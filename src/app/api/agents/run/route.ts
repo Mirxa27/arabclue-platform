@@ -34,10 +34,21 @@ export async function POST(req: NextRequest) {
           workspaceId: workspace.id,
           createdById: user!.id,
           etimadRef: `ETM-${Date.now().toString(36).toUpperCase()}`,
-          title: "New Tender Project",
-          status: "DRAFT",
+          title: body.title || "New Tender Project",
+          titleAr: body.titleAr || null,
+          category: body.tenderType || "IT",
+          budget: body.budget ?? null,
           currency: "SAR",
+          status: "DRAFT",
+          saudizationTarget: 35,
+          localContentTarget: 40,
         },
+      });
+    } else if (body.tenderType && body.tenderType !== project.category) {
+      // Update the tender type if provided and different
+      project = await db.tenderProject.update({
+        where: { id: project.id },
+        data: { category: body.tenderType, ...(body.budget ? { budget: body.budget } : {}) },
       });
     }
 

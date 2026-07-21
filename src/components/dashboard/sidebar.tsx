@@ -18,6 +18,11 @@ import {
   ChevronLeft,
   Cpu,
   CircleDot,
+  KeyRound,
+  CreditCard,
+  Users,
+  ScrollText,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +37,15 @@ const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] 
   { view: "agents", key: "nav_agents", icon: Bot },
   { view: "history", key: "nav_history", icon: History },
   { view: "brand", key: "nav_brand", icon: Palette },
+];
+
+const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] = [
+  { view: "admin_overview", key: "nav_dashboard", icon: LayoutDashboard },
+  { view: "admin_ai", key: "nav_admin_ai", icon: Cpu },
+  { view: "admin_env", key: "nav_admin_env", icon: KeyRound },
+  { view: "admin_billing", key: "nav_admin_billing", icon: CreditCard },
+  { view: "admin_security", key: "nav_admin_security", icon: Users },
+  { view: "admin_audit", key: "nav_admin_audit", icon: ScrollText },
 ];
 
 export function DashboardSidebar() {
@@ -113,6 +127,39 @@ export function DashboardSidebar() {
             >
               <Icon className="size-[18px] shrink-0" />
               {!sidebarCollapsed && <span className="truncate">{tr(item.key, locale)}</span>}
+              {active && !sidebarCollapsed && (
+                <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-white rounded-s-full" />
+              )}
+            </button>
+          );
+        })}
+
+        {/* Admin section */}
+        {!sidebarCollapsed && (
+          <div className="pt-4 pb-1 px-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sidebar-foreground/40">
+            <Lock className="size-2.5" />
+            {tr("nav_admin", locale)}
+          </div>
+        )}
+        {sidebarCollapsed && <div className="my-2 border-t border-sidebar-border" />}
+        {ADMIN_NAV.map((item) => {
+          const Icon = item.icon;
+          const active = view === item.view;
+          return (
+            <button
+              key={item.view}
+              onClick={() => setView(item.view)}
+              title={tr(item.key, locale)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group relative",
+                active
+                  ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white",
+                sidebarCollapsed && "justify-center"
+              )}
+            >
+              <Icon className="size-[18px] shrink-0" />
+              {!sidebarCollapsed && <span className="truncate text-[13px]">{tr(item.key, locale)}</span>}
               {active && !sidebarCollapsed && (
                 <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-white rounded-s-full" />
               )}

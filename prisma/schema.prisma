@@ -1,7 +1,8 @@
-// Prisma schema for Etimad AI-Bidder (منصة مناقصة)
+// Prisma schema for Arabclue — Saudi Government Tender Proposal Automation SaaS
 // Production domain model: RBAC + MFA users, workspaces, tender projects,
 // versioned documents, brand profiles, past projects (RAG), multi-agent runs,
-// NCA/PDPL compliance checks, and generated proposals.
+// NCA/PDPL compliance checks, generated proposals, AI provider config,
+// encrypted env settings, subscriptions/billing, and immutable audit trail.
 
 generator client {
   provider = "prisma-client-js"
@@ -19,7 +20,7 @@ model User {
   email           String   @unique
   name            String
   passwordHash    String
-  role            String   @default("BIDDER") // ADMIN | BIDDER | REVIEWER | FINANCE
+  role            String   @default("BIDDER") // SUPER_ADMIN | ADMIN | BIDDER | REVIEWER | FINANCE
   mfaEnabled      Boolean  @default(false)
   mfaSecret       String?
   avatarUrl       String?
@@ -35,6 +36,9 @@ model User {
   proposals       GeneratedProposal[]
   agentRuns       AgentRun[]
   sessions        UserSession[]
+  auditLogs       AuditLog[]
+  billingRecords  BillingRecord[]
+  subscription    Subscription?
 }
 
 model UserSession {
@@ -279,4 +283,149 @@ model GeneratedProposal {
 
   @@index([workspaceId])
   @@index([projectId])
+}
+
+// ─── AI Provider & Model Configuration ───────────────────────────────────────
+
+model AIProviderConfig {
+  id              String   @id @default(cuid())
+  name            String   // e.g. "ZAI GLM-4.6", "OpenAI GPT-4o", "Claude Sonnet"
+  provider        String   // zai | openai | anthropic | azure | mistral | custom
+  modelId         String   // e.g. glm-4.6, gpt-4o, claude-3-5-sonnet
+  apiBase         String?  // custom endpoint
+  isActive        Boolean  @default(false) // only one active at a time
+  isDefault       Boolean  @default(false)
+  // Tunable parameters
+  temperature     Float    @default(0.2)
+  maxTokens       Int      @default(4096)
+  topP            Float    @default(0.9)
+  frequencyPenalty Float   @default(0.0)
+  presencePenalty Float    @default(0.0)
+  // Safety guardrails
+  confidenceThreshold Float @default(0.85) // min confidence to accept agent output
+  toxicityFilter  Boolean  @default(true)
+  piiFilter       Boolean  @default(true)
+  hallucinationGuard Boolean @default(true)
+  maxRetries      Int      @default(2)
+  timeoutMs       Int      @default(60000)
+  // Cost tracking
+  inputCostPer1k  Float    @default(0.0)  // SAR per 1k input tokens
+  outputCostPer1k Float    @default(0.0)  // SAR per 1k output tokens
+  metadata        String?  // JSON blob for extra config
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([provider])
+  @@index([isActive])
+}
+
+// ─── Encrypted Environment Settings (.env UI management) ─────────────────────
+
+model EnvSetting {
+  id            String   @id @default(cuid())
+  key           String   @unique // e.g. OPENAI_API_KEY, DATABASE_URL, WEBHOOK_URL
+  valueEncrypted String  // AES-256-GCM encrypted ciphertext (iv:authTag:ciphertext)
+  category      String   @default("GENERAL") // AI_PROVIDER | DATABASE | INTEGRATION | SECURITY | BILLING | GENERAL
+  description   String?
+  isSecret      Boolean  @default(true) // mask in UI
+  isRequired    Boolean  @default(false)
+  lastRotatedAt DateTime?
+  lastEditedBy  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
+}
+
+// ─── Subscriptions & Billing ─────────────────────────────────────────────────
+
+model SubscriptionPlan {
+  id              String   @id @default(cuid())
+  name            String   // STARTER | PRO | ENTERPRISE | PAY_AS_YOU_GO
+  nameAr          String?
+  description     String?
+  priceMonthly    Float    @default(0.0) // SAR
+  priceYearly     Float    @default(0.0) // SAR
+  currency        String   @default("SAR")
+  // Quotas
+  maxProposals    Int      @default(10) // per month; -1 = unlimited
+  maxDocuments    Int      @default(50)
+  maxWorkspaces   Int      @default(1)
+  maxTokensPerMonth Int    @default(500000) // LLM token budget
+  maxStorageGb    Int      @default(5)
+  // Features
+  featuresJson    String?  // JSON array of feature flags
+  isActive        Boolean  @default(true)
+  isPublic        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subscriptions   Subscription[]
+}
+
+model Subscription {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  planId          String
+  status          String   @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELLED | TRIALING | EXPIRED
+  billingCycle    String   @default("MONTHLY") // MONTHLY | YEARLY
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  // Usage counters (reset each cycle)
+  proposalsUsed   Int      @default(0)
+  documentsUsed   Int      @default(0)
+  tokensUsed      Int      @default(0)
+  storageUsedBytes Float   @default(0)
+  trialEndsAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan            SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([status])
+}
+
+model BillingRecord {
+  id              String   @id @default(cuid())
+  userId          String
+  type            String   // SUBSCRIPTION | USAGE | TOPUP | REFUND | OVERAGE
+  amount          Float    // SAR
+  currency        String   @default("SAR")
+  description     String
+  tokensIncluded  Int      @default(0)
+  proposalsIncluded Int    @default(0)
+  status          String   @default("PAID") // PENDING | PAID | FAILED | REFUNDED
+  invoiceNumber   String?
+  paymentMethod   String?  // mada | visa | mastercard | stc_pay | bank_transfer
+  metadata        String?  // JSON
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ─── Immutable Audit Trail ───────────────────────────────────────────────────
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String?
+  action          String   // LOGIN | LOGOUT | CONFIG_CHANGE | DOC_UPLOAD | PROPOSAL_GENERATE | ROLE_CHANGE | ENV_UPDATE | BILLING_CHANGE
+  resource        String?  // affected entity type
+  resourceId      String?  // affected entity id
+  details         String?  // JSON blob with before/after
+  ipAddress       String?
+  userAgent       String?
+  severity        String   @default("INFO") // INFO | WARN | ERROR | CRITICAL
+  success         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
 }

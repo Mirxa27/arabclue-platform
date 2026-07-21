@@ -12,7 +12,14 @@ import { BrandSetup } from "./brand-setup";
 import { ProposalsList } from "./proposals-list";
 import { ProjectsList } from "./projects-list";
 import { ChartsPanel } from "./charts-panel";
-import { Sparkles } from "lucide-react";
+import { TenderTypeSelector } from "./tender-type-selector";
+import { AdminOverview } from "@/components/admin/overview";
+import { AdminAIProviders } from "@/components/admin/ai-providers";
+import { AdminEnvSettings } from "@/components/admin/env-settings";
+import { AdminBilling } from "@/components/admin/billing";
+import { AdminSecurity } from "@/components/admin/security";
+import { AdminAudit } from "@/components/admin/audit";
+import { Sparkles, Lock } from "lucide-react";
 
 export function DashboardViews() {
   const { view } = useUI();
@@ -34,6 +41,19 @@ export function DashboardViews() {
       return <HistoryView />;
     case "brand":
       return <BrandView />;
+    // Admin views
+    case "admin_overview":
+      return <AdminOverviewView />;
+    case "admin_ai":
+      return <AdminAIView />;
+    case "admin_env":
+      return <AdminEnvView />;
+    case "admin_billing":
+      return <AdminBillingView />;
+    case "admin_security":
+      return <AdminSecurityView />;
+    case "admin_audit":
+      return <AdminAuditView />;
     default:
       return <OverviewView />;
   }
@@ -62,6 +82,7 @@ function OverviewView() {
         title={tr("nav_dashboard", locale)}
         subtitle={locale === "ar" ? "نظرة شاملة على منصة العطاءات" : "Comprehensive tender platform overview"}
       />
+      <TenderTypeSelector />
       <StatCards />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 space-y-4">
@@ -75,6 +96,87 @@ function OverviewView() {
           <VersionHistory />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Admin view wrappers ─────────────────────────────────────────────────────
+
+function AdminViewHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  const { locale } = useLocale();
+  return (
+    <div className="mb-4 flex items-center justify-between">
+      <div>
+        <h1 className="text-lg lg:text-xl font-bold tracking-tight flex items-center gap-2">
+          <Lock className="size-4 text-amber-600" />
+          {title}
+        </h1>
+        <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+      </div>
+      <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-medium text-amber-700 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
+        <Lock className="size-2.5" />
+        {locale === "ar" ? "وصول المسؤول" : "Admin Access"}
+      </div>
+    </div>
+  );
+}
+
+function AdminOverviewView() {
+  const { locale } = useLocale();
+  return (
+    <div className="space-y-4">
+      <AdminViewHeader title={tr("nav_admin", locale)} subtitle={locale === "ar" ? "نظرة عامة على النظام" : "System-wide overview"} />
+      <AdminOverview />
+    </div>
+  );
+}
+
+function AdminAIView() {
+  const { locale } = useLocale();
+  return (
+    <div className="space-y-4">
+      <AdminViewHeader title={tr("admin_ai_providers", locale)} subtitle={locale === "ar" ? "تكوين نماذج اللغة والحواجز الأمنية" : "Configure LLM models & safety guardrails"} />
+      <AdminAIProviders />
+    </div>
+  );
+}
+
+function AdminEnvView() {
+  const { locale } = useLocale();
+  return (
+    <div className="space-y-4">
+      <AdminViewHeader title={tr("admin_env", locale)} subtitle={locale === "ar" ? "إدارة مشفرة لمتغيرات البيئة" : "Encrypted environment variable management"} />
+      <AdminEnvSettings />
+    </div>
+  );
+}
+
+function AdminBillingView() {
+  const { locale } = useLocale();
+  return (
+    <div className="space-y-4">
+      <AdminViewHeader title={tr("admin_billing", locale)} subtitle={locale === "ar" ? "الباقات والاستخدام والإيرادات" : "Plans, usage & revenue"} />
+      <AdminBilling />
+    </div>
+  );
+}
+
+function AdminSecurityView() {
+  const { locale } = useLocale();
+  return (
+    <div className="space-y-4">
+      <AdminViewHeader title={tr("admin_security", locale)} subtitle={locale === "ar" ? "RBAC والمستخدمون والصلاحيات" : "RBAC, users & access control"} />
+      <AdminSecurity />
+    </div>
+  );
+}
+
+function AdminAuditView() {
+  const { locale } = useLocale();
+  return (
+    <div className="space-y-4">
+      <AdminViewHeader title={tr("admin_audit", locale)} subtitle={locale === "ar" ? "سجل تدقيق غير قابل للتغيير" : "Immutable audit trail"} />
+      <AdminAudit />
     </div>
   );
 }

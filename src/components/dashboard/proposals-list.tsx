@@ -112,24 +112,35 @@ export function ProposalsList() {
                     <div className="grid grid-cols-2 gap-1.5 mt-2">
                       {artifacts.map((a: any, i: number) => {
                         const Icon = artifactIcon(a.type);
+                        const fmt =
+                          a.type === "ZIP" ? "zip" :
+                          a.type === "PDF" ? "pdf" :
+                          a.filename.includes("Compliance") ? "xlsx-matrix" :
+                          a.filename.includes("BoQ") ? "xlsx-boq" :
+                          a.type === "PPTX" ? "slides" : "zip";
                         return (
-                          <div
+                          <a
                             key={i}
-                            className="flex items-center gap-1.5 p-1.5 rounded-md bg-muted/40 border border-border/40"
+                            href={`/api/proposals/${p.id}/download?format=${fmt}`}
+                            className="flex items-center gap-1.5 p-1.5 rounded-md bg-muted/40 border border-border/40 hover:border-primary/40 hover:bg-primary/5 transition-colors group"
                           >
-                            <Icon className="size-3 text-muted-foreground shrink-0" />
+                            <Icon className="size-3 text-muted-foreground group-hover:text-primary shrink-0" />
                             <span className="text-[10px] truncate flex-1">{a.filename}</span>
-                            <Button size="icon" variant="ghost" className="size-5 shrink-0">
-                              <Download className="size-2.5" />
-                            </Button>
-                          </div>
+                            <Download className="size-2.5 text-muted-foreground group-hover:text-primary shrink-0" />
+                          </a>
                         );
                       })}
                     </div>
                   )}
 
-                  <div className="flex items-center gap-1 mt-2">
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1">
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <a href={`/api/proposals/${p.id}/download?format=zip`}>
+                      <Button size="sm" className="h-7 text-[10px] gap-1">
+                        <Download className="size-2.5" />
+                        {tr("download_zip", locale)}
+                      </Button>
+                    </a>
+                    <Button size="sm" variant="ghost" className="h-7 text-[10px] gap-1">
                       <Eye className="size-2.5" />
                       {tr("action_view", locale)}
                     </Button>

@@ -251,3 +251,230 @@ export const EXECUTION_METHODOLOGY = [
   { id: 4, name: "Monitoring & QA", nameAr: "المراقبة والجودة", pmi: "Monitoring & Controlling", agile: "Review & Retro" },
   { id: 5, name: "Closure & Handover", nameAr: "الإغلاق والتسليم", pmi: "Closing", agile: "Release" },
 ];
+
+// ─── Tender Types (Arabclue supports all government tender categories) ────────
+
+export interface TenderTypeDef {
+  id: string;
+  name: string;
+  nameAr: string;
+  icon: string;
+  color: string;
+  slaMaxPenalty: number; // % cap
+  slaPerWeek: number; // % per week delay
+  typicalBudget: number;
+  complianceScope: string[]; // which compliance frameworks apply
+  evaluationSplit: { technical: number; financial: number };
+}
+
+export const TENDER_TYPES: TenderTypeDef[] = [
+  {
+    id: "IT",
+    name: "IT & Digital Services",
+    nameAr: "تقنية المعلومات والخدمات الرقمية",
+    icon: "Cpu",
+    color: "#1E3A8A",
+    slaMaxPenalty: 20,
+    slaPerWeek: 2,
+    typicalBudget: 25000000,
+    complianceScope: ["NCA_ECC1", "NCA_CCC1", "PDPL", "EA_TP1", "EA_SP1", "EA_SP2", "LOCAL_CONTENT"],
+    evaluationSplit: { technical: 70, financial: 30 },
+  },
+  {
+    id: "CONSTRUCTION",
+    name: "Construction & Infrastructure",
+    nameAr: "الإنشاءات والبنية التحتية",
+    icon: "Building2",
+    color: "#B45309",
+    slaMaxPenalty: 10,
+    slaPerWeek: 1,
+    typicalBudget: 150000000,
+    complianceScope: ["LOCAL_CONTENT", "SAFETY", "ENVIRONMENTAL"],
+    evaluationSplit: { technical: 60, financial: 40 },
+  },
+  {
+    id: "CONSULTING",
+    name: "Consulting & Advisory",
+    nameAr: "الاستشارات والدراسات",
+    icon: "Lightbulb",
+    color: "#7C3AED",
+    slaMaxPenalty: 15,
+    slaPerWeek: 1.5,
+    typicalBudget: 8000000,
+    complianceScope: ["LOCAL_CONTENT", "PDPL"],
+    evaluationSplit: { technical: 80, financial: 20 },
+  },
+  {
+    id: "OPERATIONS",
+    name: "Operations & Facility Management",
+    nameAr: "التشغيل وإدارة المرافق",
+    icon: "Settings",
+    color: "#0891B2",
+    slaMaxPenalty: 20,
+    slaPerWeek: 2,
+    typicalBudget: 45000000,
+    complianceScope: ["NCA_ECC1", "PDPL", "LOCAL_CONTENT", "SAFETY"],
+    evaluationSplit: { technical: 65, financial: 35 },
+  },
+  {
+    id: "MEDICAL",
+    name: "Medical & Healthcare",
+    nameAr: "الطبي والرعاية الصحية",
+    icon: "HeartPulse",
+    color: "#BE123C",
+    slaMaxPenalty: 20,
+    slaPerWeek: 2,
+    typicalBudget: 60000000,
+    complianceScope: ["NCA_ECC1", "PDPL", "SFDA", "LOCAL_CONTENT"],
+    evaluationSplit: { technical: 75, financial: 25 },
+  },
+  {
+    id: "GENERAL",
+    name: "General Supplies & Services",
+    nameAr: "التوريدات والخدمات العامة",
+    icon: "Package",
+    color: "#475569",
+    slaMaxPenalty: 20,
+    slaPerWeek: 2,
+    typicalBudget: 12000000,
+    complianceScope: ["LOCAL_CONTENT", "PDPL"],
+    evaluationSplit: { technical: 55, financial: 45 },
+  },
+];
+
+export function getTenderType(id: string | null | undefined): TenderTypeDef {
+  return TENDER_TYPES.find((t) => t.id === id) ?? TENDER_TYPES[0];
+}
+
+// ─── Admin: AI Provider presets ──────────────────────────────────────────────
+
+export const AI_PROVIDER_PRESETS = [
+  {
+    name: "ZAI GLM-4.6",
+    provider: "zai",
+    modelId: "glm-4.6",
+    apiBase: "",
+    temperature: 0.2,
+    maxTokens: 4096,
+    inputCostPer1k: 0.015,
+    outputCostPer1k: 0.045,
+  },
+  {
+    name: "ZAI GLM-4.5",
+    provider: "zai",
+    modelId: "glm-4.5",
+    apiBase: "",
+    temperature: 0.3,
+    maxTokens: 8192,
+    inputCostPer1k: 0.012,
+    outputCostPer1k: 0.036,
+  },
+  {
+    name: "OpenAI GPT-4o",
+    provider: "openai",
+    modelId: "gpt-4o",
+    apiBase: "https://api.openai.com/v1",
+    temperature: 0.2,
+    maxTokens: 4096,
+    inputCostPer1k: 0.019,
+    outputCostPer1k: 0.076,
+  },
+  {
+    name: "Claude 3.5 Sonnet",
+    provider: "anthropic",
+    modelId: "claude-3-5-sonnet-20241022",
+    apiBase: "https://api.anthropic.com/v1",
+    temperature: 0.2,
+    maxTokens: 8192,
+    inputCostPer1k: 0.026,
+    outputCostPer1k: 0.131,
+  },
+  {
+    name: "Mistral Large",
+    provider: "mistral",
+    modelId: "mistral-large-latest",
+    apiBase: "https://api.mistral.ai/v1",
+    temperature: 0.2,
+    maxTokens: 4096,
+    inputCostPer1k: 0.008,
+    outputCostPer1k: 0.024,
+  },
+];
+
+// ─── Admin: Env setting catalog (known keys) ─────────────────────────────────
+
+export const ENV_CATALOG = [
+  { key: "OPENAI_API_KEY", category: "AI_PROVIDER", description: "OpenAI API key for GPT models", isRequired: false },
+  { key: "ANTHROPIC_API_KEY", category: "AI_PROVIDER", description: "Anthropic API key for Claude models", isRequired: false },
+  { key: "ZAI_API_KEY", category: "AI_PROVIDER", description: "Z.ai API key for GLM models", isRequired: false },
+  { key: "MISTRAL_API_KEY", category: "AI_PROVIDER", description: "Mistral API key", isRequired: false },
+  { key: "DATABASE_URL", category: "DATABASE", description: "Primary database connection string", isRequired: true },
+  { key: "REDIS_URL", category: "DATABASE", description: "Redis broker URL for async tasks", isRequired: false },
+  { key: "VECTOR_DB_URL", category: "DATABASE", description: "Vector database (Milvus/Pinecone) endpoint", isRequired: false },
+  { key: "WEBHOOK_URL", category: "INTEGRATION", description: "Outbound webhook for event notifications", isRequired: false },
+  { key: "SMTP_HOST", category: "INTEGRATION", description: "Email relay host", isRequired: false },
+  { key: "SMTP_PORT", category: "INTEGRATION", description: "Email relay port", isRequired: false },
+  { key: "ARABCLUE_ENC_KEY", category: "SECURITY", description: "Master encryption key for env secrets", isRequired: true },
+  { key: "JWT_SECRET", category: "SECURITY", description: "JWT signing secret", isRequired: true },
+  { key: "STRIPE_SECRET_KEY", category: "BILLING", description: "Stripe payment gateway secret", isRequired: false },
+  { key: "MADA_MERCHANT_ID", category: "BILLING", description: "mada merchant identifier", isRequired: false },
+  { key: "STC_PAY_MERCHANT_ID", category: "BILLING", description: "STC Pay merchant identifier", isRequired: false },
+];
+
+// ─── Admin: Default subscription plans ───────────────────────────────────────
+
+export const DEFAULT_PLANS = [
+  {
+    name: "STARTER",
+    nameAr: "المبتدئ",
+    description: "For solo bidders getting started",
+    priceMonthly: 299,
+    priceYearly: 2990,
+    maxProposals: 10,
+    maxDocuments: 50,
+    maxWorkspaces: 1,
+    maxTokensPerMonth: 500000,
+    maxStorageGb: 5,
+    featuresJson: JSON.stringify(["basic_agents", "pdf_export", "email_support"]),
+  },
+  {
+    name: "PRO",
+    nameAr: "الاحترافي",
+    description: "For growing bid teams",
+    priceMonthly: 999,
+    priceYearly: 9990,
+    maxProposals: 50,
+    maxDocuments: 250,
+    maxWorkspaces: 3,
+    maxTokensPerMonth: 3000000,
+    maxStorageGb: 25,
+    featuresJson: JSON.stringify(["all_agents", "pptx_pdf_xlsx_export", "brand_customization", "priority_support", "rag_corpus"]),
+  },
+  {
+    name: "ENTERPRISE",
+    nameAr: "المؤسسات",
+    description: "For large organizations with unlimited needs",
+    priceMonthly: 2999,
+    priceYearly: 29990,
+    maxProposals: -1,
+    maxDocuments: -1,
+    maxWorkspaces: 20,
+    maxTokensPerMonth: 20000000,
+    maxStorageGb: 200,
+    featuresJson: JSON.stringify(["all_agents", "all_exports", "brand_customization", "dedicated_support", "rag_corpus", "rbac", "audit_trail", "sso", "custom_agents"]),
+  },
+  {
+    name: "PAY_AS_YOU_GO",
+    nameAr: "الدفع حسب الاستخدام",
+    description: "No commitment, pay per proposal",
+    priceMonthly: 0,
+    priceYearly: 0,
+    maxProposals: -1,
+    maxDocuments: -1,
+    maxWorkspaces: 1,
+    maxTokensPerMonth: -1,
+    maxStorageGb: 10,
+    featuresJson: JSON.stringify(["all_agents", "all_exports", "pay_per_proposal"]),
+  },
+];
+

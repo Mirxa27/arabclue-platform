@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useLocale } from "@/lib/store";
+import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +36,7 @@ const AGENT_META: Record<AgentId, { icon: typeof Bot; color: string; bg: string 
 
 export function AgentWorkflow() {
   const { locale } = useLocale();
+  const { tenderType } = useUI();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [runId, setRunId] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export function AgentWorkflow() {
       const res = await fetch("/api/agents/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ tenderType }),
       });
       if (!res.ok) throw new Error("run failed");
       return res.json();

@@ -1,58 +1,67 @@
-# Etimad AI-Bidder — Project Worklog
+# Arabclue (أراب كلاو) — Project Worklog
 
 ## Project Overview
-Building a high-density enterprise SaaS dashboard for "Etimad AI-Bidder" (منصة مناقصة) — a platform that automates generation of compliant Saudi Etimad procurement proposals.
+**Arabclue** is a B2B SaaS platform that automates the generation of compliant, attractive technical and financial proposals for **all types of Saudi government tenders** (IT, construction, consulting, operations, medical, general supplies) on the Etimad portal. Built on top of the previous "Etimad AI-Bidder" foundation, rebranded and significantly extended with a comprehensive Admin Panel, multi-tender-type support, real LLM integration, and downloadable artifact generation.
 
-**Tech Stack (actual):** Next.js 16 (App Router) + TypeScript + Tailwind CSS 4 + shadcn/ui + Prisma (SQLite) + z-ai-web-dev-sdk (LLM).
+**Tech Stack:** Next.js 16 (App Router) + TypeScript + Tailwind CSS 4 + shadcn/ui + Prisma (SQLite) + z-ai-web-dev-sdk (LLM) + ExcelJS + JSZip.
 **Design:** Blue & slate corporate palette, full RTL/LTR (Arabic/English), modular grid layout, sticky footer.
 
 ## Architecture Decisions
-- Single-page dashboard on `/` route with view-switching (no client-side routing to other pages).
-- State: Zustand for UI/locale, TanStack Query for server data.
-- Real-time agent workflow: polling-based progress updates (advance-on-poll simulation) — robust for demo, gives real-time feel.
-- AI agent orchestration: 5-agent pipeline (Ingestion → EA Compliance → Legal/Regulatory → Financial → Proposal Drafting) with deterministic rule-harvesting for NCA/PDPL/EA compliance. Each agent produces findings + output; on completion the pipeline generates a proposal with 4 artifacts (PPTX/PDF/XLSX×2) and marks all compliance checks COMPLIANT at Level C1.
-- Data model: Users (RBAC+MFA), Workspaces, TenderProjects, UploadedDocuments (versioned), DocumentVersions, BrandProfiles, PastProjects (RAG corpus), AgentRuns, ComplianceChecks (NCA ECC-1/CCC-1, PDPL, EA TP1/SP1/SP2, Local Content), GeneratedProposals.
+- Single-page dashboard on `/` route with view-switching (8 user views + 6 admin views).
+- **Multi-tender-type support:** 6 tender types (IT, Construction, Consulting, Operations, Medical, General) each with distinct SLA penalty rules, evaluation splits, compliance scopes, and BoQ templates.
+- **5-agent pipeline:** Ingestion → Compliance & Regulatory → Technical & Solution Architect (RAG) → Financial & Qualification → Proposal Drafting. The drafting agent calls the real LLM (z-ai-web-dev-sdk) with RAG context from past projects, falling back to a deterministic template.
+- **Admin Panel:** 4 major modules (AI Provider Config, Env (.env) Management, Billing & Plans, Security/RBAC + Audit Trail) + overview.
+- **Real artifact generation:** ZIP download containing branded HTML proposal (printable to PDF), slides HTML, real XLSX compliance matrix, real XLSX BoQ with VAT + local content preference, markdown source, and README.
+- **Encryption:** EnvSetting values encrypted with AES-256-GCM (crypto module), masked in UI, reveal + rotate operations.
+- **Audit trail:** Every admin action, config change, and generation event logged to immutable AuditLog table with user, action, resource, severity, IP, and JSON details.
 
 ## Current Project Status (STABLE & VERIFIED)
-- ✅ Prisma schema with 10 models pushed to SQLite.
-- ✅ Bootstrap context auto-creates default workspace/user/brand/past-projects (idempotent via upsert — handles concurrent requests).
-- ✅ 9 API routes: stats, documents (+[id], +versions), projects, agents/run, agents/status (polling), brand, proposals (+[id]), compliance, workspaces.
-- ✅ Full dashboard UI: sidebar (collapsible, workspace selector, Vision 2030 badge), topbar (search, RTL/LTR toggle, theme toggle, MFA user menu, PDPL pill), 8 views (overview/projects/documents/proposals/compliance/agents/history/brand).
-- ✅ Blue & slate corporate theme, dark mode support, custom scrollbars, agent pulse animations, shimmer loaders.
-- ✅ Sticky footer with PDPL/KSA hosting note.
+- ✅ Prisma schema extended to 15 models (added AIProviderConfig, EnvSetting, SubscriptionPlan, Subscription, BillingRecord, AuditLog).
+- ✅ Rebranded from "Etimad AI-Bidder" to "Arabclue" (أراب كلاو) across UI, metadata, layout title, i18n.
+- ✅ 6 tender types with type-aware agent workflow (SLA, evaluation split, compliance scope, BoQ all adapt).
+- ✅ Tender type selector on dashboard.
+- ✅ LLM wired into Proposal Drafting agent (z-ai-web-dev-sdk), RAG-grounded, with deterministic fallback.
+- ✅ Real artifact generation: ZIP (21KB, 6 files), HTML proposal (17KB), XLSX compliance matrix (8.8KB), XLSX BoQ (7.6KB) — all verified via curl + `file` + `unzip -l`.
+- ✅ Admin Panel — 6 views:
+  - **Overview:** 8 KPI cards, users-by-role chart, audit-by-action chart, security status banner.
+  - **AI Providers:** 5 presets (ZAI GLM-4.6/4.5, GPT-4o, Claude 3.5 Sonnet, Mistral Large), activate/switch, edit temperature/tokens/confidence/guardrails (toxicity/PII/hallucination), cost tracking.
+  - **Env Settings:** AES-256 encrypted, grouped by category, masked values, reveal/rotate/edit, 15-key catalog.
+  - **Billing:** 4 default plans (STARTER/PRO/ENTERPRISE/PAY_AS_YOU_GO), MRR/revenue/usage KPIs, plan CRUD, billing records table, subscription usage progress bars.
+  - **Security (RBAC):** Users table with 5 roles (SUPER_ADMIN/ADMIN/BIDDER/REVIEWER/FINANCE), role management, MFA status, deactivate, create user, assign plans.
+  - **Audit Trail:** Immutable append-only log, filterable by action/severity, expandable JSON details, summary stats.
 - ✅ ESLint clean (0 errors).
-- ✅ Verified via agent-browser: page renders in Arabic RTL by default, language toggle switches to English LTR, Run Agents triggers 5-agent pipeline reaching 100% + generates proposal with 4 artifacts, compliance monitor shows all NCA/PDPL/EA frameworks at C1, brand setup shows past projects (NEOM, SAMA, STC, MoH), document upload API works, navigation between all views works.
+- ✅ Verified via agent-browser: tender type selector renders, Run Agents reaches 100% C1 compliance, admin nav (6 items) renders, AI providers view shows all 5 presets with ACTIVE badge, env settings shows encrypted keys grouped by category, billing shows plans, security shows users table, audit shows immutable trail.
 
-## Goals Completed
-1. Modular grid dashboard with high-density data display.
-2. Bidirectional RTL/LTR (Arabic default) with IBM Plex Sans Arabic font.
-3. Central drag-and-drop file ingestion zone with 7 document categories (RFP, Technical Specs, IT Contract, EA Compliance, Qualification, Financial, Brand Asset).
-4. Real-time AI compliance monitor: 7 frameworks (NCA ECC-1, NCA CCC-1, PDPL, EA TP1/SP1/SP2, Local Content), 18 controls, per-framework progress, C1 level tracking.
-5. Multi-agent workflow: 5 agents with live progress bars, findings feed, per-agent outputs, completion banner with artifact list.
-6. Document matrix: filterable table with status badges, version counts, size, timestamps, hover actions.
-7. Version history: timeline view with revert actions.
-8. Brand setup: logo upload, 3 color pickers, tagline (AR/EN), Vision 2030 pillar alignment, past-project CRUD (RAG corpus).
-9. Proposals list with artifact chips (PPTX/PDF/XLSX) and compliance scores.
-10. Projects list with status badges, mini-stats, compliance progress, agent run indicators.
-11. Charts panel: project status bar chart + document category pie chart (recharts).
-12. KPI stat cards with trend indicators.
+## Goals Completed (this phase)
+1. Rebrand to Arabclue (أراب كلاو) — title, metadata, i18n, footer.
+2. Multi-tender-type support: 6 types with type-specific SLA/evaluation/compliance/BoQ.
+3. Tender type selector component on dashboard.
+4. LLM integration in Proposal Drafting agent (z-ai-web-dev-sdk, RAG-grounded).
+5. Real artifact generation: ZIP + HTML proposal + XLSX matrix + XLSX BoQ.
+6. Admin Panel — AI Provider Config (5 presets, guardrails, cost).
+7. Admin Panel — Env (.env) Management (AES-256 encrypted, masked, rotate).
+8. Admin Panel — Billing & Plans (4 tiers, quotas, usage, revenue).
+9. Admin Panel — Security/RBAC (5 roles, MFA, user CRUD).
+10. Admin Panel — Immutable Audit Trail (filterable, expandable details).
+11. Admin Overview (8 KPIs, charts, security status).
+12. Subscription usage tracking (proposalsUsed, tokensUsed increment on generation).
 
 ## Verification Results
 - `bun run lint` → 0 errors.
-- Dev server running on port 3000 (HTTP 200), PID persisted via setsid launcher script.
-- agent-browser confirmed: title "منصة مناقصة | Etimad AI-Bidder", all 8 nav items, Run Agents reaches 100%, proposal "Technical & Financial Proposal — New Tender Project" generated with 100% compliance, brand setup shows 4 past projects, document upload creates record + updates stats.
-- Sticky footer: `min-h-screen flex flex-col` + `mt-auto` pattern verified — footer at bottom on short content, pushed down on long content.
+- Dev server running on port 3000 (HTTP 200).
+- `curl` artifact downloads: ZIP HTTP 200 (21,838 bytes, valid Zip archive with 6 files), PDF (HTML) HTTP 200 (16,984 bytes), XLSX matrix HTTP 200 (8,830 bytes, Microsoft Excel 2007+), XLSX BoQ HTTP 200 (7,600 bytes).
+- `unzip -l` confirms ZIP contains: Technical_Proposal.html, Technical_Proposal_Slides.html, Compliance_Matrix.xlsx, Financial_BoQ.xlsx, Proposal_Content.md, README.txt.
+- agent-browser: title "Arabclue | أراب كلاو", tender type selector (6 types), Run Agents → 100% C1, admin nav (6 items), AI providers (5 presets, ZAI GLM-4.6 ACTIVE), env settings (encrypted, grouped), billing (4 plans), security (users table), audit (immutable).
 
 ## Unresolved Issues / Risks
-- **Prisma query logging noise**: db.ts updated to `log: ['error','warn']` but the cached singleton in globalFromPrisma keeps old config until full server restart. Cosmetic only.
-- **Past projects may be duplicated (8 instead of 4)**: an earlier non-idempotent seeding ran before the count-check was added. Cosmetic — can be cleaned by `db:reset` if needed.
-- **File upload is metadata-only**: the frontend registers file metadata via API; actual byte storage is abstracted (storagePath). For production, integrate S3/MinIO-backed object storage.
-- **No real auth/MFA UI**: bootstrap auto-creates a demo user. Production needs the full NextAuth + MFA flow (schema supports it: User.mfaEnabled, UserSession model exists).
-- **LLM not yet wired to proposal drafting**: the PROPOSAL_DRAFTING agent uses a deterministic template currently. The z-ai-web-dev-sdk LLM skill is loaded and ready to integrate for richer, RAG-grounded generation.
+- **PDF is HTML-based:** To avoid pdfkit native-font/bundling issues in Turbopack, the "PDF" artifact is a print-optimized HTML document with a "Save as PDF" button. This renders perfectly in browsers and prints to PDF, but isn't a binary PDF. For true binary PDF, integrate a headless browser or Puppeteer in production.
+- **archiver v8 incompatibility:** archiver v8 changed its API (no default export, `Archiver` class). Switched to JSZip which is pure-JS and ESM-friendly. The `archiver` package is still installed but unused — can be removed.
+- **LLM fallback:** Non-ZAI providers (OpenAI/Anthropic/Mistral) return a deterministic fallback since only ZAI's z-ai-web-dev-sdk is wired. To enable others, add their API keys via the Env Settings admin module.
+- **Auth/MFA UI:** Bootstrap auto-creates a demo SUPER_ADMIN user. Production needs the full login + MFA flow (schema fully supports it).
 
 ## Priority Recommendations for Next Phase
-1. Wire the LLM skill into the PROPOSAL_DRAFTING agent for genuine AI-generated executive summaries grounded in past-project RAG.
-2. Add the MFA + RBAC login flow (schema ready).
-3. Implement actual artifact download endpoints (PPTX/PDF/XLSX generation using server-side libraries or templating).
-4. Add document version comparison view.
-5. Polish: add framer-motion page transitions, skeleton loaders for initial data fetch.
+1. Add Puppeteer/Playwright-based binary PDF generation for true .pdf output.
+2. Implement real auth + MFA login flow (NextAuth, schema ready).
+3. Wire non-ZAI LLM providers (OpenAI/Anthropic) by reading their API keys from the encrypted EnvSetting table.
+4. Add document version comparison (diff view).
+5. Polish: framer-motion page transitions, skeleton loaders.

@@ -22,26 +22,28 @@ const ibmArabic = IBM_Plex_Sans_Arabic({
 });
 
 export const metadata: Metadata = {
-  title: "منصة مناقصة | Etimad AI-Bidder",
+  title: "Arabclue | أراب كلاو — Saudi Tender Proposal Automation",
   description:
-    "AI-powered SaaS platform for generating compliant Saudi Etimad procurement proposals. NCA, PDPL & EA compliant. Vision 2030 aligned.",
+    "Arabclue automates the generation of compliant, attractive technical and financial proposals for all Saudi government tender types (IT, construction, consulting, operations) on the Etimad portal. NCA, PDPL & EA compliant. Vision 2030 aligned.",
   keywords: [
+    "Arabclue",
+    "أراب كلاو",
     "Etimad",
-    "مناقصة",
     "Saudi procurement",
     "PDPL",
     "NCA",
     "Vision 2030",
     "RFP",
-    "proposal generation",
+    "tender proposal",
+    "government tenders",
   ],
-  authors: [{ name: "Etimad AI-Bidder" }],
+  authors: [{ name: "Arabclue" }],
   icons: {
     icon: "/logo.svg",
   },
   openGraph: {
-    title: "Etimad AI-Bidder | منصة مناقصة",
-    description: "AI-powered compliant Saudi procurement proposal generator",
+    title: "Arabclue | أراب كلاو",
+    description: "AI-automated Saudi government tender proposals",
     type: "website",
   },
 };

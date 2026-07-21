@@ -1,12 +1,13 @@
 import { db } from "./db";
-import { COMPLIANCE_FRAMEWORKS } from "./constants";
+import { COMPLIANCE_FRAMEWORKS, AI_PROVIDER_PRESETS, ENV_CATALOG, DEFAULT_PLANS } from "./constants";
+import { encryptValue } from "./crypto";
 
 // Ensure a default workspace + user exist for the demo (no auth gate on UI).
 // Uses upsert to be safe under concurrent requests.
 // In production this would be replaced by the MFA + RBAC login flow.
 
 const WORKSPACE_SLUG = "default-workspace";
-const USER_EMAIL = "bidder@etimad-sa.com";
+const USER_EMAIL = "admin@arabclue.sa";
 
 export async function getBootstrapContext() {
   // Fast path: workspace already exists
@@ -22,9 +23,9 @@ export async function getBootstrapContext() {
       update: {},
       create: {
         email: USER_EMAIL,
-        name: "Abdullah Al-Qahtani",
+        name: "Khalid Al-Otaibi",
         passwordHash: "$argon2id$demo$placeholder",
-        role: "ADMIN",
+        role: "SUPER_ADMIN",
         mfaEnabled: true,
         locale: "ar",
       },
@@ -84,16 +85,88 @@ export async function getBootstrapContext() {
     update: {},
     create: {
       email: USER_EMAIL,
-      name: "Abdullah Al-Qahtani",
+      name: "Khalid Al-Otaibi",
       passwordHash: "$argon2id$demo$placeholder",
-      role: "ADMIN",
+      role: "SUPER_ADMIN",
       mfaEnabled: true,
       locale: "ar",
     },
   });
 
+  // Seed admin configuration (AI providers, env settings, plans) — idempotent
+  await seedAdminData(user.id).catch(() => {});
+
   const brandProfile = workspace.brandProfiles[0];
   return { workspace, brandProfile, user };
+}
+
+// Seed AI provider configs, encrypted env settings, subscription plans,
+// and the default user's subscription. Fully idempotent.
+async function seedAdminData(userId: string) {
+  // AI providers
+  const providerCount = await db.aIProviderConfig.count();
+  if (providerCount === 0) {
+    await db.aIProviderConfig.createMany({
+      data: AI_PROVIDER_PRESETS.map((p, i) => ({
+        ...p,
+        isActive: i === 0, // first preset (ZAI GLM-4.6) is active by default
+        isDefault: i === 0,
+        topP: 0.9,
+        frequencyPenalty: 0.0,
+        presencePenalty: 0.0,
+        confidenceThreshold: 0.85,
+        toxicityFilter: true,
+        piiFilter: true,
+        hallucinationGuard: true,
+        maxRetries: 2,
+        timeoutMs: 60000,
+      })),
+    });
+  }
+
+  // Env settings (encrypted, masked in UI)
+  const envCount = await db.envSetting.count();
+  if (envCount === 0) {
+    await db.envSetting.createMany({
+      data: ENV_CATALOG.map((e) => ({
+        key: e.key,
+        valueEncrypted: encryptValue(e.key.includes("KEY") || e.key.includes("SECRET") ? "sk-demo-" + e.key.toLowerCase().replace(/_/g, "") : ""),
+        category: e.category,
+        description: e.description,
+        isSecret: e.key.includes("KEY") || e.key.includes("SECRET") || e.key.includes("PASSWORD"),
+        isRequired: e.isRequired,
+        lastEditedBy: userId,
+      })),
+    });
+  }
+
+  // Subscription plans
+  const planCount = await db.subscriptionPlan.count();
+  if (planCount === 0) {
+    await db.subscriptionPlan.createMany({ data: DEFAULT_PLANS as any });
+  }
+
+  // Default user subscription (Enterprise plan)
+  const existingSub = await db.subscription.findUnique({ where: { userId } });
+  if (!existingSub) {
+    const entPlan = await db.subscriptionPlan.findFirst({ where: { name: "ENTERPRISE" } });
+    if (entPlan) {
+      const now = new Date();
+      await db.subscription.create({
+        data: {
+          userId,
+          planId: entPlan.id,
+          status: "ACTIVE",
+          billingCycle: "YEARLY",
+          currentPeriodStart: now,
+          currentPeriodEnd: new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()),
+          proposalsUsed: 0,
+          documentsUsed: 0,
+          tokensUsed: 0,
+        },
+      });
+    }
+  }
 }
 
 async function seedPastProjects(workspaceId: string, brandProfileId: string) {

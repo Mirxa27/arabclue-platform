@@ -4,10 +4,10 @@ type Dict = Record<string, { ar: string; en: string }>;
 
 export const t: Dict = {
   // Brand
-  appName: { ar: "منصة مناقصة", en: "Etimad AI-Bidder" },
+  appName: { ar: "أراب كلاو", en: "Arabclue" },
   appTagline: {
-    ar: "منصة ذكاء اصطناعي لتوليد العطاءات الحكومية المتوافقة",
-    en: "AI-powered compliant Saudi procurement proposal generator",
+    ar: "أتمتة العطاءات الحكومية السعودية بالذكاء الاصطناعي",
+    en: "AI-automated Saudi government tender proposals",
   },
 
   // Navigation
@@ -20,6 +20,12 @@ export const t: Dict = {
   nav_agents: { ar: "وكلاء الذكاء", en: "AI Agents" },
   nav_history: { ar: "الإصدارات", en: "Version History" },
   nav_settings: { ar: "الإعدادات", en: "Settings" },
+  nav_admin: { ar: "لوحة الإدارة", en: "Admin Panel" },
+  nav_admin_ai: { ar: "مزودو الذكاء", en: "AI Providers" },
+  nav_admin_env: { ar: "إدارة البيئة", en: "Environment" },
+  nav_admin_billing: { ar: "الفوترة والباقات", en: "Billing" },
+  nav_admin_security: { ar: "الأمن والصلاحيات", en: "Security & RBAC" },
+  nav_admin_audit: { ar: "سجل التدقيق", en: "Audit Trail" },
 
   // Sections
   section_overview: { ar: "نظرة عامة", en: "Overview" },
@@ -145,6 +151,58 @@ export const t: Dict = {
     ar: "بياناتك مستضافة محلياً في المملكة العربية السعودية — متوافق مع PDPL",
     en: "Your data is hosted locally in KSA — PDPL compliant",
   },
+
+  // Tender types
+  tender_type: { ar: "نوع المناقصة", en: "Tender Type" },
+  tender_IT: { ar: "تقنية المعلومات", en: "IT & Digital" },
+  tender_CONSTRUCTION: { ar: "الإنشاءات", en: "Construction" },
+  tender_CONSULTING: { ar: "الاستشارات", en: "Consulting" },
+  tender_OPERATIONS: { ar: "التشغيل", en: "Operations" },
+  tender_MEDICAL: { ar: "الطبي", en: "Medical" },
+  tender_GENERAL: { ar: "عام", en: "General" },
+  one_click_generate: { ar: "إنشاء بنقرة واحدة", en: "One-Click Generate" },
+  download_zip: { ar: "تنزيل الحزمة (ZIP)", en: "Download Package (ZIP)" },
+
+  // Admin
+  admin_title: { ar: "لوحة تحكم المسؤول", en: "Admin Control Panel" },
+  admin_ai_providers: { ar: "مزودو نماذج الذكاء الاصطناعي", en: "AI Provider & Model Configuration" },
+  admin_env: { ar: "إدارة متغيرات البيئة", en: "Environment Variables (.env)" },
+  admin_billing: { ar: "الفوترة وإدارة الباقات", en: "Billing & Package Management" },
+  admin_security: { ar: "الأمن والتحكم في الوصول", en: "Security & Access Control" },
+  admin_audit: { ar: "سجل التدقيق غير القابل للتغيير", en: "Immutable Audit Trail" },
+  admin_active_provider: { ar: "المزود النشط", en: "Active Provider" },
+  admin_temperature: { ar: "درجة الحرارة", en: "Temperature" },
+  admin_max_tokens: { ar: "الحد الأقصى للرموز", en: "Max Tokens" },
+  admin_confidence: { ar: "حد الثقة", en: "Confidence Threshold" },
+  admin_guardrails: { ar: "الحواجز الأمنية", en: "Safety Guardrails" },
+  admin_toxicity: { ar: "تصفية السموم", en: "Toxicity Filter" },
+  admin_pii: { ar: "تصفية البيانات الشخصية", en: "PII Filter" },
+  admin_hallucination: { ar: "منع الهلوسة", en: "Hallucination Guard" },
+  admin_activate: { ar: "تفعيل", en: "Activate" },
+  admin_add_provider: { ar: "إضافة مزود", en: "Add Provider" },
+  admin_encrypted: { ar: "مشفر AES-256", en: "AES-256 Encrypted" },
+  admin_rotate: { ar: "تدوير المفتاح", en: "Rotate Key" },
+  admin_reveal: { ar: "إظهار", en: "Reveal" },
+  admin_masked: { ar: "مخفي", en: "Masked" },
+  admin_plans: { ar: "الباقات", en: "Subscription Plans" },
+  admin_usage: { ar: "الاستخدام", en: "Usage" },
+  admin_revenue: { ar: "الإيرادات", en: "Revenue" },
+  admin_users: { ar: "المستخدمون", en: "Users" },
+  admin_roles: { ar: "الأدوار", en: "Roles" },
+  admin_role_SUPER_ADMIN: { ar: "مدير عام", en: "Super Admin" },
+  admin_role_ADMIN: { ar: "مسؤول", en: "Admin" },
+  admin_role_BIDDER: { ar: "مقدم عطاء", en: "Bidder" },
+  admin_role_REVIEWER: { ar: "مراجع", en: "Reviewer" },
+  admin_role_FINANCE: { ar: "مالية", en: "Finance" },
+  admin_quota: { ar: "الحصة", en: "Quota" },
+  admin_unlimited: { ar: "غير محدود", en: "Unlimited" },
+  admin_per_month: { ar: "/ شهرياً", en: "/ month" },
+  admin_per_year: { ar: "/ سنوياً", en: "/ year" },
+  admin_audit_action: { ar: "الإجراء", en: "Action" },
+  admin_audit_resource: { ar: "المورد", en: "Resource" },
+  admin_audit_severity: { ar: "الخطورة", en: "Severity" },
+  admin_audit_time: { ar: "الوقت", en: "Timestamp" },
+  admin_audit_user: { ar: "المستخدم", en: "User" },
 };
 
 export function tr(key: string, locale: Locale): string {
