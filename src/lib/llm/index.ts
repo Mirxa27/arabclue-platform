@@ -1,5 +1,5 @@
 import ZAI from "z-ai-web-dev-sdk";
-import { db } from "./db";
+import { db } from "../db";
 import type { AIProviderConfig } from "@prisma/client";
 
 // LLM service: resolves the active AI provider config from the database
