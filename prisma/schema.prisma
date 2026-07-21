@@ -1,0 +1,282 @@
+// Prisma schema for Etimad AI-Bidder (منصة مناقصة)
+// Production domain model: RBAC + MFA users, workspaces, tender projects,
+// versioned documents, brand profiles, past projects (RAG), multi-agent runs,
+// NCA/PDPL compliance checks, and generated proposals.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Identity & Access (RBAC + MFA) ──────────────────────────────────────────
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  passwordHash    String
+  role            String   @default("BIDDER") // ADMIN | BIDDER | REVIEWER | FINANCE
+  mfaEnabled      Boolean  @default(false)
+  mfaSecret       String?
+  avatarUrl       String?
+  locale          String   @default("ar") // ar | en
+  active          Boolean  @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspaces      WorkspaceMember[]
+  projects        TenderProject[]
+  documents       UploadedDocument[]
+  proposals       GeneratedProposal[]
+  agentRuns       AgentRun[]
+  sessions        UserSession[]
+}
+
+model UserSession {
+  id           String   @id @default(cuid())
+  userId       String
+  token        String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─── Workspaces (multi-tenant) ───────────────────────────────────────────────
+
+model Workspace {
+  id            String   @id @default(cuid())
+  name          String
+  nameAr        String?
+  slug          String   @unique
+  plan          String   @default("ENTERPRISE") // STARTER | PRO | ENTERPRISE
+  crNumber      String?  // Commercial Registration
+  vatNumber     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  members       WorkspaceMember[]
+  projects      TenderProject[]
+  documents     UploadedDocument[]
+  brandProfiles BrandProfile[]
+  pastProjects  PastProject[]
+  proposals     GeneratedProposal[]
+}
+
+model WorkspaceMember {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  userId       String
+  role         String   @default("MEMBER") // OWNER | ADMIN | MEMBER
+  createdAt    DateTime @default(now())
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+// ─── Tender Projects ─────────────────────────────────────────────────────────
+
+model TenderProject {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  createdById      String
+  etimadRef        String?  // Etimad tender reference number
+  title            String
+  titleAr          String?
+  category         String?  // IT | CONSULTING | CONSTRUCTION | MEDICAL | GENERAL
+  budget           Float?
+  currency         String   @default("SAR")
+  submissionDeadline DateTime?
+  status           String   @default("DRAFT") // DRAFT | PARSING | DRAFTING | REVIEW | SUBMITTED | ARCHIVED
+  saudizationTarget Float?  // percentage
+  localContentTarget Float? // percentage
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy        User      @relation(fields: [createdById], references: [id])
+  documents        UploadedDocument[]
+  proposals        GeneratedProposal[]
+  agentRuns        AgentRun[]
+  complianceChecks ComplianceCheck[]
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+// ─── Uploaded Documents (versioned) ──────────────────────────────────────────
+
+model UploadedDocument {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  projectId       String?
+  uploadedById    String
+  originalName    String
+  storagePath     String
+  mimeType        String
+  sizeBytes       Int
+  docCategory     String   // RFP | TECHNICAL_SPECS | IT_CONTRACT | EA_COMPLIANCE | QUALIFICATION | FINANCIAL | BRAND_ASSET | OTHER
+  docTypeAr       String?
+  checksum        String?
+  currentVersion  Int      @default(1)
+  parseStatus     String   @default("PENDING") // PENDING | PARSING | PARSED | FAILED
+  parsedSummary   String?
+  extractedEntities String? // JSON blob of extracted SOW/SLA/milestones
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project         TenderProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  uploadedBy      User      @relation(fields: [uploadedById], references: [id])
+  versions        DocumentVersion[]
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([docCategory])
+}
+
+model DocumentVersion {
+  id           String   @id @default(cuid())
+  documentId   String
+  version      Int
+  storagePath  String
+  sizeBytes    Int
+  changeLog    String?
+  createdBy    String
+  createdAt    DateTime @default(now())
+  document     UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, version])
+  @@index([documentId])
+}
+
+// ─── Brand Profiles & Past Projects (RAG corpus) ────────────────────────────
+
+model BrandProfile {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  logoUrl       String?
+  primaryColor  String   @default("#1E3A8A")
+  secondaryColor String  @default("#0F172A")
+  accentColor   String   @default("#0EA5E9")
+  fontFamily    String   @default("IBM Plex Sans Arabic")
+  tagline       String?
+  taglineAr     String?
+  vision2030Alignment String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pastProjects  PastProject[]
+}
+
+model PastProject {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  brandProfileId String?
+  title          String
+  titleAr        String?
+  clientName     String?
+  clientNameAr   String?
+  sector         String?  // GOV | HEALTH | FINANCE | ENERGY | TELECOM | OTHER
+  contractValue  Float?
+  currency       String   @default("SAR")
+  startDate      DateTime?
+  endDate        DateTime?
+  outcome        String?  // SUCCESSFUL | ONGOING | COMPLETED
+  summary        String   // rich text / vectorized for RAG
+  summaryAr      String?
+  vectorId       String?  // reference into vector store
+  tags           String?  // comma-separated
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brandProfile   BrandProfile? @relation(fields: [brandProfileId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([sector])
+}
+
+// ─── Multi-Agent Workflow Runs ───────────────────────────────────────────────
+
+model AgentRun {
+  id            String   @id @default(cuid())
+  projectId     String
+  triggeredById String
+  status        String   @default("QUEUED") // QUEUED | RUNNING | COMPLETED | FAILED | CANCELLED
+  startedAt     DateTime?
+  completedAt   DateTime?
+  overallProgress Float  @default(0) // 0-100
+  agentStates   String?  // JSON: per-agent status/progress/output
+  finalArtifact String?  // JSON summary of generated artifacts
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  triggeredBy   User          @relation(fields: [triggeredById], references: [id])
+
+  @@index([projectId])
+  @@index([status])
+}
+
+// ─── Compliance Checks (NCA / PDPL / EA) ────────────────────────────────────
+
+model ComplianceCheck {
+  id            String   @id @default(cuid())
+  projectId     String
+  framework     String   // NCA_ECC1 | NCA_CCC1 | PDPL | EA_TP1 | EA_SP1 | EA_SP2 | LOCAL_CONTENT
+  controlId     String   // e.g. ECC-1.3, PDPL-14, TP1-CloudFirst
+  title         String
+  titleAr       String?
+  requirement   String
+  status        String   @default("PENDING") // PENDING | COMPLIANT | PARTIAL | NON_COMPLIANT | NOT_APPLICABLE
+  complianceLevel String? // C1 (Full) | C2 (Substantial) | C3 (Partial)
+  evidence      String?
+  remediation   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([framework])
+}
+
+// ─── Generated Proposals ─────────────────────────────────────────────────────
+
+model GeneratedProposal {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  projectId     String
+  createdById   String
+  title         String
+  titleAr       String?
+  type          String   // TECHNICAL | FINANCIAL | EA_MATRIX | BOQ | COMBINED
+  status        String   @default("DRAFT") // DRAFT | GENERATED | REVIEWED | EXPORTED
+  version       Int      @default(1)
+  contentMd     String?  // markdown content
+  artifactsJson String?  // JSON: list of {type, filename, downloadPath}
+  complianceScore Float? // 0-100
+  generatedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy     User      @relation(fields: [createdById], references: [id])
+
+  @@index([workspaceId])
+  @@index([projectId])
+}
