@@ -13,6 +13,7 @@ import {
   FileCheck2,
   ShieldCheck,
   Bot,
+  AudioLines,
   History,
   Building2,
   ChevronLeft,
@@ -33,6 +34,7 @@ import { ArabclueLogo } from "@/components/brand/arabclue-logo";
 
 const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] = [
   { view: "overview", key: "nav_dashboard", icon: LayoutDashboard },
+  { view: "copilot", key: "nav_copilot", icon: AudioLines },
   { view: "projects", key: "nav_projects", icon: FolderKanban },
   { view: "documents", key: "nav_documents", icon: FileText },
   { view: "proposals", key: "nav_proposals", icon: FileCheck2 },

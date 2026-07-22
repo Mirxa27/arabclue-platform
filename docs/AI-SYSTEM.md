@@ -15,6 +15,18 @@ Each agent is a **principal tender engineer** role (not a generic chatbot). Craf
 7. **Law & Contract (Agent 6)** — Researches the Saudi regulatory registry + tender anchors (`src/lib/saudi-law-research.ts`), then drafts a **front-to-front EN|AR contract** (`GeneratedProposal.type = CONTRACT`). Never claims 100% legal certainty; counsel review is mandatory. Studio: dashboard **Contracts** view; export: bilingual HTML/PDF.
 8. **Validation gate** — blocks proposal export on policy violations (pricing language, invented NORA IDs, AI-priced BoQ, placeholders). Contract export uses `validateContractDraft` (disclaimer required; false-certainty language blocked).
 
+## Voice Platform Copilot (main agent)
+
+Dashboard **Voice Copilot** (`?view=copilot`) is an AI SDK `ToolLoopAgent` that operates the full product for the signed-in user:
+
+- **Stack:** `ai` + `@ai-sdk/react` (`useChat` + `DefaultChatTransport`), streaming via `createAgentUIStreamResponse` at `POST /api/platform-agent/chat`.
+- **Model:** Vercel AI Gateway when `AI_GATEWAY_API_KEY` / OIDC is present; otherwise the active Admin **DEFAULT** provider (OpenAI-compatible or Anthropic) with the admin-selected live `modelId`.
+- **Voice:** browser Speech Recognition (STT) and Speech Synthesis (TTS); live tool-execution feed so users watch actions as they run.
+- **Tools:** workspace overview, projects CRUD, documents, proposals/contracts, compliance, start/cancel/poll the 6-agent pipeline, reviews, billing status, account/onboarding, admin overview/providers/audit (role-gated), UI navigation hints.
+- **Guardrails:** tenant RBAC, pricing-input refuse (422), constitution instructions (no pricing strategy, no 100% legal certainty, human final author).
+
+Code: `src/lib/agents/platform/*`, `src/components/dashboard/platform-agent-console.tsx`.
+
 ## 18-section proposal package
 
 1. Executive Summary  
