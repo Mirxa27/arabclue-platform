@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { VoiceLiveConfig } from "@/lib/agents/platform/voice-types";
 import { RealtimeAudioWorkletCapture } from "@/lib/agents/platform/realtime-audio-capture";
+import { getLiveVoiceSessionConfig } from "@/lib/agents/platform/realtime-session-config";
 
 function toolLabel(type: string): string {
   return type.replace(/^tool-/, "").replace(/([A-Z])/g, " $1").trim();
@@ -96,16 +97,12 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
     }
     return createOpenAI().experimental_realtime(config.modelId);
   }, [config.provider, config.modelId]);
+  const sessionConfig = getLiveVoiceSessionConfig();
 
   const realtime = experimental_useRealtime({
     model,
     api: { token: "/api/platform-agent/realtime/setup" },
-    sessionConfig: {
-      instructions: undefined,
-      inputAudioTranscription: {},
-      voice: "alloy",
-      turnDetection: { type: "server-vad" },
-    },
+    sessionConfig,
     onError: (err) => setError(err.message),
     onToolCall: async ({ toolCall }) => {
       const res = await fetch("/api/platform-agent/realtime/tools", {
