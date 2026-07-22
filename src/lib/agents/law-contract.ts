@@ -18,15 +18,14 @@ import {
   NO_PRICING_RULE,
   REGULATORY_PRECISION_RULE,
 } from "./prompts";
+import {
+  articleBlock,
+  parseContractArticles,
+  type ContractArticle,
+} from "../contract-format";
 
-export type ContractArticle = {
-  number: number;
-  titleEn: string;
-  titleAr: string;
-  bodyEn: string;
-  bodyAr: string;
-  sourceIds?: string[];
-};
+export type { ContractArticle };
+export { parseContractArticles };
 
 export type BilingualContractDraft = {
   contentMd: string;
@@ -76,34 +75,6 @@ Then:
 
 End with signature blocks EN/AR and the disclaimer verbatim: "${LEGAL_DISCLAIMER}"
 `;
-
-function articleBlock(a: ContractArticle): string {
-  return `### Article ${a.number} — ${a.titleEn} | المادة ${a.number} — ${a.titleAr}
-:::en
-${a.bodyEn}
-:::
-:::ar
-${a.bodyAr}
-:::
-`;
-}
-
-export function parseContractArticles(md: string): ContractArticle[] {
-  const articles: ContractArticle[] = [];
-  const re =
-    /###\s*Article\s+(\d+)\s*—\s*([^|]+)\|\s*المادة\s+\d+\s*—\s*([^\n]+)\n:::en\n([\s\S]*?)\n:::\n:::ar\n([\s\S]*?)\n:::/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(md)) !== null) {
-    articles.push({
-      number: Number(m[1]),
-      titleEn: m[2].trim(),
-      titleAr: m[3].trim(),
-      bodyEn: m[4].trim(),
-      bodyAr: m[5].trim(),
-    });
-  }
-  return articles;
-}
 
 export function buildDeterministicContract(opts: {
   projectTitle: string;

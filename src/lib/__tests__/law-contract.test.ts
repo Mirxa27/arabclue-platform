@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildDeterministicContract,
-  parseContractArticles,
   validateContractDraft,
 } from "../agents/law-contract";
+import { parseContractArticles } from "../contract-format";
 import { researchSaudiLawForContract } from "../saudi-law-research";
 import { AGENT_ENGINES } from "../llm/model-catalog";
 import { AGENTS } from "../constants";

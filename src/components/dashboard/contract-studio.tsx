@@ -18,7 +18,7 @@ import { useLocale } from "@/lib/store";
 import {
   parseContractArticles,
   type ContractArticle,
-} from "@/lib/agents/law-contract";
+} from "@/lib/contract-format";
 import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
 
 type Props = {

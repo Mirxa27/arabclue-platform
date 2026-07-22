@@ -17,7 +17,7 @@ import { tr } from "@/lib/i18n";
 import { apiJson } from "@/lib/api-client";
 import type { ApiProposal } from "@/lib/api-types";
 import { BilingualContractStudio } from "./contract-studio";
-import type { ContractArticle } from "@/lib/agents/law-contract";
+import type { ContractArticle } from "@/lib/contract-format";
 import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
 
 function parseArtifacts(raw: string | null | undefined): {
