@@ -13,6 +13,7 @@ export const AGENT_ENGINES = [
   "DRAFTING",
   "REWRITE",
   "EMBEDDING",
+  "LAW",
 ] as const;
 
 export type AgentEngine = (typeof AGENT_ENGINES)[number];
@@ -29,6 +30,7 @@ export const AGENT_ENGINE_LABELS: Record<
   DRAFTING: { en: "Proposal Drafting", ar: "صياغة العطاء" },
   REWRITE: { en: "Section Rewrite", ar: "إعادة صياغة الأقسام" },
   EMBEDDING: { en: "Embeddings / RAG", ar: "التضمين / RAG" },
+  LAW: { en: "Law & Contracts", ar: "القانون والعقود" },
 };
 
 export const LLM_PROVIDER_TYPES = [

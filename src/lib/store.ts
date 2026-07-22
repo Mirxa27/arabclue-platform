@@ -31,6 +31,7 @@ export type DashboardView =
   | "projects"
   | "documents"
   | "proposals"
+  | "contracts"
   | "compliance"
   | "brand"
   | "account"

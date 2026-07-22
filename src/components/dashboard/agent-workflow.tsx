@@ -16,6 +16,7 @@ import {
   Network,
   Calculator,
   PenLine,
+  Scale,
   Sparkles,
   ChevronRight,
   Square,
@@ -33,6 +34,7 @@ const AGENT_META: Record<AgentId, { icon: typeof Bot; color: string; bg: string 
   TECHNICAL_ARCHITECT: { icon: Network, color: "text-chart-5", bg: "bg-chart-5/10" },
   FINANCIAL_QUALIFICATION: { icon: Calculator, color: "text-chart-3", bg: "bg-chart-3/10" },
   PROPOSAL_DRAFTING: { icon: PenLine, color: "text-chart-4", bg: "bg-chart-4/10" },
+  LAW_CONTRACT: { icon: Scale, color: "text-teal-700 dark:text-teal-300", bg: "bg-teal-500/10" },
 };
 
 export function AgentWorkflow() {
@@ -47,6 +49,7 @@ export function AgentWorkflow() {
   const [llmFallback, setLlmFallback] = useState(false);
   const [llmProvider, setLlmProvider] = useState<string | null>(null);
   const [proposalId, setProposalId] = useState<string | null>(null);
+  const [contractId, setContractId] = useState<string | null>(null);
   const [coveragePercent, setCoveragePercent] = useState<number | null>(null);
   const [exportReady, setExportReady] = useState<boolean | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,9 +81,14 @@ export function AgentWorkflow() {
       setLlmFallback(false);
       setLlmProvider(null);
       setAgentStates(data.agentStates);
+      setProposalId(null);
+      setContractId(null);
       toast({
         title: locale === "ar" ? "بدأ سير عمل الوكلاء" : "Agent workflow started",
-        description: locale === "ar" ? "5 وكلاء ذكاء اصطناعي يعملون" : "5 AI agents processing",
+        description:
+          locale === "ar"
+            ? "6 وكلاء — بما فيهم القانون والعقود"
+            : "6 AI agents — including Law & Contract",
       });
       qc.invalidateQueries({ queryKey: ["stats"] });
     },
@@ -131,6 +139,7 @@ export function AgentWorkflow() {
           setLlmFallback(!!data.finalArtifact.fallback);
           setLlmProvider(data.finalArtifact.provider ?? null);
           setProposalId(data.proposalId ?? data.finalArtifact.proposalId ?? null);
+          setContractId(data.finalArtifact.contractId ?? null);
           setCoveragePercent(
             data.coveragePercent ??
               data.finalArtifact.coverage?.coveragePercent ??
@@ -144,14 +153,14 @@ export function AgentWorkflow() {
           setCompleted(true);
           const fb = data.finalArtifact?.fallback;
           toast({
-            title: locale === "ar" ? "اكتمل إنشاء العطاء" : "Proposal generation complete",
+            title: locale === "ar" ? "اكتمل إنشاء العطاء والعقد" : "Proposal & contract complete",
             description: fb
               ? locale === "ar"
                 ? "تم الإنشاء بوضع احتياطي (بدون LLM خارجي)"
                 : `Generated via ${data.finalArtifact?.provider ?? "deterministic"} fallback`
               : locale === "ar"
-                ? "تم إنشاء الحزمة — افتح الاستوديو للمراجعة"
-                : "Package ready — open the document studio",
+                ? "العطاء + مسودة العقد الثنائية جاهزان للمراجعة القانونية"
+                : "Proposal + bilingual contract draft ready for legal review",
           });
           qc.invalidateQueries({ queryKey: ["stats"] });
           qc.invalidateQueries({ queryKey: ["proposals"] });
@@ -349,7 +358,9 @@ export function AgentWorkflow() {
           <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-              {locale === "ar" ? "تم إنشاء العطاء بنجاح" : "Proposal generated successfully"}
+              {locale === "ar"
+                ? "تم إنشاء العطاء ومسودة العقد"
+                : "Proposal & contract draft ready"}
             </div>
             <div className="text-[10px] text-muted-foreground">
               {coveragePercent != null && (
@@ -368,6 +379,11 @@ export function AgentWorkflow() {
                       : "Needs validation review"}
                 </span>
               )}
+              {contractId && (
+                <span className="me-2">
+                  {locale === "ar" ? "· عقد ثنائي اللغة" : "· bilingual contract"}
+                </span>
+              )}
               {llmProvider && (
                 <span>
                   · LLM: {llmProvider}
@@ -376,13 +392,24 @@ export function AgentWorkflow() {
               )}
             </div>
           </div>
-          <Button
-            size="sm"
-            className="h-7 text-[11px]"
-            onClick={() => setView("proposals")}
-          >
-            {locale === "ar" ? "فتح الاستوديو" : "Open studio"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="h-7 text-[11px]"
+              onClick={() => setView("proposals")}
+            >
+              {locale === "ar" ? "العطاء" : "Proposal"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px] gap-1"
+              onClick={() => setView("contracts")}
+            >
+              <Scale className="size-3" />
+              {locale === "ar" ? "العقد" : "Contract"}
+            </Button>
+          </div>
         </div>
       )}
     </Card>

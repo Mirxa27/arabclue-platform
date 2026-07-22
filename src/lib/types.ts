@@ -33,7 +33,8 @@ export type AgentId =
   | "COMPLIANCE_REGULATORY"
   | "TECHNICAL_ARCHITECT"
   | "FINANCIAL_QUALIFICATION"
-  | "PROPOSAL_DRAFTING";
+  | "PROPOSAL_DRAFTING"
+  | "LAW_CONTRACT";
 
 /** Structured extract produced by the Ingestion agent */
 export interface IngestionEntities {

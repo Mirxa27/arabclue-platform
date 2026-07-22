@@ -89,7 +89,7 @@ export function ProposalsList() {
     });
   }, [isError, error, locale, toast]);
 
-  const proposals = data?.proposals ?? [];
+  const proposals = (data?.proposals ?? []).filter((p) => p.type !== "CONTRACT");
 
   return (
     <>

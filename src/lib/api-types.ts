@@ -62,11 +62,14 @@ export type ApiProposal = {
   id: string;
   title: string;
   titleAr?: string | null;
+  type?: string | null;
   status: string;
+  contentMd?: string | null;
   complianceScore?: number | null;
   locale?: string | null;
   version?: number;
   createdAt: string;
+  generatedAt?: string | null;
   artifacts?: ApiProposalArtifact[];
   artifactsJson?: string | null;
   project?: {

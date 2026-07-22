@@ -105,8 +105,13 @@ export const t: Dict = {
     ar: "RAG من المشاريع السابقة + رؤية 2030",
     en: "RAG from past projects + Vision 2030 alignment",
   },
+  agent_LAW_CONTRACT_name: { ar: "وكيل القانون والعقود", en: "Law & Contract Agent" },
+  agent_LAW_CONTRACT_desc: {
+    ar: "بحث في أطر الأنظمة السعودية ثم صياغة عقد ثنائي اللغة للمراجعة القانونية",
+    en: "Researches Saudi legal frameworks then drafts a bilingual contract for counsel review",
+  },
 
-  // Compliance frameworks
+  nav_contracts: { ar: "العقود", en: "Contracts" },
   fw_NCA_ECC1: { ar: "ضوابط الأمن السيبراني الأساسية ECC-1:2018", en: "NCA Essential Cybersecurity Controls ECC-1:2018" },
   fw_NCA_CCC1: { ar: "ضوابط الأمن السيبراني السحابية CCC-1:2020", en: "NCA Cloud Cybersecurity Controls CCC-1:2020" },
   fw_PDPL: { ar: "نظام حماية البيانات الشخصية PDPL", en: "Personal Data Protection Law PDPL" },

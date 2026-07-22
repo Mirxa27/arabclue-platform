@@ -12,6 +12,7 @@ export const AGENTS: {
   { id: "TECHNICAL_ARCHITECT", icon: "Network", color: "#8B5CF6", order: 3 },
   { id: "FINANCIAL_QUALIFICATION", icon: "Calculator", color: "#10B981", order: 4 },
   { id: "PROPOSAL_DRAFTING", icon: "PenLine", color: "#F59E0B", order: 5 },
+  { id: "LAW_CONTRACT", icon: "Scale", color: "#0F766E", order: 6 },
 ];
 
 // NCA / PDPL / EA compliance frameworks with hardcoded control rules

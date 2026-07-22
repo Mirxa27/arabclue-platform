@@ -16,6 +16,7 @@ import { VersionHistory } from "./version-history";
 import { RequirementsMatrix } from "./requirements-matrix";
 import { ReviewsQueue } from "./reviews-queue";
 import { ProposalsList } from "./proposals-list";
+import { ContractsPanel } from "./contracts-panel";
 import { ProjectsList } from "./projects-list";
 import { ChartsPanel } from "./charts-panel";
 import { TenderTypeSelector } from "./tender-type-selector";
@@ -109,6 +110,7 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   projects: ProjectsView,
   documents: DocumentsView,
   proposals: ProposalsView,
+  contracts: ContractsView,
   compliance: ComplianceView,
   agents: AgentsView,
   history: HistoryView,
@@ -265,6 +267,24 @@ function ProposalsView() {
           <ComplianceMonitor />
         </div>
       </div>
+    </PageSection>
+  );
+}
+
+function ContractsView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        title={tr("nav_contracts", locale)}
+        subtitle={
+          locale === "ar"
+            ? "مسودات عقود ثنائية اللغة بعد بحث الأطر السعودية — للمراجعة القانونية"
+            : "Bilingual contract drafts after Saudi framework research — for legal review"
+        }
+        locale={locale}
+      />
+      <ContractsPanel />
     </PageSection>
   );
 }

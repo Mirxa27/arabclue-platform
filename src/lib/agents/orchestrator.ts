@@ -7,6 +7,7 @@ import { evaluateCompliance } from "./compliance";
 import { runTechnicalArchitect } from "./technical";
 import { runFinancialAgent } from "./financial";
 import { draftProposal } from "./drafting";
+import { draftLawContract, validateContractDraft } from "./law-contract";
 import {
   buildCoveragePlan,
 } from "./coverage";
@@ -867,6 +868,140 @@ export async function runAgentPipeline(opts: {
               .join(", ")}`
           : "Validation passed — draft ready for human review",
       ],
+    });
+
+    // ─── Agent 6: LAW_CONTRACT (research then bilingual draft) ────────────
+    await mark("LAW_CONTRACT", {
+      status: "running",
+      progress: 15,
+      startedAt: new Date().toISOString(),
+      findings: ["Researching Saudi regulatory registry and tender anchors…"],
+    });
+
+    const workspace = await db.workspace.findUnique({
+      where: { id: opts.workspaceId },
+    });
+
+    const lawDraft = await draftLawContract({
+      projectTitle: project.title,
+      etimadRef: project.etimadRef,
+      entities,
+      complianceRows: rows as ComplianceMatrixRow[],
+      brandName: workspace?.name,
+      brandNameAr: workspace?.nameAr,
+      clientName: "Client (procuring entity — complete from tender)",
+      clientNameAr: "العميل (الجهة الطارحة — يُستكمل من الكراسة)",
+      restrictions: restrictions.map((r) => r.text),
+      locale,
+    });
+
+    await mark("LAW_CONTRACT", {
+      status: "running",
+      progress: 70,
+      findings: [
+        `Research findings: ${lawDraft.research.findings.length}`,
+        `Sources: ${lawDraft.research.sources.length}`,
+        "Drafting bilingual EN|AR operative articles…",
+      ],
+    });
+
+    const contractValidation = validateContractDraft(lawDraft.contentMd);
+    const contractStatus = contractValidation.blocking ? "DRAFT" : "GENERATED";
+    const contractArtifacts = [
+      {
+        type: "CONTRACT",
+        format: "bilingual_legal_v1",
+        research: lawDraft.research,
+        articles: lawDraft.articles,
+        provider: lawDraft.provider,
+        model: lawDraft.model,
+        fallback: lawDraft.fallback,
+      },
+    ];
+
+    const contract = await db.generatedProposal.create({
+      data: {
+        workspaceId: opts.workspaceId,
+        projectId: opts.projectId,
+        createdById: opts.userId,
+        title: `Draft Contract — ${project.title}`,
+        titleAr: `مسودة عقد — ${project.titleAr ?? project.title}`,
+        type: "CONTRACT",
+        status: contractStatus,
+        version: 1,
+        locale: "ar",
+        contentMd: lawDraft.contentMd,
+        artifactsJson: JSON.stringify(contractArtifacts),
+        complianceScore: score,
+        generatedAt: new Date(),
+      },
+    });
+
+    await db.proposalVersion.create({
+      data: {
+        proposalId: contract.id,
+        version: 1,
+        contentMd: lawDraft.contentMd,
+        changeLog: "Law agent: Saudi registry research + bilingual draft",
+        locale: "ar",
+        createdBy: opts.userId,
+      },
+    });
+
+    await mark("LAW_CONTRACT", {
+      status: "completed",
+      progress: 100,
+      completedAt: new Date().toISOString(),
+      output: `Contract ${contract.id} (${lawDraft.articles.length} articles) via ${lawDraft.provider}${lawDraft.fallback ? " (registry fallback)" : ""}`,
+      findings: [
+        `Research sources: ${lawDraft.research.sources.length}`,
+        `Findings: ${lawDraft.research.findings.length}`,
+        `Articles: ${lawDraft.articles.length}`,
+        `Tokens: ${lawDraft.tokensUsed}`,
+        contractValidation.blocking
+          ? `Contract validation issues: ${contractValidation.issues.map((i) => i.code).join(", ")}`
+          : "Contract draft ready for authorized legal review (not legal advice)",
+        "No 100% legal certainty asserted — counsel verification mandatory",
+      ],
+    });
+
+    // Augment final artifact with contract id
+    const priorArtifact = await db.agentRun.findUnique({
+      where: { id: opts.runId },
+      select: { finalArtifact: true },
+    });
+    let artifactObj: Record<string, unknown> = {};
+    try {
+      artifactObj = priorArtifact?.finalArtifact
+        ? JSON.parse(priorArtifact.finalArtifact)
+        : {};
+    } catch {
+      artifactObj = {};
+    }
+    await db.agentRun.update({
+      where: { id: opts.runId },
+      data: {
+        finalArtifact: JSON.stringify({
+          ...artifactObj,
+          contractId: contract.id,
+          contractValidation,
+          contractResearchAt: lawDraft.research.researchedAt,
+        }),
+      },
+    });
+
+    await audit({
+      userId: opts.userId,
+      action: AUDIT_ACTIONS.PROPOSAL_GENERATE,
+      resource: "GeneratedProposal",
+      resourceId: contract.id,
+      severity: "INFO",
+      details: {
+        projectId: opts.projectId,
+        type: "CONTRACT",
+        provider: lawDraft.provider,
+        articles: lawDraft.articles.length,
+      },
     });
 
     await audit({

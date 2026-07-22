@@ -24,6 +24,7 @@ import {
   ScrollText,
   Lock,
   Loader2,
+  Scale,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,7 @@ const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] 
   { view: "projects", key: "nav_projects", icon: FolderKanban },
   { view: "documents", key: "nav_documents", icon: FileText },
   { view: "proposals", key: "nav_proposals", icon: FileCheck2 },
+  { view: "contracts", key: "nav_contracts", icon: Scale },
   { view: "compliance", key: "nav_compliance", icon: ShieldCheck },
   { view: "agents", key: "nav_agents", icon: Bot },
   { view: "history", key: "nav_history", icon: History },
