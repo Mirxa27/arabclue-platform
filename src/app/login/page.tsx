@@ -251,10 +251,14 @@ function LoginForm() {
                 </div>
               </div>
 
-              <div className="mt-6 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
                 <Link href="/pricing" className="hover:text-foreground underline underline-offset-4">{ar ? "الباقات" : "Pricing"}</Link>
                 <span>•</span>
-                <Link href="/compliance" className="hover:text-foreground underline underline-offset-4">{ar ? "الامتثال" : "Compliance"}</Link>
+                <Link href="/faq" className="hover:text-foreground underline underline-offset-4">{ar ? "الأسئلة" : "FAQ"}</Link>
+                <span>•</span>
+                <Link href="/privacy" className="hover:text-foreground underline underline-offset-4">{ar ? "الخصوصية" : "Privacy"}</Link>
+                <span>•</span>
+                <Link href="/terms" className="hover:text-foreground underline underline-offset-4">{ar ? "الشروط" : "Terms"}</Link>
                 <span>•</span>
                 <span className="flex items-center gap-1"><span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />{ar ? "مباشر" : "Live"}</span>
               </div>

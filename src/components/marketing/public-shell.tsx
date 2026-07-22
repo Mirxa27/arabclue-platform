@@ -13,7 +13,6 @@ import {
   Menu,
   X,
   ArrowUpRight,
-  Sparkles,
   Shield,
   Globe2,
   Sun,
@@ -30,6 +29,7 @@ const NAV = [
   { href: "/#how", labelEn: "How it works", labelAr: "كيف يعمل" },
   { href: "/pricing", labelEn: "Packages", labelAr: "الباقات" },
   { href: "/compliance", labelEn: "Compliance", labelAr: "الامتثال" },
+  { href: "/faq", labelEn: "FAQ", labelAr: "الأسئلة" },
 ] as const;
 
 type Locale = "ar" | "en";
@@ -379,66 +379,139 @@ export function PublicShell({
                       {locale === "ar" ? "لأصحاب العمل" : "For Owners"}
                     </Link>
                   </li>
+                  <li>
+                    <Link
+                      href="/faq"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "الأسئلة الشائعة" : "FAQ"}
+                    </Link>
+                  </li>
                 </ul>
               </div>
               <div>
                 <p className={cn("text-xs font-bold tracking-widest uppercase mb-4", isDark ? "text-white/40" : "text-muted-foreground")}>
-                  {locale === "ar" ? "الامتثال" : "Compliance"}
+                  {locale === "ar" ? "الشركة" : "Company"}
                 </p>
                 <ul className="space-y-2.5 text-sm">
+                  <li>
+                    <Link
+                      href="/about"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "عن أراب كلاو" : "About"}
+                    </Link>
+                  </li>
                   <li>
                     <Link
                       href="/compliance"
                       className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
                     >
-                      {locale === "ar" ? "الأطر والضوابط" : "Frameworks"}
+                      {locale === "ar" ? "الامتثال" : "Compliance"}
                     </Link>
                   </li>
                   <li>
-                    <span className={isDark ? "text-white/30" : "text-muted-foreground/60"}>
-                      {locale === "ar" ? "سجل تدقيق غير قابل للتغيير" : "Immutable audit trail"}
-                    </span>
+                    <Link
+                      href="/security"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "الأمن" : "Security"}
+                    </Link>
                   </li>
                   <li>
-                    <span className={isDark ? "text-white/30" : "text-muted-foreground/60"}>
-                      {locale === "ar" ? "عزل مستأجر + PDPL" : "Tenant isolation + PDPL"}
-                    </span>
+                    <Link
+                      href="/contact"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "تواصل معنا" : "Contact"}
+                    </Link>
                   </li>
                 </ul>
               </div>
               <div>
                 <p className={cn("text-xs font-bold tracking-widest uppercase mb-4", isDark ? "text-white/40" : "text-muted-foreground")}>
-                  {locale === "ar" ? "ابدأ" : "Get started"}
+                  {locale === "ar" ? "قانوني" : "Legal"}
                 </p>
-                <div className="space-y-3">
-                  <Button asChild className={cn("w-full rounded-full justify-between gap-2 font-semibold", isDark ? "bg-white text-black hover:bg-white/90" : "")}>
-                    <Link href="/login">
-                      <span className="flex items-center gap-2">
-                        <Sparkles className="size-4" /> {locale === "ar" ? "ادخل مساحة العمل" : "Enter workspace"}
-                      </span>
-                      <ArrowUpRight className="size-4" />
+                <ul className="space-y-2.5 text-sm">
+                  <li>
+                    <Link
+                      href="/legal"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "مركز السياسات" : "Legal hub"}
                     </Link>
-                  </Button>
-                  <p className={cn("text-[11px] leading-relaxed", isDark ? "text-white/40" : "text-muted-foreground")}>
-                    {locale === "ar" ? "تسجيل الدخول يتطلب حساباً مُنشأ من مسؤول المنصة." : "Login requires platform-provisioned account."}
-                  </p>
-                </div>
+                  </li>
+                  <li>
+                    <Link
+                      href="/privacy"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "الخصوصية" : "Privacy"}
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/terms"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "الشروط" : "Terms"}
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/cookies"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "ملفات الارتباط" : "Cookies"}
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/billing-policy"
+                      className={cn("hover:underline", isDark ? "text-white/60 hover:text-white" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      {locale === "ar" ? "الفوترة" : "Billing"}
+                    </Link>
+                  </li>
+                </ul>
               </div>
             </div>
             <div
               className={cn(
-                "flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between py-6 border-t text-xs",
+                "flex flex-col gap-4 py-6 border-t text-xs",
                 isDark ? "border-white/10 text-white/35" : "border-border/60 text-muted-foreground"
               )}
             >
-              <p>
-                © {new Date().getFullYear()} Arabclue · أراب كلاو —{" "}
-                {locale === "ar" ? "مساعد إعداد العطاءات بالذكاء الاصطناعي" : "AI Bid Preparation SaaS"}
-              </p>
-              <p className="flex items-center gap-2">
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                {locale === "ar" ? "متوافق مع متطلبات المنافسة الحكومية" : "Built for KSA government procurement"}
-              </p>
+              <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                {(
+                  [
+                    ["/acceptable-use", "Acceptable use", "الاستخدام المقبول"],
+                    ["/dpa", "DPA", "ملحق المعالجة"],
+                    ["/login", "Workspace login", "دخول المساحة"],
+                  ] as const
+                ).map(([href, en, arLabel]) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(
+                      "hover:underline",
+                      isDark ? "text-white/45 hover:text-white/80" : "hover:text-foreground"
+                    )}
+                  >
+                    {locale === "ar" ? arLabel : en}
+                  </Link>
+                ))}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+                <p>
+                  © {new Date().getFullYear()} Arabclue · أراب كلاو —{" "}
+                  {locale === "ar" ? "مساعد إعداد العطاءات بالذكاء الاصطناعي" : "AI Bid Preparation SaaS"}
+                </p>
+                <p className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {locale === "ar" ? "متوافق مع متطلبات المنافسة الحكومية" : "Built for KSA government procurement"}
+                </p>
+              </div>
             </div>
           </div>
         </footer>

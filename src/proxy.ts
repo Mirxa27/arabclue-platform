@@ -1,16 +1,15 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import { PUBLIC_PAGE_PATHS } from "@/lib/marketing/site-pages";
 
 /** Public marketing + health/auth surfaces (no session required). */
-const PUBLIC_PATHS = new Set([
-  "/",
-  "/login",
-  "/for-owners",
-  "/pricing",
-  "/compliance",
+const PUBLIC_PATHS = new Set<string>([
+  ...PUBLIC_PAGE_PATHS,
   "/api/health",
   "/api/ready",
   "/api/billing/webhook",
+  "/sitemap.xml",
+  "/robots.txt",
 ]);
 
 function isPublicPath(path: string): boolean {
