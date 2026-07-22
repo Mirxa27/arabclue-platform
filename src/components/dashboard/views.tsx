@@ -71,6 +71,13 @@ const AdminBilling = dynamic(
     })),
   { loading: PanelLoading }
 );
+const AdminMyFatoorah = dynamic(
+  () =>
+    import("@/components/admin/myfatoorah").then((m) => ({
+      default: m.AdminMyFatoorah,
+    })),
+  { loading: PanelLoading }
+);
 const AdminSecurity = dynamic(
   () =>
     import("@/components/admin/security").then((m) => ({
@@ -88,6 +95,7 @@ const ADMIN_VIEWS = new Set<DashboardView>([
   "admin_ai",
   "admin_env",
   "admin_billing",
+  "admin_myfatoorah",
   "admin_security",
   "admin_audit",
 ]);
@@ -113,6 +121,7 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   admin_ai: AdminAIView,
   admin_env: AdminEnvView,
   admin_billing: AdminBillingView,
+  admin_myfatoorah: AdminMyFatoorahView,
   admin_security: AdminSecurityView,
   admin_audit: AdminAuditView,
 };
@@ -473,6 +482,25 @@ function AdminBillingView() {
         locale={locale}
       />
       <AdminBilling />
+    </PageSection>
+  );
+}
+
+function AdminMyFatoorahView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        badge="admin"
+        title={tr("admin_myfatoorah", locale)}
+        subtitle={
+          locale === "ar"
+            ? "بوابة الدفع السعودية — أسرار مشفرة وWebhook V2"
+            : "Saudi payment gateway — encrypted secrets & Webhook V2"
+        }
+        locale={locale}
+      />
+      <AdminMyFatoorah />
     </PageSection>
   );
 }

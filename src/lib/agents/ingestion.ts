@@ -1,5 +1,9 @@
 import { readStoredFile, fileExists } from "../storage";
-import { SLA_PENALTY_RULES } from "../procurement-rules";
+import {
+  SLA_PENALTY_RULES,
+  extractLocalContentPreference,
+  noraPrinciplesFromTender,
+} from "../procurement-rules";
 import type { IngestionEntities } from "../types";
 import { getTenderType } from "../constants";
 
@@ -191,14 +195,33 @@ export function parseTenderText(
       /لا\s*تتجاوز[^%\d]{0,20}(\d+(?:\.\d+)?)\s*%/,
     ]) ?? tenderType.slaMaxPenalty;
 
-  const sla = SLA_PENALTY_RULES.enforceCap(weeklyRaw, tenderCategory);
-  const maxPercent = Math.min(maxRaw, sla.max);
-  if (sla.capped || maxRaw > sla.max) {
+  // Preserve tender-stated penalty values exactly — do not rewrite to statutory defaults.
+  const statutory = SLA_PENALTY_RULES.statutoryCandidate(tenderCategory);
+  const originalWording =
+    clean.match(
+      /(?:delay\s*penalty|penalty|غرامة)[^\n]{0,120}/i
+    )?.[0]?.slice(0, 200) ?? null;
+  evidence.push(
+    `Tender SLA (EXPLICIT_TENDER): ${weeklyRaw}%/week, max ${maxRaw}%${originalWording ? ` — "${originalWording}"` : ""}`
+  );
+  if (maxRaw > statutory.maxCandidate || weeklyRaw > statutory.maxCandidate) {
     evidence.push(
-      `SLA penalty capped at ${sla.max}% per Saudi services/construction rules (detected weekly ${weeklyRaw}%, max ${maxRaw}%)`
+      `Statutory candidate max ${statutory.maxCandidate}% (${statutory.category}) listed separately for legal review — tender clause not rewritten. Source: ${statutory.sourceReference}`
     );
-  } else {
-    evidence.push(`SLA: ${sla.weekly}%/week, max ${maxPercent}%`);
+  }
+
+  const localContent = extractLocalContentPreference(clean);
+  if (localContent.preferencePercent != null) {
+    evidence.push(
+      `Local-content preference ${localContent.preferencePercent}% extracted from tender (EXPLICIT_TENDER)`
+    );
+  }
+
+  const noraFromTender = noraPrinciplesFromTender(clean);
+  if (noraFromTender.length) {
+    evidence.push(
+      `NORA/EA principle identifiers found in tender: ${noraFromTender.map((p) => p.id).join(", ")}`
+    );
   }
 
   let scope = "";
@@ -233,10 +256,24 @@ export function parseTenderText(
       technical: Math.min(100, Math.max(0, techEval)),
       financial: Math.min(100, Math.max(0, finEval)),
     },
-    sla: { perWeek: sla.weekly, maxPercent, capped: sla.capped || maxRaw > sla.max },
+    sla: {
+      perWeek: weeklyRaw,
+      maxPercent: maxRaw,
+      capped: false,
+      originalWording,
+      statutoryCandidateMaxPercent: statutory.maxCandidate,
+      statutoryCandidateSource: statutory.sourceReference,
+    },
     milestones,
     evidence,
     rawTextExcerpt: clean.slice(0, 2000),
+    localContentPreferencePercent: localContent.preferencePercent,
+    localContentOriginalWording: localContent.originalWording,
+    noraPrinciplesFromTender: noraFromTender.map((p) => ({
+      id: p.id,
+      name: p.name,
+      snippet: p.snippet,
+    })),
   };
 }
 

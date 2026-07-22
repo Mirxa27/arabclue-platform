@@ -5,7 +5,7 @@
 
 import { db } from "./db";
 import { audit, AUDIT_ACTIONS } from "./audit";
-import { getPaymentStatus } from "./myfatoorah";
+import { amountsMatch, getPaymentStatus } from "./myfatoorah";
 
 function addPeriod(start: Date, cycle: "MONTHLY" | "YEARLY"): Date {
   const end = new Date(start);
@@ -58,6 +58,28 @@ export async function fulfillCheckout(opts: {
   let paymentMethod = "myfatoorah";
   let paymentId = opts.paymentId ?? checkout.paymentId;
   let invoiceId = opts.invoiceId ?? checkout.invoiceId;
+  let paidValue: number | null = null;
+  let paidCurrency: string | null = checkout.currency;
+
+  const assertAmount = (status: {
+    invoiceValue: number;
+    paidCurrency: string | null;
+    isPaid: boolean;
+  }) => {
+    if (!status.isPaid) return;
+    if (
+      !amountsMatch({
+        expectedSar: checkout!.amount,
+        paidSar: status.invoiceValue,
+        expectedCurrency: checkout!.currency || "SAR",
+        paidCurrency: status.paidCurrency,
+      })
+    ) {
+      throw new Error("amount_currency_mismatch");
+    }
+    paidValue = status.invoiceValue;
+    paidCurrency = status.paidCurrency ?? checkout!.currency;
+  };
 
   try {
     if (opts.paymentId) {
@@ -85,6 +107,7 @@ export async function fulfillCheckout(opts: {
         }
         return { ok: false, checkoutId: checkout.id, error: status.invoiceStatus };
       }
+      assertAmount(status);
       paymentId = status.paymentId ?? opts.paymentId;
       invoiceId = status.invoiceId || invoiceId;
       paymentMethod = status.paymentMethod
@@ -98,18 +121,41 @@ export async function fulfillCheckout(opts: {
       if (!status.isPaid) {
         return { ok: false, checkoutId: checkout.id, error: status.invoiceStatus };
       }
+      assertAmount(status);
       paymentId = status.paymentId ?? paymentId;
       paymentMethod = status.paymentMethod
         ? `myfatoorah:${status.paymentMethod}`
         : "myfatoorah";
+    } else {
+      // Never activate entitlements from redirect alone without gateway confirmation
+      return { ok: false, checkoutId: checkout.id, error: "missing_payment_keys" };
     }
   } catch (err) {
+    const msg = err instanceof Error ? err.message : "status_inquiry_failed";
+    if (msg === "amount_currency_mismatch") {
+      await db.paymentCheckout.update({
+        where: { id: checkout.id },
+        data: {
+          status: "FAILED",
+          errorMessage: "amount_currency_mismatch",
+        },
+      });
+      await audit({
+        userId: checkout.userId,
+        action: AUDIT_ACTIONS.BILLING_CHANGE,
+        resource: "PaymentCheckout",
+        resourceId: checkout.id,
+        details: { error: "amount_currency_mismatch", paidValue, paidCurrency },
+        severity: "CRITICAL",
+        success: false,
+      });
+      return { ok: false, checkoutId: checkout.id, error: msg };
+    }
     console.error("[billing] payment status inquiry failed", err);
-    // If we cannot reach MF, do not mark paid
     return {
       ok: false,
       checkoutId: checkout.id,
-      error: err instanceof Error ? err.message : "status_inquiry_failed",
+      error: msg,
     };
   }
 

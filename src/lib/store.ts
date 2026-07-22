@@ -44,6 +44,7 @@ export type DashboardView =
   | "admin_ai"
   | "admin_env"
   | "admin_billing"
+  | "admin_myfatoorah"
   | "admin_security"
   | "admin_audit";
 

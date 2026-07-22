@@ -1,35 +1,27 @@
-# API contracts (tenant)
+# API
 
-All routes require session JWT unless noted. Writers exclude `REVIEWER` role except review decisions.
+## Auth
 
-## Onboarding & account
+- `POST /api/auth/[...nextauth]` — credentials + JWT
+- MFA: `/api/auth/mfa/setup|verify|disable`
+- Password change: `/api/auth/password`
 
-| Method | Path | Notes |
-| --- | --- | --- |
-| GET/PATCH | `/api/onboarding` | Readiness + mark restrictions reviewed |
-| GET/POST/PATCH/DELETE | `/api/certificates` | CRUD |
-| GET/POST/PATCH/DELETE | `/api/staff` | CRUD |
-| GET/POST/PATCH/DELETE | `/api/methodologies` | CRUD |
-| GET/POST/PATCH/DELETE | `/api/library` | CRUD |
-| GET/POST/DELETE | `/api/partnerships` | CRUD |
-| GET/POST/DELETE | `/api/sectors` | Upsert by sector |
-| GET/POST/DELETE | `/api/bid-history` | CRUD |
-| GET/PUT | `/api/approval-policy` | Replace steps |
-| GET/POST/DELETE | `/api/restrictions` | CRUD |
-| PATCH | `/api/workspaces` | Switch workspace **or** update CR/VAT |
+## Tenant
 
-## Tender & proposals
+- Workspaces, projects, documents, proposals, compliance, onboarding corpus routes under `/api/*`
+- Agents: `POST /api/agents/run`, `GET /api/agents/status`, `POST /api/agents/cancel`
+- Billing: `POST /api/billing/checkout`, `GET /api/billing/callback`, `POST /api/billing/webhook`
+- Export: `GET /api/proposals/:id/download?format=zip|pdf|pptx|xlsx-matrix|xlsx-boq` — **422** when validation gate fails
 
-| Method | Path | Notes |
-| --- | --- | --- |
-| GET/PATCH | `/api/projects/:id/requirements` | Matrix |
-| POST | `/api/agents/run` | Requires onboarding ready + quota |
-| GET/PATCH | `/api/proposals/:id/financial` | Human BoQ prices |
-| POST | `/api/proposals/:id/submit` | Start approval |
-| GET | `/api/reviews` | Pending for current user |
-| PATCH | `/api/reviews/:id` | Approve/reject (reviewers allowed) |
-| GET | `/api/notifications` | Certs, reviews, onboarding |
+## Admin
 
-## Existing core
+- AI providers, env settings (write-only secrets), users, audit, plans
+- **Payments → MyFatoorah:** `GET|POST /api/admin/myfatoorah`
+  - GET: metadata only (masked secrets, webhook URL, recent events)
+  - POST actions: `save`, `test_connection`, `test_webhook_signature`
 
-Auth, documents, proposals edit/download, brand, billing, admin — unchanged contracts; see route handlers under `src/app/api/`.
+## Health
+
+- `GET /api/health` → `{ ok: true, service: "arabclue" }`
+
+Errors never include stack traces, secrets, or filesystem paths.

@@ -30,6 +30,7 @@ export const t: Dict = {
   nav_admin_ai: { ar: "مزودو الذكاء", en: "AI Providers" },
   nav_admin_env: { ar: "إدارة البيئة", en: "Environment" },
   nav_admin_billing: { ar: "الفوترة والباقات", en: "Billing" },
+  nav_admin_myfatoorah: { ar: "مي فاتورة", en: "MyFatoorah" },
   nav_admin_security: { ar: "الأمن والصلاحيات", en: "Security & RBAC" },
   nav_admin_audit: { ar: "سجل التدقيق", en: "Audit Trail" },
 
@@ -194,6 +195,7 @@ export const t: Dict = {
   admin_ai_providers: { ar: "مزودو نماذج الذكاء الاصطناعي", en: "AI Provider & Model Configuration" },
   admin_env: { ar: "إدارة متغيرات البيئة", en: "Environment Variables (.env)" },
   admin_billing: { ar: "الفوترة وإدارة الباقات", en: "Billing & Package Management" },
+  admin_myfatoorah: { ar: "المدفوعات — مي فاتورة", en: "Payments — MyFatoorah" },
   admin_security: { ar: "الأمن والتحكم في الوصول", en: "Security & Access Control" },
   admin_audit: { ar: "سجل التدقيق غير القابل للتغيير", en: "Immutable Audit Trail" },
   admin_active_provider: { ar: "المزود النشط", en: "Active Provider" },

@@ -109,7 +109,25 @@ export function buildDeterministicProposal(opts: {
       ? locale === "ar"
         ? "غير محسوب"
         : "N/A"
-      : `${qlr} (${opts.financial.qlrPasses ? "PASS" : "FAIL"})`;
+      : opts.financial.qlrPasses == null
+        ? `${qlr} (threshold not stated in tender)`
+        : `${qlr} (${opts.financial.qlrPasses ? "PASS" : "FAIL"} vs ${opts.financial.qlrThreshold})`;
+  const lcPref = opts.financial.localContentPreferenceApplied;
+  const lcLabel =
+    lcPref == null
+      ? locale === "ar"
+        ? "غير مذكور في المناقصة (لا يُفترض تفضيل عام)"
+        : "Not stated in tender (no blanket preference applied)"
+      : `${lcPref}%`;
+  const noraIds =
+    e?.noraPrinciplesFromTender?.map((p) => p.id).join(", ") ||
+    (locale === "ar"
+      ? "لم تُستخرج معرفات NORA من المناقصة"
+      : "No NORA identifiers extracted from tender");
+  const legalNote =
+    locale === "ar"
+      ? "مصفوفة الامتثال أداة مساعدة للصياغة وليست استشارة قانونية."
+      : "Compliance content is assisted drafting, not legal advice.";
 
   if (locale === "ar") {
     return `# العطاء الفني والمالي — ${opts.projectTitle}
@@ -119,7 +137,8 @@ export function buildDeterministicProposal(opts: {
 **نوع المناقصة:** ${opts.tenderTypeName}
 
 ## 1. الملخص التنفيذي (Executive Summary)
-يقدّم هذا العطاء استجابة متكاملة لمناقصة اعتماد بما يتوافق مع نظام المنافسات والمشتريات الحكومية، وضوابط الهيئة الوطنية للأمن السيبراني (ECC-1:2018 / CCC-1:2020)، ونظام حماية البيانات الشخصية (PDPL) بإقامة البيانات في المملكة، ومبادئ NORA (TP1/SP1/SP2)، مع تطبيق تفضيل المحتوى المحلي الإلزامي بنسبة 10%.
+يقدّم هذا العطاء استجابة لمتطلبات المناقصة المرفوعة، مع الالتزامات التنظيمية الموثّقة في مصفوفة الامتثال (وليست استشارة قانونية). تُستمد ضوابط NCA وPDPL والمحتوى المحلي ومبادئ NORA فقط من نص المناقصة والأدلة المعتمدة — دون افتراض نسب تفضيل أو معرفات غير موجودة في المصدر.
+${legalNote}
 
 ## 2. فهم المشروع (Project Understanding)
 ${e?.scope ?? "نطاق العمل كما ورد في كراسة الشروط والمواصفات المرفوعة."}
@@ -128,7 +147,8 @@ ${e?.scope ?? "نطاق العمل كما ورد في كراسة الشروط و
 | --- | --- |
 | التقييم الفني | ${e?.evaluation.technical ?? 70}% |
 | التقييم المالي | ${e?.evaluation.financial ?? 30}% |
-| غرامة التأخير | ${e?.sla.perWeek ?? 2}% أسبوعياً (حد أقصى ${e?.sla.maxPercent ?? 20}%) |
+| غرامة التأخير (من نص المناقصة) | ${e?.sla.perWeek ?? "—"}% أسبوعياً (حد أقصى ${e?.sla.maxPercent ?? "—"}%) |
+| معرفات NORA المستخرجة | ${noraIds} |
 
 ## 3. منهجية التنفيذ (Execution Methodology)
 ${opts.technical.methodology
@@ -150,7 +170,7 @@ ${
 
 ## 7. هيكل النماذج المالية (Financial Forms Structure)
 - نسبة السيولة السريعة (QLR): ${qlrLabel}
-- تفضيل المحتوى المحلي (قاعدة تقييم تنظيمية فقط): ${(opts.financial.localContentPreferenceApplied * 100).toFixed(0)}%
+- تفضيل المحتوى المحلي (قاعدة تقييم تنظيمية فقط عند ذكرها في المناقصة): ${lcLabel}
 - بنود جدول الكميات (هيكل فقط — الأسعار يُدخلها العميل): ${opts.financial.boqItems.length}
 
 ${opts.financial.notes.map((n) => `- ${n}`).join("\n")}
@@ -171,7 +191,7 @@ ${opts.technical.vision2030Notes}
 نؤكد التزامنا الكامل بمتطلبات اعتماد والمعايير السعودية، وجاهزيتنا للتنفيذ وفق الجدول الزمني المتفق عليه.
 
 ---
-*أُنشئ بواسطة أراب كلاو · متوافق مع PDPL · إقامة البيانات في المملكة*
+*أُنشئ بواسطة أراب كلاو · محتوى الامتثال ليس استشارة قانونية · إقامة البيانات وفق سياسة المستأجر والمنصة*
 `;
   }
 
@@ -182,7 +202,8 @@ ${opts.technical.vision2030Notes}
 **Tender Type:** ${opts.tenderTypeName}
 
 ## 1. Executive Summary (الملخص التنفيذي)
-This proposal responds to the Etimad tender with full alignment to the Government Tenders and Procurement Law (نظام المنافسات والمشتريات الحكومية), NCA ECC-1:2018 / CCC-1:2020, PDPL KSA residency, NORA TP1/SP1/SP2, and the mandatory 10% Local Content preference.
+This proposal responds to the uploaded tender requirements. Regulatory commitments are limited to evidence-backed compliance matrix rows (assisted drafting, not legal advice). NCA, PDPL, local-content mechanisms, and NORA identifiers are used only when present in the tender or approved sources — no blanket preference percentages or invented principle IDs.
+${legalNote}
 
 ## 2. Project Understanding (فهم المشروع)
 ${e?.scope ?? "Scope as defined in the uploaded conditions booklet."}
@@ -191,7 +212,8 @@ ${e?.scope ?? "Scope as defined in the uploaded conditions booklet."}
 | --- | --- |
 | Technical evaluation | ${e?.evaluation.technical ?? 70}% |
 | Financial evaluation | ${e?.evaluation.financial ?? 30}% |
-| SLA penalty | ${e?.sla.perWeek ?? 2}% / week (max ${e?.sla.maxPercent ?? 20}%) |
+| SLA penalty (from tender text) | ${e?.sla.perWeek ?? "—"}% / week (max ${e?.sla.maxPercent ?? "—"}%) |
+| NORA identifiers extracted | ${noraIds} |
 
 ## 3. Execution Methodology (منهجية التنفيذ)
 ${opts.technical.methodology
@@ -213,7 +235,7 @@ ${compliant}/${opts.complianceRows.length} controls assessed COMPLIANT in the ge
 
 ## 7. Financial Forms Structure (هيكل النماذج المالية)
 - Quick Liquidity Ratio: ${qlrLabel}
-- Local content preference (regulatory evaluation fact only): ${(opts.financial.localContentPreferenceApplied * 100).toFixed(0)}%
+- Local content preference (regulatory evaluation fact only when tender-stated): ${lcLabel}
 - BoQ lines (structure only — client enters prices): ${opts.financial.boqItems.length}
 
 ${opts.financial.notes.map((n) => `- ${n}`).join("\n")}
@@ -234,6 +256,6 @@ Brand note: ${opts.vision2030}
 We confirm full readiness to deliver in accordance with Etimad requirements and the agreed schedule.
 
 ---
-*Generated by Arabclue · PDPL Compliant · KSA Data Residency*
+*Generated by Arabclue · Compliance content is not legal advice · Data residency per tenant and platform policy*
 `;
 }

@@ -49,6 +49,7 @@ const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboar
   { view: "admin_ai", key: "nav_admin_ai", icon: Cpu },
   { view: "admin_env", key: "nav_admin_env", icon: KeyRound },
   { view: "admin_billing", key: "nav_admin_billing", icon: CreditCard },
+  { view: "admin_myfatoorah", key: "nav_admin_myfatoorah", icon: CreditCard },
   { view: "admin_security", key: "nav_admin_security", icon: Users },
   { view: "admin_audit", key: "nav_admin_audit", icon: ScrollText },
 ];

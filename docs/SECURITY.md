@@ -1,30 +1,48 @@
 # Security
 
-## Account isolation
+## Authentication & sessions
 
-- Tenant APIs resolve workspace via `WorkspaceMember` (`getTenantContext`).
-- Resource access asserts `resource.workspaceId === tenant.workspaceId`.
-- File bytes (`/api/files`) require path prefix `uploads/{workspaceId}/` and reject `..`.
+- NextAuth credentials + JWT
+- Server-side `UserSession` revocation
+- Optional TOTP MFA for privileged users
+- Login rate limiting
+- Password minimum 10 characters
 
-## Access control
+## Tenancy & authorization
 
-| Role | Writes | Reviews |
-| --- | --- | --- |
-| BIDDER / FINANCE / ADMIN / SUPER_ADMIN | Yes (`requireWriter`) | Yes if assigned |
-| REVIEWER | Blocked | Yes (`requireReviewerAction`) |
+- Membership-scoped `getTenantContext`
+- `assertWorkspaceMatch` on resource access
+- REVIEWER read-only on write endpoints (`requireWriter`)
+- Platform admin routes via `requireAdmin` / `requireSuperAdmin`
 
 ## Secrets
 
-- Passwords: scrypt (`src/lib/password.ts`).
-- Admin env values: AES-GCM with `ARABCLUE_ENC_KEY`.
-- Bootstrap admin password from env only; `mustChangePassword` on first login.
-- Production boot fails if `NEXTAUTH_SECRET` / `ARABCLUE_ENC_KEY` missing (`assertProductionSecrets`).
+- Bootstrap secrets in environment / KMS
+- Application secrets in `EnvSetting` with AES-256-GCM (`ARABCLUE_ENC_KEY`)
+- Write-only after creation; UI shows masks only
+- MyFatoorah admin never returns plaintext tokens
+- Audit of secret metadata writes
 
-## AI safety
+## Payments
 
-- PII redaction, toxicity, hallucination grounding, **pricing refusal** (product Section 2).
-- Restrictions (competitors / confidential clauses) injected into drafting context.
+- Official MyFatoorah URL allowlist only (SSRF guard)
+- Webhook V2 `myfatoorah-signature` via HMAC-SHA256 canonical fields
+- Invalid signature → 401, no state change
+- Event fingerprint idempotency
+- Amount/currency verification against server-side order before entitlements
+- Browser callback is UX-only
+
+## Uploads & documents
+
+- Workspace-scoped storage paths
+- MIME/category classification
+- Treat tender text as untrusted for policy override
+
+## Headers & transport
+
+- Production HTTPS via platform (Vercel / Caddy)
+- CSP and security headers via Next config / hosting
 
 ## Audit
 
-Immutable `AuditLog` for auth, uploads, proposal edits, billing, config changes.
+Append-only `AuditLog` for login, config, billing, generation, role changes.

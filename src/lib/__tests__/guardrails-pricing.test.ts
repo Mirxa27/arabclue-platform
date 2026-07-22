@@ -8,6 +8,7 @@ import {
 } from "../guardrails";
 import { runFinancialAgent } from "../agents/financial";
 import { buildDeterministicProposal } from "../agents/drafting";
+import { validateProposalOutput } from "../validation-gate";
 
 describe("no-pricing guardrails (Section 2)", () => {
   test("detects pricing requests", () => {
@@ -72,6 +73,27 @@ describe("financial agent structure-only", () => {
       expect(line.total).toBeNull();
     }
     expect(result.quickLiquidityRatio).not.toBeNull();
+    // No tender threshold → no pass/fail interpretation
+    expect(result.qlrPasses).toBeNull();
+    expect(result.localContentPreferenceApplied).toBeNull();
+  });
+
+  test("applies QLR threshold only when tender states it", () => {
+    const result = runFinancialAgent({
+      financialText:
+        "Cash equivalents 100000 Accounts receivable 50000 Current liabilities 80000",
+      entities: {
+        scope: "Digital platform",
+        evaluation: { technical: 70, financial: 30 },
+        sla: { perWeek: 1, maxPercent: 10 },
+        milestones: [{ name: "Delivery", weeks: 10 }],
+        evidence: [],
+      },
+      projectBudget: null,
+      tenderText: "Quick Liquidity Ratio minimum 1.0 required",
+    });
+    expect(result.qlrThreshold).toBe(1);
+    expect(result.qlrPasses).toBe(true);
   });
 });
 
@@ -81,31 +103,70 @@ describe("drafting leaves amount cells blank", () => {
       projectTitle: "Test",
       etimadRef: null,
       tenderTypeName: "IT",
-      entities: null,
+      entities: {
+        scope: "Platform",
+        evaluation: { technical: 70, financial: 30 },
+        sla: { perWeek: 2, maxPercent: 20 },
+        milestones: [],
+        evidence: [],
+      },
       complianceRows: [],
       technical: {
         methodology: [],
         matchedProjects: [],
         solutionApproach: "Approach",
-        vision2030Notes: "notes",
-        ragContext: "none",
+        vision2030Notes: "Notes",
+        ragContext: "",
       },
       financial: {
-        cashEquivalents: 1,
-        accountsReceivable: 1,
-        currentLiabilities: 1,
-        quickLiquidityRatio: 2,
-        qlrPasses: true,
-        saudizationPercent: 40,
-        boqItems: [{ item: "Build", unit: "LS", qty: 1, unitPrice: null, total: null }],
-        localContentPreferenceApplied: 0.1,
-        notes: ["n"],
+        cashEquivalents: null,
+        accountsReceivable: null,
+        currentLiabilities: null,
+        quickLiquidityRatio: null,
+        qlrPasses: null,
+        qlrThreshold: null,
+        qlrFormula: null,
+        saudizationPercent: null,
+        boqItems: [{ item: "A", unit: "LS", qty: 1, unitPrice: null, total: null }],
+        localContentPreferenceApplied: null,
+        notes: ["structure only"],
       },
-      brandTagline: "Arabclue",
-      vision2030: "thriving-economy",
+      brandTagline: "Brand",
+      vision2030: "Vision",
       locale: "en",
     });
-    expect(md).toContain("| Build | LS | 1 | — | — |");
-    expect(md).not.toContain("| Build | LS | 1 | 100 |");
+    expect(md).toContain("| — | — |");
+    expect(md).not.toMatch(/unit price\s*[:=]\s*\d/i);
+    expect(md).not.toContain("TP1/SP1/SP2");
+    expect(md).not.toContain("10% Local Content");
+    expect(md.toLowerCase()).toContain("not legal advice");
+  });
+});
+
+describe("validation gate", () => {
+  test("blocks pricing language and invented NORA ids", () => {
+    const report = validateProposalOutput({
+      contentMd:
+        "Recommended unit price is 5000. We follow NORA TP1 Cloud First.",
+      financial: {
+        cashEquivalents: null,
+        accountsReceivable: null,
+        currentLiabilities: null,
+        quickLiquidityRatio: null,
+        qlrPasses: null,
+        qlrThreshold: null,
+        qlrFormula: null,
+        saudizationPercent: null,
+        boqItems: [{ item: "A", unit: "LS", qty: 1, unitPrice: 10, total: 10 }],
+        localContentPreferenceApplied: null,
+        notes: [],
+      },
+      entities: { scope: "x", evaluation: { technical: 70, financial: 30 }, sla: { perWeek: 1, maxPercent: 10 }, milestones: [], evidence: [] },
+      complianceRows: [],
+    });
+    expect(report.blocking).toBe(true);
+    expect(report.issues.some((i) => i.code === "pricing_language")).toBe(true);
+    expect(report.issues.some((i) => i.code === "invented_nora_id")).toBe(true);
+    expect(report.issues.some((i) => i.code === "ai_priced_boq")).toBe(true);
   });
 });

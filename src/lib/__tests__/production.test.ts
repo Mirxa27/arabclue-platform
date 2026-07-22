@@ -50,7 +50,7 @@ describe("compliance statuses", () => {
     evidence: [],
   };
 
-  test("PDPL residency gap uses NON_COMPLIANT not GAP", () => {
+  test("PDPL residency gap requires clarification, not a universal mandate", () => {
     const { rows } = evaluateCompliance({
       entities: baseEntities,
       tenderText: "Simple tender with no residency language",
@@ -59,27 +59,34 @@ describe("compliance statuses", () => {
     const pdpl = rows.find((r) => r.frameworkId === "PDPL");
     expect(pdpl).toBeTruthy();
     expect(pdpl!.status).not.toBe("GAP");
-    expect(["NON_COMPLIANT", "PARTIAL", "COMPLIANT", "PENDING"]).toContain(
-      pdpl!.status
-    );
+    expect([
+      "CLARIFICATION_REQUIRED",
+      "LEGAL_REVIEW_REQUIRED",
+      "PARTIAL",
+      "COMPLIANT",
+      "PENDING",
+    ]).toContain(pdpl!.status);
+    expect(pdpl!.evidence.toLowerCase()).not.toContain("100% ksa data residency mandate");
   });
 
-  test("LOCAL_CONTENT is evidence-based not always COMPLIANT", () => {
+  test("LOCAL_CONTENT does not assume a blanket preference percentage", () => {
     const missing = evaluateCompliance({
       entities: baseEntities,
       tenderText: "Cloud hosting without small-business preference terms",
       tenderCategory: "IT",
     });
     const lcMissing = missing.rows.find((r) => r.frameworkId === "LOCAL_CONTENT");
-    expect(lcMissing?.status).toBe("PARTIAL");
+    expect(lcMissing?.status).toBe("NOT_APPLICABLE");
 
     const hit = evaluateCompliance({
       entities: baseEntities,
-      tenderText: "Vendor commits to Local Content preference and Saudization targets",
+      tenderText:
+        "Vendor commits to Local Content preference of 10% and Saudization targets",
       tenderCategory: "IT",
     });
     const lcHit = hit.rows.find((r) => r.frameworkId === "LOCAL_CONTENT");
     expect(lcHit?.status).toBe("COMPLIANT");
+    expect(lcHit?.sourceCategory).toBe("EXPLICIT_TENDER");
   });
 
   test("SLA cap row is evidence-based under procurement law", () => {

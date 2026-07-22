@@ -3,30 +3,29 @@
 ## Project Overview
 **Arabclue** is a B2B SaaS platform that automates compliant technical and financial proposal **structure** for Saudi government tenders on Etimad — **never pricing bids**.
 
-**Tech Stack:** Next.js 16 + TypeScript + Tailwind + shadcn/ui + Prisma (SQLite local) + NextAuth + Playwright PDF + ExcelJS + JSZip + multi-provider LLM.
+**Tech Stack:** Next.js 16 + TypeScript + Tailwind + shadcn/ui + Prisma (Postgres) + NextAuth + Playwright PDF + ExcelJS + JSZip + multi-provider LLM + MyFatoorah.
 
-## Status (2026-07-22 full product pass)
+## Status (2026-07-22 production completion pass)
 
-### Delivered vs product brief
-- 10-part account onboarding hub + readiness gate on agent run
-- Tender requirements matrix (persist + UI status linking)
-- Structure-only financial BoQ; human price entry; pricing guardrails (tested)
-- Approval chain submit/review/approve; reviews queue
-- Certificate expiry + in-app notifications
-- Engineering docs: `prd/PRD.md`, `docs/ARCHITECTURE.md`, `DATA-MODEL.md`, `API.md`, `SECURITY.md`, `STYLE.md`, `GUARDRAILS.md`
+### Delivered
+- Versioned regulatory policy registry (no blanket 10%, no PDPL universal residency, no invented NORA IDs, tender SLA preserved)
+- Deterministic validation gate blocking export on pricing / placeholders / invented identifiers
+- MyFatoorah Webhook V2 canonical HMAC, URL allowlist, amount/currency verification, webhook event idempotency
+- Admin Payments → MyFatoorah panel (write-only secrets, connection + signature tests)
+- Recurring profile + webhook event models/migration
+- Full docs suite under `docs/`
 
-### Prior solid core
-- Multi-agent pipeline, proposal editor/export, NextAuth + MFA
-- Admin CRUD, MyFatoorah billing, quotas, tenant membership scoping
+### Verification
+```bash
+bun test src/lib/__tests__   # 49 pass
+bun run lint                 # 0 errors
+bunx tsc --noEmit            # pass
+bunx prisma migrate deploy   # pass
+bun run build                # pass
+```
 
 ### Intentionally out of scope
 - Real Etimad portal submission API
 - Redis/Bull job queue
 - SSO
-
-## Verification
-```bash
-bun run lint
-bunx tsc --noEmit
-bun test
-```
+- Live MyFatoorah sandbox charge without merchant credentials

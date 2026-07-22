@@ -513,6 +513,52 @@ model PaymentCheckout {
   @@index([invoiceId])
 }
 
+// MyFatoorah Webhook V2 durable receipt + idempotency
+model PaymentWebhookEvent {
+  id                String   @id @default(cuid())
+  eventFingerprint  String   @unique
+  eventName         String?
+  eventCode         Int?
+  eventReference    String?
+  invoiceId         String?
+  paymentId         String?
+  recurringId       String?
+  customerReference String?
+  signatureValid    Boolean  @default(false)
+  processingStatus  String   @default("RECEIVED") // RECEIVED | PROCESSED | FAILED | IGNORED | DUPLICATE
+  disposition       String?
+  attempts          Int      @default(0)
+  errorMessage      String?
+  payloadRedacted   String?  // JSON without secrets
+  createdAt         DateTime @default(now())
+  processedAt       DateTime?
+
+  @@index([processingStatus])
+  @@index([invoiceId])
+  @@index([recurringId])
+  @@index([createdAt])
+}
+
+// MyFatoorah-managed recurring profiles (when merchant supports recurring)
+model MyFatoorahRecurringProfile {
+  id                String   @id @default(cuid())
+  userId            String
+  subscriptionId    String?
+  recurringId       String   @unique
+  status            String   @default("DRAFT") // DRAFT | ACTIVE | UNCOMPLETED | COMPLETED | CANCELED
+  recurringType     String?
+  intervalDays      Int?
+  retryCount        Int      @default(3)
+  customerReference String?
+  initialInvoiceId  String?
+  lastWebhookAt     DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
 // ─── Immutable Audit Trail ───────────────────────────────────────────────────
 
 model AuditLog {

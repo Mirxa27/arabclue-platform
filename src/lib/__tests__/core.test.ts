@@ -16,7 +16,7 @@ describe("sanitizeText", () => {
 });
 
 describe("parseTenderText", () => {
-  test("extracts evaluation split and caps SLA at 20%", () => {
+  test("extracts evaluation split and preserves tender SLA without rewriting", () => {
     const text = `
       Scope of Work: Deliver a national digital platform for citizen services.
       Technical evaluation 70% Financial 30%.
@@ -28,8 +28,10 @@ describe("parseTenderText", () => {
     const entities = parseTenderText(text, "IT");
     expect(entities.evaluation.technical).toBe(70);
     expect(entities.evaluation.financial).toBe(30);
-    expect(entities.sla.maxPercent).toBeLessThanOrEqual(20);
-    expect(entities.sla.perWeek).toBeLessThanOrEqual(20);
+    // Tender clause preserved (not capped to statutory candidate)
+    expect(entities.sla.maxPercent).toBe(40);
+    expect(entities.sla.perWeek).toBe(5);
+    expect(entities.sla.statutoryCandidateMaxPercent).toBe(20);
     expect(entities.milestones.length).toBeGreaterThanOrEqual(2);
     expect(entities.scope.toLowerCase()).toContain("digital platform");
   });
@@ -41,14 +43,24 @@ describe("parseTenderText", () => {
 });
 
 describe("financial QLR", () => {
-  test("computes QLR correctly", () => {
+  test("computes QLR correctly without inventing pass/fail", () => {
     const qlr = computeQuickLiquidityRatio({
       cashEquivalents: 100,
       accountsReceivable: 50,
       currentLiabilities: 100,
     });
     expect(qlr.ratio).toBe(1.5);
-    expect(qlr.passes).toBe(true);
+    expect(qlr.passes).toBeNull();
+
+    const withThreshold = computeQuickLiquidityRatio(
+      {
+        cashEquivalents: 100,
+        accountsReceivable: 50,
+        currentLiabilities: 100,
+      },
+      1.0
+    );
+    expect(withThreshold.passes).toBe(true);
   });
 
   test("parses financial statement text", () => {
@@ -73,7 +85,7 @@ describe("financial QLR", () => {
       projectBudget: 10_000_000,
     });
     expect(result.quickLiquidityRatio).toBeCloseTo(1.37, 1);
-    expect(result.qlrPasses).toBe(true);
+    expect(result.qlrPasses).toBeNull();
     expect(result.boqItems.length).toBeGreaterThanOrEqual(2);
     for (const line of result.boqItems) {
       expect(line.unitPrice).toBeNull();
@@ -82,11 +94,14 @@ describe("financial QLR", () => {
   });
 });
 
-describe("SLA caps", () => {
-  test("services max 20%", () => {
+describe("SLA statutory candidates", () => {
+  test("services candidate max 20% does not rewrite tender values", () => {
     const r = SLA_PENALTY_RULES.enforceCap(25, "IT");
     expect(r.max).toBe(20);
+    expect(r.weekly).toBe(25);
     expect(r.capped).toBe(true);
+    const candidate = SLA_PENALTY_RULES.statutoryCandidate("IT");
+    expect(candidate.sourceCategory).toBe("REGULATORY_CANDIDATE");
   });
 });
 
@@ -219,9 +234,11 @@ describe("bilingual deterministic drafting", () => {
         currentLiabilities: 1,
         quickLiquidityRatio: 2,
         qlrPasses: true,
+        qlrThreshold: 1,
+        qlrFormula: "(CashEquivalents + AccountsReceivable) / CurrentLiabilities",
         saudizationPercent: 40,
         boqItems: [{ item: "Build", unit: "LS", qty: 1, unitPrice: null, total: null }],
-        localContentPreferenceApplied: 0.1,
+        localContentPreferenceApplied: 10,
         notes: ["n"],
       },
       brandTagline: "Arabclue",

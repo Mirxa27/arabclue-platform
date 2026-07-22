@@ -13,6 +13,11 @@ import {
 } from "@/lib/generators";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+import {
+  assertExportAllowed,
+  validateProposalOutput,
+} from "@/lib/validation-gate";
+import type { FinancialExtract } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -46,10 +51,70 @@ export async function GET(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  const brand = proposal.workspace.brandProfiles[0] ?? null;
-  const checks = await db.complianceCheck.findMany({
+  // Deterministic validation gate — blocks final export on pricing/placeholder/NORA/etc.
+  const restrictions = await db.restriction.findMany({
+    where: { workspaceId: workspace.id, active: true },
+    select: { text: true },
+  });
+  const checksForGate = await db.complianceCheck.findMany({
     where: { projectId: proposal.projectId },
   });
+  const gateFinancial: FinancialExtract | null = proposal.financialFormsJson
+    ? (() => {
+        try {
+          const forms = JSON.parse(proposal.financialFormsJson);
+          return {
+            cashEquivalents: null,
+            accountsReceivable: null,
+            currentLiabilities: null,
+            quickLiquidityRatio: null,
+            qlrPasses: null,
+            qlrThreshold: null,
+            qlrFormula: null,
+            saudizationPercent: null,
+            boqItems: Array.isArray(forms.boqItems) ? forms.boqItems : [],
+            localContentPreferenceApplied: null,
+            notes: [],
+          };
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+  const gateReport = validateProposalOutput({
+    contentMd: proposal.contentMd,
+    financial: gateFinancial,
+    entities: null,
+    complianceRows: checksForGate.map((c) => ({
+      frameworkId: c.framework,
+      controlId: c.controlId,
+      title: c.title,
+      status: (c.status === "GAP" ? "PARTIAL" : c.status) as
+        | "COMPLIANT"
+        | "PARTIAL"
+        | "NON_COMPLIANT"
+        | "PENDING",
+      evidence: c.evidence ?? "",
+      remediation: c.remediation,
+    })),
+    restrictions: restrictions.map((r) => r.text),
+  });
+  if (gateReport.blocking && format !== "html") {
+    try {
+      assertExportAllowed(gateReport);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: err instanceof Error ? err.message : "validation_failed",
+          validation: gateReport,
+        },
+        { status: 422 }
+      );
+    }
+  }
+
+  const brand = proposal.workspace.brandProfiles[0] ?? null;
+  const checks = checksForGate;
 
   // Prefer human-entered financial forms; fall back to structure-only agent BoQ
   let boqItems:

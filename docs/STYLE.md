@@ -18,5 +18,8 @@ Prefer numbered `##` sections: Executive Summary, Project Understanding, Methodo
 ## Grounding
 
 - Experience and certifications only from RAG corpus (past projects, staff, library, methodologies).
+- Never invent NORA principle IDs, blanket local-content percentages, or universal PDPL residency mandates.
+- Compliance content is assisted drafting, not legal advice — include the legal disclaimer.
+- BoQ amount columns always blank (em dash); client commercial team enters prices.
 - Never invent Etimad references, ISO numbers, or project outcomes.
 - When tender requirements are ambiguous or data is missing, leave a clear gap for the human author — do not fabricate.
