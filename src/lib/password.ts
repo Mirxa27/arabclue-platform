@@ -8,8 +8,8 @@ import { promisify } from "util";
 const scrypt = promisify(scryptCb);
 
 export async function hashPassword(plain: string): Promise<string> {
-  if (!plain || plain.length < 8) {
-    throw new Error("Password must be at least 8 characters");
+  if (!plain || plain.length < 10) {
+    throw new Error("Password must be at least 10 characters");
   }
   const salt = randomBytes(16).toString("hex");
   const derived = (await scrypt(plain, salt, 64)) as Buffer;
@@ -38,6 +38,6 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
  */
 export function getBootstrapAdminPassword(): string | null {
   const pwd = process.env.BOOTSTRAP_ADMIN_PASSWORD?.trim();
-  if (!pwd || pwd.length < 8) return null;
+  if (!pwd || pwd.length < 10) return null;
   return pwd;
 }

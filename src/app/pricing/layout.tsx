@@ -1,10 +1,10 @@
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "Pricing",
-  titleAr: "الأسعار",
+  title: "Packages & Pricing",
+  titleAr: "الباقات والأسعار",
   description:
-    "Arabclue subscription plans for Saudi tender proposal teams — Starter, Professional, and Enterprise with enforced quotas.",
+    "ArabClue packages: Starter SAR 299, Professional SAR 999, Enterprise SAR 2,999 monthly — quotas enforced at upload and agent run.",
   path: "/pricing",
 });
 

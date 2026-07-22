@@ -3,6 +3,7 @@ import {
   agentRunBodySchema,
   emailSchema,
   passwordChangeSchema,
+  profileUpdateSchema,
   projectCreateSchema,
   documentPatchSchema,
 } from "../validation";
@@ -49,6 +50,22 @@ describe("Zod validation contracts", () => {
     expect(documentPatchSchema.safeParse({}).success).toBe(false);
     expect(
       documentPatchSchema.safeParse({ docCategory: "RFP" }).success
+    ).toBe(true);
+  });
+
+  test("profileUpdate requires a field and password for email", () => {
+    expect(profileUpdateSchema.safeParse({}).success).toBe(false);
+    expect(
+      profileUpdateSchema.safeParse({ name: "Khalid Al-Otaibi" }).success
+    ).toBe(true);
+    expect(
+      profileUpdateSchema.safeParse({ email: "new@arabclue.com" }).success
+    ).toBe(false);
+    expect(
+      profileUpdateSchema.safeParse({
+        email: "new@arabclue.com",
+        currentPassword: "secret-pass",
+      }).success
     ).toBe(true);
   });
 });

@@ -69,7 +69,7 @@ export async function PATCH(
     const updated = await db.tenderProject.update({ where: { id }, data });
     await audit({
       userId: session.user.id,
-      action: AUDIT_ACTIONS.PROJECT_CREATE,
+      action: AUDIT_ACTIONS.PROJECT_UPDATE,
       resource: "TenderProject",
       resourceId: id,
       details: { patched: Object.keys(data) },

@@ -33,7 +33,7 @@ export async function GET(
   return NextResponse.json({ versions });
 }
 
-// POST /api/documents/[id]/versions — create a new version
+// POST /api/documents/[id]/versions — create a new version (server-validated path)
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -58,13 +58,35 @@ export async function POST(
     );
   }
 
+  // HIGH fix: never trust client path — must be inside workspace folder and exist
+  const normalized = storagePath.replace(/\\/g, "/");
+  const expectedPrefix = `uploads/${workspace.id}/`;
+  if (!normalized.startsWith(expectedPrefix) && !normalized.startsWith(`uploads/${workspace.id}`)) {
+    return NextResponse.json({ error: "invalid storagePath workspace mismatch" }, { status: 400 });
+  }
+  if (normalized.includes("..")) {
+    return NextResponse.json({ error: "invalid path traversal" }, { status: 400 });
+  }
+
+  // Verify file actually exists and size matches (if possible) — prevents injection
+  const { fileExists } = await import("@/lib/storage");
+  const exists = await fileExists(normalized);
+  if (!exists) {
+    return NextResponse.json({ error: "file not found on server for version" }, { status: 400 });
+  }
+
+  // Enforce reasonable size (max 100MB per version)
+  if (sizeBytes <= 0 || sizeBytes > 100 * 1024 * 1024) {
+    return NextResponse.json({ error: "invalid sizeBytes" }, { status: 400 });
+  }
+
   const newVersion = current.currentVersion + 1;
   const [version] = await db.$transaction([
     db.documentVersion.create({
       data: {
         documentId: id,
         version: newVersion,
-        storagePath,
+        storagePath: normalized,
         sizeBytes,
         changeLog: changeLog ?? `Version ${newVersion}`,
         createdBy: session.user.id,
@@ -72,9 +94,18 @@ export async function POST(
     }),
     db.uploadedDocument.update({
       where: { id },
-      data: { currentVersion: newVersion, storagePath, sizeBytes },
+      data: { currentVersion: newVersion, storagePath: normalized, sizeBytes },
     }),
   ]);
+
+  const { audit, AUDIT_ACTIONS } = await import("@/lib/audit");
+  await audit({
+    userId: session.user.id,
+    action: AUDIT_ACTIONS.DOC_UPLOAD,
+    resource: "UploadedDocument",
+    resourceId: id,
+    details: { version: newVersion, storagePath: normalized },
+  });
 
   return NextResponse.json({ version });
 }

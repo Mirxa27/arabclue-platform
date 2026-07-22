@@ -837,7 +837,7 @@ function CreateUserForm({
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             className="h-8 text-xs mt-1"
-            placeholder="user@arabclue.sa"
+            placeholder="user@arabclue.com"
           />
         </div>
       </div>

@@ -2,6 +2,7 @@ import { db } from "./db";
 import { COMPLIANCE_FRAMEWORKS, AI_PROVIDER_PRESETS, ENV_CATALOG, DEFAULT_PLANS } from "./constants";
 import { encryptValue, assertProductionSecrets } from "./crypto";
 import { hashPassword, getBootstrapAdminPassword } from "./password";
+import { ensureDatabaseReady } from "./ensure-db";
 
 // Ensures default workspace + SUPER_ADMIN exist when BOOTSTRAP_ADMIN_PASSWORD is set.
 // Auth gate is enforced by NextAuth middleware — this only seeds data.
@@ -9,13 +10,19 @@ import { hashPassword, getBootstrapAdminPassword } from "./password";
 const WORKSPACE_SLUG = "default-workspace";
 
 function bootstrapAdminEmail(): string {
-  return (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@arabclue.sa").trim().toLowerCase();
+  return (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@arabclue.com").trim().toLowerCase();
 }
 
 let cachedBootstrap: Awaited<ReturnType<typeof runBootstrap>> | null = null;
 
+/** Clear bootstrap cache after ephemeral DB is replaced (Vercel /tmp). */
+export function resetBootstrapCache() {
+  cachedBootstrap = null;
+}
+
 export async function getBootstrapContext() {
   assertProductionSecrets();
+  await ensureDatabaseReady();
   if (cachedBootstrap) return cachedBootstrap;
   cachedBootstrap = await runBootstrap();
   return cachedBootstrap;
@@ -37,7 +44,7 @@ async function runBootstrap() {
   if (!workspace) {
     if (!passwordHash) {
       throw new Error(
-        "BOOTSTRAP_ADMIN_PASSWORD is required to seed the initial workspace (min 8 chars)"
+        "BOOTSTRAP_ADMIN_PASSWORD is required to seed the initial workspace (min 10 chars)"
       );
     }
     const user = await db.user.upsert({

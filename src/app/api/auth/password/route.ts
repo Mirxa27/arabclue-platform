@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 /** POST { currentPassword, newPassword } — change password; clears mustChangePassword */
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireSession();
+    const session = await requireSession({ allowMustChangePassword: true });
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

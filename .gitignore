@@ -38,6 +38,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# generated admin credentials — never commit
+admin-credentials.json
+.env.admin
 
 # typescript
 *.tsbuildinfo
@@ -65,3 +68,5 @@ server.log
 # Vercel
 .vercel
 .env.local
+prisma/template.db
+.env*

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin, canGrantRole } from "@/lib/auth";
+import { requireAdmin, canGrantRole, revokeUserSessions } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import type { Role } from "@/lib/types";
 
@@ -51,6 +51,14 @@ export async function PATCH(
     },
   });
 
+  const privilegeChanged =
+    (body.role !== undefined && body.role !== before.role) ||
+    (body.active !== undefined && body.active !== before.active) ||
+    body.active === false;
+  if (privilegeChanged) {
+    await revokeUserSessions(id);
+  }
+
   if (body.planId) {
     const plan = await db.subscriptionPlan.findUnique({ where: { id: body.planId } });
     if (plan) {
@@ -84,6 +92,7 @@ export async function PATCH(
     details: {
       before: { role: before.role, active: before.active },
       after: { role: updated.role, active: updated.active },
+      sessionsRevoked: privilegeChanged,
     },
     severity: "CRITICAL",
   });
@@ -118,12 +127,13 @@ export async function DELETE(
     where: { id },
     data: { active: false },
   });
+  await revokeUserSessions(id);
   await audit({
     userId: session.user.id,
     action: AUDIT_ACTIONS.USER_DEACTIVATE,
     resource: "User",
     resourceId: id,
-    details: { email: updated.email },
+    details: { email: updated.email, sessionsRevoked: true },
     severity: "CRITICAL",
   });
   return NextResponse.json({ ok: true });

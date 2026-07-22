@@ -72,7 +72,7 @@ export default function BillingCallbackPage() {
             <h1 className="text-lg font-semibold">Payment successful</h1>
             <p className="text-sm text-muted-foreground">{message}</p>
             <Button asChild>
-              <Link href="/?view=billing">Open billing</Link>
+              <Link href="/app?view=billing">Open billing</Link>
             </Button>
           </>
         )}
@@ -82,7 +82,7 @@ export default function BillingCallbackPage() {
             <h1 className="text-lg font-semibold">Payment not completed</h1>
             <p className="text-sm text-muted-foreground">{message}</p>
             <Button asChild variant="outline">
-              <Link href="/?view=billing">Back to billing</Link>
+              <Link href="/app?view=billing">Back to billing</Link>
             </Button>
           </>
         )}

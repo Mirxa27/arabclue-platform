@@ -1,38 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { generateMfaSecret, buildMfaQrDataUrl } from "@/lib/mfa";
-import { verifyPassword } from "@/lib/password";
+import { generateMfaSecret, buildMfaQrDataUrl, verifyMfaToken } from "@/lib/mfa";
+import { requireSession } from "@/lib/auth";
+import { rateLimit } from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST — generate MFA secret + QR.
- * Requires either an authenticated session OR email+password proof.
+ * Requires authenticated session. If MFA is already enabled, requires current TOTP.
+ * Rate-limited: 5 setups / 15min per user.
  */
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const body = await req.json().catch(() => ({}));
-  const email = (body.email as string | undefined)?.trim().toLowerCase();
-  const password = String(body.password ?? "");
+  const session = await requireSession({ allowMustChangePassword: true });
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let user =
-    session?.user?.id
-      ? await db.user.findUnique({ where: { id: session.user.id } })
-      : null;
+  const rl = rateLimit({ key: `mfa:setup:${session.user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
+  if (!rl.ok) {
+    return NextResponse.json({ error: "rate_limited_try_later" }, { status: 429 });
+  }
 
-  if (!user) {
-    if (!email || !password) {
+  const user = await db.user.findUnique({ where: { id: session.user.id } });
+  if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
+  let body: { currentToken?: string } = {};
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+
+  if (user.mfaEnabled) {
+    const currentToken = body.currentToken?.trim() ?? "";
+    if (!user.mfaSecret || !currentToken || !verifyMfaToken(user.mfaSecret, currentToken)) {
       return NextResponse.json(
-        { error: "Authentication required (session or email+password)" },
-        { status: 401 }
+        { error: "Current MFA token required to rotate MFA" },
+        { status: 403 }
       );
-    }
-    user = await db.user.findUnique({ where: { email } });
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
   }
 
@@ -52,10 +57,11 @@ export async function POST(req: NextRequest) {
     action: "MFA_SETUP",
     resource: "User",
     resourceId: user.id,
+    details: { rotated: user.mfaEnabled },
   });
 
+  // Do not return raw secret — QR / otpauth URL is enough for authenticator apps
   return NextResponse.json({
-    secret,
     otpauthUrl,
     qrDataUrl,
     message: "Scan the QR code, then POST /api/auth/mfa/verify to enable MFA",

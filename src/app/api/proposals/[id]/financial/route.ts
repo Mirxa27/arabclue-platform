@@ -46,14 +46,18 @@ export async function PATCH(
     const parsed = await parseJsonBody(req, financialFormsSchema);
     if (!parsed.ok) return parsed.response;
 
-    // Normalize totals from unitPrice * qty when both present
+    // Always recompute total = unitPrice * qty server-side — never trust client total
+    // Also enforce max bounds to avoid overflow / DOS
+    const MAX_AMOUNT = 1e12; // 1 trillion SAR cap per line
     const boqItems = parsed.data.boqItems.map((row) => {
-      const total =
-        row.total != null
-          ? row.total
-          : row.unitPrice != null
-            ? Math.round(row.unitPrice * row.qty * 100) / 100
-            : null;
+      if (row.unitPrice != null && (row.unitPrice < 0 || row.unitPrice > MAX_AMOUNT)) {
+        throw new ApiError(`unitPrice out of bounds [0, ${MAX_AMOUNT}]`, 400);
+      }
+      if (row.qty < 0 || row.qty > 1_000_000) {
+        throw new ApiError("qty out of bounds", 400);
+      }
+      const total = row.unitPrice != null ? Math.round(row.unitPrice * row.qty * 100) / 100 : null;
+      if (total != null && total > MAX_AMOUNT * 10) throw new ApiError("total out of bounds", 400);
       return { ...row, total };
     });
 

@@ -6,17 +6,17 @@
 import type { Metadata } from "next";
 
 export const SITE = {
-  name: "Arabclue",
+  name: "ArabClue",
   nameAr: "أراب كلاو",
-  nameFull: "Arabclue | أراب كلاو",
+  nameFull: "ArabClue | أراب كلاو",
   tagline:
     "Saudi Tender Proposal Automation — Etimad, NCA, PDPL & Vision 2030",
   taglineAr:
     "أتمتة عطاءات المناقصات السعودية — اعتماد، الهيئة الوطنية، حماية البيانات، ورؤية 2030",
   description:
-    "Arabclue automates the generation of compliant, attractive technical and financial proposals for all Saudi government tender types (IT, construction, consulting, operations) on the Etimad portal. NCA, PDPL & EA compliant. Vision 2030 aligned.",
+    "ArabClue is an AI bid-preparation SaaS for Saudi Etimad tenders. Draft technical proposals and financial structures in hours — humans enter prices. NCA, PDPL & Vision 2030 aligned.",
   descriptionAr:
-    "أراب كلاو يُؤتمت إنشاء العروض الفنية والمالية المتوافقة والجذابة لجميع أنواع المناقصات الحكومية السعودية على منصة اعتماد.",
+    "أراب كلاو منصة SaaS لإعداد عطاءات اعتماد بالذكاء الاصطناعي. صياغة فنية وهيكل مالي في ساعات — الأسعار يدخلها البشر. متوافق مع الهيئة الوطنية وحماية البيانات ورؤية 2030.",
   keywords: [
     "Arabclue",
     "أراب كلاو",
@@ -35,7 +35,7 @@ function siteUrl(): string {
   return (
     process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-    "https://arabclue.sa"
+    "https://arabclue.com"
   );
 }
 
@@ -70,7 +70,11 @@ export function createPageMetadata(input: PageMetaInput): Metadata {
     description,
     keywords: [...SITE.keywords],
     authors: [{ name: SITE.name }],
-    icons: { icon: "/logo.svg" },
+    icons: {
+      icon: [{ url: "/logo.svg", type: "image/svg+xml" }, { url: "/icon.svg", type: "image/svg+xml" }],
+      apple: [{ url: "/logo.svg" }],
+      shortcut: "/logo.svg",
+    },
     alternates: {
       canonical: url,
       languages: {

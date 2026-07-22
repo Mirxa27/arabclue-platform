@@ -1,7 +1,9 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
+import dynamic from "next/dynamic";
 import { useEffect, useState, type ComponentType } from "react";
+import { useSession } from "next-auth/react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { PageHeader, PageSection } from "@/components/patterns";
@@ -11,21 +13,84 @@ import { ComplianceMonitor } from "./compliance-monitor";
 import { AgentWorkflow } from "./agent-workflow";
 import { DocumentMatrix } from "./document-matrix";
 import { VersionHistory } from "./version-history";
-import { AccountOnboarding } from "./account-onboarding";
 import { RequirementsMatrix } from "./requirements-matrix";
 import { ReviewsQueue } from "./reviews-queue";
-import { SettingsPanel } from "./settings-panel";
 import { ProposalsList } from "./proposals-list";
 import { ProjectsList } from "./projects-list";
 import { ChartsPanel } from "./charts-panel";
 import { TenderTypeSelector } from "./tender-type-selector";
-import { AdminOverview } from "@/components/admin/overview";
-import { AdminAIProviders } from "@/components/admin/ai-providers";
-import { AdminEnvSettings } from "@/components/admin/env-settings";
-import { AdminBilling } from "@/components/admin/billing";
-import { AdminSecurity } from "@/components/admin/security";
-import { AdminAudit } from "@/components/admin/audit";
-import { BillingPanel } from "@/components/dashboard/billing-panel";
+import { Loader2 } from "lucide-react";
+
+function PanelLoading() {
+  return (
+    <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
+      <Loader2 className="size-4 animate-spin" />
+    </div>
+  );
+}
+
+const AccountOnboarding = dynamic(
+  () =>
+    import("./account-onboarding").then((m) => ({ default: m.AccountOnboarding })),
+  { loading: PanelLoading }
+);
+const SettingsPanel = dynamic(
+  () => import("./settings-panel").then((m) => ({ default: m.SettingsPanel })),
+  { loading: PanelLoading }
+);
+const BillingPanel = dynamic(
+  () =>
+    import("./billing-panel").then((m) => ({ default: m.BillingPanel })),
+  { loading: PanelLoading }
+);
+const AdminOverview = dynamic(
+  () =>
+    import("@/components/admin/overview").then((m) => ({
+      default: m.AdminOverview,
+    })),
+  { loading: PanelLoading }
+);
+const AdminAIProviders = dynamic(
+  () =>
+    import("@/components/admin/ai-providers").then((m) => ({
+      default: m.AdminAIProviders,
+    })),
+  { loading: PanelLoading }
+);
+const AdminEnvSettings = dynamic(
+  () =>
+    import("@/components/admin/env-settings").then((m) => ({
+      default: m.AdminEnvSettings,
+    })),
+  { loading: PanelLoading }
+);
+const AdminBilling = dynamic(
+  () =>
+    import("@/components/admin/billing").then((m) => ({
+      default: m.AdminBilling,
+    })),
+  { loading: PanelLoading }
+);
+const AdminSecurity = dynamic(
+  () =>
+    import("@/components/admin/security").then((m) => ({
+      default: m.AdminSecurity,
+    })),
+  { loading: PanelLoading }
+);
+const AdminAudit = dynamic(
+  () =>
+    import("@/components/admin/audit").then((m) => ({ default: m.AdminAudit })),
+  { loading: PanelLoading }
+);
+const ADMIN_VIEWS = new Set<DashboardView>([
+  "admin_overview",
+  "admin_ai",
+  "admin_env",
+  "admin_billing",
+  "admin_security",
+  "admin_audit",
+]);
 
 /**
  * Thin view router (App Router SPA equivalent of a PageController).
@@ -54,6 +119,9 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
 
 export function DashboardViews() {
   const { view, setView } = useUI();
+  const { data: session } = useSession();
+  const isAdmin =
+    session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -61,12 +129,20 @@ export function DashboardViews() {
     if (q && q in VIEW_REGISTRY) setView(q);
   }, [setView]);
 
-  const Content = VIEW_REGISTRY[view] ?? OverviewView;
+  useEffect(() => {
+    if (ADMIN_VIEWS.has(view) && session && !isAdmin) {
+      setView("overview");
+    }
+  }, [view, session, isAdmin, setView]);
+
+  const safeView =
+    ADMIN_VIEWS.has(view) && session && !isAdmin ? "overview" : view;
+  const Content = VIEW_REGISTRY[safeView] ?? OverviewView;
 
   return (
     <AnimatePresence mode="wait">
       <motion.div
-        key={view}
+        key={safeView}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -6 }}
@@ -299,7 +375,9 @@ function SettingsView() {
       <PageHeader
         title={tr("nav_settings", locale)}
         subtitle={
-          locale === "ar" ? "الملف الشخصي والأمان" : "Profile & security"
+          locale === "ar"
+            ? "تحديث الاسم والبريد والصورة وكلمة المرور وMFA"
+            : "Update name, email, avatar, password & MFA"
         }
         locale={locale}
       />
