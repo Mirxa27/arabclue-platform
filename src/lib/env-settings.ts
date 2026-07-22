@@ -15,7 +15,17 @@ export async function getDecryptedEnv(key: string): Promise<string> {
 export async function getProviderApiKey(provider: string): Promise<string> {
   const envKey = defaultApiKeyEnvKey(provider);
   if (!envKey) return "";
-  return getDecryptedEnv(envKey);
+  const primary = await getDecryptedEnv(envKey);
+  if (primary) return primary;
+
+  // Common alternate env names for Google / Gemini
+  if (provider.toLowerCase() === "google") {
+    for (const alt of ["GOOGLE_API_KEY", "GEMINI_API_KEY"]) {
+      const v = await getDecryptedEnv(alt);
+      if (v) return v;
+    }
+  }
+  return "";
 }
 
 /** Resolve API key using optional custom env key, then provider default. */

@@ -176,15 +176,26 @@ export async function fetchLiveProviderModels(opts: {
   const key = await resolveProviderApiKey(provider, keyEnv || null);
   const fetchedAt = new Date().toISOString();
 
+  const missingKey = (label: string, envName: string) => {
+    throw new Error(
+      `${label} API key missing. Set "${envName}" under Admin → Environment, or on the provider connection.`
+    );
+  };
+
   if (provider === "anthropic") {
-    if (!key) throw new Error("Anthropic API key missing");
-    const models = await fetchAnthropicModels(key);
+    if (!key) missingKey("Anthropic", keyEnv || "ANTHROPIC_API_KEY");
+    const models = await fetchAnthropicModels(key!);
     return { models, source: "anthropic", fetchedAt };
   }
 
   if (provider === "google") {
-    if (!key) throw new Error("Google Generative AI API key missing");
-    let models = await fetchGoogleModels(opts.apiBase ?? null, key);
+    if (!key) {
+      missingKey(
+        "Google / Gemini",
+        keyEnv || "GOOGLE_GENERATIVE_AI_API_KEY"
+      );
+    }
+    let models = await fetchGoogleModels(opts.apiBase ?? null, key!);
     if ((opts.engine || "").toUpperCase() === "VOICE") {
       models = preferVoiceLiveModels(models);
     }
@@ -192,6 +203,10 @@ export async function fetchLiveProviderModels(opts: {
   }
 
   // ZAI and all OpenAI-compatible gateways: require live /models
+  if (!key && provider !== "ollama") {
+    missingKey(provider, keyEnv || defaultApiKeyEnvKey(provider) || "API_KEY");
+  }
+
   let models = await fetchOpenAiCompatibleModels(
     opts.apiBase ?? null,
     key,
