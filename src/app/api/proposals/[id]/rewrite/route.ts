@@ -2,18 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireWriter } from "@/lib/auth";
 import { generateCompletion } from "@/lib/llm";
-import { systemDrafting } from "@/lib/agents/prompts";
+import { systemRewrite } from "@/lib/agents/prompts";
 import type { Locale } from "@/lib/types";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+import { parseJsonBody, proposalRewriteSchema } from "@/lib/validation";
+import {
+  applySectionRewrite,
+  skillInstruction,
+  unifiedDiff,
+} from "@/lib/proposal-studio";
+import { validateProposalOutput } from "@/lib/validation-gate";
+import { financialForValidationGate } from "@/lib/proposal-studio";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
  * POST /api/proposals/[id]/rewrite
- * AI-assisted rewrite of full proposal or a selected markdown fragment.
- * Body: { selection?: string, instruction?: string, locale?: "ar"|"en", apply?: boolean }
+ * AI skill: rewrite | expand | condense | translate | redesign | section
+ * Body: { selection?, instruction?, locale?, apply?, skill? }
  */
 export async function POST(
   req: NextRequest,
@@ -25,12 +33,24 @@ export async function POST(
   }
   const { workspace } = await getTenantContext(session.user.id);
   const { id } = await params;
-  const body = await req.json().catch(() => ({}));
+  const parsed = await parseJsonBody(req, proposalRewriteSchema);
+  if (!parsed.ok) return parsed.response;
+
   const proposal = await db.generatedProposal.findUnique({ where: { id } });
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  if (["REVIEW", "APPROVED", "EXPORTED"].includes(proposal.status)) {
+    return NextResponse.json(
+      {
+        error: "Proposal is locked for editing in current status",
+        code: "status_locked",
+      },
+      { status: 409 }
+    );
+  }
 
+  const body = parsed.data;
   const locale: Locale =
     body.locale === "en" || body.locale === "ar"
       ? body.locale
@@ -41,22 +61,20 @@ export async function POST(
     typeof body.selection === "string" && body.selection.trim()
       ? body.selection.trim()
       : proposal.contentMd ?? "";
-  const instruction =
-    typeof body.instruction === "string" && body.instruction.trim()
-      ? body.instruction.trim()
-      : locale === "ar"
-        ? "حسّن الصياغة الرسمية الحكومية مع الحفاظ على الحقائق والأرقام."
-        : "Improve government-formal wording while preserving all facts and figures.";
+  const skill = body.skill ?? "rewrite";
+  const instruction = skillInstruction(skill, locale, body.instruction);
   const apply = body.apply === true;
 
   const result = await generateCompletion(
     [
       {
         role: "system",
-        content: `${systemDrafting(locale)}
+        content: `${systemRewrite(locale)}
 
-You are now in EDIT mode. Rewrite ONLY the provided markdown fragment or document.
-Preserve headings structure when possible. Do not invent past projects, certifications, or financial figures.
+Skill: ${skill}
+You are in EDIT mode. Rewrite ONLY the provided markdown fragment or document.
+Preserve headings structure when possible unless skill is redesign.
+Do not invent past projects, certifications, staff, prices, or legal conclusions.
 Return Markdown only.`,
       },
       {
@@ -69,7 +87,10 @@ Return Markdown only.`,
 
   let rewritten = result.content?.trim() ?? "";
   if (rewritten.startsWith("```")) {
-    rewritten = rewritten.replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    rewritten = rewritten
+      .replace(/^```(?:markdown|md)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
   }
   if (!rewritten || result.fallback) {
     return NextResponse.json(
@@ -83,21 +104,41 @@ Return Markdown only.`,
     );
   }
 
-  let proposalOut = proposal;
-  if (apply) {
-    const nextVersion = proposal.version + 1;
-    const contentMd =
-      selection === (proposal.contentMd ?? "")
-        ? rewritten
-        : (proposal.contentMd ?? "").replace(selection, rewritten);
+  const contentMd = applySectionRewrite(
+    proposal.contentMd ?? "",
+    selection,
+    rewritten
+  );
+  const previewDiff = unifiedDiff(selection, rewritten);
 
+  let proposalOut = proposal;
+  let validation: ReturnType<typeof validateProposalOutput> | null = null;
+  if (apply) {
+    const forms = proposal.financialFormsJson
+      ? (() => {
+          try {
+            return JSON.parse(proposal.financialFormsJson);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+    validation = validateProposalOutput({
+      contentMd,
+      financial: financialForValidationGate(forms),
+      entities: null,
+      complianceRows: [],
+    });
+
+    const nextVersion = proposal.version + 1;
+    const blocking = validation.blocking;
     proposalOut = await db.$transaction(async (tx) => {
       await tx.proposalVersion.create({
         data: {
           proposalId: id,
           version: nextVersion,
           contentMd,
-          changeLog: `AI rewrite: ${instruction.slice(0, 120)}`,
+          changeLog: `AI ${skill}: ${instruction.slice(0, 120)}`,
           locale,
           createdBy: session.user.id,
         },
@@ -108,7 +149,7 @@ Return Markdown only.`,
           contentMd,
           version: nextVersion,
           locale,
-          status: "REVIEWED",
+          status: blocking ? "DRAFT" : "REVIEWED",
         },
       });
     });
@@ -118,16 +159,26 @@ Return Markdown only.`,
       action: AUDIT_ACTIONS.PROPOSAL_EDIT,
       resource: "GeneratedProposal",
       resourceId: id,
-      details: { version: nextVersion, aiRewrite: true, provider: result.provider },
+      details: {
+        version: nextVersion,
+        aiRewrite: true,
+        skill,
+        provider: result.provider,
+      },
     });
   }
 
   return NextResponse.json({
     content: rewritten,
+    fullContent: contentMd,
+    skill,
+    instruction,
+    previewDiff: previewDiff.slice(0, 400),
     provider: result.provider,
     model: result.model,
     tokensUsed: result.tokensUsed,
     fallback: false,
+    validation,
     proposal: apply
       ? {
           ...proposalOut,

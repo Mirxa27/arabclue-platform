@@ -22,13 +22,32 @@ export async function GET() {
   }
 
   checks.nextauthSecret = {
-    ok: Boolean(process.env.NEXTAUTH_SECRET && process.env.NEXTAUTH_SECRET.length >= 16),
+    ok: Boolean(
+      process.env.NEXTAUTH_SECRET && process.env.NEXTAUTH_SECRET.length >= 16
+    ),
   };
   checks.encKey = {
     ok:
       process.env.NODE_ENV !== "production" ||
-      Boolean(process.env.ARABCLUE_ENC_KEY && process.env.ARABCLUE_ENC_KEY.length >= 16),
+      Boolean(
+        process.env.ARABCLUE_ENC_KEY && process.env.ARABCLUE_ENC_KEY.length >= 16
+      ),
   };
+
+  try {
+    const activeProviders = await db.aIProviderConfig.count({
+      where: { isActive: true },
+    });
+    checks.llmProviders = {
+      ok: true,
+      detail:
+        activeProviders > 0
+          ? `active:${activeProviders}`
+          : "none_active_deterministic_fallback",
+    };
+  } catch {
+    checks.llmProviders = { ok: false, detail: "provider_query_failed" };
+  }
 
   try {
     const mf = await getMyFatoorahPublicConfig();

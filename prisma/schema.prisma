@@ -266,6 +266,7 @@ model AgentRun {
   overallProgress Float  @default(0) // 0-100
   agentStates   String?  // JSON: per-agent status/progress/output
   finalArtifact String?  // JSON summary of generated artifacts
+  configJson    String?  // JSON: durable run config for resume (locale, workspace, regenerate mode)
   errorMessage  String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -307,6 +308,7 @@ model GeneratedProposal {
   workspaceId   String
   projectId     String
   createdById   String
+  parentProposalId String? // lineage when forked from another proposal
   title         String
   titleAr       String?
   type          String   // TECHNICAL | FINANCIAL | EA_MATRIX | BOQ | COMBINED
@@ -326,11 +328,14 @@ model GeneratedProposal {
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy     User      @relation(fields: [createdById], references: [id])
+  parentProposal GeneratedProposal? @relation("ProposalLineage", fields: [parentProposalId], references: [id], onDelete: SetNull)
+  childProposals GeneratedProposal[] @relation("ProposalLineage")
   versions      ProposalVersion[]
   reviews       ProposalReview[]
 
   @@index([workspaceId])
   @@index([projectId])
+  @@index([parentProposalId])
 }
 
 model ProposalVersion {

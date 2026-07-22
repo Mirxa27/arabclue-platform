@@ -11,6 +11,19 @@ export const agentRunBodySchema = z.object({
   locale: localeSchema.optional(),
   tenderType: z.string().min(1).max(64).optional(),
   budget: z.number().nonnegative().nullable().optional(),
+  /** version = update existing proposal; fork = new proposal with lineage */
+  regenerateMode: z.enum(["version", "fork"]).optional(),
+  targetProposalId: z.string().min(1).optional(),
+});
+
+export const proposalRewriteSchema = z.object({
+  selection: z.string().max(500_000).optional(),
+  instruction: z.string().max(2000).optional(),
+  locale: localeSchema.optional(),
+  apply: z.boolean().optional(),
+  skill: z
+    .enum(["rewrite", "expand", "condense", "translate", "redesign", "section"])
+    .optional(),
 });
 
 export const agentCancelBodySchema = z.object({

@@ -46,6 +46,9 @@ export function AgentWorkflow() {
   const [completed, setCompleted] = useState(false);
   const [llmFallback, setLlmFallback] = useState(false);
   const [llmProvider, setLlmProvider] = useState<string | null>(null);
+  const [proposalId, setProposalId] = useState<string | null>(null);
+  const [coveragePercent, setCoveragePercent] = useState<number | null>(null);
+  const [exportReady, setExportReady] = useState<boolean | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runMutation = useMutation({
@@ -127,6 +130,15 @@ export function AgentWorkflow() {
         if (data.finalArtifact) {
           setLlmFallback(!!data.finalArtifact.fallback);
           setLlmProvider(data.finalArtifact.provider ?? null);
+          setProposalId(data.proposalId ?? data.finalArtifact.proposalId ?? null);
+          setCoveragePercent(
+            data.coveragePercent ??
+              data.finalArtifact.coverage?.coveragePercent ??
+              null
+          );
+          setExportReady(
+            data.exportReady ?? data.finalArtifact.exportReady ?? null
+          );
         }
         if (data.status === "COMPLETED") {
           setCompleted(true);
@@ -138,8 +150,8 @@ export function AgentWorkflow() {
                 ? "تم الإنشاء بوضع احتياطي (بدون LLM خارجي)"
                 : `Generated via ${data.finalArtifact?.provider ?? "deterministic"} fallback`
               : locale === "ar"
-                ? "تم إنشاء الحزمة القابلة للتنزيل"
-                : "Bid package ready for download",
+                ? "تم إنشاء الحزمة — افتح الاستوديو للمراجعة"
+                : "Package ready — open the document studio",
           });
           qc.invalidateQueries({ queryKey: ["stats"] });
           qc.invalidateQueries({ queryKey: ["proposals"] });
@@ -333,27 +345,44 @@ export function AgentWorkflow() {
 
       {/* Completion banner */}
       {completed && (
-        <div className="mx-3 mb-3 rounded-lg bg-gradient-to-br from-emerald-500/10 to-chart-3/10 border border-emerald-500/20 p-3 flex items-center gap-3">
+        <div className="mx-3 mb-3 rounded-lg bg-gradient-to-br from-emerald-500/10 to-chart-3/10 border border-emerald-500/20 p-3 flex flex-wrap items-center gap-3">
           <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
               {locale === "ar" ? "تم إنشاء العطاء بنجاح" : "Proposal generated successfully"}
             </div>
             <div className="text-[10px] text-muted-foreground">
-              {locale === "ar"
-                ? "ملفات جاهزة: PDF, HTML slides, XLSX×2, ZIP"
-                : "Artifacts ready: PDF, HTML slides, XLSX×2, ZIP"}
+              {coveragePercent != null && (
+                <span className="me-2">
+                  {locale === "ar" ? "تغطية" : "Coverage"}: {coveragePercent}%
+                </span>
+              )}
+              {exportReady != null && (
+                <span className="me-2">
+                  {exportReady
+                    ? locale === "ar"
+                      ? "جاهز للتصدير"
+                      : "Export-ready"
+                    : locale === "ar"
+                      ? "يحتاج مراجعة التحقق"
+                      : "Needs validation review"}
+                </span>
+              )}
               {llmProvider && (
-                <span className="ms-1">
+                <span>
                   · LLM: {llmProvider}
                   {llmFallback ? (locale === "ar" ? " (احتياطي)" : " (fallback)") : ""}
                 </span>
               )}
             </div>
           </div>
-          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 border-emerald-500/20 text-[10px]">
-            C1 ✓
-          </Badge>
+          <Button
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={() => setView("proposals")}
+          >
+            {locale === "ar" ? "فتح الاستوديو" : "Open studio"}
+          </Button>
         </div>
       )}
     </Card>

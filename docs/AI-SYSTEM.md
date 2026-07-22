@@ -65,3 +65,19 @@ See `docs/GUARDRAILS.md`.
 ## Artifacts
 
 `AgentRun.finalArtifact` includes coverage matrix summary, technical package metadata, validation report, and `exportReady`.
+
+## Proposal Document Studio
+
+Live editing, redesign, and release loop:
+
+| Capability | Endpoint / UI |
+| --- | --- |
+| Skills (rewrite, expand, condense, translate, redesign, section) | `POST /api/proposals/[id]/rewrite` (`skill`, `apply`) |
+| Validation + export readiness | `GET /api/proposals/[id]/validate` |
+| Version compare | `GET /api/proposals/[id]/versions/compare?a=&b=` |
+| Version revert | `POST /api/proposals/[id]/versions/[version]/revert` |
+| Regenerate as version or fork | `POST /api/agents/run` with `regenerateMode` + `targetProposalId` |
+| Final export policy | Approval required when policy exists; ZIP marks `EXPORTED` |
+| Stale agent resume | `GET /api/agents/status` resumes from `configJson` |
+
+Studio UI: `ProposalEditorDialog` (versions, validation, skills, regenerate, export errors).

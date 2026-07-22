@@ -17,6 +17,10 @@ import {
   assertExportAllowed,
   validateProposalOutput,
 } from "@/lib/validation-gate";
+import {
+  evaluateExportPolicy,
+  financialForValidationGate,
+} from "@/lib/proposal-studio";
 import type { FinancialExtract } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -59,28 +63,31 @@ export async function GET(
   const checksForGate = await db.complianceCheck.findMany({
     where: { projectId: proposal.projectId },
   });
-  const gateFinancial: FinancialExtract | null = proposal.financialFormsJson
-    ? (() => {
-        try {
-          const forms = JSON.parse(proposal.financialFormsJson);
-          return {
-            cashEquivalents: null,
-            accountsReceivable: null,
-            currentLiabilities: null,
-            quickLiquidityRatio: null,
-            qlrPasses: null,
-            qlrThreshold: null,
-            qlrFormula: null,
-            saudizationPercent: null,
-            boqItems: Array.isArray(forms.boqItems) ? forms.boqItems : [],
-            localContentPreferenceApplied: null,
-            notes: [],
-          };
-        } catch {
-          return null;
-        }
-      })()
-    : null;
+  const policy = await db.approvalPolicy.findUnique({
+    where: { workspaceId: workspace.id },
+    include: { steps: true },
+  });
+  const hasApprovalPolicy = Boolean(policy && policy.steps.length > 0);
+
+  let formsRaw: {
+    boqItems?: {
+      item: string;
+      unit: string;
+      qty: number;
+      unitPrice: number | null;
+      total: number | null;
+    }[];
+    source?: string;
+  } | null = null;
+  if (proposal.financialFormsJson) {
+    try {
+      formsRaw = JSON.parse(proposal.financialFormsJson);
+    } catch {
+      formsRaw = null;
+    }
+  }
+  const gateFinancial: FinancialExtract | null =
+    financialForValidationGate(formsRaw);
   const gateReport = validateProposalOutput({
     contentMd: proposal.contentMd,
     financial: gateFinancial,
@@ -99,18 +106,37 @@ export async function GET(
     })),
     restrictions: restrictions.map((r) => r.text),
   });
-  if (gateReport.blocking && format !== "html") {
-    try {
-      assertExportAllowed(gateReport);
-    } catch (err) {
-      return NextResponse.json(
-        {
-          error: err instanceof Error ? err.message : "validation_failed",
-          validation: gateReport,
-        },
-        { status: 422 }
-      );
+
+  const policyResult = evaluateExportPolicy({
+    proposalStatus: proposal.status,
+    validation: gateReport,
+    format,
+    hasApprovalPolicy,
+  });
+  if (!policyResult.allowed) {
+    if (policyResult.code === "validation_blocked") {
+      try {
+        assertExportAllowed(gateReport);
+      } catch (err) {
+        return NextResponse.json(
+          {
+            error: err instanceof Error ? err.message : "validation_failed",
+            code: policyResult.code,
+            validation: gateReport,
+          },
+          { status: 422 }
+        );
+      }
     }
+    return NextResponse.json(
+      {
+        error: policyResult.error,
+        code: policyResult.code,
+        validation: gateReport,
+        status: proposal.status,
+      },
+      { status: policyResult.status }
+    );
   }
 
   const brand = proposal.workspace.brandProfiles[0] ?? null;
@@ -122,13 +148,8 @@ export async function GET(
     | undefined;
   let slidesMetrics: SlidesMetrics | undefined;
 
-  if (proposal.financialFormsJson) {
-    try {
-      const forms = JSON.parse(proposal.financialFormsJson);
-      if (Array.isArray(forms.boqItems)) boqItems = forms.boqItems;
-    } catch {
-      /* ignore */
-    }
+  if (formsRaw && Array.isArray(formsRaw.boqItems)) {
+    boqItems = formsRaw.boqItems;
   }
 
   const run = await db.agentRun.findFirst({
@@ -156,14 +177,6 @@ export async function GET(
       saudizationTarget: proposal.project.saudizationTarget,
     };
   }
-
-  await audit({
-    userId: session.user.id,
-    action: AUDIT_ACTIONS.ARTIFACT_DOWNLOAD,
-    resource: "GeneratedProposal",
-    resourceId: id,
-    details: { format },
-  });
 
   try {
     let buffer: Buffer;
@@ -251,6 +264,21 @@ export async function GET(
         contentType = "application/zip";
         filename = "Arabclue_Bid_Package.zip";
         break;
+    }
+
+    await audit({
+      userId: session.user.id,
+      action: AUDIT_ACTIONS.ARTIFACT_DOWNLOAD,
+      resource: "GeneratedProposal",
+      resourceId: id,
+      details: { format },
+    });
+
+    if (policyResult.markExported && proposal.status !== "EXPORTED") {
+      await db.generatedProposal.update({
+        where: { id },
+        data: { status: "EXPORTED" },
+      });
     }
 
     return new NextResponse(new Uint8Array(buffer), {

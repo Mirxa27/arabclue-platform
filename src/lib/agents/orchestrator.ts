@@ -63,6 +63,8 @@ export async function runAgentPipeline(opts: {
   workspaceId: string;
   userId: string;
   locale?: Locale;
+  regenerateMode?: "version" | "fork";
+  targetProposalId?: string | null;
 }): Promise<OrchestratorResult> {
   const locale: Locale = opts.locale === "en" ? "en" : "ar";
   const states = initStates(locale);
@@ -662,40 +664,115 @@ export async function runAgentPipeline(opts: {
       },
     ];
 
-    const proposal = await db.generatedProposal.create({
-      data: {
-        workspaceId: opts.workspaceId,
-        projectId: opts.projectId,
-        createdById: opts.userId,
-        title: `Technical & Financial Proposal — ${project.title}`,
-        titleAr: `العطاء الفني والمالي — ${project.titleAr ?? project.title}`,
-        type: "COMBINED",
-        status: validationReport.blocking ? "DRAFT" : "GENERATED",
-        version: 1,
-        locale,
-        contentMd: draft.contentMd,
-        artifactsJson: JSON.stringify(artifacts),
-        financialFormsJson: JSON.stringify({
-          boqItems: financial.boqItems,
-          currency: project.currency,
-          updatedAt: new Date().toISOString(),
-          source: "agent_structure_only",
-        }),
-        complianceScore: score,
-        generatedAt: new Date(),
-      },
+    const titleEn = `Technical & Financial Proposal — ${project.title}`;
+    const titleAr = `العطاء الفني والمالي — ${project.titleAr ?? project.title}`;
+    const status = validationReport.blocking ? "DRAFT" : "GENERATED";
+    const financialFormsJson = JSON.stringify({
+      boqItems: financial.boqItems,
+      currency: project.currency,
+      updatedAt: new Date().toISOString(),
+      source: "agent_structure_only",
     });
 
-    await db.proposalVersion.create({
-      data: {
-        proposalId: proposal.id,
-        version: 1,
-        contentMd: draft.contentMd,
-        changeLog: "Initial AI generation",
-        locale,
-        createdBy: opts.userId,
-      },
-    });
+    let proposal: {
+      id: string;
+      version: number;
+      artifactsJson: string | null;
+    };
+
+    const targetId = opts.targetProposalId ?? null;
+    const mode = opts.regenerateMode;
+
+    if (mode === "version" && targetId) {
+      const existing = await db.generatedProposal.findFirst({
+        where: {
+          id: targetId,
+          projectId: opts.projectId,
+          workspaceId: opts.workspaceId,
+        },
+      });
+      if (!existing) {
+        throw new Error("Target proposal not found for version regenerate");
+      }
+      const nextVersion = existing.version + 1;
+      proposal = await db.$transaction(async (tx) => {
+        await tx.proposalReview.deleteMany({ where: { proposalId: existing.id } });
+        await tx.proposalVersion.create({
+          data: {
+            proposalId: existing.id,
+            version: nextVersion,
+            contentMd: draft.contentMd,
+            changeLog: "AI regenerate (new version)",
+            locale,
+            createdBy: opts.userId,
+          },
+        });
+        return tx.generatedProposal.update({
+          where: { id: existing.id },
+          data: {
+            title: titleEn,
+            titleAr,
+            status,
+            version: nextVersion,
+            locale,
+            contentMd: draft.contentMd,
+            artifactsJson: JSON.stringify(artifacts),
+            financialFormsJson,
+            complianceScore: score,
+            generatedAt: new Date(),
+            submittedAt: null,
+            approvedAt: null,
+          },
+        });
+      });
+    } else {
+      const parentProposalId =
+        mode === "fork" && targetId ? targetId : null;
+      if (parentProposalId) {
+        const parent = await db.generatedProposal.findFirst({
+          where: {
+            id: parentProposalId,
+            projectId: opts.projectId,
+            workspaceId: opts.workspaceId,
+          },
+        });
+        if (!parent) {
+          throw new Error("Parent proposal not found for fork regenerate");
+        }
+      }
+      proposal = await db.generatedProposal.create({
+        data: {
+          workspaceId: opts.workspaceId,
+          projectId: opts.projectId,
+          createdById: opts.userId,
+          parentProposalId,
+          title: titleEn,
+          titleAr,
+          type: "COMBINED",
+          status,
+          version: 1,
+          locale,
+          contentMd: draft.contentMd,
+          artifactsJson: JSON.stringify(artifacts),
+          financialFormsJson,
+          complianceScore: score,
+          generatedAt: new Date(),
+        },
+      });
+
+      await db.proposalVersion.create({
+        data: {
+          proposalId: proposal.id,
+          version: 1,
+          contentMd: draft.contentMd,
+          changeLog: parentProposalId
+            ? `Forked from ${parentProposalId}`
+            : "Initial AI generation",
+          locale,
+          createdBy: opts.userId,
+        },
+      });
+    }
 
     const realArtifacts = artifacts.map((a) => ({
       ...a,
@@ -705,8 +782,6 @@ export async function runAgentPipeline(opts: {
       where: { id: proposal.id },
       data: {
         artifactsJson: JSON.stringify(realArtifacts),
-        // Store financial/compliance JSON for generators
-        // contentMd already set; attach meta in finalArtifact on run
       },
     });
 
@@ -716,6 +791,8 @@ export async function runAgentPipeline(opts: {
       data: {
         finalArtifact: JSON.stringify({
           proposalId: proposal.id,
+          regenerateMode: mode ?? "create",
+          parentProposalId: mode === "fork" ? targetId : null,
           boqItems: financial.boqItems,
           financial,
           coverage: {

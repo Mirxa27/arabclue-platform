@@ -32,6 +32,26 @@ export async function POST(req: NextRequest) {
     const locale =
       parsed.data.locale ??
       (session.user.locale === "en" ? "en" : "ar");
+    const regenerateMode = parsed.data.regenerateMode;
+    const targetProposalId = parsed.data.targetProposalId;
+
+    if (regenerateMode && !targetProposalId) {
+      return NextResponse.json(
+        { error: "targetProposalId required for regenerateMode" },
+        { status: 400 }
+      );
+    }
+    if (targetProposalId) {
+      const target = await db.generatedProposal.findFirst({
+        where: { id: targetProposalId, projectId, workspaceId: workspace.id },
+      });
+      if (!target) {
+        return NextResponse.json(
+          { error: "target proposal not found for project" },
+          { status: 404 }
+        );
+      }
+    }
 
     try {
       await assertOnboardingReady(workspace.id);
@@ -120,6 +140,14 @@ export async function POST(req: NextRequest) {
           status: "QUEUED",
           overallProgress: 0,
           agentStates: JSON.stringify(agentStates),
+          configJson: JSON.stringify({
+            locale,
+            workspaceId: workspace.id,
+            userId,
+            projectId: project.id,
+            regenerateMode,
+            targetProposalId: targetProposalId ?? null,
+          }),
         },
       });
       return { conflict: false as const, run: created };
@@ -141,7 +169,12 @@ export async function POST(req: NextRequest) {
       action: AUDIT_ACTIONS.AGENT_RUN,
       resource: "AgentRun",
       resourceId: run.run.id,
-      details: { projectId: project.id, locale },
+      details: {
+        projectId: project.id,
+        locale,
+        regenerateMode: regenerateMode ?? "create",
+        targetProposalId: targetProposalId ?? null,
+      },
     });
 
     void runAgentPipeline({
@@ -150,6 +183,8 @@ export async function POST(req: NextRequest) {
       workspaceId: workspace.id,
       userId,
       locale,
+      regenerateMode,
+      targetProposalId: targetProposalId ?? null,
     }).catch((err) => console.error("[agents/run pipeline]", err));
 
     return NextResponse.json({
