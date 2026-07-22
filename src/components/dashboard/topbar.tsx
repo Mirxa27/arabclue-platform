@@ -35,7 +35,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { ApiAuditLog, ApiDocument, ApiProject } from "@/lib/api-types";
+import type { ApiDocument, ApiProject, ApiNotification } from "@/lib/api-types";
 
 export function DashboardTopbar() {
   const { locale, toggle } = useLocale();
@@ -70,14 +70,14 @@ export function DashboardTopbar() {
     },
   });
 
-  const { data: auditData } = useQuery({
-    queryKey: ["notifications-audit"],
+  const { data: notifData } = useQuery({
+    queryKey: ["notifications"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/audit?limit=8");
-      if (!res.ok) return { logs: [] };
+      const res = await fetch("/api/notifications");
+      if (!res.ok) return { items: [] };
       return res.json();
     },
-    retry: false,
+    refetchInterval: 30_000,
   });
 
   useEffect(() => {
@@ -125,7 +125,7 @@ export function DashboardTopbar() {
     return [...projects, ...docs];
   }, [q, projectsData, docsData]);
 
-  const notifications = (auditData?.logs ?? []) as ApiAuditLog[];
+  const notifications = (notifData?.items ?? []) as ApiNotification[];
 
   return (
     <header className="h-16 shrink-0 border-b border-border bg-card/80 glass backdrop-blur-xl flex items-center gap-3 px-4 lg:px-6 z-30">
@@ -221,19 +221,25 @@ export function DashboardTopbar() {
                 {tr("no_data", locale)}
               </p>
             ) : (
-              notifications.map((log) => (
-                <div
-                  key={log.id}
-                  className="px-3 py-2 border-b border-border/40 text-[11px]"
+              notifications.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  className="w-full text-start px-3 py-2 border-b border-border/40 text-[11px] hover:bg-muted/50"
+                  onClick={() => {
+                    if (n.href?.includes("view=")) {
+                      const v = n.href.split("view=")[1] as DashboardView;
+                      if (v) setView(v);
+                    }
+                  }}
                 >
-                  <div className="font-medium">{log.action}</div>
-                  <div className="text-muted-foreground truncate">
-                    {log.resource ?? "—"} ·{" "}
-                    {new Date(log.createdAt).toLocaleString(
-                      locale === "ar" ? "ar-SA" : "en-US"
-                    )}
+                  <div className="font-medium">
+                    {locale === "ar" ? n.titleAr : n.title}
                   </div>
-                </div>
+                  <div className="text-muted-foreground truncate">
+                    {locale === "ar" ? n.bodyAr : n.body}
+                  </div>
+                </button>
               ))
             )}
           </div>

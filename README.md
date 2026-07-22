@@ -84,7 +84,7 @@ SQLite remains the default for local development only.
 
 ## Billing
 
-Plan quotas (`maxDocuments` / `maxProposals`) are enforced before upload and agent run. Payment collection is **manual ledger** in admin — no Stripe checkout in this cut.
+Self-serve checkout via **MyFatoorah** (`/api/billing/checkout`, callback, webhook). Plan quotas (`maxDocuments` / `maxProposals`) are enforced before upload and agent run. Admin can also manage plans and ledger.
 
 ## Ops notes
 

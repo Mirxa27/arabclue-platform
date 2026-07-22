@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -47,9 +47,12 @@ export function ProposalEditorDialog({
   const qc = useQueryClient();
   const [draftMd, setDraftMd] = useState<string | null>(null);
   const [draftLocale, setDraftLocale] = useState<"ar" | "en" | null>(null);
-  const [mode, setMode] = useState<"edit" | "preview" | "split">("split");
+  const [mode, setMode] = useState<"edit" | "preview" | "split" | "financial">("split");
   const [instruction, setInstruction] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [boqRows, setBoqRows] = useState<
+    { item: string; unit: string; qty: number; unitPrice: number | null; total: number | null }[]
+  >([]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["proposal", proposalId],
@@ -61,18 +64,34 @@ export function ProposalEditorDialog({
     },
   });
 
-  // Reset local draft when opening a different proposal
+  const { data: finData } = useQuery({
+    queryKey: ["proposal-financial", proposalId],
+    enabled: open && !!proposalId,
+    queryFn: async () => {
+      const res = await fetch(`/api/proposals/${proposalId}/financial`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
   if (open && proposalId && proposalId !== activeId) {
     setActiveId(proposalId);
     setDraftMd(null);
     setDraftLocale(null);
     setInstruction("");
+    setBoqRows([]);
   }
   if (!open && activeId) {
     setActiveId(null);
     setDraftMd(null);
     setDraftLocale(null);
   }
+
+  useEffect(() => {
+    if (finData?.forms?.boqItems && Array.isArray(finData.forms.boqItems)) {
+      setBoqRows(finData.forms.boqItems);
+    }
+  }, [finData]);
 
   const markdown = draftMd ?? data?.proposal?.contentMd ?? "";
   const propLocale: "ar" | "en" =
@@ -150,6 +169,54 @@ export function ProposalEditorDialog({
     },
   });
 
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/proposals/${proposalId}/submit`, {
+        method: "POST",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Submit failed");
+      return json;
+    },
+    onSuccess: (json) => {
+      qc.invalidateQueries({ queryKey: ["proposals"] });
+      qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
+      toast({
+        title: locale === "ar" ? "أُرسل للمراجعة" : "Submitted for review",
+        description:
+          json.checklist?.missingRequirements > 0
+            ? locale === "ar"
+              ? `تحذير: ${json.checklist.missingRequirements} متطلبات ناقصة`
+              : `Warning: ${json.checklist.missingRequirements} missing requirements`
+            : undefined,
+      });
+    },
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
+  });
+
+  const saveFinancialMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/proposals/${proposalId}/financial`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ boqItems: boqRows, currency: "SAR" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Save failed");
+      return json;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["proposal-financial", proposalId] });
+      toast({
+        title:
+          locale === "ar"
+            ? "تم حفظ الأسعار (إدخال بشري فقط)"
+            : "Prices saved (human-entered only)",
+      });
+    },
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
+  });
+
   const version = data?.proposal?.version ?? 1;
   const showEdit = mode === "edit" || mode === "split";
   const showPreview = mode === "preview" || mode === "split";
@@ -201,6 +268,14 @@ export function ProposalEditorDialog({
                   <Eye className="size-3" />
                   {tr("proposal_preview", locale)}
                 </Button>
+                <Button
+                  size="sm"
+                  variant={mode === "financial" ? "default" : "ghost"}
+                  className="h-7 text-[11px]"
+                  onClick={() => setMode("financial")}
+                >
+                  {locale === "ar" ? "المالي" : "Financial"}
+                </Button>
               </div>
 
               <Select
@@ -218,6 +293,18 @@ export function ProposalEditorDialog({
 
               <div className="flex-1" />
 
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 text-[11px]"
+                disabled={submitMutation.isPending}
+                onClick={() => submitMutation.mutate()}
+              >
+                {submitMutation.isPending ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : null}
+                {locale === "ar" ? "إرسال للمراجعة" : "Submit for review"}
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
@@ -268,6 +355,114 @@ export function ProposalEditorDialog({
               }
             />
 
+            {mode === "financial" ? (
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  {locale === "ar"
+                    ? "أدخل الأسعار يدوياً فقط. أراب كلاو لا يقترح أو يحسب أسعار العطاء."
+                    : "Enter prices yourself. ArabClue never suggests or calculates bid prices."}
+                </p>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-muted-foreground">
+                      <th className="p-2 text-start">Item</th>
+                      <th className="p-2">Unit</th>
+                      <th className="p-2">Qty</th>
+                      <th className="p-2">Unit price</th>
+                      <th className="p-2">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {boqRows.map((row, i) => (
+                      <tr key={i} className="border-b border-border/40">
+                        <td className="p-1">
+                          <Input
+                            className="h-8 text-xs"
+                            value={row.item}
+                            onChange={(e) => {
+                              const next = [...boqRows];
+                              next[i] = { ...row, item: e.target.value };
+                              setBoqRows(next);
+                            }}
+                          />
+                        </td>
+                        <td className="p-1 w-20">
+                          <Input
+                            className="h-8 text-xs"
+                            value={row.unit}
+                            onChange={(e) => {
+                              const next = [...boqRows];
+                              next[i] = { ...row, unit: e.target.value };
+                              setBoqRows(next);
+                            }}
+                          />
+                        </td>
+                        <td className="p-1 w-20">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs"
+                            value={row.qty}
+                            onChange={(e) => {
+                              const qty = Number(e.target.value) || 0;
+                              const next = [...boqRows];
+                              const unitPrice = row.unitPrice;
+                              next[i] = {
+                                ...row,
+                                qty,
+                                total:
+                                  unitPrice != null
+                                    ? Math.round(unitPrice * qty * 100) / 100
+                                    : null,
+                              };
+                              setBoqRows(next);
+                            }}
+                          />
+                        </td>
+                        <td className="p-1 w-28">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs"
+                            value={row.unitPrice ?? ""}
+                            placeholder="—"
+                            onChange={(e) => {
+                              const unitPrice =
+                                e.target.value === ""
+                                  ? null
+                                  : Number(e.target.value);
+                              const next = [...boqRows];
+                              next[i] = {
+                                ...row,
+                                unitPrice,
+                                total:
+                                  unitPrice != null
+                                    ? Math.round(unitPrice * row.qty * 100) / 100
+                                    : null,
+                              };
+                              setBoqRows(next);
+                            }}
+                          />
+                        </td>
+                        <td className="p-1 w-28 text-center">
+                          {row.total ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <Button
+                  size="sm"
+                  onClick={() => saveFinancialMutation.mutate()}
+                  disabled={saveFinancialMutation.isPending || boqRows.length === 0}
+                >
+                  {saveFinancialMutation.isPending ? (
+                    <Loader2 className="size-3 animate-spin me-1" />
+                  ) : (
+                    <Save className="size-3 me-1" />
+                  )}
+                  {locale === "ar" ? "حفظ الأسعار" : "Save prices"}
+                </Button>
+              </div>
+            ) : (
             <div
               className={cn(
                 "flex-1 min-h-0 overflow-hidden rounded-md border grid gap-0",
@@ -295,6 +490,7 @@ export function ProposalEditorDialog({
                 />
               )}
             </div>
+            )}
           </>
         )}
       </DialogContent>

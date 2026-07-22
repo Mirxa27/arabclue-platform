@@ -202,6 +202,19 @@ export async function runAgentPipeline(opts: {
       findings: entities.evidence,
     });
 
+    // Persist tender requirements matrix (structure + account linking)
+    try {
+      const { persistTenderRequirements } = await import("../requirements");
+      await persistTenderRequirements(
+        project.id,
+        project.workspaceId,
+        entities,
+        combined
+      );
+    } catch (err) {
+      console.warn("[orchestrator] requirements persist failed", err);
+    }
+
     // ─── Agent 2: COMPLIANCE_REGULATORY ───────────────────────────────────
     await mark("COMPLIANCE_REGULATORY", {
       status: "running",
@@ -306,6 +319,20 @@ export async function runAgentPipeline(opts: {
     const past = await db.pastProject.findMany({
       where: { workspaceId: opts.workspaceId },
     });
+    const [libraryItems, staffMembers, methodologies, restrictions] = await Promise.all([
+      db.contentLibraryItem.findMany({
+        where: { workspaceId: opts.workspaceId, approved: true, restricted: false },
+      }),
+      db.staffMember.findMany({
+        where: { workspaceId: opts.workspaceId, active: true },
+      }),
+      db.methodologyAsset.findMany({
+        where: { workspaceId: opts.workspaceId, approved: true },
+      }),
+      db.restriction.findMany({
+        where: { workspaceId: opts.workspaceId, active: true },
+      }),
+    ]);
     const ragDocs: RagDocument[] = [];
     for (const p of past) {
       let embedding: number[] | null = p.embeddingJson
@@ -329,6 +356,41 @@ export async function runAgentPipeline(opts: {
         embedding,
       });
     }
+    for (const item of libraryItems) {
+      ragDocs.push({
+        id: item.id,
+        title: `[Library] ${item.title}`,
+        summary: item.bodyMd.slice(0, 1500),
+        tags: item.tags,
+        embedding: item.embeddingJson
+          ? (JSON.parse(item.embeddingJson) as number[])
+          : null,
+      });
+    }
+    for (const s of staffMembers) {
+      ragDocs.push({
+        id: s.id,
+        title: `[Staff] ${s.name} — ${s.roleTitle}`,
+        summary: [s.cvSummary, s.certifications, s.requirementTags]
+          .filter(Boolean)
+          .join("\n")
+          .slice(0, 1500),
+        tags: s.requirementTags,
+        embedding: s.embeddingJson ? (JSON.parse(s.embeddingJson) as number[]) : null,
+      });
+    }
+    for (const m of methodologies) {
+      ragDocs.push({
+        id: m.id,
+        title: `[Methodology:${m.category}] ${m.title}`,
+        summary: m.bodyMd.slice(0, 1500),
+        tags: m.category,
+        embedding: null,
+      });
+    }
+    const restrictionsText = restrictions
+      .map((r) => `${r.restrictionType}: ${r.text}`)
+      .join("\n");
 
     const queryEmbedding = await embedText(
       sanitizeText(
@@ -471,6 +533,7 @@ export async function runAgentPipeline(opts: {
           : brand?.tagline || "Arabclue",
       vision2030: brand?.vision2030Alignment ?? "thriving-economy",
       locale,
+      restrictions: restrictionsText,
     });
 
     const artifacts = [
@@ -519,6 +582,12 @@ export async function runAgentPipeline(opts: {
         locale,
         contentMd: draft.contentMd,
         artifactsJson: JSON.stringify(artifacts),
+        financialFormsJson: JSON.stringify({
+          boqItems: financial.boqItems,
+          currency: project.currency,
+          updatedAt: new Date().toISOString(),
+          source: "agent_structure_only",
+        }),
         complianceScore: score,
         generatedAt: new Date(),
       },

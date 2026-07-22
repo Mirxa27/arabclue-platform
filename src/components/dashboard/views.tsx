@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { PageHeader, PageSection } from "@/components/patterns";
@@ -11,7 +11,10 @@ import { ComplianceMonitor } from "./compliance-monitor";
 import { AgentWorkflow } from "./agent-workflow";
 import { DocumentMatrix } from "./document-matrix";
 import { VersionHistory } from "./version-history";
-import { BrandSetup } from "./brand-setup";
+import { AccountOnboarding } from "./account-onboarding";
+import { RequirementsMatrix } from "./requirements-matrix";
+import { ReviewsQueue } from "./reviews-queue";
+import { SettingsPanel } from "./settings-panel";
 import { ProposalsList } from "./proposals-list";
 import { ProjectsList } from "./projects-list";
 import { ChartsPanel } from "./charts-panel";
@@ -36,7 +39,10 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   compliance: ComplianceView,
   agents: AgentsView,
   history: HistoryView,
-  brand: BrandView,
+  brand: AccountView,
+  account: AccountView,
+  reviews: ReviewsView,
+  settings: SettingsView,
   billing: BillingView,
   admin_overview: AdminOverviewView,
   admin_ai: AdminAIView,
@@ -86,6 +92,7 @@ function OverviewView() {
         locale={locale}
       />
       <TenderTypeSelector />
+      <OnboardingBanner />
       <StatCards />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 space-y-4">
@@ -142,6 +149,7 @@ function DocumentsView() {
         <div className="xl:col-span-2 space-y-4">
           <FileIngestion />
           <DocumentMatrix />
+          <RequirementsMatrix />
         </div>
         <div className="space-y-4">
           <VersionHistory />
@@ -190,7 +198,8 @@ function ComplianceView() {
         locale={locale}
       />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2">
+        <div className="xl:col-span-2 space-y-4">
+          <RequirementsMatrix />
           <ComplianceMonitor />
         </div>
         <div className="space-y-4">
@@ -247,20 +256,54 @@ function HistoryView() {
   );
 }
 
-function BrandView() {
+function AccountView() {
   const { locale } = useLocale();
   return (
     <PageSection>
       <PageHeader
-        title={tr("nav_brand", locale)}
+        title={tr("nav_account", locale)}
         subtitle={
           locale === "ar"
-            ? "إعداد هوية الشركة والمشاريع السابقة"
-            : "Company identity & past project corpus"
+            ? "قاعدة معرفة الحساب — 10 أقسام قبل توليد العروض"
+            : "Account knowledge base — 10 sections before proposal generation"
         }
         locale={locale}
       />
-      <BrandSetup />
+      <AccountOnboarding />
+    </PageSection>
+  );
+}
+
+function ReviewsView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        title={tr("nav_reviews", locale)}
+        subtitle={
+          locale === "ar"
+            ? "اعتماد العروض الفنية قبل التصدير"
+            : "Approve technical proposals before export"
+        }
+        locale={locale}
+      />
+      <ReviewsQueue />
+    </PageSection>
+  );
+}
+
+function SettingsView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        title={tr("nav_settings", locale)}
+        subtitle={
+          locale === "ar" ? "الملف الشخصي والأمان" : "Profile & security"
+        }
+        locale={locale}
+      />
+      <SettingsPanel />
     </PageSection>
   );
 }
@@ -391,5 +434,41 @@ function AdminAuditView() {
       />
       <AdminAudit />
     </PageSection>
+  );
+}
+
+function OnboardingBanner() {
+  const { locale } = useLocale();
+  const { setView } = useUI();
+  const [ready, setReady] = useState<boolean | null>(null);
+  const [missing, setMissing] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/onboarding")
+      .then((r) => r.json())
+      .then((d) => {
+        setReady(d.readyForProposals === true);
+        setMissing(d.missing ?? []);
+      })
+      .catch(() => setReady(true));
+  }, []);
+
+  if (ready !== false) return null;
+
+  return (
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-3">
+      <span>
+        {locale === "ar"
+          ? `أكمل إعداد الحساب قبل توليد العروض. ناقص: ${missing.join(", ")}`
+          : `Complete account setup before generating proposals. Missing: ${missing.join(", ")}`}
+      </span>
+      <button
+        type="button"
+        className="underline font-medium"
+        onClick={() => setView("account")}
+      >
+        {locale === "ar" ? "فتح الإعداد" : "Open setup"}
+      </button>
+    </div>
   );
 }

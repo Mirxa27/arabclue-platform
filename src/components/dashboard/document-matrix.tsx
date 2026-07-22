@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useLocale } from "@/lib/store";
+import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +59,7 @@ function timeAgo(date: string): string {
 
 export function DocumentMatrix() {
   const { locale } = useLocale();
+  const { setView, setActiveProjectId } = useUI();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [filter, setFilter] = useStateLocal<DocCategory | "ALL">("docFilter", "ALL");
@@ -255,10 +256,10 @@ export function DocumentMatrix() {
                           size="icon"
                           variant="ghost"
                           className="size-7"
-                          title={locale === "ar" ? "عرض الملخص" : "View summary"}
+                          title={locale === "ar" ? "مصفوفة المتطلبات" : "Requirements matrix"}
                           onClick={() => {
-                            const summary = d.parsedSummary || (locale === "ar" ? "لا يوجد ملخص" : "No summary");
-                            window.alert(summary);
+                            if (d.projectId) setActiveProjectId(d.projectId);
+                            setView("compliance");
                           }}
                         >
                           <Eye className="size-3" />

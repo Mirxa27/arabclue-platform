@@ -75,6 +75,10 @@ describe("financial QLR", () => {
     expect(result.quickLiquidityRatio).toBeCloseTo(1.37, 1);
     expect(result.qlrPasses).toBe(true);
     expect(result.boqItems.length).toBeGreaterThanOrEqual(2);
+    for (const line of result.boqItems) {
+      expect(line.unitPrice).toBeNull();
+      expect(line.total).toBeNull();
+    }
   });
 });
 
@@ -216,7 +220,7 @@ describe("bilingual deterministic drafting", () => {
         quickLiquidityRatio: 2,
         qlrPasses: true,
         saudizationPercent: 40,
-        boqItems: [{ item: "Build", unit: "LS", qty: 1, unitPrice: 100, total: 100 }],
+        boqItems: [{ item: "Build", unit: "LS", qty: 1, unitPrice: null, total: null }],
         localContentPreferenceApplied: 0.1,
         notes: ["n"],
       },

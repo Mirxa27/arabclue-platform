@@ -69,22 +69,36 @@ export async function GET() {
   }, "workspaces GET");
 }
 
-// PATCH /api/workspaces — switch active workspace
+// PATCH /api/workspaces — switch active workspace OR update legal profile
 export async function PATCH(req: Request) {
-  return withTenant("session", async ({ session }) => {
-    const parsed = await parseJsonBody(req, workspaceSwitchSchema);
-    if (!parsed.ok) return parsed.response;
+  return withTenant("session", async ({ session, workspace }) => {
+    const body = await req.json().catch(() => ({}));
 
-    const ctx = await setActiveWorkspace(
-      session.user.id,
-      parsed.data.workspaceId
-    );
-    if (!ctx) throw new ApiError("Workspace not found or access denied", 404);
+    if (typeof body.workspaceId === "string" && body.workspaceId) {
+      const ctx = await setActiveWorkspace(session.user.id, body.workspaceId);
+      if (!ctx) throw new ApiError("Workspace not found or access denied", 404);
+      return jsonOk({
+        workspace: ctx.workspace,
+        membershipRole: ctx.membershipRole,
+      });
+    }
 
-    return jsonOk({
-      workspace: ctx.workspace,
-      membershipRole: ctx.membershipRole,
+    // Legal / profile fields (writers only)
+    if (session.user.role === "REVIEWER") {
+      throw new ApiError("Forbidden", 403);
+    }
+
+    const updated = await db.workspace.update({
+      where: { id: workspace.id },
+      data: {
+        ...(body.crNumber !== undefined ? { crNumber: body.crNumber } : {}),
+        ...(body.vatNumber !== undefined ? { vatNumber: body.vatNumber } : {}),
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.nameAr !== undefined ? { nameAr: body.nameAr } : {}),
+      },
     });
+
+    return jsonOk({ workspace: updated });
   }, "workspaces PATCH");
 }
 

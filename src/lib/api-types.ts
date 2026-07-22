@@ -216,3 +216,75 @@ export type AdminOverviewResponse = {
     auditByAction?: ActionCount[];
   };
 };
+
+export type ApiCertificate = {
+  id: string;
+  certType: string;
+  name: string;
+  number?: string | null;
+  issuer?: string | null;
+  issuedAt?: string | null;
+  expiresAt?: string | null;
+  alertDays: number;
+  notes?: string | null;
+};
+
+export type ApiStaffMember = {
+  id: string;
+  name: string;
+  nameAr?: string | null;
+  roleTitle: string;
+  roleTitleAr?: string | null;
+  certifications?: string | null;
+  cvSummary?: string | null;
+  requirementTags?: string[];
+  active: boolean;
+};
+
+export type ApiTenderRequirement = {
+  id: string;
+  text: string;
+  sectionRef?: string | null;
+  pageRef?: string | null;
+  status: string;
+  linkedResourceType?: string | null;
+  linkedResourceId?: string | null;
+  sortOrder: number;
+};
+
+export type ApiProposalReview = {
+  id: string;
+  proposalId: string;
+  stepIndex: number;
+  reviewerId: string;
+  stepRole: string;
+  status: string;
+  comment?: string | null;
+  decidedAt?: string | null;
+  reviewer?: { id: string; name: string; email: string };
+  proposal?: {
+    id: string;
+    title: string;
+    status: string;
+    project?: { id: string; title: string } | null;
+  };
+};
+
+export type ApiNotification = {
+  id: string;
+  type: "CERT_EXPIRY" | "PENDING_REVIEW" | "ONBOARDING" | "INFO";
+  severity: "INFO" | "WARN" | "CRITICAL";
+  title: string;
+  titleAr: string;
+  body: string;
+  bodyAr: string;
+  href?: string;
+  createdAt: string;
+};
+
+export type OnboardingStatusResponse = {
+  readyForProposals: boolean;
+  restrictionsReviewed: boolean;
+  steps: Record<string, boolean>;
+  missing: string[];
+};

@@ -12,7 +12,6 @@ import {
   FileText,
   FileCheck2,
   ShieldCheck,
-  Palette,
   Bot,
   History,
   Building2,
@@ -38,8 +37,10 @@ const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] 
   { view: "compliance", key: "nav_compliance", icon: ShieldCheck },
   { view: "agents", key: "nav_agents", icon: Bot },
   { view: "history", key: "nav_history", icon: History },
-  { view: "brand", key: "nav_brand", icon: Palette },
+  { view: "account", key: "nav_account", icon: Building2 },
+  { view: "reviews", key: "nav_reviews", icon: ScrollText },
   { view: "billing", key: "nav_billing", icon: CreditCard },
+  { view: "settings", key: "nav_settings", icon: Lock },
 ];
 
 const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] = [

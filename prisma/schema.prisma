@@ -42,6 +42,8 @@ model User {
   billingRecords  BillingRecord[]
   paymentCheckouts PaymentCheckout[]
   subscription    Subscription?
+  approvalSteps   ApprovalStep[]
+  proposalReviews ProposalReview[]
 }
 
 model UserSession {
@@ -70,12 +72,22 @@ model Workspace {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  members       WorkspaceMember[]
-  projects      TenderProject[]
-  documents     UploadedDocument[]
-  brandProfiles BrandProfile[]
-  pastProjects  PastProject[]
-  proposals     GeneratedProposal[]
+  members            WorkspaceMember[]
+  projects           TenderProject[]
+  documents          UploadedDocument[]
+  brandProfiles      BrandProfile[]
+  pastProjects       PastProject[]
+  proposals          GeneratedProposal[]
+  certificates       Certificate[]
+  staffMembers       StaffMember[]
+  methodologyAssets  MethodologyAsset[]
+  contentLibrary     ContentLibraryItem[]
+  partnerships       Partnership[]
+  targetSectors      TargetSector[]
+  bidHistoryNotes    BidHistoryNote[]
+  approvalPolicy     ApprovalPolicy?
+  restrictions       Restriction[]
+  onboardingProgress OnboardingProgress?
 }
 
 model WorkspaceMember {
@@ -116,6 +128,7 @@ model TenderProject {
   proposals        GeneratedProposal[]
   agentRuns        AgentRun[]
   complianceChecks ComplianceCheck[]
+  requirements     TenderRequirement[]
 
   @@index([workspaceId])
   @@index([status])
@@ -295,12 +308,15 @@ model GeneratedProposal {
   title         String
   titleAr       String?
   type          String   // TECHNICAL | FINANCIAL | EA_MATRIX | BOQ | COMBINED
-  status        String   @default("DRAFT") // DRAFT | GENERATED | REVIEWED | EXPORTED
+  status        String   @default("DRAFT") // DRAFT | GENERATED | REVIEW | REVIEWED | APPROVED | REJECTED | EXPORTED
   version       Int      @default(1)
   contentMd     String?  // markdown content
   locale        String   @default("ar") // ar | en — generation language
   artifactsJson String?  // JSON: list of {type, filename, downloadPath}
+  financialFormsJson String? // JSON: user-entered BoQ amounts (never AI-filled)
   complianceScore Float? // 0-100
+  submittedAt   DateTime?
+  approvedAt    DateTime?
   generatedAt   DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -309,6 +325,7 @@ model GeneratedProposal {
   project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy     User      @relation(fields: [createdById], references: [id])
   versions      ProposalVersion[]
+  reviews       ProposalReview[]
 
   @@index([workspaceId])
   @@index([projectId])
@@ -516,4 +533,224 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+}
+
+// ─── Account Onboarding Corpus (Phase 1 knowledge base) ──────────────────────
+
+model Certificate {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  certType      String   // ISO | GOSI | VAT | ZAKAT | LICENSE | OTHER
+  name          String
+  number        String?
+  issuer        String?
+  issuedAt      DateTime?
+  expiresAt     DateTime?
+  filePath      String?
+  alertDays     Int      @default(30)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([expiresAt])
+}
+
+model StaffMember {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  name            String
+  nameAr          String?
+  roleTitle       String
+  roleTitleAr     String?
+  certifications  String?
+  cvSummary       String?
+  requirementTags String?  // JSON string[] e.g. ["ISO_27001_LEAD"]
+  embeddingJson   String?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model MethodologyAsset {
+  id          String   @id @default(cuid())
+  workspaceId String
+  category    String   // IMPLEMENTATION | QC | RISK | BCP | OTHER
+  title       String
+  titleAr     String?
+  bodyMd      String
+  approved    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([category])
+}
+
+model ContentLibraryItem {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  title         String
+  titleAr       String?
+  category      String   @default("BOILERPLATE") // BOILERPLATE | DIAGRAM | POLICY | EXCERPT | OTHER
+  bodyMd        String
+  tags          String?
+  restricted    Boolean  @default(false)
+  embeddingJson String?
+  approved      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([category])
+}
+
+model Partnership {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  partnerType String   // JV | SUBCONTRACTOR | OTHER
+  scope       String?
+  docsNote    String?
+  filePath    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model TargetSector {
+  id          String   @id @default(cuid())
+  workspaceId String
+  sector      String   // GOV | HEALTH | FINANCE | ENERGY | TELECOM | OTHER
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, sector])
+  @@index([workspaceId])
+}
+
+model BidHistoryNote {
+  id          String   @id @default(cuid())
+  workspaceId String
+  entityName  String
+  sector      String?
+  outcome     String   // WIN | LOSS | WITHDRAWN
+  notes       String?
+  bidDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model ApprovalPolicy {
+  id          String   @id @default(cuid())
+  workspaceId String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  steps       ApprovalStep[]
+}
+
+model ApprovalStep {
+  id         String   @id @default(cuid())
+  policyId   String
+  stepIndex  Int
+  reviewerId String
+  stepRole   String   @default("TECHNICAL") // TECHNICAL | FINAL
+  createdAt  DateTime @default(now())
+
+  policy     ApprovalPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  reviewer   User           @relation(fields: [reviewerId], references: [id])
+
+  @@unique([policyId, stepIndex])
+  @@index([reviewerId])
+}
+
+model Restriction {
+  id          String   @id @default(cuid())
+  workspaceId String
+  restrictionType String // CONFIDENTIAL_CLAUSE | COMPETITOR_NAME | OTHER
+  text        String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model OnboardingProgress {
+  id                String   @id @default(cuid())
+  workspaceId       String   @unique
+  completedSteps    String   @default("{}") // JSON record of step keys → true
+  restrictionsReviewed Boolean @default(false)
+  readyForProposals Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// ─── Tender Requirements Matrix ──────────────────────────────────────────────
+
+model TenderRequirement {
+  id               String   @id @default(cuid())
+  projectId        String
+  text             String
+  sectionRef       String?
+  pageRef          String?
+  status           String   @default("MISSING") // COVERED | IN_PROGRESS | MISSING
+  linkedResourceType String? // CERTIFICATE | STAFF | PAST_PROJECT | LIBRARY | METHODOLOGY
+  linkedResourceId String?
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project          TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+}
+
+// ─── Proposal Review Workflow ────────────────────────────────────────────────
+
+model ProposalReview {
+  id          String   @id @default(cuid())
+  proposalId  String
+  stepIndex   Int
+  reviewerId  String
+  stepRole    String   @default("TECHNICAL") // TECHNICAL | FINAL
+  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  comment     String?
+  decidedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  proposal    GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  reviewer    User              @relation(fields: [reviewerId], references: [id])
+
+  @@unique([proposalId, stepIndex])
+  @@index([reviewerId])
+  @@index([status])
 }

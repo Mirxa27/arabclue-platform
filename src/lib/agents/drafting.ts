@@ -19,6 +19,7 @@ export async function draftProposal(opts: {
   brandTagline: string;
   vision2030: string;
   locale?: Locale;
+  restrictions?: string;
 }): Promise<{
   contentMd: string;
   provider: string;
@@ -56,9 +57,7 @@ export async function draftProposal(opts: {
     ),
     financialJson: JSON.stringify(opts.financial, null, 2),
     ragContext: opts.technical.ragContext,
-    brandTagline: opts.brandTagline,
-    vision2030: opts.vision2030,
-    locale,
+    restrictions: opts.restrictions,
   });
 
   const result = await generateCompletion(
@@ -149,19 +148,19 @@ ${
 ## 6. الالتزامات التنظيمية (Compliance)
 تم تقييم ${compliant}/${opts.complianceRows.length} ضابطاً بحالة COMPLIANT في مصفوفة الامتثال المُنشأة.
 
-## 7. العرض المالي والتأهيل (Financial & Qualification)
+## 7. هيكل النماذج المالية (Financial Forms Structure)
 - نسبة السيولة السريعة (QLR): ${qlrLabel}
-- تفضيل المحتوى المحلي: ${(opts.financial.localContentPreferenceApplied * 100).toFixed(0)}%
-- بنود جدول الكميات: ${opts.financial.boqItems.length}
+- تفضيل المحتوى المحلي (قاعدة تقييم تنظيمية فقط): ${(opts.financial.localContentPreferenceApplied * 100).toFixed(0)}%
+- بنود جدول الكميات (هيكل فقط — الأسعار يُدخلها العميل): ${opts.financial.boqItems.length}
 
 ${opts.financial.notes.map((n) => `- ${n}`).join("\n")}
 
-### ملخص جدول الكميات
+### ملخص جدول الكميات (أسعار فارغة — يُدخلها فريق العميل)
 | البند | الوحدة | الكمية | السعر | الإجمالي |
 | --- | --- | --- | --- | --- |
 ${opts.financial.boqItems
   .slice(0, 12)
-  .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | ${b.unitPrice} | ${b.total} |`)
+  .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | — | — |`)
   .join("\n")}
 
 ## 8. المواءمة مع رؤية 2030
@@ -212,19 +211,19 @@ ${
 ## 6. Compliance Commitments (الالتزامات التنظيمية)
 ${compliant}/${opts.complianceRows.length} controls assessed COMPLIANT in the generated matrix.
 
-## 7. Financial & Qualification (العرض المالي والتأهيل)
+## 7. Financial Forms Structure (هيكل النماذج المالية)
 - Quick Liquidity Ratio: ${qlrLabel}
-- Local content preference: ${(opts.financial.localContentPreferenceApplied * 100).toFixed(0)}%
-- BoQ lines: ${opts.financial.boqItems.length}
+- Local content preference (regulatory evaluation fact only): ${(opts.financial.localContentPreferenceApplied * 100).toFixed(0)}%
+- BoQ lines (structure only — client enters prices): ${opts.financial.boqItems.length}
 
 ${opts.financial.notes.map((n) => `- ${n}`).join("\n")}
 
-### BoQ Summary
+### BoQ Summary (blank amounts — client-entered)
 | Item | Unit | Qty | Unit Price | Total |
 | --- | --- | --- | --- | --- |
 ${opts.financial.boqItems
   .slice(0, 12)
-  .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | ${b.unitPrice} | ${b.total} |`)
+  .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | — | — |`)
   .join("\n")}
 
 ## 8. Vision 2030 Alignment (المواءمة مع رؤية 2030)

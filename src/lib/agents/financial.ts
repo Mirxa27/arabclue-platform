@@ -47,6 +47,10 @@ export function parseFinancialText(text: string): {
   return { cashEquivalents, accountsReceivable, currentLiabilities, saudizationPercent };
 }
 
+/**
+ * Financial agent: qualification extraction + structure-only BoQ.
+ * Never populates unitPrice/total — prices are human-entered only (product Section 2).
+ */
 export function runFinancialAgent(opts: {
   financialText: string;
   entities: IngestionEntities | null;
@@ -92,31 +96,29 @@ export function runFinancialAgent(opts: {
     );
   }
 
-  const budget = opts.projectBudget && opts.projectBudget > 0 ? opts.projectBudget : 1_000_000;
   const milestones = opts.entities?.milestones ?? [
     { name: "Mobilization", weeks: 2 },
     { name: "Delivery", weeks: 20 },
   ];
-  const weightSum = milestones.reduce((s, m) => s + m.weeks, 0) || 1;
-  const boqItems = milestones.map((m) => {
-    const share = m.weeks / weightSum;
-    const total = Math.round(budget * share * 100) / 100;
-    return {
-      item: m.name,
-      unit: "LS",
-      qty: 1,
-      unitPrice: total,
-      total,
-    };
-  });
 
-  // Add local-content adjusted comparable price note as a BoQ meta line
+  // Structure-only: item / unit / qty — prices always null (client-entered)
+  const boqItems = milestones.map((m) => ({
+    item: m.name,
+    unit: "LS",
+    qty: 1,
+    unitPrice: null as number | null,
+    total: null as number | null,
+  }));
+
   const preference = LOCAL_CONTENT_PRICE_PREFERENCE;
   notes.push(
-    `Local content price preference ${(preference * 100).toFixed(0)}% applied in evaluation narrative (not altering line unit prices).`
+    "BoQ structure generated without prices. Enter unit prices and totals in the financial forms — ArabClue does not price bids."
+  );
+  notes.push(
+    `Regulatory note: Local content / SME evaluation preference is ${(preference * 100).toFixed(0)}% under procurement law (evaluation rule only; not a bid price suggestion).`
   );
   findings.push(
-    `BoQ generated with ${boqItems.length} lines from milestones; budget base ${budget} ${opts.currency ?? "SAR"}`
+    `BoQ structure generated with ${boqItems.length} lines (unitPrice/total blank for client entry)`
   );
 
   return {

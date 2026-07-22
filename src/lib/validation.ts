@@ -107,6 +107,133 @@ export const workspaceInviteSchema = z.object({
   role: z.enum(["ADMIN", "MEMBER"]).default("MEMBER"),
 });
 
+export const certificateSchema = z.object({
+  certType: z.enum(["ISO", "GOSI", "VAT", "ZAKAT", "LICENSE", "OTHER"]),
+  name: z.string().trim().min(1).max(300),
+  number: z.string().trim().max(100).nullable().optional(),
+  issuer: z.string().trim().max(200).nullable().optional(),
+  issuedAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+  filePath: z.string().trim().max(500).nullable().optional(),
+  alertDays: z.number().int().min(1).max(365).optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
+
+export const staffMemberSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  nameAr: z.string().trim().max(200).nullable().optional(),
+  roleTitle: z.string().trim().min(1).max(200),
+  roleTitleAr: z.string().trim().max(200).nullable().optional(),
+  certifications: z.string().trim().max(2000).nullable().optional(),
+  cvSummary: z.string().trim().max(10000).nullable().optional(),
+  requirementTags: z.array(z.string().trim().min(1).max(64)).max(50).optional(),
+  active: z.boolean().optional(),
+});
+
+export const methodologySchema = z.object({
+  category: z.enum(["IMPLEMENTATION", "QC", "RISK", "BCP", "OTHER"]),
+  title: z.string().trim().min(1).max(300),
+  titleAr: z.string().trim().max(300).nullable().optional(),
+  bodyMd: z.string().trim().min(1).max(50000),
+  approved: z.boolean().optional(),
+});
+
+export const libraryItemSchema = z.object({
+  title: z.string().trim().min(1).max(300),
+  titleAr: z.string().trim().max(300).nullable().optional(),
+  category: z
+    .enum(["BOILERPLATE", "DIAGRAM", "POLICY", "EXCERPT", "OTHER"])
+    .optional(),
+  bodyMd: z.string().trim().min(1).max(50000),
+  tags: z.string().trim().max(500).nullable().optional(),
+  restricted: z.boolean().optional(),
+  approved: z.boolean().optional(),
+});
+
+export const partnershipSchema = z.object({
+  name: z.string().trim().min(1).max(300),
+  partnerType: z.enum(["JV", "SUBCONTRACTOR", "OTHER"]),
+  scope: z.string().trim().max(5000).nullable().optional(),
+  docsNote: z.string().trim().max(5000).nullable().optional(),
+  filePath: z.string().trim().max(500).nullable().optional(),
+});
+
+export const targetSectorSchema = z.object({
+  sector: z.enum(["GOV", "HEALTH", "FINANCE", "ENERGY", "TELECOM", "OTHER"]),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
+
+export const bidHistorySchema = z.object({
+  entityName: z.string().trim().min(1).max(300),
+  sector: z
+    .enum(["GOV", "HEALTH", "FINANCE", "ENERGY", "TELECOM", "OTHER"])
+    .nullable()
+    .optional(),
+  outcome: z.enum(["WIN", "LOSS", "WITHDRAWN"]),
+  notes: z.string().trim().max(5000).nullable().optional(),
+  bidDate: z.string().datetime().nullable().optional(),
+});
+
+export const approvalPolicySchema = z.object({
+  steps: z
+    .array(
+      z.object({
+        reviewerId: z.string().min(1),
+        stepRole: z.enum(["TECHNICAL", "FINAL"]).default("TECHNICAL"),
+      })
+    )
+    .min(1)
+    .max(10),
+});
+
+export const restrictionSchema = z.object({
+  restrictionType: z.enum(["CONFIDENTIAL_CLAUSE", "COMPETITOR_NAME", "OTHER"]),
+  text: z.string().trim().min(1).max(2000),
+  active: z.boolean().optional(),
+});
+
+export const onboardingPatchSchema = z.object({
+  restrictionsReviewed: z.boolean().optional(),
+  completedSteps: z.record(z.string(), z.boolean()).optional(),
+});
+
+export const workspaceLegalSchema = z.object({
+  crNumber: z.string().trim().max(64).nullable().optional(),
+  vatNumber: z.string().trim().max(64).nullable().optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+  nameAr: z.string().trim().max(200).nullable().optional(),
+});
+
+export const requirementPatchSchema = z.object({
+  status: z.enum(["COVERED", "IN_PROGRESS", "MISSING"]).optional(),
+  linkedResourceType: z
+    .enum(["CERTIFICATE", "STAFF", "PAST_PROJECT", "LIBRARY", "METHODOLOGY"])
+    .nullable()
+    .optional(),
+  linkedResourceId: z.string().min(1).nullable().optional(),
+});
+
+export const financialFormsSchema = z.object({
+  boqItems: z
+    .array(
+      z.object({
+        item: z.string().trim().min(1).max(500),
+        unit: z.string().trim().min(1).max(32),
+        qty: z.number().positive(),
+        unitPrice: z.number().nonnegative().nullable(),
+        total: z.number().nonnegative().nullable(),
+      })
+    )
+    .min(1)
+    .max(200),
+  currency: z.string().trim().max(8).optional(),
+});
+
+export const reviewDecisionSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED"]),
+  comment: z.string().trim().max(5000).nullable().optional(),
+});
+
 export function zodErrorResponse(error: z.ZodError) {
   return NextResponse.json(
     {

@@ -292,14 +292,20 @@ export async function generateComplianceMatrixXLSX(
 export async function generateBoQXLSX(
   project: TenderProject,
   brand: BrandProfile | null,
-  boqItems?: { item: string; unit: string; qty: number; unitPrice: number; total: number }[]
+  boqItems?: {
+    item: string;
+    unit: string;
+    qty: number;
+    unitPrice: number | null;
+    total: number | null;
+  }[]
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Arabclue";
   wb.created = new Date();
   const ws = wb.addWorksheet("Financial BoQ");
 
-  ws.mergeCells("A1:H1");
+  ws.mergeCells("A1:F1");
   const tc = ws.getCell("A1");
   tc.value = `Financial Bill of Quantities — ${project.title}`;
   tc.font = { size: 14, bold: true, color: { argb: "FFFFFFFF" } };
@@ -314,8 +320,6 @@ export async function generateBoQXLSX(
     "Qty",
     "Unit Price (SAR)",
     "Total (SAR)",
-    "Local Content Pref %",
-    "Eval Comparable (SAR)",
   ];
   headers.forEach((h, i) => {
     const cell = ws.getCell(2, i + 1);
@@ -324,79 +328,60 @@ export async function generateBoQXLSX(
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
   });
 
-  const pref = LOCAL_CONTENT_PRICE_PREFERENCE;
+  // Structure-only defaults — never invent prices from budget
   const items =
     boqItems && boqItems.length > 0
       ? boqItems
       : [
-          {
-            item: "Mobilization & Project Setup",
-            unit: "LS",
-            qty: 1,
-            unitPrice: Math.round((project.budget ?? 1_000_000) * 0.08),
-            total: Math.round((project.budget ?? 1_000_000) * 0.08),
-          },
-          {
-            item: "Design & Architecture",
-            unit: "LS",
-            qty: 1,
-            unitPrice: Math.round((project.budget ?? 1_000_000) * 0.15),
-            total: Math.round((project.budget ?? 1_000_000) * 0.15),
-          },
-          {
-            item: "Build & Implementation",
-            unit: "LS",
-            qty: 1,
-            unitPrice: Math.round((project.budget ?? 1_000_000) * 0.45),
-            total: Math.round((project.budget ?? 1_000_000) * 0.45),
-          },
-          {
-            item: "UAT, Training & Go-Live",
-            unit: "LS",
-            qty: 1,
-            unitPrice: Math.round((project.budget ?? 1_000_000) * 0.2),
-            total: Math.round((project.budget ?? 1_000_000) * 0.2),
-          },
-          {
-            item: "Support & Warranty (12 months)",
-            unit: "LS",
-            qty: 1,
-            unitPrice: Math.round((project.budget ?? 1_000_000) * 0.12),
-            total: Math.round((project.budget ?? 1_000_000) * 0.12),
-          },
+          { item: "Mobilization & Project Setup", unit: "LS", qty: 1, unitPrice: null, total: null },
+          { item: "Design & Architecture", unit: "LS", qty: 1, unitPrice: null, total: null },
+          { item: "Build & Implementation", unit: "LS", qty: 1, unitPrice: null, total: null },
+          { item: "UAT, Training & Go-Live", unit: "LS", qty: 1, unitPrice: null, total: null },
+          { item: "Support & Warranty (12 months)", unit: "LS", qty: 1, unitPrice: null, total: null },
         ];
 
   let row = 3;
   let subtotal = 0;
+  let hasPrices = false;
   items.forEach((it, idx) => {
-    const total = it.total;
-    subtotal += total;
-    const comparable = Math.round(total * (1 - pref) * 100) / 100;
     ws.getCell(row, 1).value = idx + 1;
     ws.getCell(row, 2).value = it.item;
     ws.getCell(row, 3).value = it.unit;
     ws.getCell(row, 4).value = it.qty;
-    ws.getCell(row, 5).value = it.unitPrice;
-    ws.getCell(row, 6).value = total;
-    ws.getCell(row, 7).value = pref * 100;
-    ws.getCell(row, 8).value = comparable;
+    if (it.unitPrice != null) {
+      ws.getCell(row, 5).value = it.unitPrice;
+      hasPrices = true;
+    } else {
+      ws.getCell(row, 5).value = "—";
+    }
+    if (it.total != null) {
+      ws.getCell(row, 6).value = it.total;
+      subtotal += it.total;
+      hasPrices = true;
+    } else {
+      ws.getCell(row, 6).value = "—";
+    }
     row++;
   });
 
-  const vat = Math.round(subtotal * 0.15 * 100) / 100;
-  ws.getCell(row, 2).value = "Subtotal";
-  ws.getCell(row, 6).value = subtotal;
-  row++;
-  ws.getCell(row, 2).value = "VAT 15%";
-  ws.getCell(row, 6).value = vat;
-  row++;
-  ws.getCell(row, 2).value = "Grand Total (SAR)";
-  ws.getCell(row, 2).font = { bold: true };
-  ws.getCell(row, 6).value = subtotal + vat;
-  ws.getCell(row, 6).font = { bold: true };
-  row += 2;
+  if (hasPrices && subtotal > 0) {
+    const vat = Math.round(subtotal * 0.15 * 100) / 100;
+    ws.getCell(row, 2).value = "Subtotal";
+    ws.getCell(row, 6).value = subtotal;
+    row++;
+    ws.getCell(row, 2).value = "VAT 15%";
+    ws.getCell(row, 6).value = vat;
+    row++;
+    ws.getCell(row, 2).value = "Grand Total (SAR)";
+    ws.getCell(row, 2).font = { bold: true };
+    ws.getCell(row, 6).value = subtotal + vat;
+    ws.getCell(row, 6).font = { bold: true };
+    row += 2;
+  } else {
+    row++;
+  }
   ws.getCell(row, 2).value =
-    `Local Content / SME price preference ${(pref * 100).toFixed(0)}% applied for evaluation comparable pricing (Government Tenders and Procurement Law).`;
+    "Prices are client-entered only. ArabClue does not suggest or calculate bid prices. Local content preference is an evaluation rule under the Government Tenders and Procurement Law.";
 
   ws.columns = [
     { width: 10 },
@@ -405,8 +390,6 @@ export async function generateBoQXLSX(
     { width: 8 },
     { width: 16 },
     { width: 14 },
-    { width: 18 },
-    { width: 18 },
   ];
 
   void brand;

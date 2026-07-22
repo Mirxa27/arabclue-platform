@@ -249,6 +249,11 @@ export async function requireWriter() {
   return session;
 }
 
+/** REVIEWER may approve/reject; writers and admins may also act on reviews. */
+export async function requireReviewerAction() {
+  return requireSession();
+}
+
 export function canGrantRole(actorRole: Role, targetRole: Role): boolean {
   if (actorRole === "SUPER_ADMIN") return true;
   if (actorRole === "ADMIN") {

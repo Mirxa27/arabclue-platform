@@ -1,6 +1,7 @@
 /**
  * Runtime safety guardrails for LLM completions.
  * Mirrors AIProviderConfig flags: toxicityFilter, hallucinationGuard, confidenceThreshold, piiFilter.
+ * Enforces product Section 2: no pricing / commercial strategy assistance.
  */
 
 import type { AIProviderConfig } from "@prisma/client";
@@ -9,6 +10,9 @@ export interface LLMMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
+
+export const PRICING_REFUSAL_MESSAGE =
+  "Enter prices in the financial forms; ArabClue does not price bids, suggest discounts, margins, or commercial strategy.";
 
 const TOXIC_PATTERNS: RegExp[] = [
   /\b(kill yourself|kys)\b/i,
@@ -25,6 +29,37 @@ const HALLUCINATION_CUES: RegExp[] = [
   /\b(?:etimad|اعتماد)\s*(?:ref|reference|#)?\s*[:#]?\s*[A-Z0-9-]{12,}\b/i,
 ];
 
+/** Bid pricing / commercial strategy — must refuse (Section 2) */
+const PRICING_INPUT_PATTERNS: RegExp[] = [
+  /\b(suggest|recommend|propose|calculate|compute|set|fill|populate)\b.{0,40}\b(price|pricing|unit\s*price|bid\s*total|discount|margin|markup)\b/i,
+  /\b(price|pricing|unit\s*price|bid\s*total|discount|margin|markup)\b.{0,40}\b(suggest|recommend|propose|calculate|compute)\b/i,
+  /\b(how\s+much\s+should\s+(we|i)\s+(bid|charge|price))\b/i,
+  /\b(commercial\s+strategy|pricing\s+strategy|win\s+price|competitive\s+price)\b/i,
+  /\b(ما\s*هو\s*السعر|اقترح\s*سعر|احسب\s*السعر|هامش\s*الربح|خصم)\b/i,
+  /اقترح\s*سعر/,
+  /احسب\s*السعر/,
+  /ما\s*هو\s*السعر/,
+  /\bwhat\s+(unit\s*)?price\s+should\b/i,
+  /\bfill\s+(in\s+)?(the\s+)?(boq|bill\s+of\s+quantities)\s+(prices|amounts)\b/i,
+];
+
+const PRICING_OUTPUT_PATTERNS: RegExp[] = [
+  /\b(recommended|suggested)\s+(unit\s*)?price\b/i,
+  /\b(you\s+should\s+(bid|price|charge)\s+(at|around)?\s*[\d,]+)\b/i,
+  /\b(margin|markup)\s+(of\s+)?\d+(\.\d+)?\s*%/i,
+  /\b(discount\s+of\s+\d+)\b/i,
+  /\bunit\s*price\s*[:=]\s*[\d,]+(\.\d+)?/i,
+  /\b(نوصي\s*بسعر|السعر\s*المقترح|هامش\s*\d+\s*%)\b/i,
+];
+
+export function detectPricingRequest(text: string): boolean {
+  return PRICING_INPUT_PATTERNS.some((r) => r.test(text));
+}
+
+export function detectPricingSuggestion(text: string): boolean {
+  return PRICING_OUTPUT_PATTERNS.some((r) => r.test(text));
+}
+
 export function applyInputPiiFilter(
   messages: LLMMessage[],
   enabled: boolean
@@ -39,6 +74,22 @@ export function redactPii(text: string): string {
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[REDACTED_EMAIL]")
     .replace(/\b0?5\d{8}\b/g, "[REDACTED_PHONE]")
     .replace(/\b9665\d{8}\b/g, "[REDACTED_PHONE]");
+}
+
+/**
+ * Refuse pricing-related user prompts before model call.
+ */
+export function applyPricingInputGuardrails(
+  messages: LLMMessage[]
+): { allowed: true } | { allowed: false; message: string } {
+  const userText = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content)
+    .join("\n");
+  if (detectPricingRequest(userText)) {
+    return { allowed: false, message: PRICING_REFUSAL_MESSAGE };
+  }
+  return { allowed: true };
 }
 
 function tokenize(text: string): Set<string> {
@@ -68,7 +119,6 @@ export function estimateGroundingConfidence(
     if (ctxTokens.has(t)) overlap++;
   }
   const lexical = overlap / outTokens.size;
-  // Reward structured procurement language even when paraphrased
   const hasVision = /vision\s*2030|رؤية\s*2030/i.test(output);
   const hasProcurement =
     /etimad|اعتماد|nca|pdpl|local content|محتوى محلي|qlr|saudization|سعودة/i.test(
@@ -108,6 +158,15 @@ export function applyOutputGuardrails(
     return { content: "", confidence: 0, rejected: true, reasons: ["empty_output"] };
   }
 
+  if (detectPricingSuggestion(out)) {
+    return {
+      content: PRICING_REFUSAL_MESSAGE,
+      confidence: 0,
+      rejected: true,
+      reasons: ["pricing_guardrail"],
+    };
+  }
+
   if (provider.toxicityFilter && failsToxicityFilter(out)) {
     return {
       content: "",
@@ -120,7 +179,6 @@ export function applyOutputGuardrails(
   if (provider.hallucinationGuard) {
     const grounding = estimateGroundingConfidence(out, messages);
     confidence = Math.min(confidence, grounding + 0.35);
-    // Drop fabricated long Etimad-style refs not present in input
     const ctx = messages.map((m) => m.content).join("\n");
     out = out.replace(
       /\b(?:ETM|ETIMAD|اعتماد)[-_\s]?[A-Z0-9]{8,}\b/gi,

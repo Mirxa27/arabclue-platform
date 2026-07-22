@@ -42,6 +42,7 @@ export interface IngestionEntities {
   sla: { perWeek: number; maxPercent: number; capped?: boolean };
   milestones: { name: string; weeks: number }[];
   evidence: string[];
+  requirements?: TenderRequirementExtract[];
   rawTextExcerpt?: string;
 }
 
@@ -54,6 +55,23 @@ export interface ComplianceMatrixRow {
   remediation?: string | null;
 }
 
+export interface BoqLineItem {
+  item: string;
+  unit: string;
+  qty: number;
+  /** Always null from AI agents — human-entered only */
+  unitPrice: number | null;
+  /** Always null from AI agents — human-entered only */
+  total: number | null;
+}
+
+export interface FinancialFormsData {
+  boqItems: BoqLineItem[];
+  currency?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface FinancialExtract {
   cashEquivalents: number | null;
   accountsReceivable: number | null;
@@ -61,15 +79,36 @@ export interface FinancialExtract {
   quickLiquidityRatio: number | null;
   qlrPasses: boolean | null;
   saudizationPercent: number | null;
-  boqItems: {
-    item: string;
-    unit: string;
-    qty: number;
-    unitPrice: number;
-    total: number;
-  }[];
+  /** Structure-only BoQ — prices always null from agents */
+  boqItems: BoqLineItem[];
   localContentPreferenceApplied: number;
   notes: string[];
+}
+
+export type OnboardingStepKey =
+  | "brand"
+  | "legal"
+  | "trackRecord"
+  | "humanCapital"
+  | "methodologies"
+  | "contentLibrary"
+  | "partnerships"
+  | "sectors"
+  | "approvalChain"
+  | "restrictions";
+
+export type RequirementStatus = "COVERED" | "IN_PROGRESS" | "MISSING";
+export type LinkedResourceType =
+  | "CERTIFICATE"
+  | "STAFF"
+  | "PAST_PROJECT"
+  | "LIBRARY"
+  | "METHODOLOGY";
+
+export interface TenderRequirementExtract {
+  text: string;
+  sectionRef?: string | null;
+  pageRef?: string | null;
 }
 
 export interface TechnicalArchitectOutput {

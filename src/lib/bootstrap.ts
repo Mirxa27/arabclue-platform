@@ -143,9 +143,57 @@ async function runBootstrap() {
   }
 
   await seedAdminData(user.id).catch(() => {});
+  await seedOnboardingDefaults(workspace.id, user.id).catch(() => {});
 
   const brandProfile = workspace.brandProfiles[0];
   return { workspace, brandProfile, user };
+}
+
+/** Ensure required onboarding steps exist so proposal generation can run. */
+export async function seedOnboardingDefaults(
+  workspaceId: string,
+  ownerUserId: string
+) {
+  const policy = await db.approvalPolicy.findUnique({
+    where: { workspaceId },
+    include: { steps: true },
+  });
+  if (!policy) {
+    await db.approvalPolicy.create({
+      data: {
+        workspaceId,
+        steps: {
+          create: {
+            stepIndex: 0,
+            reviewerId: ownerUserId,
+            stepRole: "FINAL",
+          },
+        },
+      },
+    });
+  } else if (policy.steps.length === 0) {
+    await db.approvalStep.create({
+      data: {
+        policyId: policy.id,
+        stepIndex: 0,
+        reviewerId: ownerUserId,
+        stepRole: "FINAL",
+      },
+    });
+  }
+
+  await db.onboardingProgress.upsert({
+    where: { workspaceId },
+    create: {
+      workspaceId,
+      restrictionsReviewed: true,
+      completedSteps: JSON.stringify({ restrictions: true }),
+      readyForProposals: false,
+    },
+    update: {
+      restrictionsReviewed: true,
+    },
+  });
 }
 
 async function seedAdminData(userId: string) {

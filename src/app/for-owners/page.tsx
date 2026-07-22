@@ -20,9 +20,9 @@ const CAPABILITIES = [
     titleEn: "Multi-agent proposal factory",
     titleAr: "مصنع عطاءات متعدد الوكلاء",
     bodyEn:
-      "Orchestrate ingestion, technical drafting, financial BoQ, and compliance checks in one controlled run — tied to an active tender project.",
+      "Orchestrate ingestion, technical drafting, structure-only financial forms, and compliance checks in one controlled run — never bid pricing.",
     bodyAr:
-      "نظّم الاستيعاب والصياغة الفنية والمالية وفحص الامتثال في تشغيل واحد مضبوط — مرتبط بمشروع مناقصة نشط.",
+      "نظّم الاستيعاب والصياغة الفنية وهيكل النماذج المالية وفحص الامتثال في تشغيل واحد — دون تسعير العطاء.",
   },
   {
     icon: ShieldCheck,
@@ -35,12 +35,12 @@ const CAPABILITIES = [
   },
   {
     icon: Users,
-    titleEn: "Role-aware workspace control",
-    titleAr: "تحكم بمساحات العمل حسب الدور",
+    titleEn: "Account knowledge base & approvals",
+    titleAr: "قاعدة معرفة الحساب والاعتماد",
     bodyEn:
-      "Owners invite writers and reviewers, enforce MFA, and keep proposal data scoped to the membership workspace.",
+      "Complete 10-part onboarding (brand, certs, staff, library, restrictions), then route proposals through your approval chain.",
     bodyAr:
-      "يدعو المالكون الكتّاب والمراجعين، ويفرضون المصادقة الثنائية، ويحفظون بيانات العطاء ضمن مساحة العضوية.",
+      "أكمل إعداد الحساب بعشرة أقسام (الهوية، الشهادات، الفريق، المكتبة، القيود)، ثم مرّر العروض عبر سلسلة الاعتماد.",
   },
   {
     icon: BarChart3,
@@ -56,10 +56,10 @@ const CAPABILITIES = [
 const STEPS = [
   {
     n: "01",
-    titleEn: "Create a tender project",
-    titleAr: "أنشئ مشروع مناقصة",
-    bodyEn: "Bind Etimad references, category, budget, and saudization targets.",
-    bodyAr: "اربط مرجع اعتماد والتصنيف والميزانية ومستهدفات السعودة.",
+    titleEn: "Complete account onboarding",
+    titleAr: "أكمل إعداد الحساب",
+    bodyEn: "Brand, certificates, staff, library, approval chain, and restrictions.",
+    bodyAr: "الهوية والشهادات والفريق والمكتبة وسلسلة الاعتماد والقيود.",
   },
   {
     n: "02",
@@ -70,10 +70,10 @@ const STEPS = [
   },
   {
     n: "03",
-    titleEn: "Run, review, export",
-    titleAr: "شغّل، راجع، صدّر",
-    bodyEn: "Edit generated sections, verify compliance, download ZIP/PDF/XLSX artifacts.",
-    bodyAr: "حرّر الأقسام المُنشأة، تحقق من الامتثال، وحمّل مخرجات ZIP وPDF وXLSX.",
+    titleEn: "Draft, approve, export",
+    titleAr: "صغ، اعتمد، صدّر",
+    bodyEn: "Edit technical sections, enter prices yourself, approve, download branded package.",
+    bodyAr: "حرّر الأقسام الفنية، أدخل الأسعار بنفسك، اعتمد، وحمّل الحزمة بعلامتك.",
   },
 ] as const;
 

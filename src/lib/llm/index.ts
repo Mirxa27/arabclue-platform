@@ -5,6 +5,8 @@ import { resolveProviderApiKey } from "../env-settings";
 import {
   applyInputPiiFilter,
   applyOutputGuardrails,
+  applyPricingInputGuardrails,
+  PRICING_REFUSAL_MESSAGE,
   type LLMMessage,
 } from "../guardrails";
 import {
@@ -96,6 +98,19 @@ export async function generateCompletion(
   );
 
   const filteredMessages = applyInputPiiFilter(messages, provider.piiFilter);
+
+  const pricingGate = applyPricingInputGuardrails(filteredMessages);
+  if (!pricingGate.allowed) {
+    return {
+      content: pricingGate.message,
+      provider: provider.provider,
+      model: provider.modelId,
+      tokensUsed: estimateTokens(pricingGate.message),
+      confidence: 1,
+      fallback: false,
+      engine,
+    };
+  }
 
   const finalize = (
     raw: string,

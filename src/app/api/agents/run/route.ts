@@ -10,6 +10,8 @@ import { requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { agentRunBodySchema, parseJsonBody } from "@/lib/validation";
+import { assertOnboardingReady } from "@/lib/onboarding";
+import { ApiError } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -30,6 +32,18 @@ export async function POST(req: NextRequest) {
     const locale =
       parsed.data.locale ??
       (session.user.locale === "en" ? "en" : "ar");
+
+    try {
+      await assertOnboardingReady(workspace.id);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        return NextResponse.json(
+          { error: e.message, code: e.code },
+          { status: e.status }
+        );
+      }
+      throw e;
+    }
 
     try {
       await assertWithinQuota(userId, "proposal");

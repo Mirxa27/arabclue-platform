@@ -51,19 +51,29 @@ export async function GET(
     where: { projectId: proposal.projectId },
   });
 
-  // Pull BoQ + financial metrics from latest completed agent run
+  // Prefer human-entered financial forms; fall back to structure-only agent BoQ
+  let boqItems:
+    | { item: string; unit: string; qty: number; unitPrice: number | null; total: number | null }[]
+    | undefined;
+  let slidesMetrics: SlidesMetrics | undefined;
+
+  if (proposal.financialFormsJson) {
+    try {
+      const forms = JSON.parse(proposal.financialFormsJson);
+      if (Array.isArray(forms.boqItems)) boqItems = forms.boqItems;
+    } catch {
+      /* ignore */
+    }
+  }
+
   const run = await db.agentRun.findFirst({
     where: { projectId: proposal.projectId, status: "COMPLETED" },
     orderBy: { completedAt: "desc" },
   });
-  let boqItems:
-    | { item: string; unit: string; qty: number; unitPrice: number; total: number }[]
-    | undefined;
-  let slidesMetrics: SlidesMetrics | undefined;
   if (run?.finalArtifact) {
     try {
       const fa = JSON.parse(run.finalArtifact);
-      boqItems = fa.boqItems;
+      if (!boqItems) boqItems = fa.boqItems;
       slidesMetrics = fa.slidesMetrics ?? {
         quickLiquidityRatio: fa.financial?.quickLiquidityRatio,
         qlrPasses: fa.financial?.qlrPasses,

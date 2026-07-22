@@ -97,6 +97,9 @@ export async function getTenantContext(userId: string): Promise<TenantContext> {
     data: { activeWorkspaceId: workspace.id },
   });
 
+  const { seedOnboardingDefaults } = await import("./bootstrap");
+  await seedOnboardingDefaults(workspace.id, userId).catch(() => {});
+
   return {
     workspace,
     brandProfile: workspace.brandProfiles[0] ?? null,
