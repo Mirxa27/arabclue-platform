@@ -52,19 +52,31 @@ async function fetchOpenAiCompatibleModels(
     );
   }
   if (!apiKey && provider !== "ollama") {
-    throw new Error("API key missing — configure it in Env Settings first");
+    throw new Error(
+      "API key missing — configure it in Env Settings first"
+    );
   }
 
   const headers: Record<string, string> = { Accept: "application/json" };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-  const res = await fetch(`${base}/models`, {
-    headers,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${base}/models`, {
+      headers,
+      cache: "no-store",
+      signal: AbortSignal.timeout(25_000),
+    });
+  } catch (err) {
+    throw new Error(
+      `Cannot reach ${base}/models (${err instanceof Error ? err.message : "network error"}). Check API Base and outbound network.`
+    );
+  }
   if (!res.ok) {
     const t = await res.text();
-    throw new Error(`Models HTTP ${res.status}: ${t.slice(0, 200)}`);
+    throw new Error(
+      `${provider} models HTTP ${res.status}: ${t.slice(0, 200)}. Verify the API key is valid for this provider.`
+    );
   }
   const data = await res.json();
   const metas = extractModelsFromPayload(data);

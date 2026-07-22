@@ -180,7 +180,8 @@ async function handleModelsPost(body: FetchBody) {
         models: [],
         code: missingKey ? "API_KEY_MISSING" : "UPSTREAM_MODELS_FAILED",
       },
-      { status: missingKey ? 400 : 502 }
+      // Application/config errors — not an infrastructure gateway failure
+      { status: missingKey ? 400 : 422 }
     );
   }
 }

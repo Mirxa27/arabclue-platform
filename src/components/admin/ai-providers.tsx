@@ -656,12 +656,15 @@ function ProviderEditForm({
     }
   };
 
-  // Load cache immediately, then refresh live list from the provider API
+  // Load cached models only — live fetch is explicit (avoids console noise on expand)
   useEffect(() => {
     if (provider.modelsCache?.length) {
       setModels(provider.modelsCache as RemoteModel[]);
     }
-    void fetchModels({ preferCache: false });
+    if (provider.modelsFetchedAt) {
+      setFetchedAt(provider.modelsFetchedAt);
+    }
+    void fetchModels({ preferCache: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider.id]);
 
