@@ -112,6 +112,56 @@ async function fetchAnthropicModels(apiKey: string): Promise<ModelCapability[]> 
 }
 
 /**
+ * Google Generative Language models list (includes Live-capable ids when published).
+ */
+async function fetchGoogleModels(
+  apiBase: string | null,
+  apiKey: string
+): Promise<ModelCapability[]> {
+  const base = (apiBase || defaultApiBase("google")).replace(/\/$/, "");
+  const url = `${base}/models?key=${encodeURIComponent(apiKey)}&pageSize=200`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Google models HTTP ${res.status}: ${t.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const metas = extractModelsFromPayload(data).map((m) => {
+    const name = String(m.name || m.id || m.display_name || "");
+    // Google returns "models/gemini-…" — normalize to bare model id
+    const id = name.replace(/^models\//, "");
+    return { ...m, id };
+  });
+  const ids = sortModelIds(
+    metas
+      .map((m) => m.id)
+      .filter((id): id is string => Boolean(id && String(id).trim()))
+      .map((id) => String(id).trim())
+  );
+  if (ids.length === 0) {
+    throw new Error("Google returned an empty model list");
+  }
+  const byId = new Map(metas.map((m) => [String(m.id || ""), m]));
+  return ids.map((id) => enrichRemoteModel(id, byId.get(id), "google"));
+}
+
+/**
+ * Prefer live/realtime-capable model ids for the VOICE engine list.
+ * Still only from the live remote catalog — never invents ids.
+ */
+export function preferVoiceLiveModels(
+  models: ModelCapability[]
+): ModelCapability[] {
+  const live = models.filter((m) =>
+    /realtime|live|native-audio|voice/i.test(m.id)
+  );
+  return live.length > 0 ? live : models;
+}
+
+/**
  * Fetch live model list from the provider API.
  * Never falls back to a hardcoded catalog.
  */
@@ -119,6 +169,7 @@ export async function fetchLiveProviderModels(opts: {
   provider: string;
   apiBase?: string | null;
   apiKeyEnvKey?: string | null;
+  engine?: string | null;
 }): Promise<FetchModelsResult> {
   const provider = (opts.provider || "openai").toLowerCase();
   const keyEnv = opts.apiKeyEnvKey || defaultApiKeyEnvKey(provider);
@@ -131,12 +182,24 @@ export async function fetchLiveProviderModels(opts: {
     return { models, source: "anthropic", fetchedAt };
   }
 
+  if (provider === "google") {
+    if (!key) throw new Error("Google Generative AI API key missing");
+    let models = await fetchGoogleModels(opts.apiBase ?? null, key);
+    if ((opts.engine || "").toUpperCase() === "VOICE") {
+      models = preferVoiceLiveModels(models);
+    }
+    return { models, source: "google", fetchedAt };
+  }
+
   // ZAI and all OpenAI-compatible gateways: require live /models
-  const models = await fetchOpenAiCompatibleModels(
+  let models = await fetchOpenAiCompatibleModels(
     opts.apiBase ?? null,
     key,
     provider === "zai" ? "openai_compatible" : provider
   );
+  if ((opts.engine || "").toUpperCase() === "VOICE") {
+    models = preferVoiceLiveModels(models);
+  }
   return {
     models,
     source: provider === "ollama" ? "ollama" : "remote",

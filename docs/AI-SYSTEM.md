@@ -17,15 +17,22 @@ Each agent is a **principal tender engineer** role (not a generic chatbot). Craf
 
 ## Voice Platform Copilot (main agent)
 
-Dashboard **Voice Copilot** (`?view=copilot`) is an AI SDK `ToolLoopAgent` that operates the full product for the signed-in user:
+Dashboard **Voice Copilot** (`?view=copilot`) is an AI SDK agent that operates the full product for the signed-in user.
 
-- **Stack:** `ai` + `@ai-sdk/react` (`useChat` + `DefaultChatTransport`), streaming via `createAgentUIStreamResponse` at `POST /api/platform-agent/chat`.
-- **Model:** Vercel AI Gateway when `AI_GATEWAY_API_KEY` / OIDC is present; otherwise the active Admin **DEFAULT** provider (OpenAI-compatible or Anthropic) with the admin-selected live `modelId`.
-- **Voice:** browser Speech Recognition (STT) and Speech Synthesis (TTS); live tool-execution feed so users watch actions as they run.
-- **Tools:** workspace overview, projects CRUD, documents, proposals/contracts, compliance, start/cancel/poll the 6-agent pipeline, reviews, billing status, account/onboarding, admin overview/providers/audit (role-gated), UI navigation hints.
-- **Guardrails:** tenant RBAC, pricing-input refuse (422), constitution instructions (no pricing strategy, no 100% legal certainty, human final author).
+### Modes
 
-Code: `src/lib/agents/platform/*`, `src/components/dashboard/platform-agent-console.tsx`.
+1. **Live voice (preferred)** — OpenAI Realtime API or Gemini Live API speech-to-speech via AI SDK `experimental_useRealtime` + ephemeral tokens.
+   - Configure under **Admin → AI Providers → Voice live (VOICE) engine**.
+   - Presets: **OpenAI Realtime (voice live)** and **Gemini Live (voice live)**.
+   - Admin fetches live model lists (no hardcoded IDs), selects e.g. a `gpt-realtime-*` or Gemini `*-live*` id, activates the connection.
+   - Setup: `GET/POST /api/platform-agent/realtime/setup` (token mint), tools: `POST /api/platform-agent/realtime/tools`.
+2. **Browser mode (fallback)** — Web Speech STT/TTS + `ToolLoopAgent` chat stream at `POST /api/platform-agent/chat` when no VOICE provider is active.
+
+### Guardrails
+
+Tenant RBAC, pricing-input refuse, constitution instructions (no pricing strategy, no 100% legal certainty, human final author).
+
+Code: `src/lib/agents/platform/*`, `src/components/dashboard/platform-agent-console.tsx`, `src/components/dashboard/live-voice-session.tsx`.
 
 ## 18-section proposal package
 

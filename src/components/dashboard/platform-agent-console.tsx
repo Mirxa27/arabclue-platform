@@ -19,8 +19,11 @@ import {
   VolumeX,
   Sparkles,
   Wrench,
+  Radio,
 } from "lucide-react";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
+import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
+import { LiveVoiceSession } from "./live-voice-session";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -68,10 +71,37 @@ export function PlatformAgentConsole() {
   const [interim, setInterim] = useState("");
   const [followView, setFollowView] = useState<DashboardView | null>(null);
   const [followNote, setFollowNote] = useState<string | null>(null);
+  const [liveConfig, setLiveConfig] = useState<VoiceLiveConfigResponse | null>(
+    null
+  );
+  const [mode, setMode] = useState<"live" | "classic">("live");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const spokenIdsRef = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const appliedToolKeys = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/platform-agent/realtime/setup")
+      .then((r) => r.json())
+      .then((data: VoiceLiveConfigResponse) => {
+        if (cancelled) return;
+        setLiveConfig(data);
+        setMode(data.enabled ? "live" : "classic");
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLiveConfig({
+            enabled: false,
+            reason: "Could not load live voice config",
+          });
+          setMode("classic");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const transport = useMemo(
     () =>
@@ -248,13 +278,49 @@ export function PlatformAgentConsole() {
         title={ar ? "وكيل المنصة الصوتي" : "Voice Platform Copilot"}
         subtitle={
           ar
-            ? "تحدث مع الوكيل الرئيسي — يشغّل كل ميزات عرب كلو وأنت تشاهد التنفيذ مباشرة."
-            : "Speak with the main agent — it runs full ArabClue capabilities while you watch live execution."
+            ? "تحدث مع الوكيل الرئيسي — صوت مباشر (OpenAI / Gemini) أو وضع المتصفح، مع تنفيذ مباشر للأدوات."
+            : "Speak with the main agent — OpenAI/Gemini live voice or browser mode, with live tool execution."
         }
         locale={locale}
         badge="none"
       />
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={mode === "live" ? "default" : "outline"}
+          className="gap-1"
+          disabled={!liveConfig?.enabled}
+          onClick={() => setMode("live")}
+        >
+          <Radio className="size-3.5" />
+          {ar ? "مباشر (Live)" : "Live voice"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={mode === "classic" ? "default" : "outline"}
+          onClick={() => setMode("classic")}
+        >
+          {ar ? "وضع المتصفح" : "Browser mode"}
+        </Button>
+        {liveConfig && !liveConfig.enabled && (
+          <span className="text-xs text-muted-foreground max-w-xl">
+            {liveConfig.reason}
+          </span>
+        )}
+        {liveConfig?.enabled && (
+          <Badge variant="secondary" className="font-mono text-[10px]">
+            {liveConfig.provider} · {liveConfig.modelId}
+          </Badge>
+        )}
+      </div>
+
+      {mode === "live" && liveConfig?.enabled ? (
+        <LiveVoiceSession config={liveConfig} />
+      ) : (
+        <>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary" className="gap-1">
           <Sparkles className="size-3" />
@@ -476,6 +542,8 @@ export function PlatformAgentConsole() {
           </Button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

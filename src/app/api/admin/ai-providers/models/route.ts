@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
           provider: row.provider,
           apiBase: row.apiBase,
           apiKeyEnvKey: row.apiKeyEnvKey,
+          engine: row.engine,
         });
         await db.aIProviderConfig.update({
           where: { id: row.id },
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
   let apiBase = body.apiBase ?? null;
   let apiKeyEnvKey = body.apiKeyEnvKey ?? null;
   let providerId = body.providerId ?? null;
+  let engine: string | null = null;
 
   if (providerId) {
     const row = await db.aIProviderConfig.findUnique({
@@ -98,6 +100,7 @@ export async function POST(req: NextRequest) {
     provider = row.provider.toLowerCase();
     apiBase = body.apiBase ?? row.apiBase;
     apiKeyEnvKey = body.apiKeyEnvKey ?? row.apiKeyEnvKey;
+    engine = row.engine;
 
     if (body.cachedOnly) {
       const cached = parseModelsCache(row.modelsCacheJson);
@@ -115,6 +118,7 @@ export async function POST(req: NextRequest) {
       provider,
       apiBase,
       apiKeyEnvKey,
+      engine,
     });
 
     if (providerId) {
