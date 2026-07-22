@@ -3,14 +3,15 @@ import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { requireAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { AI_PROVIDER_PRESETS } from "@/lib/constants";
 import {
   AGENT_ENGINES,
   AGENT_ENGINE_LABELS,
   LLM_PROVIDER_TYPES,
+  PROVIDER_CONNECTION_TEMPLATES,
   defaultApiBase,
   defaultApiKeyEnvKey,
   inferModelCapabilities,
+  parseModelsCache,
 } from "@/lib/llm/model-catalog";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +37,14 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    providers,
-    presets: AI_PROVIDER_PRESETS,
+    providers: providers.map((p) => ({
+      ...p,
+      modelsCache: parseModelsCache(p.modelsCacheJson),
+      modelsFetchedAt: p.modelsFetchedAt?.toISOString() ?? null,
+    })),
+    // Connection templates only — no model IDs
+    presets: PROVIDER_CONNECTION_TEMPLATES,
+    connectionTemplates: PROVIDER_CONNECTION_TEMPLATES,
     engines: AGENT_ENGINES.map((id) => ({
       id,
       label: AGENT_ENGINE_LABELS[id],
@@ -47,7 +54,7 @@ export async function GET() {
   });
 }
 
-// POST /api/admin/ai-providers — create a new provider config
+// POST /api/admin/ai-providers — create a new provider connection
 export async function POST(req: NextRequest) {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -55,7 +62,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
 
   const provider = String(body.provider || "openai_compatible");
-  const modelId = String(body.modelId || "");
+  const modelId = String(body.modelId || "").trim();
   const caps =
     body.contextWindow != null
       ? {
@@ -67,10 +74,30 @@ export async function POST(req: NextRequest) {
           inputCostPer1k: Number(body.inputCostPer1k ?? 0),
           outputCostPer1k: Number(body.outputCostPer1k ?? 0),
         }
-      : inferModelCapabilities(modelId || "gpt-4o");
+      : modelId
+        ? inferModelCapabilities(modelId)
+        : {
+            contextWindow: 128000,
+            maxTokens: 4096,
+            supportsVision: false,
+            supportsJsonMode: true,
+            supportsTools: false,
+            inputCostPer1k: 0,
+            outputCostPer1k: 0,
+          };
 
   const engine = String(body.engine || "DEFAULT");
   const activate = body.isActive === true;
+  if (activate && !modelId) {
+    return NextResponse.json(
+      {
+        error:
+          "Cannot activate a connection without a model. Fetch models and select one first.",
+        code: "model_required",
+      },
+      { status: 400 }
+    );
+  }
 
   if (activate) {
     await db.aIProviderConfig.updateMany({
@@ -79,11 +106,23 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  const modelsCache = parseModelsCache(
+    Array.isArray(body.modelsCache)
+      ? JSON.stringify(body.modelsCache)
+      : body.modelsCacheJson
+  );
+  const modelsFetchedAt =
+    body.modelsFetchedAt != null
+      ? new Date(String(body.modelsFetchedAt))
+      : modelsCache.length > 0
+        ? new Date()
+        : null;
+
   const created = await db.aIProviderConfig.create({
     data: {
-      name: body.name || `${provider} · ${modelId}`,
+      name: body.name || provider,
       provider,
-      modelId: modelId || "gpt-4o",
+      modelId,
       apiBase: body.apiBase ?? (defaultApiBase(provider) || null),
       apiKeyEnvKey:
         body.apiKeyEnvKey ?? (defaultApiKeyEnvKey(provider) || null),
@@ -108,6 +147,9 @@ export async function POST(req: NextRequest) {
       timeoutMs: body.timeoutMs ?? 60000,
       inputCostPer1k: body.inputCostPer1k ?? caps.inputCostPer1k ?? 0.0,
       outputCostPer1k: body.outputCostPer1k ?? caps.outputCostPer1k ?? 0.0,
+      modelsCacheJson:
+        modelsCache.length > 0 ? JSON.stringify(modelsCache) : null,
+      modelsFetchedAt,
     },
   });
 

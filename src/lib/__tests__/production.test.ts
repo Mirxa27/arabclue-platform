@@ -15,6 +15,8 @@ import type { AIProviderConfig } from "@prisma/client";
 import {
   inferModelCapabilities,
   normalizeOpenAiBase,
+  parseModelsCache,
+  requireConfiguredModelId,
   AGENT_ENGINES,
 } from "../llm/model-catalog";
 
@@ -203,14 +205,22 @@ describe("AI model catalog & engines", () => {
     expect(AGENT_ENGINES).toContain("EMBEDDING");
   });
 
-  test("infers vision and context from known model ids", () => {
-    const gpt = inferModelCapabilities("gpt-4o");
-    expect(gpt.supportsVision).toBe(true);
-    expect(gpt.contextWindow).toBeGreaterThanOrEqual(128000);
-
+  test("infers capabilities from heuristics and remote metadata only", () => {
     const embed = inferModelCapabilities("text-embedding-3-small");
     expect(embed.supportsJsonMode).toBe(false);
     expect(embed.contextWindow).toBe(8191);
+
+    const visionNamed = inferModelCapabilities("acme-vision-large");
+    expect(visionNamed.supportsVision).toBe(true);
+
+    const fromMeta = inferModelCapabilities("provider-model-xyz", {
+      supports_vision: true,
+      context_window: 200000,
+      max_output_tokens: 64000,
+    });
+    expect(fromMeta.supportsVision).toBe(true);
+    expect(fromMeta.contextWindow).toBe(200000);
+    expect(fromMeta.maxTokens).toBe(64000);
   });
 
   test("normalizes OpenAI-compatible base URLs to /v1", () => {
@@ -220,5 +230,41 @@ describe("AI model catalog & engines", () => {
     expect(normalizeOpenAiBase("https://api.openai.com/v1/")).toBe(
       "https://api.openai.com/v1"
     );
+    expect(normalizeOpenAiBase("")).toBe("");
+  });
+
+  test("connection templates never embed model ids", async () => {
+    const { PROVIDER_CONNECTION_TEMPLATES } = await import("../llm/model-catalog");
+    for (const t of PROVIDER_CONNECTION_TEMPLATES) {
+      expect((t as { modelId?: string }).modelId).toBeUndefined();
+      expect(t.provider).toBeTruthy();
+    }
+  });
+
+  test("requires configured model id at runtime — no hardcoded fallback", () => {
+    expect(() => requireConfiguredModelId("")).toThrow(/no model selected/i);
+    expect(() => requireConfiguredModelId(null)).toThrow(/no model selected/i);
+    expect(requireConfiguredModelId("live-model-from-provider")).toBe(
+      "live-model-from-provider"
+    );
+  });
+
+  test("parses cached remote model lists", () => {
+    const cached = parseModelsCache(
+      JSON.stringify([
+        {
+          id: "remote-a",
+          contextWindow: 1000,
+          maxTokens: 500,
+          supportsVision: false,
+          supportsJsonMode: true,
+          supportsTools: true,
+        },
+      ])
+    );
+    expect(cached).toHaveLength(1);
+    expect(cached[0]?.id).toBe("remote-a");
+    expect(parseModelsCache(null)).toEqual([]);
+    expect(parseModelsCache("not-json")).toEqual([]);
   });
 });

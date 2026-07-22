@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -66,6 +66,7 @@ export function AdminAIProviders() {
   const [editing, setEditing] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [engineFilter, setEngineFilter] = useState<string>("ALL");
+  const [refreshingAll, setRefreshingAll] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-ai-providers"],
@@ -172,6 +173,41 @@ export function AdminAIProviders() {
 
   const activeCount = Object.values(activeByEngine).filter(Boolean).length;
 
+  const refreshAllModels = async () => {
+    setRefreshingAll(true);
+    try {
+      const res = await fetch("/api/admin/ai-providers/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshAll: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "refresh failed");
+      qc.invalidateQueries({ queryKey: ["admin-ai-providers"] });
+      toast({
+        title:
+          locale === "ar"
+            ? `تم تحديث ${data.okCount} اتصال`
+            : `Refreshed ${data.okCount} connection(s)`,
+        description:
+          data.failCount > 0
+            ? locale === "ar"
+              ? `${data.failCount} فشل — تحقق من المفاتيح و API Base`
+              : `${data.failCount} failed — check API keys and base URLs`
+            : undefined,
+        variant: data.failCount > 0 ? "destructive" : "default",
+      });
+    } catch (err) {
+      toast({
+        title: locale === "ar" ? "فشل التحديث" : "Refresh failed",
+        description: err instanceof Error ? err.message : "",
+        variant: "destructive",
+      });
+    } finally {
+      setRefreshingAll(false);
+    }
+  };
+
   return (
     <Card className="p-0 overflow-hidden border-border/60">
       <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/30">
@@ -199,6 +235,20 @@ export function AdminAIProviders() {
             {activeCount}{" "}
             {locale === "ar" ? "محركات مفعّلة" : "engines active"}
           </Badge>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 text-[11px]"
+            onClick={refreshAllModels}
+            disabled={refreshingAll || providers.length === 0}
+          >
+            {refreshingAll ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3" />
+            )}
+            {locale === "ar" ? "تحديث كل النماذج" : "Refresh all models"}
+          </Button>
           <Dialog open={showAdd} onOpenChange={setShowAdd}>
             <DialogTrigger asChild>
               <Button
@@ -306,8 +356,11 @@ export function AdminAIProviders() {
                       </Badge>
                     </div>
                     <div className="text-[10px] text-muted-foreground font-mono">
-                      {p.provider} · {p.modelId}
+                      {p.provider} · {p.modelId || (locale === "ar" ? "بدون نموذج" : "no model")}
                       {p.apiBase ? ` · ${p.apiBase}` : ""}
+                      {p.modelsFetchedAt
+                        ? ` · fetched ${new Date(p.modelsFetchedAt).toLocaleString()}`
+                        : ""}
                     </div>
                   </div>
                 </div>
@@ -318,7 +371,16 @@ export function AdminAIProviders() {
                       variant="outline"
                       className="h-7 text-[10px] gap-1"
                       onClick={() => activateMutation.mutate(p.id)}
-                      disabled={activateMutation.isPending}
+                      disabled={
+                        activateMutation.isPending || !p.modelId?.trim()
+                      }
+                      title={
+                        !p.modelId?.trim()
+                          ? locale === "ar"
+                            ? "اختر نموذجاً أولاً"
+                            : "Select a model first"
+                          : undefined
+                      }
                     >
                       <Zap className="size-2.5" />
                       {tr("admin_activate", locale)}
@@ -535,7 +597,11 @@ function ProviderEditForm({
     }));
   };
 
-  const fetchModels = async () => {
+  const [fetchedAt, setFetchedAt] = useState<string | null>(
+    provider.modelsFetchedAt ?? null
+  );
+
+  const fetchModels = async (opts?: { preferCache?: boolean }) => {
     setFetchingModels(true);
     try {
       const res = await fetch("/api/admin/ai-providers/models", {
@@ -546,17 +612,28 @@ function ProviderEditForm({
           provider: provider.provider,
           apiBase: form.apiBase,
           apiKeyEnvKey: form.apiKeyEnvKey,
+          cachedOnly: opts?.preferCache === true,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "fetch failed");
+      if (!res.ok && !(data.models?.length > 0)) {
+        throw new Error(data.error || "fetch failed");
+      }
       setModels(data.models ?? []);
-      toast({
-        title:
-          locale === "ar"
-            ? `تم جلب ${data.models?.length ?? 0} نموذج`
-            : `Fetched ${data.models?.length ?? 0} models`,
-      });
+      if (data.fetchedAt) setFetchedAt(data.fetchedAt);
+      if (data.warning) {
+        toast({
+          title: locale === "ar" ? "قائمة مخزّنة" : "Using cached list",
+          description: data.warning,
+        });
+      } else if (!opts?.preferCache) {
+        toast({
+          title:
+            locale === "ar"
+              ? `تم جلب ${data.models?.length ?? 0} نموذج`
+              : `Fetched ${data.models?.length ?? 0} models`,
+        });
+      }
     } catch (err) {
       toast({
         title: locale === "ar" ? "فشل جلب النماذج" : "Model fetch failed",
@@ -567,6 +644,15 @@ function ProviderEditForm({
       setFetchingModels(false);
     }
   };
+
+  // Load cache immediately, then refresh live list from the provider API
+  useEffect(() => {
+    if (provider.modelsCache?.length) {
+      setModels(provider.modelsCache as RemoteModel[]);
+    }
+    void fetchModels({ preferCache: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider.id]);
 
   return (
     <div className="mt-3 pt-3 border-t border-border/60 space-y-3">
@@ -628,13 +714,21 @@ function ProviderEditForm({
 
       <div>
         <div className="flex items-center justify-between mb-1">
-          <Label className="text-[10px]">Model ID</Label>
+          <Label className="text-[10px]">
+            Model ID{" "}
+            {fetchedAt && (
+              <span className="text-muted-foreground font-normal">
+                · {locale === "ar" ? "آخر جلب" : "last fetch"}{" "}
+                {new Date(fetchedAt).toLocaleString()}
+              </span>
+            )}
+          </Label>
           <Button
             type="button"
             size="sm"
             variant="ghost"
             className="h-6 text-[10px] gap-1"
-            onClick={fetchModels}
+            onClick={() => fetchModels({ preferCache: false })}
             disabled={fetchingModels}
           >
             {fetchingModels ? (
@@ -642,33 +736,60 @@ function ProviderEditForm({
             ) : (
               <RefreshCw className="size-3" />
             )}
-            {locale === "ar" ? "جلب النماذج" : "Fetch models"}
+            {locale === "ar" ? "تحديث النماذج" : "Refresh models"}
           </Button>
         </div>
         {models.length > 0 ? (
-          <Select value={form.modelId} onValueChange={(id) => {
-            const m = models.find((x) => x.id === id);
-            if (m) applyModelCaps(m);
-            else setForm({ ...form, modelId: id });
-          }}>
+          <Select
+            value={form.modelId || undefined}
+            onValueChange={(id) => {
+              const m = models.find((x) => x.id === id);
+              if (m) applyModelCaps(m);
+              else setForm({ ...form, modelId: id });
+            }}
+          >
             <SelectTrigger className="h-8 text-xs font-mono">
-              <SelectValue placeholder="Select model" />
+              <SelectValue
+                placeholder={
+                  locale === "ar" ? "اختر نموذجاً من القائمة" : "Select from live list"
+                }
+              />
             </SelectTrigger>
             <SelectContent className="max-h-60">
+              {form.modelId && !models.some((m) => m.id === form.modelId) ? (
+                <SelectItem
+                  value={form.modelId}
+                  className="text-xs font-mono"
+                >
+                  {form.modelId}{" "}
+                  <span className="text-muted-foreground">
+                    ({locale === "ar" ? "محدد سابقاً" : "previously selected"})
+                  </span>
+                </SelectItem>
+              ) : null}
               {models.map((m) => (
                 <SelectItem key={m.id} value={m.id} className="text-xs font-mono">
                   {m.id}
                   {m.supportsVision ? " · vision" : ""}
+                  {/embed/i.test(m.id) ? " · embed" : ""}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         ) : (
-          <Input
-            value={form.modelId}
-            onChange={(e) => setForm({ ...form, modelId: e.target.value })}
-            className="h-8 text-xs font-mono"
-          />
+          <div className="rounded-md border border-dashed border-border/80 px-3 py-2 space-y-1">
+            {form.modelId ? (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                {locale === "ar" ? "المحدد سابقاً:" : "Previously selected:"}{" "}
+                {form.modelId}
+              </p>
+            ) : null}
+            <p className="text-[10px] text-muted-foreground">
+              {locale === "ar"
+                ? "لا توجد قائمة ثابتة — اضبط المفتاح و API Base ثم اضغط «تحديث النماذج»."
+                : "No static catalog — set API key and base URL, then Refresh models."}
+            </p>
+          </div>
         )}
       </div>
 
@@ -880,23 +1001,24 @@ function AddProviderForm({
   const { toast } = useToast();
   const [selectedPreset, setSelectedPreset] = useState(0);
   const [models, setModels] = useState<RemoteModel[]>([]);
+  const [modelsFetchedAt, setModelsFetchedAt] = useState<string | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
 
   const applyPreset = (p: Preset, engineOverride?: string) => ({
     name: String(p.name ?? ""),
     provider: String(p.provider ?? "openai_compatible"),
-    modelId: String(p.modelId ?? ""),
+    modelId: "",
     apiBase: String(p.apiBase ?? ""),
     apiKeyEnvKey: String(p.apiKeyEnvKey ?? ""),
     engine: engineOverride ?? String(p.engine ?? defaultEngine),
-    temperature: Number(p.temperature ?? 0.2),
-    maxTokens: Number(p.maxTokens ?? 4096),
-    contextWindow: Number(p.contextWindow ?? 128000),
-    supportsVision: Boolean(p.supportsVision),
-    supportsJsonMode: p.supportsJsonMode !== false,
-    supportsTools: Boolean(p.supportsTools),
-    inputCostPer1k: Number(p.inputCostPer1k ?? 0),
-    outputCostPer1k: Number(p.outputCostPer1k ?? 0),
+    temperature: 0.2,
+    maxTokens: 4096,
+    contextWindow: 128000,
+    supportsVision: false,
+    supportsJsonMode: true,
+    supportsTools: false,
+    inputCostPer1k: 0,
+    outputCostPer1k: 0,
     isActive: false,
   });
 
@@ -933,6 +1055,8 @@ function AddProviderForm({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "fetch failed");
       setModels(data.models ?? []);
+      setModelsFetchedAt(data.fetchedAt ?? new Date().toISOString());
+      setForm((f) => ({ ...f, modelId: "" }));
       toast({
         title:
           locale === "ar"
@@ -952,12 +1076,26 @@ function AddProviderForm({
 
   const create = useMutation({
     mutationFn: async () => {
+      if (form.isActive && !form.modelId.trim()) {
+        throw new Error(
+          locale === "ar"
+            ? "جلب النماذج واختر نموذجاً قبل التفعيل"
+            : "Fetch models and select one before activating"
+        );
+      }
       const res = await fetch("/api/admin/ai-providers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          modelsCache: models,
+          modelsFetchedAt,
+        }),
       });
-      if (!res.ok) throw new Error("failed");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "failed");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -977,7 +1115,7 @@ function AddProviderForm({
     <div className="space-y-3">
       <div>
         <Label className="text-xs mb-1.5 block">
-          {locale === "ar" ? "اختر قالباً" : "Choose a preset"}
+          {locale === "ar" ? "قالب اتصال (بدون نماذج ثابتة)" : "Connection template (no fixed models)"}
         </Label>
         <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto scrollbar-thin">
           {presets.map((p, i) => (
@@ -987,6 +1125,7 @@ function AddProviderForm({
               onClick={() => {
                 setSelectedPreset(i);
                 setModels([]);
+                setModelsFetchedAt(null);
                 setForm(applyPreset(p, defaultEngine));
               }}
               className={cn(
@@ -998,7 +1137,8 @@ function AddProviderForm({
             >
               <span className="font-medium">{String(p.name ?? "")}</span>
               <span className="text-[10px] text-muted-foreground font-mono">
-                {String(p.provider)} · {String(p.modelId ?? "")}
+                {String(p.provider)}
+                {p.apiBase ? ` · ${String(p.apiBase)}` : ""}
               </span>
             </button>
           ))}
@@ -1090,7 +1230,9 @@ function AddProviderForm({
 
       <div>
         <div className="flex items-center justify-between mb-1">
-          <Label className="text-[10px]">Model ID</Label>
+          <Label className="text-[10px]">
+            {locale === "ar" ? "النموذج (من المزود مباشرة)" : "Model (live from provider)"}
+          </Label>
           <Button
             type="button"
             size="sm"
@@ -1109,36 +1251,45 @@ function AddProviderForm({
         </div>
         {models.length > 0 ? (
           <Select
-            value={form.modelId}
+            value={form.modelId || undefined}
             onValueChange={(id) => {
               const m = models.find((x) => x.id === id);
               if (m) applyModelCaps(m);
-              else setForm({ ...form, modelId: id });
             }}
           >
             <SelectTrigger className="h-8 text-xs font-mono">
-              <SelectValue />
+              <SelectValue
+                placeholder={
+                  locale === "ar" ? "اختر نموذجاً من القائمة" : "Select from live list"
+                }
+              />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {models.map((m) => (
                 <SelectItem key={m.id} value={m.id} className="text-xs font-mono">
                   {m.id}
+                  {m.supportsVision ? " · vision" : ""}
+                  {/embed/i.test(m.id) ? " · embed" : ""}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         ) : (
-          <Input
-            value={form.modelId}
-            onChange={(e) => setForm({ ...form, modelId: e.target.value })}
-            className="h-8 text-xs mt-1 font-mono"
-          />
+          <div className="rounded-md border border-dashed border-border/80 px-3 py-2">
+            <p className="text-[10px] text-muted-foreground">
+              {locale === "ar"
+                ? "لا قائمة ثابتة — اضبط المفتاح و API Base ثم اضغط «جلب النماذج»."
+                : "No static catalog — set API key and base URL, then Fetch models."}
+            </p>
+          </div>
         )}
-        <p className="text-[9px] text-muted-foreground mt-1">
-          {locale === "ar"
-            ? `سياق ${form.contextWindow} · max ${form.maxTokens}${form.supportsVision ? " · رؤية" : ""}`
-            : `Context ${form.contextWindow} · max ${form.maxTokens}${form.supportsVision ? " · vision" : ""}`}
-        </p>
+        {form.modelId ? (
+          <p className="text-[9px] text-muted-foreground mt-1">
+            {locale === "ar"
+              ? `سياق ${form.contextWindow} · max ${form.maxTokens}${form.supportsVision ? " · رؤية" : ""}`
+              : `Context ${form.contextWindow} · max ${form.maxTokens}${form.supportsVision ? " · vision" : ""}`}
+          </p>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-between p-2 rounded-md border border-border/60">
@@ -1149,8 +1300,21 @@ function AddProviderForm({
         </span>
         <Switch
           checked={form.isActive}
-          onCheckedChange={(v) => setForm({ ...form, isActive: v })}
+          onCheckedChange={(v) => {
+            if (v && !form.modelId.trim()) {
+              toast({
+                title:
+                  locale === "ar"
+                    ? "اختر نموذجاً أولاً"
+                    : "Select a model first",
+                variant: "destructive",
+              });
+              return;
+            }
+            setForm({ ...form, isActive: v });
+          }}
           className="scale-75"
+          disabled={!form.modelId.trim()}
         />
       </div>
 
@@ -1158,7 +1322,9 @@ function AddProviderForm({
         size="sm"
         className="w-full gap-1.5"
         onClick={() => create.mutate()}
-        disabled={create.isPending}
+        disabled={
+          create.isPending || (form.isActive && !form.modelId.trim())
+        }
       >
         {create.isPending ? (
           <Loader2 className="size-3.5 animate-spin" />

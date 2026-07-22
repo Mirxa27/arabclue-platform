@@ -12,6 +12,7 @@ import {
 import {
   type AgentEngine,
   normalizeOpenAiBase,
+  requireConfiguredModelId,
 } from "./model-catalog";
 
 export type { LLMMessage };
@@ -153,8 +154,25 @@ export async function generateCompletion(
     const pid = provider.provider.toLowerCase();
 
     if (pid === "zai") {
+      // Prefer OpenAI-compatible path when apiBase is configured (live models)
+      if (provider.apiBase?.trim()) {
+        const content = await callOpenAiCompatible(
+          provider,
+          filteredMessages,
+          temperature,
+          maxTokens
+        );
+        return finalize(
+          content.text,
+          0.92,
+          content.tokensUsed ||
+            estimateTokens(content.text + JSON.stringify(filteredMessages))
+        );
+      }
+      const model = requireConfiguredModelId(provider.modelId);
       const zai = await getZai();
       const completion = await zai.chat.completions.create({
+        model,
         messages: filteredMessages.map((m) => ({
           role: m.role === "system" ? "assistant" : m.role,
           content: m.content,
@@ -271,7 +289,7 @@ async function callOpenAiCompatible(
   if (key) headers.Authorization = `Bearer ${key}`;
 
   const body: Record<string, unknown> = {
-    model: provider.modelId || "gpt-4o",
+    model: requireConfiguredModelId(provider.modelId),
     messages,
     temperature,
     max_tokens: maxTokens,
@@ -336,7 +354,7 @@ async function callAnthropic(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: provider.modelId || "claude-3-5-sonnet-20241022",
+        model: requireConfiguredModelId(provider.modelId),
         max_tokens: maxTokens,
         temperature,
         system: system || undefined,
@@ -432,7 +450,7 @@ export async function embedText(text: string): Promise<number[]> {
             method: "POST",
             headers,
             body: JSON.stringify({
-              model: provider.modelId || "text-embedding-3-small",
+              model: requireConfiguredModelId(provider.modelId),
               input: trimmed,
             }),
           });
@@ -442,27 +460,6 @@ export async function embedText(text: string): Promise<number[]> {
             if (emb?.length) return emb;
           }
         }
-      }
-    }
-
-    // Legacy fallback: bare OpenAI key with default embed model
-    const key = await resolveProviderApiKey("openai", "OPENAI_API_KEY");
-    if (key) {
-      const res = await fetch("https://api.openai.com/v1/embeddings", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "text-embedding-3-small",
-          input: trimmed,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const emb = data.data?.[0]?.embedding as number[] | undefined;
-        if (emb?.length) return emb;
       }
     }
   } catch {

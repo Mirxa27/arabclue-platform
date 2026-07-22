@@ -2,142 +2,155 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { requireAdmin } from "@/lib/auth";
-import { resolveProviderApiKey } from "@/lib/env-settings";
-import {
-  enrichRemoteModel,
-  normalizeOpenAiBase,
-  defaultApiKeyEnvKey,
-} from "@/lib/llm/model-catalog";
+import { parseModelsCache } from "@/lib/llm/model-catalog";
+import { fetchLiveProviderModels } from "@/lib/llm/fetch-models";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type FetchBody = {
   provider?: string;
   apiBase?: string | null;
   apiKeyEnvKey?: string | null;
-  /** When set, load credentials from an existing provider row */
+  /** When set, load credentials from an existing provider row and cache results */
   providerId?: string;
+  /** refresh all configured provider connections */
+  refreshAll?: boolean;
+  /** return cached list only (no network) */
+  cachedOnly?: boolean;
 };
 
 /**
  * POST /api/admin/ai-providers/models
- * Auto-fetch model list from OpenAI-compatible /models (and Anthropic).
+ * Auto-fetch live model list from the provider API and cache on the connection.
+ * Never returns a hardcoded model catalog.
  */
 export async function POST(req: NextRequest) {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await getBootstrapContext();
 
-  const body = (await req.json()) as FetchBody;
+  const body = (await req.json().catch(() => ({}))) as FetchBody;
+
+  if (body.refreshAll) {
+    const rows = await db.aIProviderConfig.findMany({
+      orderBy: { createdAt: "asc" },
+    });
+    const results: Array<{
+      providerId: string;
+      name: string;
+      ok: boolean;
+      count?: number;
+      error?: string;
+      fetchedAt?: string;
+    }> = [];
+
+    for (const row of rows) {
+      try {
+        const live = await fetchLiveProviderModels({
+          provider: row.provider,
+          apiBase: row.apiBase,
+          apiKeyEnvKey: row.apiKeyEnvKey,
+        });
+        await db.aIProviderConfig.update({
+          where: { id: row.id },
+          data: {
+            modelsCacheJson: JSON.stringify(live.models),
+            modelsFetchedAt: new Date(live.fetchedAt),
+          },
+        });
+        results.push({
+          providerId: row.id,
+          name: row.name,
+          ok: true,
+          count: live.models.length,
+          fetchedAt: live.fetchedAt,
+        });
+      } catch (err) {
+        results.push({
+          providerId: row.id,
+          name: row.name,
+          ok: false,
+          error: err instanceof Error ? err.message : "fetch failed",
+        });
+      }
+    }
+
+    return NextResponse.json({
+      refreshed: results,
+      okCount: results.filter((r) => r.ok).length,
+      failCount: results.filter((r) => !r.ok).length,
+    });
+  }
+
   let provider = (body.provider || "openai").toLowerCase();
   let apiBase = body.apiBase ?? null;
   let apiKeyEnvKey = body.apiKeyEnvKey ?? null;
+  let providerId = body.providerId ?? null;
 
-  if (body.providerId) {
+  if (providerId) {
     const row = await db.aIProviderConfig.findUnique({
-      where: { id: body.providerId },
+      where: { id: providerId },
     });
     if (!row) {
       return NextResponse.json({ error: "Provider not found" }, { status: 404 });
     }
     provider = row.provider.toLowerCase();
-    apiBase = row.apiBase;
-    apiKeyEnvKey = row.apiKeyEnvKey;
+    apiBase = body.apiBase ?? row.apiBase;
+    apiKeyEnvKey = body.apiKeyEnvKey ?? row.apiKeyEnvKey;
+
+    if (body.cachedOnly) {
+      const cached = parseModelsCache(row.modelsCacheJson);
+      return NextResponse.json({
+        models: cached,
+        source: cached.length ? "cache" : "empty",
+        fetchedAt: row.modelsFetchedAt?.toISOString() ?? null,
+        cached: true,
+      });
+    }
   }
 
   try {
-    const models = await fetchProviderModels(provider, apiBase, apiKeyEnvKey);
+    const live = await fetchLiveProviderModels({
+      provider,
+      apiBase,
+      apiKeyEnvKey,
+    });
+
+    if (providerId) {
+      await db.aIProviderConfig.update({
+        where: { id: providerId },
+        data: {
+          modelsCacheJson: JSON.stringify(live.models),
+          modelsFetchedAt: new Date(live.fetchedAt),
+        },
+      });
+    }
+
     return NextResponse.json({
-      models: models.map((m) => enrichRemoteModel(m.id)),
-      source: models[0]?.source ?? "remote",
+      models: live.models,
+      source: live.source,
+      fetchedAt: live.fetchedAt,
+      cached: Boolean(providerId),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch models";
+    // Serve last cache on soft failure when providerId present
+    if (providerId) {
+      const row = await db.aIProviderConfig.findUnique({
+        where: { id: providerId },
+      });
+      const cached = parseModelsCache(row?.modelsCacheJson);
+      if (cached.length > 0) {
+        return NextResponse.json({
+          models: cached,
+          source: "cache_stale",
+          fetchedAt: row?.modelsFetchedAt?.toISOString() ?? null,
+          warning: message,
+          cached: true,
+        });
+      }
+    }
     return NextResponse.json({ error: message, models: [] }, { status: 502 });
   }
-}
-
-async function fetchProviderModels(
-  provider: string,
-  apiBase: string | null,
-  apiKeyEnvKey: string | null
-): Promise<Array<{ id: string; source: string }>> {
-  const keyEnv = apiKeyEnvKey || defaultApiKeyEnvKey(provider);
-  const key = await resolveProviderApiKey(provider, keyEnv);
-
-  if (provider === "anthropic") {
-    if (!key) throw new Error("Anthropic API key missing");
-    const res = await fetch("https://api.anthropic.com/v1/models", {
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-      },
-    });
-    if (!res.ok) {
-      const t = await res.text();
-      throw new Error(`Anthropic models HTTP ${res.status}: ${t.slice(0, 160)}`);
-    }
-    const data = await res.json();
-    const list = (data.data ?? data.models ?? []) as Array<{ id?: string }>;
-    return list
-      .map((m) => m.id)
-      .filter((id): id is string => Boolean(id))
-      .map((id) => ({ id, source: "anthropic" }));
-  }
-
-  if (provider === "zai") {
-    // ZAI SDK does not expose a public list endpoint — return catalog defaults
-    return [
-      { id: "glm-4.6", source: "catalog" },
-      { id: "glm-4.5", source: "catalog" },
-      { id: "glm-4", source: "catalog" },
-    ];
-  }
-
-  // OpenAI-compatible: openai, openai_compatible, ollama, azure_openai, mistral
-  const base = normalizeOpenAiBase(
-    apiBase ||
-      (provider === "mistral"
-        ? "https://api.mistral.ai/v1"
-        : provider === "ollama"
-          ? "http://127.0.0.1:11434/v1"
-          : "https://api.openai.com/v1")
-  );
-
-  if (!key && provider !== "ollama") {
-    throw new Error(
-      `API key missing (${keyEnv || "unset"}). Configure the key in Env Settings.`
-    );
-  }
-
-  const headers: Record<string, string> = {};
-  if (key) headers.Authorization = `Bearer ${key}`;
-
-  const res = await fetch(`${base}/models`, { headers });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Models HTTP ${res.status}: ${t.slice(0, 160)}`);
-  }
-  const data = await res.json();
-  const list = (data.data ?? data.models ?? []) as Array<{
-    id?: string;
-    name?: string;
-  }>;
-  const ids = list
-    .map((m) => m.id || m.name)
-    .filter((id): id is string => Boolean(id));
-
-  // Prefer chat / embed models first
-  ids.sort((a, b) => {
-    const score = (id: string) => {
-      const l = id.toLowerCase();
-      if (/embed/.test(l)) return 2;
-      if (/instruct|chat|gpt|claude|mistral|llama|qwen|deepseek|glm/.test(l))
-        return 0;
-      return 1;
-    };
-    return score(a) - score(b) || a.localeCompare(b);
-  });
-
-  return ids.map((id) => ({ id, source: "remote" }));
 }

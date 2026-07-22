@@ -1,7 +1,9 @@
 /**
- * Agent engines that can bind a dedicated LLM provider config.
- * DEFAULT is the fallback for any engine without an active assignment.
+ * LLM provider connection metadata and capability inference.
+ * Model IDs are never hardcoded — they come from live provider /models APIs
+ * (cached per admin connection). Capability defaults use heuristics only.
  */
+
 export const AGENT_ENGINES = [
   "DEFAULT",
   "INGESTION",
@@ -50,73 +52,200 @@ export type ModelCapability = {
   supportsTools: boolean;
   inputCostPer1k?: number;
   outputCostPer1k?: number;
+  ownedBy?: string;
+  displayName?: string;
+  source?: string;
 };
 
-/** Known model defaults — applied when admin selects a model id. */
-const KNOWN_MODELS: ModelCapability[] = [
-  { id: "gpt-4o", contextWindow: 128000, maxTokens: 16384, supportsVision: true, supportsJsonMode: true, supportsTools: true, inputCostPer1k: 0.019, outputCostPer1k: 0.076 },
-  { id: "gpt-4o-mini", contextWindow: 128000, maxTokens: 16384, supportsVision: true, supportsJsonMode: true, supportsTools: true, inputCostPer1k: 0.0006, outputCostPer1k: 0.0024 },
-  { id: "gpt-4.1", contextWindow: 1047576, maxTokens: 32768, supportsVision: true, supportsJsonMode: true, supportsTools: true },
-  { id: "gpt-4.1-mini", contextWindow: 1047576, maxTokens: 32768, supportsVision: true, supportsJsonMode: true, supportsTools: true },
-  { id: "o4-mini", contextWindow: 200000, maxTokens: 100000, supportsVision: true, supportsJsonMode: true, supportsTools: true },
-  { id: "o3-mini", contextWindow: 200000, maxTokens: 100000, supportsVision: false, supportsJsonMode: true, supportsTools: true },
-  { id: "text-embedding-3-small", contextWindow: 8191, maxTokens: 8191, supportsVision: false, supportsJsonMode: false, supportsTools: false },
-  { id: "text-embedding-3-large", contextWindow: 8191, maxTokens: 8191, supportsVision: false, supportsJsonMode: false, supportsTools: false },
-  { id: "claude-3-5-sonnet", contextWindow: 200000, maxTokens: 8192, supportsVision: true, supportsJsonMode: true, supportsTools: true, inputCostPer1k: 0.026, outputCostPer1k: 0.131 },
-  { id: "claude-3-5-haiku", contextWindow: 200000, maxTokens: 8192, supportsVision: true, supportsJsonMode: true, supportsTools: true },
-  { id: "claude-sonnet-4", contextWindow: 200000, maxTokens: 64000, supportsVision: true, supportsJsonMode: true, supportsTools: true },
-  { id: "mistral-large", contextWindow: 128000, maxTokens: 8192, supportsVision: false, supportsJsonMode: true, supportsTools: true },
-  { id: "mistral-small", contextWindow: 32000, maxTokens: 8192, supportsVision: false, supportsJsonMode: true, supportsTools: true },
-  { id: "pixtral", contextWindow: 128000, maxTokens: 8192, supportsVision: true, supportsJsonMode: true, supportsTools: true },
-  { id: "glm-4", contextWindow: 128000, maxTokens: 8192, supportsVision: false, supportsJsonMode: true, supportsTools: false },
-  { id: "deepseek-chat", contextWindow: 64000, maxTokens: 8192, supportsVision: false, supportsJsonMode: true, supportsTools: true },
-  { id: "deepseek-reasoner", contextWindow: 64000, maxTokens: 8192, supportsVision: false, supportsJsonMode: true, supportsTools: false },
-  { id: "llama-3.3", contextWindow: 128000, maxTokens: 8192, supportsVision: false, supportsJsonMode: true, supportsTools: true },
-  { id: "llama3.2-vision", contextWindow: 128000, maxTokens: 8192, supportsVision: true, supportsJsonMode: false, supportsTools: false },
-  { id: "qwen2.5", contextWindow: 128000, maxTokens: 8192, supportsVision: false, supportsJsonMode: true, supportsTools: true },
-  { id: "qwen2-vl", contextWindow: 128000, maxTokens: 8192, supportsVision: true, supportsJsonMode: true, supportsTools: false },
-  { id: "gemma2", contextWindow: 8192, maxTokens: 8192, supportsVision: false, supportsJsonMode: true, supportsTools: false },
+/** Connection templates only — no model IDs (models are auto-fetched). */
+export type ProviderConnectionTemplate = {
+  name: string;
+  provider: LlmProviderType | string;
+  apiBase: string;
+  apiKeyEnvKey: string;
+  engine: AgentEngine;
+};
+
+export const PROVIDER_CONNECTION_TEMPLATES: ProviderConnectionTemplate[] = [
+  {
+    name: "OpenAI",
+    provider: "openai",
+    apiBase: "https://api.openai.com/v1",
+    apiKeyEnvKey: "OPENAI_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "OpenAI Embeddings",
+    provider: "openai",
+    apiBase: "https://api.openai.com/v1",
+    apiKeyEnvKey: "OPENAI_API_KEY",
+    engine: "EMBEDDING",
+  },
+  {
+    name: "Anthropic",
+    provider: "anthropic",
+    apiBase: "https://api.anthropic.com",
+    apiKeyEnvKey: "ANTHROPIC_API_KEY",
+    engine: "DRAFTING",
+  },
+  {
+    name: "Mistral",
+    provider: "mistral",
+    apiBase: "https://api.mistral.ai/v1",
+    apiKeyEnvKey: "MISTRAL_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "OpenAI-Compatible Gateway",
+    provider: "openai_compatible",
+    apiBase: "",
+    apiKeyEnvKey: "OPENAI_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "Ollama (local)",
+    provider: "ollama",
+    apiBase: "http://127.0.0.1:11434/v1",
+    apiKeyEnvKey: "",
+    engine: "DEFAULT",
+  },
+  {
+    name: "OpenRouter",
+    provider: "openai_compatible",
+    apiBase: "https://openrouter.ai/api/v1",
+    apiKeyEnvKey: "OPENROUTER_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "Groq",
+    provider: "openai_compatible",
+    apiBase: "https://api.groq.com/openai/v1",
+    apiKeyEnvKey: "GROQ_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "DeepSeek",
+    provider: "openai_compatible",
+    apiBase: "https://api.deepseek.com/v1",
+    apiKeyEnvKey: "DEEPSEEK_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "Z.AI (OpenAI-compatible)",
+    provider: "zai",
+    apiBase: "",
+    apiKeyEnvKey: "ZAI_API_KEY",
+    engine: "DEFAULT",
+  },
 ];
 
-function matchKnown(modelId: string): ModelCapability | null {
-  const id = modelId.toLowerCase();
-  // exact / prefix / includes, prefer longest match
-  let best: ModelCapability | null = null;
-  for (const m of KNOWN_MODELS) {
-    const mid = m.id.toLowerCase();
-    if (id === mid || id.includes(mid) || mid.includes(id)) {
-      if (!best || m.id.length > best.id.length) best = m;
-    }
-  }
-  return best;
-}
+/** @deprecated use PROVIDER_CONNECTION_TEMPLATES */
+export const AI_PROVIDER_PRESETS = PROVIDER_CONNECTION_TEMPLATES;
 
-/** Infer context window, vision, token limits from model id. */
-export function inferModelCapabilities(modelId: string): ModelCapability {
-  const known = matchKnown(modelId);
-  if (known) {
-    return { ...known, id: modelId };
-  }
-  const id = modelId.toLowerCase();
+export type RemoteModelMeta = {
+  id?: string;
+  name?: string;
+  display_name?: string;
+  owned_by?: string;
+  context_window?: number;
+  context_length?: number;
+  max_model_len?: number;
+  max_tokens?: number;
+  max_output_tokens?: number;
+  max_completion_tokens?: number;
+  supports_vision?: boolean;
+  supports_json_mode?: boolean;
+  supports_tools?: boolean;
+  pricing?: { prompt?: number; completion?: number };
+  architecture?: { modality?: string; input_modalities?: string[] };
+};
+
+/**
+ * Infer capability defaults from a model id / remote metadata.
+ * Uses heuristics only — never a hardcoded model catalog.
+ */
+export function inferModelCapabilities(
+  modelId: string,
+  meta?: RemoteModelMeta | null
+): ModelCapability {
+  const id = (modelId || meta?.id || "").trim();
+  const lower = id.toLowerCase();
+  const isEmbed = /embed|embedding/.test(lower);
+  const modality = [
+    meta?.architecture?.modality ?? "",
+    ...(meta?.architecture?.input_modalities ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
   const supportsVision =
-    /vision|vl|gpt-4o|gpt-4\.1|claude-3|pixtral|gemini/.test(id);
-  const isEmbed = /embed|embedding/.test(id);
+    meta?.supports_vision === true ||
+    /vision|vl\b|pixtral|image|multimodal/.test(lower) ||
+    /image|vision/.test(modality);
+  const contextWindow =
+    meta?.context_window ??
+    meta?.context_length ??
+    meta?.max_model_len ??
+    (isEmbed ? 8191 : /claude|sonnet|opus|haiku/.test(lower) ? 200000 : 128000);
+  const maxTokens =
+    meta?.max_output_tokens ??
+    meta?.max_completion_tokens ??
+    meta?.max_tokens ??
+    (isEmbed ? contextWindow : Math.min(contextWindow, 16384));
+
+  const inputCost =
+    meta?.pricing?.prompt != null
+      ? Number(meta.pricing.prompt) * 1000
+      : undefined;
+  const outputCost =
+    meta?.pricing?.completion != null
+      ? Number(meta.pricing.completion) * 1000
+      : undefined;
+
   return {
-    id: modelId,
-    contextWindow: isEmbed ? 8191 : 128000,
-    maxTokens: isEmbed ? 8191 : 8192,
-    supportsVision,
-    supportsJsonMode: !isEmbed,
-    supportsTools: !isEmbed && !/embed/.test(id),
+    id,
+    displayName: meta?.display_name || meta?.name,
+    ownedBy: meta?.owned_by,
+    contextWindow: Number(contextWindow) || (isEmbed ? 8191 : 128000),
+    maxTokens: Number(maxTokens) || (isEmbed ? 8191 : 8192),
+    supportsVision: Boolean(supportsVision),
+    supportsJsonMode:
+      meta?.supports_json_mode ??
+      (!isEmbed && !/whisper|tts|dall-e|imagen|audio/.test(lower)),
+    supportsTools:
+      meta?.supports_tools ??
+      (!isEmbed && !/whisper|tts|dall-e|imagen|audio|embed/.test(lower)),
+    inputCostPer1k: inputCost,
+    outputCostPer1k: outputCost,
   };
 }
 
-/** Enrich a remote model list entry with catalog capabilities. */
-export function enrichRemoteModel(id: string): ModelCapability & {
-  ownedBy?: string;
-} {
-  const caps = inferModelCapabilities(id);
-  return caps;
+/** Enrich a remote model list entry with inferred capabilities. */
+export function enrichRemoteModel(
+  id: string,
+  meta?: RemoteModelMeta | null,
+  source = "remote"
+): ModelCapability {
+  return { ...inferModelCapabilities(id, meta), source };
+}
+
+export function parseModelsCache(
+  raw: string | null | undefined
+): ModelCapability[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v
+      .map((m) => {
+        if (!m || typeof m !== "object") return null;
+        const id = String((m as ModelCapability).id || "").trim();
+        if (!id) return null;
+        return m as ModelCapability;
+      })
+      .filter((m): m is ModelCapability => Boolean(m));
+  } catch {
+    return [];
+  }
 }
 
 export function defaultApiBase(provider: string): string {
@@ -132,7 +261,8 @@ export function defaultApiBase(provider: string): string {
     case "ollama":
       return "http://127.0.0.1:11434/v1";
     case "openai_compatible":
-      return "https://api.openai.com/v1";
+    case "zai":
+      return "";
     default:
       return "";
   }
@@ -154,18 +284,28 @@ export function defaultApiKeyEnvKey(provider: string): string {
     case "ollama":
       return "";
     default:
-      return "OPENAI_API_KEY";
+      return "";
   }
 }
 
 /** Normalize base URL so chat/completions paths resolve correctly. */
 export function normalizeOpenAiBase(apiBase: string | null | undefined): string {
-  let base = (apiBase || "https://api.openai.com/v1").trim().replace(/\/$/, "");
+  let base = (apiBase || "").trim().replace(/\/$/, "");
+  if (!base) return "";
   if (!base.endsWith("/v1") && !base.includes("/openai/deployments")) {
-    // Ollama & many gateways accept /v1 suffix
     if (!/anthropic\.com/i.test(base)) {
       base = `${base}/v1`;
     }
   }
   return base;
+}
+
+export function requireConfiguredModelId(modelId: string | null | undefined): string {
+  const id = (modelId ?? "").trim();
+  if (!id) {
+    throw new Error(
+      "Provider has no model selected. Admin must Fetch models and choose one."
+    );
+  }
+  return id;
 }

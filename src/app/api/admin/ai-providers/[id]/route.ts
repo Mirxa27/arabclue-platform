@@ -74,6 +74,24 @@ export async function PATCH(
   }
 
   const targetEngine = String(data.engine ?? existing.engine);
+  const nextModelId = String(
+    data.modelId !== undefined ? data.modelId : existing.modelId
+  ).trim();
+  const willBeActive =
+    data.isActive === true ||
+    (data.isActive !== false && existing.isActive);
+
+  // Active connections must always have a selected model from live fetch
+  if (willBeActive && !nextModelId) {
+    return NextResponse.json(
+      {
+        error:
+          "Cannot activate or keep active without a selected model. Fetch models and choose one first.",
+        code: "model_required",
+      },
+      { status: 400 }
+    );
+  }
 
   // Activation is scoped per engine: only one active provider per engine
   if (data.isActive === true) {
@@ -91,7 +109,7 @@ export async function PATCH(
       resource: "AIProviderConfig",
       resourceId: id,
       severity: "WARN",
-      details: { engine: targetEngine },
+      details: { engine: targetEngine, modelId: nextModelId },
     });
   }
 

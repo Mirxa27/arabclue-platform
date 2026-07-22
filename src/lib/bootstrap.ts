@@ -206,31 +206,37 @@ export async function seedOnboardingDefaults(
 async function seedAdminData(userId: string) {
   const providerCount = await db.aIProviderConfig.count();
   if (providerCount === 0) {
-    // Activate one provider per engine (first preset that targets that engine)
-    const activeEngines = new Set<string>();
+    // Seed connection templates only — inactive, no model IDs.
+    // Admin must configure keys, fetch models, select, and activate.
     await db.aIProviderConfig.createMany({
-      data: AI_PROVIDER_PRESETS.map((p, i) => {
-        const engine = p.engine ?? "DEFAULT";
-        const isActive = !activeEngines.has(engine);
-        if (isActive) activeEngines.add(engine);
-        return {
-          ...p,
-          engine,
-          apiKeyEnvKey: p.apiKeyEnvKey || null,
-          isActive,
-          isDefault: i === 0,
-          priority: isActive ? 10 : 0,
-          topP: 0.9,
-          frequencyPenalty: 0.0,
-          presencePenalty: 0.0,
-          confidenceThreshold: 0.85,
-          toxicityFilter: true,
-          piiFilter: true,
-          hallucinationGuard: true,
-          maxRetries: 2,
-          timeoutMs: 60000,
-        };
-      }),
+      data: AI_PROVIDER_PRESETS.map((p, i) => ({
+        name: p.name,
+        provider: p.provider,
+        modelId: "",
+        apiBase: p.apiBase || null,
+        apiKeyEnvKey: p.apiKeyEnvKey || null,
+        engine: p.engine ?? "DEFAULT",
+        isActive: false,
+        isDefault: i === 0,
+        priority: 0,
+        temperature: 0.2,
+        maxTokens: 4096,
+        contextWindow: 128000,
+        supportsVision: false,
+        supportsJsonMode: true,
+        supportsTools: false,
+        topP: 0.9,
+        frequencyPenalty: 0.0,
+        presencePenalty: 0.0,
+        confidenceThreshold: 0.85,
+        toxicityFilter: true,
+        piiFilter: true,
+        hallucinationGuard: true,
+        maxRetries: 2,
+        timeoutMs: 60000,
+        inputCostPer1k: 0,
+        outputCostPer1k: 0,
+      })),
     });
   }
 

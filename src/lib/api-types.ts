@@ -163,6 +163,17 @@ export type ApiAIProvider = {
   outputCostPer1k?: number;
   maxRetries?: number;
   timeoutMs?: number;
+  modelsCache?: Array<{
+    id: string;
+    contextWindow: number;
+    maxTokens: number;
+    supportsVision: boolean;
+    supportsJsonMode: boolean;
+    supportsTools: boolean;
+    inputCostPer1k?: number;
+    outputCostPer1k?: number;
+  }>;
+  modelsFetchedAt?: string | null;
 };
 
 export type ProviderPatch = Partial<{
