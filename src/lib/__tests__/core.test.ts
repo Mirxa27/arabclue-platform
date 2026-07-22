@@ -196,6 +196,56 @@ describe("markdown renderer", () => {
   });
 });
 
+const sampleTechnical = {
+  methodology: [
+    { id: 1, name: "Discover", nameAr: "اكتشاف", rationale: "r" },
+  ],
+  matchedProjects: [] as {
+    id: string;
+    title: string;
+    score: number;
+    why: string;
+    experienceClass: "exact" | "analogous" | "proposed";
+  }[],
+  solutionApproach: "Zero Trust",
+  vision2030Notes: "pillar",
+  deliveryModel: "Hybrid Agile + PMI",
+  governance: "Steering committee",
+  qualityPlan: "QA gates",
+  riskPlan: "Risk register",
+  securityPrivacy: "NCA/PDPL evidence-backed",
+  serviceManagement: "ITIL-aligned",
+  trainingTransition: "KT plan",
+  continuity: "BCP gap-aware",
+  evaluationAlignment: "Technical 70% priority",
+  ragContext: "none",
+};
+
+const sampleCoverage = {
+  rows: [
+    {
+      requirementId: "REQ-001",
+      requirementText: "بناء منصة",
+      sectionRef: "SOW",
+      pageRef: null,
+      status: "PARTIAL" as const,
+      evidenceIds: [],
+      evidenceTitles: [],
+      proposalSection: "Technical Response",
+      responseOutline: "Evidence gap",
+      matchScore: 0.1,
+    },
+  ],
+  coveredCount: 0,
+  partialCount: 1,
+  gapCount: 0,
+  coveragePercent: 50,
+  evaluationWeights: { technical: 70, financial: 30 },
+  missingEvidenceTasks: [],
+  strengths: ["Compliant control PDPL-1"],
+  winStrategyNotes: ["Prioritize technical evaluation weight (70%)"],
+};
+
 describe("bilingual deterministic drafting", () => {
   test("Arabic draft contains Arabic section headings", () => {
     const md = buildDeterministicProposal({
@@ -219,15 +269,7 @@ describe("bilingual deterministic drafting", () => {
           remediation: null,
         },
       ],
-      technical: {
-        methodology: [
-          { id: 1, name: "Discover", nameAr: "اكتشاف", rationale: "r" },
-        ],
-        matchedProjects: [],
-        solutionApproach: "Zero Trust",
-        vision2030Notes: "pillar",
-        ragContext: "none",
-      },
+      technical: sampleTechnical,
       financial: {
         cashEquivalents: 1,
         accountsReceivable: 1,
@@ -241,11 +283,14 @@ describe("bilingual deterministic drafting", () => {
         localContentPreferenceApplied: 10,
         notes: ["n"],
       },
+      coverage: sampleCoverage,
       brandTagline: "Arabclue",
       vision2030: "thriving-economy",
       locale: "ar",
     });
     expect(md).toContain("الملخص التنفيذي");
-    expect(md).toContain("العطاء الفني والمالي");
+    expect(md).toContain("العطاء الفني");
+    expect(md).toContain("مصفوفة تغطية المتطلبات");
+    expect(md).toContain("مواءمة معايير التقييم");
   });
 });

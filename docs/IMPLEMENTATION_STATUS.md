@@ -1,17 +1,17 @@
 # Implementation Status
 
 **Branch:** `cursor/production-completion-ab64`  
-**Verified:** 2026-07-22 (continued pass)
+**Verified:** 2026-07-22 (winning-tender agent craft pass)
 
 ## Quality gates (executed)
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Unit tests | `bun test src/lib/__tests__` | **59 pass, 0 fail** |
+| Unit tests | `bun test src/lib/__tests__` | **62 pass, 0 fail** |
 | Lint | `bun run lint` | **0 errors** (2 pre-existing warnings in settings-panel) |
 | Typecheck | `bunx tsc --noEmit` | **pass** |
-| Build | `bun run build` | **pass** (includes `/api/admin/myfatoorah`, `/api/ready`, `/api/admin/billing/reconcile`) |
-| Migrate | `bunx prisma migrate deploy` | **applied** `20260722150000_payment_webhook_recurring`, `20260722160000_knowledge_eligibility` |
+| Build | `bun run build` | **pass** |
+| Migrate | `bunx prisma migrate deploy` | **applied** prior migrations |
 | Health | `GET /api/health` | liveness `{"ok":true,"service":"arabclue"}` |
 | Readiness | `GET /api/ready` | DB + config checks |
 | Webhook auth | `POST /api/billing/webhook` unsigned | **401** |
@@ -29,6 +29,11 @@
 | Agent validation gate | Wired | Blocking keeps proposal `DRAFT` |
 | Payment reconciliation | Implemented | `POST /api/admin/billing/reconcile` |
 | MyFatoorah | Hardened | Webhook V2, allowlist, amount match, admin panel |
+| Principal-engineer agents | Implemented | `WINNING_TENDER_CRAFT` + Agents 1–5 specialized prompts |
+| Requirement coverage planner | Implemented + tested | `coverage.ts`; matrix in proposal + `finalArtifact` |
+| 18-section proposal package | Implemented + tested | Deterministic + LLM drafting; evaluator-scorable |
+| Experience classes | Implemented | `exact` / `analogous` / `proposed` — no fabrication |
+| Coverage → requirements sync | Implemented | `applyCoveragePlanToRequirements` |
 
 ## Deferred / external
 

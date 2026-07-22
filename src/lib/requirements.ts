@@ -1,5 +1,7 @@
 import { db } from "./db";
 import type { IngestionEntities, LinkedResourceType, RequirementStatus } from "./types";
+import type { CoveragePlan } from "./agents/coverage";
+import { coverageStatusToRequirementStatus } from "./agents/coverage";
 
 type LinkCandidate = {
   type: LinkedResourceType;
@@ -118,6 +120,65 @@ export async function persistTenderRequirements(
 
   await db.tenderRequirement.createMany({ data: rows });
   return rows.length;
+}
+
+/**
+ * Sync coverage-plan statuses onto persisted tender requirements.
+ * Matches by requirement text overlap; remains best-effort.
+ */
+export async function applyCoveragePlanToRequirements(
+  projectId: string,
+  coverage: CoveragePlan
+): Promise<number> {
+  const existing = await db.tenderRequirement.findMany({
+    where: { projectId },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  if (existing.length === 0) {
+    if (coverage.rows.length === 0) return 0;
+    await db.tenderRequirement.createMany({
+      data: coverage.rows.map((r, i) => ({
+        projectId,
+        text: r.requirementText.slice(0, 2000),
+        sectionRef: r.sectionRef,
+        pageRef: r.pageRef,
+        status: coverageStatusToRequirementStatus(r.status) as RequirementStatus,
+        linkedResourceType: null,
+        linkedResourceId: r.evidenceIds[0] ?? null,
+        sortOrder: i,
+      })),
+    });
+    return coverage.rows.length;
+  }
+
+  let updated = 0;
+  for (const row of coverage.rows) {
+    let bestIdx = -1;
+    let bestScore = 0;
+    for (let i = 0; i < existing.length; i++) {
+      const s = scoreMatch(row.requirementText, tokenize(existing[i].text));
+      if (s > bestScore) {
+        bestScore = s;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0 || bestScore < 1) continue;
+    const target = existing[bestIdx];
+    const status = coverageStatusToRequirementStatus(
+      row.status
+    ) as RequirementStatus;
+    await db.tenderRequirement.update({
+      where: { id: target.id },
+      data: {
+        status,
+        linkedResourceId:
+          row.evidenceIds[0] ?? target.linkedResourceId ?? null,
+      },
+    });
+    updated++;
+  }
+  return updated;
 }
 
 function safeJsonArray(raw: string | null): string[] | null {

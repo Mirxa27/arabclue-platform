@@ -1,5 +1,7 @@
 import { generateCompletion } from "../llm";
 import { systemDrafting, draftingUserPrompt } from "./prompts";
+import { LEGAL_DISCLAIMER } from "../procurement-rules";
+import type { CoveragePlan } from "./coverage";
 import type {
   IngestionEntities,
   FinancialExtract,
@@ -16,6 +18,7 @@ export async function draftProposal(opts: {
   complianceRows: ComplianceMatrixRow[];
   technical: TechnicalArchitectOutput & { ragContext: string };
   financial: FinancialExtract;
+  coverage: CoveragePlan;
   brandTagline: string;
   vision2030: string;
   locale?: Locale;
@@ -30,11 +33,36 @@ export async function draftProposal(opts: {
 }> {
   const locale: Locale = opts.locale === "en" ? "en" : "ar";
   const complianceJson = JSON.stringify(
-    opts.complianceRows.slice(0, 40).map((r) => ({
+    opts.complianceRows.slice(0, 50).map((r) => ({
       control: r.controlId,
       status: r.status,
-      evidence: r.evidence.slice(0, 200),
+      sourceCategory: r.sourceCategory,
+      evidence: r.evidence.slice(0, 220),
+      remediation: r.remediation,
     })),
+    null,
+    2
+  );
+
+  const coverageJson = JSON.stringify(
+    {
+      coveragePercent: opts.coverage.coveragePercent,
+      coveredCount: opts.coverage.coveredCount,
+      gapCount: opts.coverage.gapCount,
+      evaluationWeights: opts.coverage.evaluationWeights,
+      winStrategyNotes: opts.coverage.winStrategyNotes,
+      missingEvidenceTasks: opts.coverage.missingEvidenceTasks.slice(0, 15),
+      rows: opts.coverage.rows.slice(0, 40).map((r) => ({
+        id: r.requirementId,
+        text: r.requirementText.slice(0, 200),
+        status: r.status,
+        section: r.proposalSection,
+        evidence: r.evidenceTitles,
+        outline: r.responseOutline,
+        sectionRef: r.sectionRef,
+        pageRef: r.pageRef,
+      })),
+    },
     null,
     2
   );
@@ -43,19 +71,29 @@ export async function draftProposal(opts: {
     projectTitle: opts.projectTitle,
     etimadRef: opts.etimadRef,
     tenderType: opts.tenderTypeName,
-    ingestionJson: JSON.stringify(opts.entities, null, 2),
+    ingestionJson: JSON.stringify(opts.entities, null, 2).slice(0, 8000),
     complianceJson,
     technicalJson: JSON.stringify(
       {
         approach: opts.technical.solutionApproach,
         methodology: opts.technical.methodology,
         matchedProjects: opts.technical.matchedProjects,
+        deliveryModel: opts.technical.deliveryModel,
+        governance: opts.technical.governance,
+        qualityPlan: opts.technical.qualityPlan,
+        riskPlan: opts.technical.riskPlan,
+        securityPrivacy: opts.technical.securityPrivacy,
+        serviceManagement: opts.technical.serviceManagement,
+        trainingTransition: opts.technical.trainingTransition,
+        continuity: opts.technical.continuity,
+        evaluationAlignment: opts.technical.evaluationAlignment,
         vision: opts.technical.vision2030Notes,
       },
       null,
       2
     ),
     financialJson: JSON.stringify(opts.financial, null, 2),
+    coverageJson,
     ragContext: opts.technical.ragContext,
     restrictions: opts.restrictions,
   });
@@ -65,13 +103,15 @@ export async function draftProposal(opts: {
       { role: "system", content: systemDrafting(locale) },
       { role: "user", content: user },
     ],
-    { maxTokens: 6000, temperature: 0.35, engine: "DRAFTING" }
+    { maxTokens: 8192, temperature: 0.28, engine: "DRAFTING" }
   );
 
   let contentMd = result.content?.trim() ?? "";
-  // Strip accidental wrapping fences
   if (contentMd.startsWith("```")) {
-    contentMd = contentMd.replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    contentMd = contentMd
+      .replace(/^```(?:markdown|md)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
   }
   const usedFallback = !contentMd || result.fallback;
   if (usedFallback) {
@@ -88,6 +128,26 @@ export async function draftProposal(opts: {
   };
 }
 
+function coverageTable(coverage: CoveragePlan, locale: Locale): string {
+  const header =
+    locale === "ar"
+      ? "| المعرف | المتطلب | القسم | الأدلة | الحالة |\n| --- | --- | --- | --- | --- |"
+      : "| ID | Requirement | Section | Evidence | Status |\n| --- | --- | --- | --- | --- |";
+  const rows = coverage.rows
+    .slice(0, 40)
+    .map((r) => {
+      const ev =
+        r.evidenceTitles.length > 0
+          ? r.evidenceTitles.slice(0, 2).join("; ")
+          : locale === "ar"
+            ? "— فجوة —"
+            : "— gap —";
+      return `| ${r.requirementId} | ${r.requirementText.replace(/\|/g, "/").slice(0, 120)} | ${r.proposalSection} | ${ev.replace(/\|/g, "/")} | ${r.status} |`;
+    })
+    .join("\n");
+  return `${header}\n${rows}`;
+}
+
 export function buildDeterministicProposal(opts: {
   projectTitle: string;
   etimadRef: string | null;
@@ -96,166 +156,276 @@ export function buildDeterministicProposal(opts: {
   complianceRows: ComplianceMatrixRow[];
   technical: TechnicalArchitectOutput & { ragContext: string };
   financial: FinancialExtract;
+  coverage: CoveragePlan;
   brandTagline: string;
   vision2030: string;
   locale?: Locale;
 }): string {
   const locale: Locale = opts.locale === "en" ? "en" : "ar";
   const e = opts.entities;
+  const c = opts.coverage;
   const compliant = opts.complianceRows.filter((r) => r.status === "COMPLIANT").length;
   const qlr = opts.financial.quickLiquidityRatio;
   const qlrLabel =
     qlr == null
       ? locale === "ar"
-        ? "غير محسوب"
-        : "N/A"
+        ? "غير محسوب — يلزم كشف مالي معتمد"
+        : "N/A — upload approved financial statements"
       : opts.financial.qlrPasses == null
-        ? `${qlr} (threshold not stated in tender)`
+        ? `${qlr} (${opts.financial.qlrFormula ?? "QLR"}; no tender threshold)`
         : `${qlr} (${opts.financial.qlrPasses ? "PASS" : "FAIL"} vs ${opts.financial.qlrThreshold})`;
   const lcPref = opts.financial.localContentPreferenceApplied;
   const lcLabel =
     lcPref == null
       ? locale === "ar"
-        ? "غير مذكور في المناقصة (لا يُفترض تفضيل عام)"
-        : "Not stated in tender (no blanket preference applied)"
-      : `${lcPref}%`;
-  const noraIds =
-    e?.noraPrinciplesFromTender?.map((p) => p.id).join(", ") ||
-    (locale === "ar"
-      ? "لم تُستخرج معرفات NORA من المناقصة"
-      : "No NORA identifiers extracted from tender");
-  const legalNote =
+        ? "غير مذكور في المناقصة"
+        : "Not stated in tender"
+      : `${lcPref}% (tender-stated)`;
+  const gaps = c.missingEvidenceTasks
+    .slice(0, 12)
+    .map((t) => `- ${t}`)
+    .join("\n");
+  const experienceBlock = opts.technical.matchedProjects.length
+    ? opts.technical.matchedProjects
+        .map(
+          (p) =>
+            `- **${p.title}** [${p.experienceClass}] — score ${p.score.toFixed(3)}: ${p.why}`
+        )
+        .join("\n")
+    : locale === "ar"
+      ? "_لا توجد مشاريع معتمدة مطابقة — يُدرج كفجوة أدلة_"
+      : "_No approved matching projects — recorded as evidence gap_";
+
+  const complianceBlock = opts.complianceRows
+    .slice(0, 25)
+    .map(
+      (r) =>
+        `| ${r.controlId} | ${r.title} | ${r.status} | ${r.sourceCategory ?? "—"} | ${(r.evidence ?? "").replace(/\|/g, "/").slice(0, 100)} |`
+    )
+    .join("\n");
+
+  const humanNotice =
     locale === "ar"
-      ? "مصفوفة الامتثال أداة مساعدة للصياغة وليست استشارة قانونية."
-      : "Compliance content is assisted drafting, not legal advice.";
+      ? "مسودة بانتظار اعتماد بشري مخوّل — المستخدم هو المؤلف النهائي."
+      : "Draft pending authorized human approval — user is final author of record.";
 
   if (locale === "ar") {
-    return `# العطاء الفني والمالي — ${opts.projectTitle}
+    return `# العطاء الفني — ${opts.projectTitle}
 
 **العلامة:** ${opts.brandTagline}  
 **مرجع اعتماد:** ${opts.etimadRef ?? "غير متوفر"}  
-**نوع المناقصة:** ${opts.tenderTypeName}
+**نوع المناقصة:** ${opts.tenderTypeName}  
+**تغطية المتطلبات:** ${c.coveragePercent}% (${c.coveredCount} مكتمل / ${c.partialCount} جزئي / ${c.gapCount} فجوة)
 
-## 1. الملخص التنفيذي (Executive Summary)
-يقدّم هذا العطاء استجابة لمتطلبات المناقصة المرفوعة، مع الالتزامات التنظيمية الموثّقة في مصفوفة الامتثال (وليست استشارة قانونية). تُستمد ضوابط NCA وPDPL والمحتوى المحلي ومبادئ NORA فقط من نص المناقصة والأدلة المعتمدة — دون افتراض نسب تفضيل أو معرفات غير موجودة في المصدر.
-${legalNote}
+## 1. الملخص التنفيذي
+يقدّم هذا العطاء استجابة منظّمة وفق مصفوفة تغطية المتطلبات، مع أولوية الوزن الفني (${c.evaluationWeights.technical}%). تُستخدم exclusively الأدلة المعتمدة لدى المستأجر ونص المناقصة.
+نقاط القوة: ${c.strengths.slice(0, 3).join("؛ ") || "قيد استكمال الأدلة"}
+${LEGAL_DISCLAIMER}
+${humanNotice}
 
-## 2. فهم المشروع (Project Understanding)
-${e?.scope ?? "نطاق العمل كما ورد في كراسة الشروط والمواصفات المرفوعة."}
+## 2. فهم المشروع
+${e?.scope ?? "نطاق العمل كما ورد في كراسة الشروط المرفوعة."}
 
 | البند | القيمة |
 | --- | --- |
-| التقييم الفني | ${e?.evaluation.technical ?? 70}% |
-| التقييم المالي | ${e?.evaluation.financial ?? 30}% |
-| غرامة التأخير (من نص المناقصة) | ${e?.sla.perWeek ?? "—"}% أسبوعياً (حد أقصى ${e?.sla.maxPercent ?? "—"}%) |
-| معرفات NORA المستخرجة | ${noraIds} |
+| الوزن الفني | ${c.evaluationWeights.technical}% |
+| الوزن المالي | ${c.evaluationWeights.financial}% |
+| غرامة التأخير (نص المناقصة) | ${e?.sla.perWeek ?? "—"}% / أسبوع (حد ${e?.sla.maxPercent ?? "—"}%) |
 
-## 3. منهجية التنفيذ (Execution Methodology)
-${opts.technical.methodology
-  .map((m) => `### ${m.id}. ${m.nameAr} (${m.name})\n${m.rationale}`)
-  .join("\n\n")}
+## 3. مواءمة معايير التقييم
+${opts.technical.evaluationAlignment}
 
-## 4. نهج الحل (Solution Approach)
+استراتيجية التوثيق (بدون تسعير):
+${c.winStrategyNotes.map((n) => `- ${n}`).join("\n")}
+
+## 4. مصفوفة تغطية المتطلبات
+${coverageTable(c, "ar")}
+
+### مهام استكمال الأدلة
+${gaps || "- لا توجد فجوات مسجّلة في الاستخراج الحالي"}
+
+## 5. منهجية التنفيذ
+${opts.technical.methodology.map((m) => `### ${m.id}. ${m.nameAr}\n${m.rationale}`).join("\n\n")}
+
+## 6. المعمارية ونموذج التسليم
 ${opts.technical.solutionApproach}
 
-## 5. الخبرات ذات الصلة (Relevant Experience)
-${
-  opts.technical.matchedProjects
-    .map((p) => `- **${p.title}** — درجة ${p.score.toFixed(3)}: ${p.why}`)
-    .join("\n") || "_لا توجد مشاريع سابقة مطابقة بدرجة كافية_"
-}
+**نموذج التسليم:** ${opts.technical.deliveryModel}
 
-## 6. الالتزامات التنظيمية (Compliance)
-تم تقييم ${compliant}/${opts.complianceRows.length} ضابطاً بحالة COMPLIANT في مصفوفة الامتثال المُنشأة.
+## 7. الحوكمة والجودة
+**الحوكمة:** ${opts.technical.governance}
 
-## 7. هيكل النماذج المالية (Financial Forms Structure)
-- نسبة السيولة السريعة (QLR): ${qlrLabel}
-- تفضيل المحتوى المحلي (قاعدة تقييم تنظيمية فقط عند ذكرها في المناقصة): ${lcLabel}
-- بنود جدول الكميات (هيكل فقط — الأسعار يُدخلها العميل): ${opts.financial.boqItems.length}
+**الجودة:** ${opts.technical.qualityPlan}
+
+## 8. إدارة المخاطر
+${opts.technical.riskPlan}
+
+## 9. الأمن والخصوصية
+${opts.technical.securityPrivacy}
+
+## 10. اتفاقيات مستوى الخدمة وإدارة الخدمة
+${opts.technical.serviceManagement}
+
+## 11. الفريق والمؤهلات
+تُدرج مؤهلات الفريق فقط من أدلة الكوادر المعتمدة في قاعدة المعرفة. أي نقص يُسجَّل كمهمة استكمال.
+
+## 12. الخبرات ذات الصلة
+${experienceBlock}
+
+تصنيف الخبرة: exact = تطابق مباشر من دليل معتمد؛ analogous = خبرة مشابهة؛ proposed = نهج مقترح دون ادّعاء إنجاز سابق.
+
+## 13. الالتزامات التنظيمية
+ضوابط COMPLIANT: ${compliant}/${opts.complianceRows.length}
+
+| الضابط | العنوان | الحالة | فئة المصدر | الدليل |
+| --- | --- | --- | --- | --- |
+${complianceBlock}
+
+${LEGAL_DISCLAIMER}
+
+## 14. التدريب والانتقال والاستمرارية
+**التدريب والانتقال:** ${opts.technical.trainingTransition}
+
+**الاستمرارية:** ${opts.technical.continuity}
+
+## 15. هيكل النماذج المالية
+- QLR: ${qlrLabel}
+- تفضيل المحتوى المحلي: ${lcLabel}
+- بنود BoQ (هيكل فقط): ${opts.financial.boqItems.length}
 
 ${opts.financial.notes.map((n) => `- ${n}`).join("\n")}
 
-### ملخص جدول الكميات (أسعار فارغة — يُدخلها فريق العميل)
 | البند | الوحدة | الكمية | السعر | الإجمالي |
 | --- | --- | --- | --- | --- |
 ${opts.financial.boqItems
-  .slice(0, 12)
+  .slice(0, 20)
   .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | — | — |`)
   .join("\n")}
 
-## 8. المواءمة مع رؤية 2030
-${opts.technical.vision2030Notes}
-ملاحظة العلامة التجارية: ${opts.vision2030}
+## 16. الافتراضات والاستثناءات والتوضيحات
+- الأسعار والتعبئة التجارية من مسؤولية الفريق التجاري المعتمد لدى العميل فقط.
+- أي متطلب بحالة GAP/NEEDS_USER_INPUT يتطلب دليلاً معتمداً قبل التسليم النهائي.
+- المحتوى التنظيمي ليس استشارة قانونية.
 
-## 9. الخاتمة
-نؤكد التزامنا الكامل بمتطلبات اعتماد والمعايير السعودية، وجاهزيتنا للتنفيذ وفق الجدول الزمني المتفق عليه.
+## 17. المواءمة مع رؤية 2030
+${opts.technical.vision2030Notes}
+ملاحظة العلامة: ${opts.vision2030}
+
+## 18. الخاتمة
+نؤكد جاهزية المسودة للمراجعة البشرية والاعتماد الداخلي قبل أي تقديم رسمي.
+${humanNotice}
 
 ---
-*أُنشئ بواسطة أراب كلاو · محتوى الامتثال ليس استشارة قانونية · إقامة البيانات وفق سياسة المستأجر والمنصة*
+*أراب كلاو — صياغة مساعدة عالية الدقة · المؤلف النهائي هو المستخدم*
 `;
   }
 
-  return `# Technical & Financial Proposal — ${opts.projectTitle}
+  return `# Technical Proposal — ${opts.projectTitle}
 
 **Brand:** ${opts.brandTagline}  
 **Etimad Ref:** ${opts.etimadRef ?? "N/A"}  
-**Tender Type:** ${opts.tenderTypeName}
+**Tender Type:** ${opts.tenderTypeName}  
+**Requirement coverage:** ${c.coveragePercent}% (${c.coveredCount} covered / ${c.partialCount} partial / ${c.gapCount} gaps)
 
-## 1. Executive Summary (الملخص التنفيذي)
-This proposal responds to the uploaded tender requirements. Regulatory commitments are limited to evidence-backed compliance matrix rows (assisted drafting, not legal advice). NCA, PDPL, local-content mechanisms, and NORA identifiers are used only when present in the tender or approved sources — no blanket preference percentages or invented principle IDs.
-${legalNote}
+## 1. Executive Summary
+This package is organized as an evaluator-scorable technical response prioritizing the technical evaluation weight (${c.evaluationWeights.technical}%). All factual claims are limited to tender text and approved tenant evidence.
+Strengths: ${c.strengths.slice(0, 3).join("; ") || "Pending additional approved evidence"}
+${LEGAL_DISCLAIMER}
+${humanNotice}
 
-## 2. Project Understanding (فهم المشروع)
+## 2. Project Understanding
 ${e?.scope ?? "Scope as defined in the uploaded conditions booklet."}
 
 | Item | Value |
 | --- | --- |
-| Technical evaluation | ${e?.evaluation.technical ?? 70}% |
-| Financial evaluation | ${e?.evaluation.financial ?? 30}% |
-| SLA penalty (from tender text) | ${e?.sla.perWeek ?? "—"}% / week (max ${e?.sla.maxPercent ?? "—"}%) |
-| NORA identifiers extracted | ${noraIds} |
+| Technical evaluation weight | ${c.evaluationWeights.technical}% |
+| Financial evaluation weight | ${c.evaluationWeights.financial}% |
+| SLA penalty (tender clause) | ${e?.sla.perWeek ?? "—"}% / week (max ${e?.sla.maxPercent ?? "—"}%) |
 
-## 3. Execution Methodology (منهجية التنفيذ)
-${opts.technical.methodology
-  .map((m) => `### ${m.id}. ${m.name} (${m.nameAr})\n${m.rationale}`)
-  .join("\n\n")}
+## 3. Evaluation Alignment
+${opts.technical.evaluationAlignment}
 
-## 4. Solution Approach (نهج الحل)
+Documentation strategy (no pricing):
+${c.winStrategyNotes.map((n) => `- ${n}`).join("\n")}
+
+## 4. Requirement Coverage Matrix
+${coverageTable(c, "en")}
+
+### Evidence completion tasks
+${gaps || "- No extraction-time gaps recorded"}
+
+## 5. Execution Methodology
+${opts.technical.methodology.map((m) => `### ${m.id}. ${m.name} (${m.nameAr})\n${m.rationale}`).join("\n\n")}
+
+## 6. Solution Architecture & Delivery Model
 ${opts.technical.solutionApproach}
 
-## 5. Relevant Experience (الخبرات ذات الصلة)
-${
-  opts.technical.matchedProjects
-    .map((p) => `- **${p.title}** — score ${p.score.toFixed(3)}: ${p.why}`)
-    .join("\n") || "_No ranked past projects_"
-}
+**Delivery model:** ${opts.technical.deliveryModel}
 
-## 6. Compliance Commitments (الالتزامات التنظيمية)
-${compliant}/${opts.complianceRows.length} controls assessed COMPLIANT in the generated matrix.
+## 7. Governance & Quality
+**Governance:** ${opts.technical.governance}
 
-## 7. Financial Forms Structure (هيكل النماذج المالية)
-- Quick Liquidity Ratio: ${qlrLabel}
-- Local content preference (regulatory evaluation fact only when tender-stated): ${lcLabel}
-- BoQ lines (structure only — client enters prices): ${opts.financial.boqItems.length}
+**Quality:** ${opts.technical.qualityPlan}
+
+## 8. Risk Management
+${opts.technical.riskPlan}
+
+## 9. Security & Privacy Response
+${opts.technical.securityPrivacy}
+
+## 10. SLA & Service Management
+${opts.technical.serviceManagement}
+
+## 11. Team & Qualifications
+Staff qualifications are drawn only from approved active staff evidence in the tenant knowledge base. Shortfalls are listed as completion tasks.
+
+## 12. Relevant Experience
+${experienceBlock}
+
+Experience classes: **exact** = direct approved evidence match; **analogous** = related approved evidence; **proposed** = approach without claiming prior delivery.
+
+## 13. Compliance Commitments
+COMPLIANT controls: ${compliant}/${opts.complianceRows.length}
+
+| Control | Title | Status | Source category | Evidence |
+| --- | --- | --- | --- | --- |
+${complianceBlock}
+
+${LEGAL_DISCLAIMER}
+
+## 14. Training, Transition & Continuity
+**Training & transition:** ${opts.technical.trainingTransition}
+
+**Continuity:** ${opts.technical.continuity}
+
+## 15. Financial Forms Structure
+- QLR: ${qlrLabel}
+- Local content preference: ${lcLabel}
+- BoQ lines (structure only): ${opts.financial.boqItems.length}
 
 ${opts.financial.notes.map((n) => `- ${n}`).join("\n")}
 
-### BoQ Summary (blank amounts — client-entered)
 | Item | Unit | Qty | Unit Price | Total |
 | --- | --- | --- | --- | --- |
 ${opts.financial.boqItems
-  .slice(0, 12)
+  .slice(0, 20)
   .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | — | — |`)
   .join("\n")}
 
-## 8. Vision 2030 Alignment (المواءمة مع رؤية 2030)
+## 16. Assumptions, Exclusions & Clarifications
+- Commercial prices are entered solely by the client's authorized commercial team.
+- Any GAP / NEEDS_USER_INPUT requirement requires approved evidence before final submission.
+- Regulatory content is not legal advice.
+
+## 17. Vision 2030 Alignment
 ${opts.technical.vision2030Notes}
 Brand note: ${opts.vision2030}
 
-## 9. Closing (الخاتمة)
-We confirm full readiness to deliver in accordance with Etimad requirements and the agreed schedule.
+## 18. Closing
+This draft is ready for internal human review and authorization prior to any official submission.
+${humanNotice}
 
 ---
-*Generated by Arabclue · Compliance content is not legal advice · Data residency per tenant and platform policy*
+*ArabClue — precision assisted drafting · user is final author of record*
 `;
 }

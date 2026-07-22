@@ -8,6 +8,9 @@ import { runTechnicalArchitect } from "./technical";
 import { runFinancialAgent } from "./financial";
 import { draftProposal } from "./drafting";
 import {
+  buildCoveragePlan,
+} from "./coverage";
+import {
   enrichIngestionWithAi,
   enrichComplianceWithAi,
   enrichTechnicalWithAi,
@@ -449,6 +452,15 @@ export async function runAgentPipeline(opts: {
     const technicalAi = await enrichTechnicalWithAi({
       solutionApproach: technical.solutionApproach,
       vision2030Notes: technical.vision2030Notes,
+      deliveryModel: technical.deliveryModel,
+      governance: technical.governance,
+      qualityPlan: technical.qualityPlan,
+      riskPlan: technical.riskPlan,
+      securityPrivacy: technical.securityPrivacy,
+      serviceManagement: technical.serviceManagement,
+      trainingTransition: technical.trainingTransition,
+      continuity: technical.continuity,
+      evaluationAlignment: technical.evaluationAlignment,
       methodology: technical.methodology,
       matchedProjects: technical.matchedProjects,
       ragContext: technical.ragContext,
@@ -456,21 +468,36 @@ export async function runAgentPipeline(opts: {
       scope: entities.scope,
     });
     if (technicalAi.data) {
-      const d = technicalAi.data as {
-        solutionApproach?: string;
-        vision2030Notes?: string;
-        findings?: string[];
+      const d = technicalAi.data as Record<string, unknown>;
+      const pick = (key: string, min: number, current: string) => {
+        const v = d[key];
+        return typeof v === "string" && v.length >= min ? v : current;
       };
       technical = {
         ...technical,
-        solutionApproach:
-          typeof d.solutionApproach === "string" && d.solutionApproach.length > 40
-            ? d.solutionApproach
-            : technical.solutionApproach,
-        vision2030Notes:
-          typeof d.vision2030Notes === "string" && d.vision2030Notes.length > 20
-            ? d.vision2030Notes
-            : technical.vision2030Notes,
+        solutionApproach: pick("solutionApproach", 40, technical.solutionApproach),
+        vision2030Notes: pick("vision2030Notes", 20, technical.vision2030Notes),
+        deliveryModel: pick("deliveryModel", 20, technical.deliveryModel),
+        governance: pick("governance", 20, technical.governance),
+        qualityPlan: pick("qualityPlan", 20, technical.qualityPlan),
+        riskPlan: pick("riskPlan", 20, technical.riskPlan),
+        securityPrivacy: pick("securityPrivacy", 20, technical.securityPrivacy),
+        serviceManagement: pick(
+          "serviceManagement",
+          20,
+          technical.serviceManagement
+        ),
+        trainingTransition: pick(
+          "trainingTransition",
+          20,
+          technical.trainingTransition
+        ),
+        continuity: pick("continuity", 20, technical.continuity),
+        evaluationAlignment: pick(
+          "evaluationAlignment",
+          20,
+          technical.evaluationAlignment
+        ),
         findings: [
           ...technical.findings,
           ...((d.findings as string[]) ?? []),
@@ -550,6 +577,21 @@ export async function runAgentPipeline(opts: {
       findings: financial.findings,
     });
 
+    // ─── Coverage plan (requirement → evidence matrix) ────────────────────
+    const coverage = buildCoveragePlan({
+      entities,
+      evidenceDocs: ragDocs,
+      complianceRows: rows as ComplianceMatrixRow[],
+      locale,
+    });
+
+    try {
+      const { applyCoveragePlanToRequirements } = await import("../requirements");
+      await applyCoveragePlanToRequirements(opts.projectId, coverage);
+    } catch (err) {
+      console.warn("[orchestrator] coverage sync failed", err);
+    }
+
     // ─── Agent 5: PROPOSAL_DRAFTING ───────────────────────────────────────
     await mark("PROPOSAL_DRAFTING", {
       status: "running",
@@ -566,6 +608,7 @@ export async function runAgentPipeline(opts: {
       complianceRows: rows as ComplianceMatrixRow[],
       technical,
       financial: financial as FinancialExtract,
+      coverage,
       brandTagline:
         locale === "ar"
           ? brand?.taglineAr || brand?.tagline || "أراب كلاو"
@@ -675,6 +718,22 @@ export async function runAgentPipeline(opts: {
           proposalId: proposal.id,
           boqItems: financial.boqItems,
           financial,
+          coverage: {
+            coveragePercent: coverage.coveragePercent,
+            coveredCount: coverage.coveredCount,
+            partialCount: coverage.partialCount,
+            gapCount: coverage.gapCount,
+            evaluationWeights: coverage.evaluationWeights,
+            missingEvidenceTasks: coverage.missingEvidenceTasks,
+            strengths: coverage.strengths,
+            winStrategyNotes: coverage.winStrategyNotes,
+            rows: coverage.rows,
+          },
+          technicalPackage: {
+            evaluationAlignment: technical.evaluationAlignment,
+            deliveryModel: technical.deliveryModel,
+            matchedProjects: technical.matchedProjects,
+          },
           complianceScore: score,
           provider: draft.provider,
           model: draft.model,
@@ -690,6 +749,7 @@ export async function runAgentPipeline(opts: {
             saudizationTarget: project.saudizationTarget,
             complianceScore: score,
             localContentPreference: financial.localContentPreferenceApplied,
+            coveragePercent: coverage.coveragePercent,
           },
         }),
       },
@@ -720,6 +780,7 @@ export async function runAgentPipeline(opts: {
       findings: [
         `Tokens: ${draft.tokensUsed}`,
         `Compliance score: ${score}%`,
+        `Requirement coverage: ${coverage.coveragePercent}% (${coverage.coveredCount} covered / ${coverage.gapCount} gaps)`,
         `Artifacts: ${realArtifacts.length}`,
         ...knowledgeFindings,
         validationReport.blocking

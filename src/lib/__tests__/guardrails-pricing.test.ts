@@ -116,6 +116,15 @@ describe("drafting leaves amount cells blank", () => {
         matchedProjects: [],
         solutionApproach: "Approach",
         vision2030Notes: "Notes",
+        deliveryModel: "Hybrid",
+        governance: "Board",
+        qualityPlan: "QA",
+        riskPlan: "Risks",
+        securityPrivacy: "Security",
+        serviceManagement: "SLA",
+        trainingTransition: "Training",
+        continuity: "BCP",
+        evaluationAlignment: "Tech weight 70%",
         ragContext: "",
       },
       financial: {
@@ -131,11 +140,37 @@ describe("drafting leaves amount cells blank", () => {
         localContentPreferenceApplied: null,
         notes: ["structure only"],
       },
+      coverage: {
+        rows: [
+          {
+            requirementId: "REQ-001",
+            requirementText: "Platform delivery",
+            sectionRef: "SOW",
+            pageRef: null,
+            status: "NEEDS_USER_INPUT",
+            evidenceIds: [],
+            evidenceTitles: [],
+            proposalSection: "Technical Response",
+            responseOutline: "Evidence gap",
+            matchScore: 0,
+          },
+        ],
+        coveredCount: 0,
+        partialCount: 0,
+        gapCount: 1,
+        coveragePercent: 0,
+        evaluationWeights: { technical: 70, financial: 30 },
+        missingEvidenceTasks: ['REQ-001: upload/approve evidence for "Platform delivery"'],
+        strengths: [],
+        winStrategyNotes: ["Prioritize technical evaluation weight (70%)"],
+      },
       brandTagline: "Brand",
       vision2030: "Vision",
       locale: "en",
     });
     expect(md).toContain("| — | — |");
+    expect(md).toContain("Requirement Coverage Matrix");
+    expect(md).toContain("REQ-001");
     expect(md).not.toMatch(/unit price\s*[:=]\s*\d/i);
     expect(md).not.toContain("TP1/SP1/SP2");
     expect(md).not.toContain("10% Local Content");

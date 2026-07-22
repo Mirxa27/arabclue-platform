@@ -155,9 +155,25 @@ export interface TenderRequirementExtract {
 
 export interface TechnicalArchitectOutput {
   methodology: { id: number; name: string; nameAr: string; rationale: string }[];
-  matchedProjects: { id: string; title: string; score: number; why: string }[];
+  matchedProjects: {
+    id: string;
+    title: string;
+    score: number;
+    why: string;
+    /** exact | analogous | proposed — never invent exact experience */
+    experienceClass: "exact" | "analogous" | "proposed";
+  }[];
   solutionApproach: string;
   vision2030Notes: string;
+  deliveryModel: string;
+  governance: string;
+  qualityPlan: string;
+  riskPlan: string;
+  securityPrivacy: string;
+  serviceManagement: string;
+  trainingTransition: string;
+  continuity: string;
+  evaluationAlignment: string;
 }
 
 export interface AgentState {
