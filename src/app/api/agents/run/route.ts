@@ -1,90 +1,147 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getBootstrapContext, seedComplianceChecks } from "@/lib/bootstrap";
+import { seedComplianceChecks } from "@/lib/bootstrap";
 import { AGENTS } from "@/lib/constants";
-import type { AgentState, AgentId } from "@/lib/types";
+import { tr } from "@/lib/i18n";
+import type { AgentState } from "@/lib/types";
+import { runAgentPipeline } from "@/lib/agents/orchestrator";
+import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { requireWriter } from "@/lib/auth";
+import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
+import { agentRunBodySchema, parseJsonBody } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
-// POST /api/agents/run — kick off a multi-agent workflow for a project
+// POST /api/agents/run — kick off multi-agent workflow (idempotent per project)
 export async function POST(req: NextRequest) {
   try {
-    const { workspace } = await getBootstrapContext();
-    const user = await db.user.findFirst({
-      where: { workspaces: { some: { workspaceId: workspace.id } } },
-    });
-    const body = await req.json();
-    const { projectId } = body as { projectId?: string };
-
-    // Resolve project: provided, or most recent DRAFT, or create one
-    let project = projectId
-      ? await db.tenderProject.findUnique({ where: { id: projectId } })
-      : null;
-
-    if (!project) {
-      project = await db.tenderProject.findFirst({
-        where: { workspaceId: workspace.id },
-        orderBy: { createdAt: "desc" },
-      });
+    const session = await requireWriter();
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    if (!project) {
-      project = await db.tenderProject.create({
-        data: {
-          workspaceId: workspace.id,
-          createdById: user!.id,
-          etimadRef: `ETM-${Date.now().toString(36).toUpperCase()}`,
-          title: body.title || "New Tender Project",
-          titleAr: body.titleAr || null,
-          category: body.tenderType || "IT",
-          budget: body.budget ?? null,
-          currency: "SAR",
-          status: "DRAFT",
-          saudizationTarget: 35,
-          localContentTarget: 40,
+    const parsed = await parseJsonBody(req, agentRunBodySchema);
+    if (!parsed.ok) return parsed.response;
+
+    const { workspace } = await getTenantContext(session.user.id);
+    const userId = session.user.id;
+    const { projectId, tenderType, budget } = parsed.data;
+    const locale =
+      parsed.data.locale ??
+      (session.user.locale === "en" ? "en" : "ar");
+
+    try {
+      await assertWithinQuota(userId, "proposal");
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        return NextResponse.json({ error: e.message, code: e.code }, { status: 402 });
+      }
+      throw e;
+    }
+
+    let project = await db.tenderProject.findUnique({ where: { id: projectId } });
+    if (!project || !assertWorkspaceMatch(project.workspaceId, workspace.id)) {
+      return NextResponse.json({ error: "project not found" }, { status: 404 });
+    }
+
+    // Atomic race guard: only one QUEUED/RUNNING run per project
+    const active = await db.agentRun.findFirst({
+      where: {
+        projectId: project.id,
+        status: { in: ["QUEUED", "RUNNING"] },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (active) {
+      return NextResponse.json(
+        {
+          error: "An agent run is already in progress for this project",
+          runId: active.id,
+          status: active.status,
         },
-      });
-    } else if (body.tenderType && body.tenderType !== project.category) {
-      // Update the tender type if provided and different
+        { status: 409 }
+      );
+    }
+
+    if (tenderType && tenderType !== project.category) {
       project = await db.tenderProject.update({
         where: { id: project.id },
-        data: { category: body.tenderType, ...(body.budget ? { budget: body.budget } : {}) },
+        data: {
+          category: tenderType,
+          ...(budget != null ? { budget } : {}),
+        },
       });
     }
 
-    // Seed compliance checks for this project
     await seedComplianceChecks(project.id);
-
-    // Update project status to PARSING
     await db.tenderProject.update({
       where: { id: project.id },
       data: { status: "PARSING" },
     });
 
-    // Initialize agent states (all pending, 0 progress)
     const agentStates: AgentState[] = AGENTS.map((a) => ({
       id: a.id,
-      name: "",
-      nameAr: "",
+      name: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "en"),
+      nameAr: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "ar"),
       status: "pending",
       progress: 0,
     }));
 
-    const run = await db.agentRun.create({
-      data: {
-        projectId: project.id,
-        triggeredById: user!.id,
-        status: "RUNNING",
-        startedAt: new Date(),
-        overallProgress: 0,
-        agentStates: JSON.stringify(agentStates),
-      },
+    // Create under transaction; re-check active to close TOCTOU window
+    const run = await db.$transaction(async (tx) => {
+      const racing = await tx.agentRun.findFirst({
+        where: {
+          projectId: project.id,
+          status: { in: ["QUEUED", "RUNNING"] },
+        },
+      });
+      if (racing) {
+        return { conflict: true as const, run: racing };
+      }
+      const created = await tx.agentRun.create({
+        data: {
+          projectId: project.id,
+          triggeredById: userId,
+          status: "QUEUED",
+          overallProgress: 0,
+          agentStates: JSON.stringify(agentStates),
+        },
+      });
+      return { conflict: false as const, run: created };
     });
 
-    return NextResponse.json({
-      runId: run.id,
+    if (run.conflict) {
+      return NextResponse.json(
+        {
+          error: "An agent run is already in progress for this project",
+          runId: run.run.id,
+          status: run.run.status,
+        },
+        { status: 409 }
+      );
+    }
+
+    await audit({
+      userId,
+      action: AUDIT_ACTIONS.AGENT_RUN,
+      resource: "AgentRun",
+      resourceId: run.run.id,
+      details: { projectId: project.id, locale },
+    });
+
+    void runAgentPipeline({
+      runId: run.run.id,
       projectId: project.id,
-      status: "RUNNING",
+      workspaceId: workspace.id,
+      userId,
+      locale,
+    }).catch((err) => console.error("[agents/run pipeline]", err));
+
+    return NextResponse.json({
+      runId: run.run.id,
+      projectId: project.id,
+      status: "QUEUED",
       agentStates,
     });
   } catch (err) {

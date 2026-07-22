@@ -35,6 +35,7 @@ export type DashboardView =
   | "brand"
   | "agents"
   | "history"
+  | "billing"
   // Admin views
   | "admin_overview"
   | "admin_ai"

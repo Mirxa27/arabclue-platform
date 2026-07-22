@@ -22,6 +22,8 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { DocCategory } from "@/lib/types";
+import type { ApiDocument } from "@/lib/api-types";
+import { ListSkeleton } from "./loading-skeletons";
 
 interface UploadedFile {
   id: string;
@@ -70,7 +72,7 @@ function formatBytes(bytes: number): string {
 
 export function FileIngestion() {
   const { locale } = useLocale();
-  const { setActiveProjectId, setView } = useUI();
+  const { activeProjectId, setActiveProjectId, setView } = useUI();
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<DocCategory>("RFP");
@@ -78,39 +80,65 @@ export function FileIngestion() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data: docsData } = useQuery({
-    queryKey: ["documents"],
+  const { data: docsData, isLoading: docsLoading, isError: docsError, error: docsErr } = useQuery({
+    queryKey: ["documents", activeProjectId],
     queryFn: async () => {
-      const res = await fetch("/api/documents");
-      return res.json();
+      const url = activeProjectId
+        ? `/api/documents?projectId=${activeProjectId}`
+        : "/api/documents";
+      const res = await fetch(url);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to load documents");
+      }
+      return res.json() as Promise<{ documents: ApiDocument[] }>;
     },
   });
   const recentDocs = (docsData?.documents ?? []).slice(0, 5);
 
   const uploadMutation = useMutation({
-    mutationFn: async (file: { name: string; size: number; mime: string; category: DocCategory }) => {
+    mutationFn: async (payload: { file: File; category: DocCategory }) => {
+      if (!activeProjectId) {
+        throw new Error(
+          locale === "ar"
+            ? "اختر مشروعاً نشطاً أولاً"
+            : "Select an active project first"
+        );
+      }
+      const form = new FormData();
+      form.append("file", payload.file);
+      form.append("docCategory", payload.category);
+      form.append("projectId", activeProjectId);
       const res = await fetch("/api/documents", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          originalName: file.name,
-          mimeType: file.mime,
-          sizeBytes: file.size,
-          docCategory: file.category,
-          storagePath: `/uploads/${Date.now()}-${file.name}`,
-        }),
+        body: form,
       });
-      if (!res.ok) throw new Error("upload failed");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "upload failed");
+      }
       return res.json();
     },
   });
 
   const handleFiles = useCallback(
     async (fileList: FileList | File[]) => {
+      if (!activeProjectId) {
+        toast({
+          title: locale === "ar" ? "لا يوجد مشروع نشط" : "No active project",
+          description:
+            locale === "ar"
+              ? "أنشئ أو اختر مشروعاً قبل رفع الملفات"
+              : "Create or select a project before uploading",
+          variant: "destructive",
+        });
+        setView("projects");
+        return;
+      }
       const arr = Array.from(fileList);
       for (const file of arr) {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const category = guessCategory(file.name);
+        const category = selectedCategory || guessCategory(file.name);
         const entry: UploadedFile = {
           id,
           name: file.name,
@@ -121,23 +149,16 @@ export function FileIngestion() {
         };
         setFiles((prev) => [entry, ...prev]);
 
-        // Simulate upload progress
-        for (let p = 10; p <= 90; p += 20) {
-          await new Promise((r) => setTimeout(r, 80));
-          setFiles((prev) =>
-            prev.map((f) => (f.id === id ? { ...f, progress: p } : f))
-          );
-        }
+        setFiles((prev) =>
+          prev.map((f) => (f.id === id ? { ...f, progress: 40 } : f))
+        );
 
         try {
-          entry.status = "parsing";
           setFiles((prev) =>
-            prev.map((f) => (f.id === id ? { ...f, status: "parsing", progress: 95 } : f))
+            prev.map((f) => (f.id === id ? { ...f, status: "parsing", progress: 70 } : f))
           );
           const result = await uploadMutation.mutateAsync({
-            name: file.name,
-            size: file.size,
-            mime: file.type || "application/octet-stream",
+            file,
             category,
           });
           setFiles((prev) =>
@@ -149,30 +170,42 @@ export function FileIngestion() {
                     progress: 100,
                     documentId: result.document.id,
                     summary: result.document.parsedSummary,
+                    category,
                   }
                 : f
             )
           );
+          if (result.document.projectId) {
+            setActiveProjectId(result.document.projectId);
+          }
           qc.invalidateQueries({ queryKey: ["documents"] });
           qc.invalidateQueries({ queryKey: ["stats"] });
-          if (result.document.projectId) setActiveProjectId(result.document.projectId);
           toast({
-            title: locale === "ar" ? "تم رفع المستند" : "Document uploaded",
-            description: `${file.name} → ${tr(`cat_${category}`, locale)}`,
+            title: locale === "ar" ? "تم الرفع" : "Uploaded",
+            description: file.name,
           });
-        } catch (e) {
+        } catch (err) {
           setFiles((prev) =>
             prev.map((f) => (f.id === id ? { ...f, status: "error", progress: 100 } : f))
           );
           toast({
-            variant: "destructive",
             title: locale === "ar" ? "فشل الرفع" : "Upload failed",
-            description: file.name,
+            description: err instanceof Error ? err.message : "error",
+            variant: "destructive",
           });
         }
       }
     },
-    [uploadMutation, qc, locale, toast, setActiveProjectId]
+    [
+      uploadMutation,
+      selectedCategory,
+      activeProjectId,
+      setActiveProjectId,
+      setView,
+      qc,
+      toast,
+      locale,
+    ]
   );
 
   const onDrop = useCallback(
@@ -202,9 +235,27 @@ export function FileIngestion() {
           </div>
         </div>
         <Badge variant="outline" className="bg-background text-[10px] font-mono">
-          NCA · PDPL · EA
+          {activeProjectId
+            ? `${locale === "ar" ? "مشروع" : "Project"} · ${activeProjectId.slice(0, 8)}`
+            : locale === "ar"
+              ? "اختر مشروعاً"
+              : "Select project"}
         </Badge>
       </div>
+
+      {!activeProjectId && (
+        <div className="mx-5 mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+          {locale === "ar"
+            ? "يجب اختيار مشروع نشط قبل رفع الملفات."
+            : "Select an active project before uploading files."}
+        </div>
+      )}
+
+      {docsError && (
+        <div className="mx-5 mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+          {docsErr instanceof Error ? docsErr.message : "Failed to load documents"}
+        </div>
+      )}
 
       {/* Category selector */}
       <div className="px-5 pt-4 pb-3 flex flex-wrap gap-1.5">
@@ -334,7 +385,7 @@ export function FileIngestion() {
             {locale === "ar" ? "أحدث المستندات" : "Recent documents"}
           </div>
           <div className="space-y-1.5 max-h-40 overflow-y-auto scrollbar-thin">
-            {recentDocs.map((d: any) => {
+            {recentDocs.map((d) => {
               const Icon = fileIcon(d.originalName, d.mimeType);
               return (
                 <button

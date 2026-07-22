@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { requireAdmin, canGrantRole } from "@/lib/auth";
+import { hashPassword } from "@/lib/password";
+import type { Role } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/admin/users — list all users with their subscriptions + usage
 export async function GET() {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await getBootstrapContext();
   const users = await db.user.findMany({
     orderBy: { createdAt: "desc" },
@@ -26,28 +30,43 @@ export async function GET() {
   return NextResponse.json({ users });
 }
 
-// POST /api/admin/users — create a new user
 export async function POST(req: NextRequest) {
-  const { user: admin } = await getBootstrapContext();
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
+  if (!body.email || !body.name || !body.password) {
+    return NextResponse.json(
+      { error: "email, name, and password are required" },
+      { status: 400 }
+    );
+  }
+  const role = (body.role ?? "BIDDER") as Role;
+  if (!canGrantRole(session.user.role, role)) {
+    return NextResponse.json(
+      { error: "Insufficient privileges to grant this role" },
+      { status: 403 }
+    );
+  }
+  const passwordHash = await hashPassword(String(body.password));
   const created = await db.user.create({
     data: {
-      email: body.email,
+      email: String(body.email).trim().toLowerCase(),
       name: body.name,
-      passwordHash: "$argon2id$demo$" + (body.password ?? "placeholder"),
-      role: body.role ?? "BIDDER",
+      passwordHash,
+      role,
       mfaEnabled: body.mfaEnabled ?? false,
       locale: body.locale ?? "ar",
       active: true,
     },
   });
   await audit({
-    userId: admin.id,
+    userId: session.user.id,
     action: AUDIT_ACTIONS.USER_CREATE,
     resource: "User",
     resourceId: created.id,
     details: { email: created.email, role: created.role },
     severity: "WARN",
   });
-  return NextResponse.json({ user: created });
+  const { passwordHash: _pw, ...safe } = created;
+  return NextResponse.json({ user: safe });
 }

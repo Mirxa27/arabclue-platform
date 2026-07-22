@@ -19,6 +19,7 @@ export const t: Dict = {
   nav_brand: { ar: "هوية العلامة", en: "Brand Setup" },
   nav_agents: { ar: "وكلاء الذكاء", en: "AI Agents" },
   nav_history: { ar: "الإصدارات", en: "Version History" },
+  nav_billing: { ar: "الاشتراك والدفع", en: "Billing" },
   nav_settings: { ar: "الإعدادات", en: "Settings" },
   nav_admin: { ar: "لوحة الإدارة", en: "Admin Panel" },
   nav_admin_ai: { ar: "مزودو الذكاء", en: "AI Providers" },
@@ -67,15 +68,26 @@ export const t: Dict = {
     ar: "استخراج نطاق العمل، عقوبات SLA، ومعالم التسليم",
     en: "Extracts Scope of Work, SLA penalties, delivery milestones",
   },
-  agent_EA_COMPLIANCE_name: { ar: "وكيل الامتثال المؤسسي", en: "EA Compliance Agent" },
-  agent_EA_COMPLIANCE_desc: {
-    ar: "مطابقة الحل مع معايير NORA وEXIM — مستوى C1",
-    en: "Maps solution to NORA/EXIM standards — Level C1",
+  agent_COMPLIANCE_REGULATORY_name: { ar: "وكيل الامتثال والتنظيم", en: "Compliance & Regulatory Agent" },
+  agent_COMPLIANCE_REGULATORY_desc: {
+    ar: "NCA وPDPL والمحتوى المحلي وNORA — نظام المنافسات",
+    en: "NCA, PDPL, local content & NORA — procurement law",
   },
-  agent_LEGAL_REGULATORY_name: { ar: "الوكيل القانوني والتنظيمي", en: "Legal & Regulatory Agent" },
+  agent_TECHNICAL_ARCHITECT_name: { ar: "وكيل المعمارية الفنية", en: "Technical & Solution Architect" },
+  agent_TECHNICAL_ARCHITECT_desc: {
+    ar: "RAG من المشاريع السابقة ومنهجية التنفيذ",
+    en: "RAG from past projects + execution methodology",
+  },
+  // Legacy keys kept for any cached UI
+  agent_EA_COMPLIANCE_name: { ar: "وكيل الامتثال والتنظيم", en: "Compliance & Regulatory Agent" },
+  agent_EA_COMPLIANCE_desc: {
+    ar: "NCA وPDPL والمحتوى المحلي وNORA",
+    en: "NCA, PDPL, local content & NORA",
+  },
+  agent_LEGAL_REGULATORY_name: { ar: "وكيل المعمارية الفنية", en: "Technical & Solution Architect" },
   agent_LEGAL_REGULATORY_desc: {
-    ar: "PDPL، ضوابط NCA، تفضيل المحتوى المحلي 10%",
-    en: "PDPL, NCA controls, 10% local content preference",
+    ar: "RAG من المشاريع السابقة ومنهجية التنفيذ",
+    en: "RAG from past projects + execution methodology",
   },
   agent_FINANCIAL_QUALIFICATION_name: { ar: "الوكيل المالي والتأهيلي", en: "Financial & Qualification Agent" },
   agent_FINANCIAL_QUALIFICATION_desc: {
@@ -96,6 +108,7 @@ export const t: Dict = {
   fw_EA_SP1: { ar: "التصميم الآمن SP1", en: "Secure by Design (SP1)" },
   fw_EA_SP2: { ar: "الثقة المعدومة SP2", en: "Zero Trust (SP2)" },
   fw_LOCAL_CONTENT: { ar: "المحتوى المحلي والمشاريع الصغيرة", en: "Local Content & SME" },
+  fw_NORA: { ar: "الإطار الوطني للبنية المؤسسية NORA", en: "NORA Enterprise Architecture" },
 
   // Status
   status_PENDING: { ar: "قيد الانتظار", en: "Pending" },
@@ -124,7 +137,15 @@ export const t: Dict = {
   action_generate: { ar: "إنشاء العطاء", en: "Generate Proposal" },
   action_download: { ar: "تنزيل", en: "Download" },
   action_view: { ar: "عرض", en: "View" },
+  action_edit: { ar: "تحرير", en: "Edit" },
   action_revert: { ar: "استرجاع", en: "Revert" },
+  proposal_editor: { ar: "محرر العطاء", en: "Proposal Editor" },
+  proposal_preview: { ar: "معاينة", en: "Preview" },
+  proposal_saved: { ar: "تم حفظ العطاء", en: "Proposal saved" },
+  proposal_save_pdf: { ar: "حفظ وتنزيل PDF", en: "Save & Download PDF" },
+  proposal_ai_rewrite: { ar: "إعادة صياغة بالذكاء الاصطناعي", en: "AI Rewrite Section" },
+  proposal_version: { ar: "الإصدار", en: "Version" },
+  proposal_locale: { ar: "لغة العطاء", en: "Proposal language" },
   action_compare: { ar: "مقارنة", en: "Compare" },
   action_delete: { ar: "حذف", en: "Delete" },
   action_save: { ar: "حفظ", en: "Save" },

@@ -1,13 +1,11 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getBootstrapContext } from "@/lib/bootstrap";
+import { withTenant, jsonOk } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/stats — dashboard KPI summary
+// GET /api/stats — dashboard KPI summary (tenant-scoped)
 export async function GET() {
-  try {
-    const { workspace } = await getBootstrapContext();
+  return withTenant("session", async ({ workspace }) => {
     const wid = workspace.id;
 
     const [projects, documents, proposals, agentRuns, compliance, pastProjects] =
@@ -34,7 +32,9 @@ export async function GET() {
     });
 
     const runningAgents = agentRuns.filter((a) => a.status === "RUNNING").length;
-    const completedAgents = agentRuns.filter((a) => a.status === "COMPLETED").length;
+    const completedAgents = agentRuns.filter(
+      (a) => a.status === "COMPLETED"
+    ).length;
 
     const compliant = compliance.filter((c) => c.status === "COMPLIANT").length;
     const avgCompliance =
@@ -42,21 +42,19 @@ export async function GET() {
         ? Math.round((compliant / compliance.length) * 100)
         : 100;
 
-    // Status breakdown for project distribution chart
     const statusBreakdown = await db.tenderProject.groupBy({
       by: ["status"],
       where: { workspaceId: wid },
       _count: true,
     });
 
-    // Document category breakdown
     const docCategoryBreakdown = await db.uploadedDocument.groupBy({
       by: ["docCategory"],
       where: { workspaceId: wid },
       _count: true,
     });
 
-    return NextResponse.json({
+    return jsonOk({
       workspace: {
         id: workspace.id,
         name: workspace.name,
@@ -84,11 +82,5 @@ export async function GET() {
         })),
       },
     });
-  } catch (err) {
-    console.error("[stats] error", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
-  }
+  }, "stats GET");
 }

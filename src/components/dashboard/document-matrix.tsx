@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { DocCategory } from "@/lib/types";
+import type { ApiDocument } from "@/lib/api-types";
+import { ListSkeleton } from "./loading-skeletons";
 
 function fileIcon(name: string, mime: string) {
   if (mime.includes("sheet") || name.endsWith(".xlsx") || name.endsWith(".xls")) return FileSpreadsheet;
@@ -61,27 +63,46 @@ export function DocumentMatrix() {
   const { toast } = useToast();
   const [filter, setFilter] = useStateLocal<DocCategory | "ALL">("docFilter", "ALL");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["documents"],
     queryFn: async () => {
       const res = await fetch("/api/documents");
-      return res.json();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof err.error === "string" ? err.error : "Failed to load documents"
+        );
+      }
+      return res.json() as Promise<{ documents: ApiDocument[] }>;
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await fetch(`/api/documents/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof err.error === "string" ? err.error : "Delete failed"
+        );
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["documents"] });
       qc.invalidateQueries({ queryKey: ["stats"] });
       toast({ title: locale === "ar" ? "تم الحذف" : "Document deleted" });
     },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "فشل الحذف" : "Delete failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const docs = (data?.documents ?? []).filter(
-    (d: any) => filter === "ALL" || d.docCategory === filter
+    (d) => filter === "ALL" || d.docCategory === filter
   );
 
   const categories: (DocCategory | "ALL")[] = [
@@ -128,9 +149,16 @@ export function DocumentMatrix() {
 
       <div className="max-h-96 overflow-y-auto scrollbar-thin">
         {isLoading ? (
-          <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-            <Loader2 className="size-4 animate-spin" />
-            {tr("loading", locale)}
+          <ListSkeleton rows={4} />
+        ) : isError ? (
+          <div className="p-8 text-center space-y-2">
+            <AlertCircle className="size-8 text-destructive/50 mx-auto" />
+            <p className="text-xs text-destructive">
+              {error instanceof Error ? error.message : "Error"}
+            </p>
+            <Button size="sm" variant="outline" onClick={() => refetch()}>
+              {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+            </Button>
           </div>
         ) : docs.length === 0 ? (
           <div className="p-8 text-center">
@@ -163,7 +191,7 @@ export function DocumentMatrix() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {docs.map((d: any) => {
+              {docs.map((d) => {
                 const Icon = fileIcon(d.originalName, d.mimeType);
                 return (
                   <TableRow key={d.id} className="group hover:bg-muted/40">
@@ -180,7 +208,7 @@ export function DocumentMatrix() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-[9px] font-mono">
-                        {tr(`cat_${d.docCategory}`, locale)}
+                        {tr(`cat_${d.docCategory}` as Parameters<typeof tr>[0], locale)}
                       </Badge>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
@@ -210,25 +238,41 @@ export function DocumentMatrix() {
                       )}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <span className="text-[10px] font-mono text-muted-foreground">v{d.currentVersion}</span>
-                      {d._count?.versions > 1 && (
-                        <span className="text-[9px] text-muted-foreground"> ({d._count.versions})</span>
+                      <span className="text-[10px] font-mono text-muted-foreground">v{d.currentVersion ?? 1}</span>
+                      {(d._count?.versions ?? 0) > 1 && (
+                        <span className="text-[9px] text-muted-foreground"> ({d._count?.versions})</span>
                       )}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-[10px] font-mono text-muted-foreground">
                       {formatBytes(d.sizeBytes)}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground">
-                      {timeAgo(d.updatedAt)}
+                      {timeAgo(d.updatedAt ?? d.createdAt)}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button size="icon" variant="ghost" className="size-7">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          title={locale === "ar" ? "عرض الملخص" : "View summary"}
+                          onClick={() => {
+                            const summary = d.parsedSummary || (locale === "ar" ? "لا يوجد ملخص" : "No summary");
+                            window.alert(summary);
+                          }}
+                        >
                           <Eye className="size-3" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="size-7">
-                          <Download className="size-3" />
-                        </Button>
+                        {d.storagePath && (
+                          <a
+                            href={`/api/files?path=${encodeURIComponent(d.storagePath)}&download=1&name=${encodeURIComponent(d.originalName)}`}
+                            download={d.originalName}
+                          >
+                            <Button size="icon" variant="ghost" className="size-7" title={locale === "ar" ? "تنزيل" : "Download"}>
+                              <Download className="size-3" />
+                            </Button>
+                          </a>
+                        )}
                         <Button
                           size="icon"
                           variant="ghost"

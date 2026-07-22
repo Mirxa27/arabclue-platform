@@ -1,37 +1,59 @@
 import { db } from "./db";
 import { COMPLIANCE_FRAMEWORKS, AI_PROVIDER_PRESETS, ENV_CATALOG, DEFAULT_PLANS } from "./constants";
-import { encryptValue } from "./crypto";
+import { encryptValue, assertProductionSecrets } from "./crypto";
+import { hashPassword, getBootstrapAdminPassword } from "./password";
 
-// Ensure a default workspace + user exist for the demo (no auth gate on UI).
-// Uses upsert to be safe under concurrent requests.
-// In production this would be replaced by the MFA + RBAC login flow.
+// Ensures default workspace + SUPER_ADMIN exist when BOOTSTRAP_ADMIN_PASSWORD is set.
+// Auth gate is enforced by NextAuth middleware — this only seeds data.
 
 const WORKSPACE_SLUG = "default-workspace";
-const USER_EMAIL = "admin@arabclue.sa";
+
+function bootstrapAdminEmail(): string {
+  return (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@arabclue.sa").trim().toLowerCase();
+}
+
+let cachedBootstrap: Awaited<ReturnType<typeof runBootstrap>> | null = null;
 
 export async function getBootstrapContext() {
-  // Fast path: workspace already exists
+  assertProductionSecrets();
+  if (cachedBootstrap) return cachedBootstrap;
+  cachedBootstrap = await runBootstrap();
+  return cachedBootstrap;
+}
+
+async function runBootstrap() {
+  const USER_EMAIL = bootstrapAdminEmail();
   let workspace = await db.workspace.findFirst({
     where: { slug: WORKSPACE_SLUG },
     include: { brandProfiles: true },
   });
 
+  const bootstrapPassword = getBootstrapAdminPassword();
+  let passwordHash: string | null = null;
+  if (bootstrapPassword) {
+    passwordHash = await hashPassword(bootstrapPassword);
+  }
+
   if (!workspace) {
-    // Upsert user (idempotent under concurrent requests)
+    if (!passwordHash) {
+      throw new Error(
+        "BOOTSTRAP_ADMIN_PASSWORD is required to seed the initial workspace (min 8 chars)"
+      );
+    }
     const user = await db.user.upsert({
       where: { email: USER_EMAIL },
       update: {},
       create: {
         email: USER_EMAIL,
         name: "Khalid Al-Otaibi",
-        passwordHash: "$argon2id$demo$placeholder",
+        passwordHash,
         role: "SUPER_ADMIN",
-        mfaEnabled: true,
+        mfaEnabled: false,
         locale: "ar",
+        mustChangePassword: true,
       },
     });
 
-    // Upsert workspace (idempotent on slug)
     workspace = await db.workspace.upsert({
       where: { slug: WORKSPACE_SLUG },
       update: {},
@@ -61,92 +83,155 @@ export async function getBootstrapContext() {
       include: { brandProfiles: true },
     });
 
-    // Link the user as a member if not already (handle case where workspace
-    // existed via a prior partial create but member link is missing)
     const existingMember = await db.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: workspace.id, userId: user.id } },
     });
     if (!existingMember) {
-      await db.workspaceMember.create({
-        data: { workspaceId: workspace.id, userId: user.id, role: "OWNER" },
-      }).catch(() => {});
+      await db.workspaceMember
+        .create({
+          data: { workspaceId: workspace.id, userId: user.id, role: "OWNER" },
+        })
+        .catch(() => {});
     }
 
-    // Seed past projects only if none exist for this workspace
     const ppCount = await db.pastProject.count({ where: { workspaceId: workspace.id } });
     if (ppCount === 0 && workspace.brandProfiles[0]) {
       await seedPastProjects(workspace.id, workspace.brandProfiles[0].id);
     }
   }
 
-  // Ensure the default user exists and is linked (handles pre-existing workspace)
-  const user = await db.user.upsert({
-    where: { email: USER_EMAIL },
-    update: {},
-    create: {
-      email: USER_EMAIL,
-      name: "Khalid Al-Otaibi",
-      passwordHash: "$argon2id$demo$placeholder",
-      role: "SUPER_ADMIN",
-      mfaEnabled: true,
-      locale: "ar",
-    },
-  });
+  let user = await db.user.findUnique({ where: { email: USER_EMAIL } });
+  if (!user) {
+    if (!passwordHash) {
+      throw new Error(
+        "BOOTSTRAP_ADMIN_PASSWORD is required to create the bootstrap admin user"
+      );
+    }
+    user = await db.user.create({
+      data: {
+        email: USER_EMAIL,
+        name: "Khalid Al-Otaibi",
+        passwordHash,
+        role: "SUPER_ADMIN",
+        mfaEnabled: false,
+        locale: "ar",
+        mustChangePassword: true,
+      },
+    });
+  } else if (
+    user.passwordHash.startsWith("$argon2id$demo$") ||
+    user.passwordHash.includes("placeholder")
+  ) {
+    if (!passwordHash) {
+      throw new Error(
+        "Legacy demo password detected — set BOOTSTRAP_ADMIN_PASSWORD to migrate"
+      );
+    }
+    user = await db.user.update({
+      where: { id: user.id },
+      data: { passwordHash, mfaEnabled: false, mustChangePassword: true },
+    });
+  }
 
-  // Seed admin configuration (AI providers, env settings, plans) — idempotent
+  const member = await db.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId: workspace.id, userId: user.id } },
+  });
+  if (!member) {
+    await db.workspaceMember
+      .create({ data: { workspaceId: workspace.id, userId: user.id, role: "OWNER" } })
+      .catch(() => {});
+  }
+
   await seedAdminData(user.id).catch(() => {});
 
   const brandProfile = workspace.brandProfiles[0];
   return { workspace, brandProfile, user };
 }
 
-// Seed AI provider configs, encrypted env settings, subscription plans,
-// and the default user's subscription. Fully idempotent.
 async function seedAdminData(userId: string) {
-  // AI providers
   const providerCount = await db.aIProviderConfig.count();
   if (providerCount === 0) {
+    // Activate one provider per engine (first preset that targets that engine)
+    const activeEngines = new Set<string>();
     await db.aIProviderConfig.createMany({
-      data: AI_PROVIDER_PRESETS.map((p, i) => ({
-        ...p,
-        isActive: i === 0, // first preset (ZAI GLM-4.6) is active by default
-        isDefault: i === 0,
-        topP: 0.9,
-        frequencyPenalty: 0.0,
-        presencePenalty: 0.0,
-        confidenceThreshold: 0.85,
-        toxicityFilter: true,
-        piiFilter: true,
-        hallucinationGuard: true,
-        maxRetries: 2,
-        timeoutMs: 60000,
-      })),
+      data: AI_PROVIDER_PRESETS.map((p, i) => {
+        const engine = p.engine ?? "DEFAULT";
+        const isActive = !activeEngines.has(engine);
+        if (isActive) activeEngines.add(engine);
+        return {
+          ...p,
+          engine,
+          apiKeyEnvKey: p.apiKeyEnvKey || null,
+          isActive,
+          isDefault: i === 0,
+          priority: isActive ? 10 : 0,
+          topP: 0.9,
+          frequencyPenalty: 0.0,
+          presencePenalty: 0.0,
+          confidenceThreshold: 0.85,
+          toxicityFilter: true,
+          piiFilter: true,
+          hallucinationGuard: true,
+          maxRetries: 2,
+          timeoutMs: 60000,
+        };
+      }),
     });
   }
 
-  // Env settings (encrypted, masked in UI)
   const envCount = await db.envSetting.count();
   if (envCount === 0) {
     await db.envSetting.createMany({
       data: ENV_CATALOG.map((e) => ({
         key: e.key,
-        valueEncrypted: encryptValue(e.key.includes("KEY") || e.key.includes("SECRET") ? "sk-demo-" + e.key.toLowerCase().replace(/_/g, "") : ""),
+        valueEncrypted: encryptValue(
+          e.key === "NEXTAUTH_SECRET"
+            ? process.env.NEXTAUTH_SECRET ?? ""
+            : e.key === "DATABASE_URL"
+              ? process.env.DATABASE_URL ?? ""
+              : e.key === "ARABCLUE_ENC_KEY"
+                ? process.env.ARABCLUE_ENC_KEY ?? ""
+                : ""
+        ),
         category: e.category,
         description: e.description,
-        isSecret: e.key.includes("KEY") || e.key.includes("SECRET") || e.key.includes("PASSWORD"),
+        isSecret:
+          e.key.includes("KEY") ||
+          e.key.includes("SECRET") ||
+          e.key.includes("PASSWORD"),
         isRequired: e.isRequired,
         lastEditedBy: userId,
       })),
     });
   }
 
-  // Subscription plans
-  const planCount = await db.subscriptionPlan.count();
-  if (planCount === 0) {
-    await db.subscriptionPlan.createMany({ data: DEFAULT_PLANS as any });
+  // Ensure NEXTAUTH keys exist in catalog seed
+  for (const key of ["NEXTAUTH_SECRET", "NEXTAUTH_URL"] as const) {
+    const exists = await db.envSetting.findUnique({ where: { key } });
+    if (!exists) {
+      await db.envSetting.create({
+        data: {
+          key,
+          valueEncrypted: encryptValue(
+            key === "NEXTAUTH_SECRET"
+              ? process.env.NEXTAUTH_SECRET ?? ""
+              : process.env.NEXTAUTH_URL ?? "http://localhost:3000"
+          ),
+          category: "SECURITY",
+          description: key === "NEXTAUTH_SECRET" ? "NextAuth JWT secret" : "NextAuth canonical URL",
+          isSecret: key === "NEXTAUTH_SECRET",
+          isRequired: true,
+          lastEditedBy: userId,
+        },
+      });
+    }
   }
 
-  // Default user subscription (Enterprise plan)
+  const planCount = await db.subscriptionPlan.count();
+  if (planCount === 0) {
+    await db.subscriptionPlan.createMany({ data: [...DEFAULT_PLANS] });
+  }
+
   const existingSub = await db.subscription.findUnique({ where: { userId } });
   if (!existingSub) {
     const entPlan = await db.subscriptionPlan.findFirst({ where: { name: "ENTERPRISE" } });
@@ -230,25 +315,42 @@ async function seedPastProjects(workspaceId: string, brandProfileId: string) {
   ];
 
   for (const p of projects) {
-    await db.pastProject.create({
-      data: {
-        workspaceId,
-        brandProfileId,
-        ...p,
-        currency: "SAR",
-        startDate: new Date("2022-01-01"),
-        endDate: new Date("2024-06-30"),
-      },
-    }).catch(() => {});
+    try {
+      const { localEmbedText } = await import("./llm");
+      const embedding = localEmbedText(
+        `${p.title}\n${p.summary}\n${p.sector}\n${p.tags}`
+      );
+      await db.pastProject.create({
+        data: {
+          workspaceId,
+          brandProfileId,
+          ...p,
+          currency: "SAR",
+          startDate: new Date("2022-01-01"),
+          endDate: new Date("2024-06-30"),
+          embeddingJson: JSON.stringify(embedding),
+        },
+      });
+    } catch {
+      /* ignore duplicate seed races */
+    }
   }
 }
 
-// Seed compliance checks for a project (deterministic, based on frameworks)
 export async function seedComplianceChecks(projectId: string) {
   const existing = await db.complianceCheck.count({ where: { projectId } });
   if (existing > 0) return;
 
-  const checks = [];
+  const checks: {
+    projectId: string;
+    framework: string;
+    controlId: string;
+    title: string;
+    titleAr: string;
+    requirement: string;
+    status: string;
+    complianceLevel: string;
+  }[] = [];
   for (const fw of COMPLIANCE_FRAMEWORKS) {
     for (const ctrl of fw.controls) {
       checks.push({

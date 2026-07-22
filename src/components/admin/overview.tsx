@@ -19,21 +19,33 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { AdminOverviewResponse, RoleCount, ActionCount } from "@/lib/api-types";
 
 export function AdminOverview() {
   const { locale } = useLocale();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-overview"],
     queryFn: async () => {
       const res = await fetch("/api/admin/overview");
-      return res.json();
+      if (!res.ok) throw new Error("overview failed");
+      return res.json() as Promise<AdminOverviewResponse>;
     },
     refetchInterval: 15000,
   });
 
   const k = data?.kpis;
   const charts = data?.charts;
+  const usersByRole: RoleCount[] = charts?.usersByRole ?? [];
+  const auditByAction: ActionCount[] = charts?.auditByAction ?? [];
+
+  if (isError) {
+    return (
+      <Card className="p-8 text-center text-xs text-destructive border-border/50">
+        {locale === "ar" ? "تعذر تحميل لوحة الإدارة" : "Failed to load admin overview"}
+      </Card>
+    );
+  }
 
   const kpis = [
     { label: tr("admin_users", locale), value: k?.totalUsers ?? 0, sub: `${k?.activeUsers ?? 0} active`, icon: Users, color: "text-chart-1", bg: "bg-chart-1/10" },
@@ -80,8 +92,8 @@ export function AdminOverview() {
             <span className="text-xs font-semibold">{tr("admin_roles", locale)}</span>
           </div>
           <div className="p-4 space-y-2">
-            {(charts?.usersByRole ?? []).map((u: any) => {
-              const total = charts?.usersByRole?.reduce((s: number, r: any) => s + r.count, 0) || 1;
+            {usersByRole.map((u) => {
+              const total = usersByRole.reduce((s, r) => s + r.count, 0) || 1;
               const pct = Math.round((u.count / total) * 100);
               const colors: Record<string, string> = {
                 SUPER_ADMIN: "bg-rose-500",
@@ -105,7 +117,7 @@ export function AdminOverview() {
                 </div>
               );
             })}
-            {!isLoading && (!charts?.usersByRole || charts.usersByRole.length === 0) && (
+            {!isLoading && usersByRole.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-4">{tr("no_data", locale)}</p>
             )}
           </div>
@@ -120,8 +132,8 @@ export function AdminOverview() {
             <span className="text-xs font-semibold">{tr("admin_audit", locale)} — {locale === "ar" ? "بالإجراء" : "by Action"}</span>
           </div>
           <div className="p-4 space-y-2">
-            {(charts?.auditByAction ?? []).map((a: any) => {
-              const max = Math.max(...(charts?.auditByAction?.map((x: any) => x.count) ?? [1]), 1);
+            {auditByAction.map((a) => {
+              const max = Math.max(...auditByAction.map((x) => x.count), 1);
               const pct = Math.round((a.count / max) * 100);
               return (
                 <div key={a.action}>
@@ -135,7 +147,7 @@ export function AdminOverview() {
                 </div>
               );
             })}
-            {!isLoading && (!charts?.auditByAction || charts.auditByAction.length === 0) && (
+            {!isLoading && auditByAction.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-4">{tr("no_data", locale)}</p>
             )}
           </div>

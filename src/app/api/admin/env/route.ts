@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
+import { requireAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { encryptValue, decryptValue, maskSecret, rotateEncryption } from "@/lib/crypto";
 import { ENV_CATALOG } from "@/lib/constants";
@@ -9,7 +10,9 @@ export const dynamic = "force-dynamic";
 
 // GET /api/admin/env — returns all settings with masked secret values
 export async function GET(req: NextRequest) {
-  const { user } = await getBootstrapContext();
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await getBootstrapContext();
   const reveal = req.nextUrl.searchParams.get("reveal") === "1";
   const settings = await db.envSetting.findMany({
     orderBy: [{ category: "asc" }, { key: "asc" }],
@@ -34,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   if (reveal) {
     await audit({
-      userId: user.id,
+      userId: session.user.id,
       action: AUDIT_ACTIONS.ENV_UPDATE,
       resource: "EnvSetting",
       details: { action: "REVEAL_ALL", count: settings.length },
@@ -47,7 +50,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/admin/env — create or update a setting (encrypts the value)
 export async function POST(req: NextRequest) {
-  const { user } = await getBootstrapContext();
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await getBootstrapContext();
   const body = await req.json();
   const { key, value, category, description, isSecret } = body as {
     key: string;
@@ -71,7 +76,7 @@ export async function POST(req: NextRequest) {
       category: category ?? undefined,
       description: description ?? undefined,
       isSecret: secret,
-      lastEditedBy: user.id,
+      lastEditedBy: session.user.id,
       lastRotatedAt: new Date(),
     },
     create: {
@@ -80,13 +85,13 @@ export async function POST(req: NextRequest) {
       category: category ?? "GENERAL",
       description: description ?? null,
       isSecret: secret,
-      lastEditedBy: user.id,
+      lastEditedBy: session.user.id,
       lastRotatedAt: new Date(),
     },
   });
 
   await audit({
-    userId: user.id,
+    userId: session.user.id,
     action: AUDIT_ACTIONS.ENV_UPDATE,
     resource: "EnvSetting",
     resourceId: setting.id,

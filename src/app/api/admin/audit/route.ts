@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
+import { requireAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/admin/audit — paginated audit trail (immutable, read-only)
 export async function GET(req: NextRequest) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await getBootstrapContext();
   const action = req.nextUrl.searchParams.get("action");
   const severity = req.nextUrl.searchParams.get("severity");

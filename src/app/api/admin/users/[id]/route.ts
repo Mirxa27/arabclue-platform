@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getBootstrapContext } from "@/lib/bootstrap";
+import { requireAdmin, canGrantRole } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import type { Role } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -10,14 +11,35 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  const { user: admin } = await getBootstrapContext();
   const body = await req.json();
 
   const before = await db.user.findUnique({
     where: { id },
     select: { role: true, active: true, email: true },
   });
+  if (!before) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  if (body.role) {
+    const targetRole = body.role as Role;
+    if (!canGrantRole(session.user.role, targetRole)) {
+      return NextResponse.json(
+        { error: "Insufficient privileges to grant this role" },
+        { status: 403 }
+      );
+    }
+    // Non-super-admins cannot demote/modify SUPER_ADMIN accounts
+    if (before.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
+      return NextResponse.json(
+        { error: "Only SUPER_ADMIN can modify SUPER_ADMIN accounts" },
+        { status: 403 }
+      );
+    }
+  }
 
   const updated = await db.user.update({
     where: { id },
@@ -29,7 +51,6 @@ export async function PATCH(
     },
   });
 
-  // Assign / change subscription plan
   if (body.planId) {
     const plan = await db.subscriptionPlan.findUnique({ where: { id: body.planId } });
     if (plan) {
@@ -56,12 +77,12 @@ export async function PATCH(
   }
 
   await audit({
-    userId: admin.id,
+    userId: session.user.id,
     action: AUDIT_ACTIONS.ROLE_CHANGE,
     resource: "User",
     resourceId: id,
     details: {
-      before: { role: before?.role, active: before?.active },
+      before: { role: before.role, active: before.active },
       after: { role: updated.role, active: updated.active },
     },
     severity: "CRITICAL",
@@ -75,14 +96,30 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  const { user: admin } = await getBootstrapContext();
+
+  const target = await db.user.findUnique({ where: { id }, select: { role: true, email: true } });
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+  if (target.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
+    return NextResponse.json(
+      { error: "Only SUPER_ADMIN can deactivate SUPER_ADMIN accounts" },
+      { status: 403 }
+    );
+  }
+  if (id === session.user.id) {
+    return NextResponse.json({ error: "Cannot deactivate your own account" }, { status: 400 });
+  }
+
   const updated = await db.user.update({
     where: { id },
     data: { active: false },
   });
   await audit({
-    userId: admin.id,
+    userId: session.user.id,
     action: AUDIT_ACTIONS.USER_DEACTIVATE,
     resource: "User",
     resourceId: id,

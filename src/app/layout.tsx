@@ -4,6 +4,9 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import { AuthSessionProvider } from "@/components/providers/session-provider";
+import { QueryProvider } from "@/components/providers/query-provider";
+import { rootMetadata } from "@/lib/seo";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,32 +24,7 @@ const ibmArabic = IBM_Plex_Sans_Arabic({
   weight: ["300", "400", "500", "600", "700"],
 });
 
-export const metadata: Metadata = {
-  title: "Arabclue | أراب كلاو — Saudi Tender Proposal Automation",
-  description:
-    "Arabclue automates the generation of compliant, attractive technical and financial proposals for all Saudi government tender types (IT, construction, consulting, operations) on the Etimad portal. NCA, PDPL & EA compliant. Vision 2030 aligned.",
-  keywords: [
-    "Arabclue",
-    "أراب كلاو",
-    "Etimad",
-    "Saudi procurement",
-    "PDPL",
-    "NCA",
-    "Vision 2030",
-    "RFP",
-    "tender proposal",
-    "government tenders",
-  ],
-  authors: [{ name: "Arabclue" }],
-  icons: {
-    icon: "/logo.svg",
-  },
-  openGraph: {
-    title: "Arabclue | أراب كلاو",
-    description: "AI-automated Saudi government tender proposals",
-    type: "website",
-  },
-};
+export const metadata: Metadata = rootMetadata;
 
 export default function RootLayout({
   children,
@@ -64,7 +42,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <AuthSessionProvider>
+            <QueryProvider>
+              {children}
+            </QueryProvider>
+          </AuthSessionProvider>
           <Toaster />
           <SonnerToaster position="top-center" richColors />
         </ThemeProvider>

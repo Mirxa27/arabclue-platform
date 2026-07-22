@@ -13,11 +13,12 @@ import {
   CircleDashed,
   FileSearch,
   ShieldCheck,
-  Scale,
+  Network,
   Calculator,
   PenLine,
   Sparkles,
   ChevronRight,
+  Square,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,43 +29,89 @@ import type { AgentState, AgentId } from "@/lib/types";
 
 const AGENT_META: Record<AgentId, { icon: typeof Bot; color: string; bg: string }> = {
   INGESTION: { icon: FileSearch, color: "text-chart-2", bg: "bg-chart-2/10" },
-  EA_COMPLIANCE: { icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-500/10" },
-  LEGAL_REGULATORY: { icon: Scale, color: "text-chart-5", bg: "bg-chart-5/10" },
+  COMPLIANCE_REGULATORY: { icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-500/10" },
+  TECHNICAL_ARCHITECT: { icon: Network, color: "text-chart-5", bg: "bg-chart-5/10" },
   FINANCIAL_QUALIFICATION: { icon: Calculator, color: "text-chart-3", bg: "bg-chart-3/10" },
   PROPOSAL_DRAFTING: { icon: PenLine, color: "text-chart-4", bg: "bg-chart-4/10" },
 };
 
 export function AgentWorkflow() {
   const { locale } = useLocale();
-  const { tenderType } = useUI();
+  const { tenderType, activeProjectId, setView } = useUI();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [runId, setRunId] = useState<string | null>(null);
   const [agentStates, setAgentStates] = useState<AgentState[]>([]);
   const [overall, setOverall] = useState(0);
   const [completed, setCompleted] = useState(false);
+  const [llmFallback, setLlmFallback] = useState(false);
+  const [llmProvider, setLlmProvider] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runMutation = useMutation({
     mutationFn: async () => {
+      if (!activeProjectId) {
+        throw new Error(
+          locale === "ar"
+            ? "اختر مشروعاً نشطاً أولاً"
+            : "Select an active project first"
+        );
+      }
       const res = await fetch("/api/agents/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenderType }),
+        body: JSON.stringify({ projectId: activeProjectId, tenderType, locale }),
       });
-      if (!res.ok) throw new Error("run failed");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "run failed");
+      }
       return res.json();
     },
     onSuccess: (data) => {
       setRunId(data.runId);
       setCompleted(false);
       setOverall(0);
+      setLlmFallback(false);
+      setLlmProvider(null);
       setAgentStates(data.agentStates);
       toast({
         title: locale === "ar" ? "بدأ سير عمل الوكلاء" : "Agent workflow started",
         description: locale === "ar" ? "5 وكلاء ذكاء اصطناعي يعملون" : "5 AI agents processing",
       });
       qc.invalidateQueries({ queryKey: ["stats"] });
+    },
+    onError: (err: Error) => {
+      if (err.message.includes("project") || err.message.includes("مشروع")) {
+        setView("projects");
+      }
+      toast({
+        title: locale === "ar" ? "تعذر التشغيل" : "Could not start",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      if (!runId) throw new Error("no run");
+      const res = await fetch("/api/agents/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "cancel failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setCompleted(true);
+      toast({
+        title: locale === "ar" ? "تم الإلغاء" : "Run cancelled",
+      });
     },
   });
 
@@ -77,15 +124,42 @@ export function AgentWorkflow() {
         const data = await res.json();
         setAgentStates(data.agentStates ?? []);
         setOverall(data.overallProgress ?? 0);
+        if (data.finalArtifact) {
+          setLlmFallback(!!data.finalArtifact.fallback);
+          setLlmProvider(data.finalArtifact.provider ?? null);
+        }
         if (data.status === "COMPLETED") {
           setCompleted(true);
+          const fb = data.finalArtifact?.fallback;
           toast({
             title: locale === "ar" ? "اكتمل إنشاء العطاء" : "Proposal generation complete",
-            description: locale === "ar" ? "تم إنشاء 4 ملفات قابلة للتنزيل" : "4 artifacts ready for download",
+            description: fb
+              ? locale === "ar"
+                ? "تم الإنشاء بوضع احتياطي (بدون LLM خارجي)"
+                : `Generated via ${data.finalArtifact?.provider ?? "deterministic"} fallback`
+              : locale === "ar"
+                ? "تم إنشاء الحزمة القابلة للتنزيل"
+                : "Bid package ready for download",
           });
           qc.invalidateQueries({ queryKey: ["stats"] });
           qc.invalidateQueries({ queryKey: ["proposals"] });
           qc.invalidateQueries({ queryKey: ["compliance"] });
+          return;
+        }
+        if (data.status === "FAILED" || data.status === "CANCELLED") {
+          setCompleted(true);
+          toast({
+            title:
+              data.status === "CANCELLED"
+                ? locale === "ar"
+                  ? "تم إلغاء التشغيل"
+                  : "Run cancelled"
+                : locale === "ar"
+                  ? "فشل سير العمل"
+                  : "Agent workflow failed",
+            description: data.errorMessage ?? "error",
+            variant: data.status === "CANCELLED" ? "default" : "destructive",
+          });
           return;
         }
         pollRef.current = setTimeout(poll, 900);
@@ -116,9 +190,36 @@ export function AgentWorkflow() {
             </p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+        {running && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+            className="gap-1.5"
+          >
+            <Square className="size-3.5" />
+            {locale === "ar" ? "إلغاء" : "Cancel"}
+          </Button>
+        )}
         <Button
           size="sm"
-          onClick={() => runMutation.mutate()}
+          onClick={() => {
+            if (!activeProjectId) {
+              toast({
+                title: locale === "ar" ? "لا يوجد مشروع نشط" : "No active project",
+                description:
+                  locale === "ar"
+                    ? "أنشئ أو اختر مشروعاً أولاً"
+                    : "Create or select a project first",
+                variant: "destructive",
+              });
+              setView("projects");
+              return;
+            }
+            runMutation.mutate();
+          }}
           disabled={running}
           className="gap-1.5"
         >
@@ -131,6 +232,7 @@ export function AgentWorkflow() {
             ? tr("status_RUNNING", locale)
             : tr("action_run_agents", locale)}
         </Button>
+        </div>
       </div>
 
       {/* Overall progress */}
@@ -162,7 +264,11 @@ export function AgentWorkflow() {
           </div>
         )}
         {agentStates.map((a, idx) => {
-          const meta = AGENT_META[a.id];
+          const meta = AGENT_META[a.id] ?? {
+            icon: Bot,
+            color: "text-muted-foreground",
+            bg: "bg-muted",
+          };
           const Icon = meta.icon;
           const isRunning = a.status === "running";
           const isDone = a.status === "completed";
@@ -234,7 +340,15 @@ export function AgentWorkflow() {
               {locale === "ar" ? "تم إنشاء العطاء بنجاح" : "Proposal generated successfully"}
             </div>
             <div className="text-[10px] text-muted-foreground">
-              {locale === "ar" ? "4 ملفات جاهزة: PPTX, PDF, XLSX×2" : "4 artifacts ready: PPTX, PDF, XLSX×2"}
+              {locale === "ar"
+                ? "ملفات جاهزة: PDF, HTML slides, XLSX×2, ZIP"
+                : "Artifacts ready: PDF, HTML slides, XLSX×2, ZIP"}
+              {llmProvider && (
+                <span className="ms-1">
+                  · LLM: {llmProvider}
+                  {llmFallback ? (locale === "ar" ? " (احتياطي)" : " (fallback)") : ""}
+                </span>
+              )}
             </div>
           </div>
           <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 border-emerald-500/20 text-[10px]">

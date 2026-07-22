@@ -1,7 +1,10 @@
 "use client";
 
-import { useLocale, useUI } from "@/lib/store";
+import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, type ComponentType } from "react";
+import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { tr } from "@/lib/i18n";
+import { PageHeader, PageSection } from "@/components/patterns";
 import { StatCards } from "./stat-cards";
 import { FileIngestion } from "./file-ingestion";
 import { ComplianceMonitor } from "./compliance-monitor";
@@ -19,68 +22,68 @@ import { AdminEnvSettings } from "@/components/admin/env-settings";
 import { AdminBilling } from "@/components/admin/billing";
 import { AdminSecurity } from "@/components/admin/security";
 import { AdminAudit } from "@/components/admin/audit";
-import { Sparkles, Lock } from "lucide-react";
+import { BillingPanel } from "@/components/dashboard/billing-panel";
+
+/**
+ * Thin view router (App Router SPA equivalent of a PageController).
+ * Specialized panels live in their own modules — do not embed business logic here.
+ */
+const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
+  overview: OverviewView,
+  projects: ProjectsView,
+  documents: DocumentsView,
+  proposals: ProposalsView,
+  compliance: ComplianceView,
+  agents: AgentsView,
+  history: HistoryView,
+  brand: BrandView,
+  billing: BillingView,
+  admin_overview: AdminOverviewView,
+  admin_ai: AdminAIView,
+  admin_env: AdminEnvView,
+  admin_billing: AdminBillingView,
+  admin_security: AdminSecurityView,
+  admin_audit: AdminAuditView,
+};
 
 export function DashboardViews() {
-  const { view } = useUI();
+  const { view, setView } = useUI();
 
-  switch (view) {
-    case "overview":
-      return <OverviewView />;
-    case "projects":
-      return <ProjectsView />;
-    case "documents":
-      return <DocumentsView />;
-    case "proposals":
-      return <ProposalsView />;
-    case "compliance":
-      return <ComplianceView />;
-    case "agents":
-      return <AgentsView />;
-    case "history":
-      return <HistoryView />;
-    case "brand":
-      return <BrandView />;
-    // Admin views
-    case "admin_overview":
-      return <AdminOverviewView />;
-    case "admin_ai":
-      return <AdminAIView />;
-    case "admin_env":
-      return <AdminEnvView />;
-    case "admin_billing":
-      return <AdminBillingView />;
-    case "admin_security":
-      return <AdminSecurityView />;
-    case "admin_audit":
-      return <AdminAuditView />;
-    default:
-      return <OverviewView />;
-  }
-}
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("view") as DashboardView | null;
+    if (q && q in VIEW_REGISTRY) setView(q);
+  }, [setView]);
 
-function ViewHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  const Content = VIEW_REGISTRY[view] ?? OverviewView;
+
   return (
-    <div className="mb-4 flex items-center justify-between">
-      <div>
-        <h1 className="text-lg lg:text-xl font-bold tracking-tight">{title}</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
-      </div>
-      <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-medium text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-        <Sparkles className="size-2.5" />
-        C1 Compliance
-      </div>
-    </div>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={view}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -6 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+      >
+        <Content />
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
 function OverviewView() {
   const { locale } = useLocale();
   return (
-    <div className="space-y-4">
-      <ViewHeader
+    <PageSection>
+      <PageHeader
         title={tr("nav_dashboard", locale)}
-        subtitle={locale === "ar" ? "نظرة شاملة على منصة العطاءات" : "Comprehensive tender platform overview"}
+        subtitle={
+          locale === "ar"
+            ? "نظرة شاملة على منصة العطاءات"
+            : "Comprehensive tender platform overview"
+        }
+        locale={locale}
       />
       <TenderTypeSelector />
       <StatCards />
@@ -96,98 +99,20 @@ function OverviewView() {
           <VersionHistory />
         </div>
       </div>
-    </div>
-  );
-}
-
-// ─── Admin view wrappers ─────────────────────────────────────────────────────
-
-function AdminViewHeader({ title, subtitle }: { title: string; subtitle: string }) {
-  const { locale } = useLocale();
-  return (
-    <div className="mb-4 flex items-center justify-between">
-      <div>
-        <h1 className="text-lg lg:text-xl font-bold tracking-tight flex items-center gap-2">
-          <Lock className="size-4 text-amber-600" />
-          {title}
-        </h1>
-        <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
-      </div>
-      <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-medium text-amber-700 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
-        <Lock className="size-2.5" />
-        {locale === "ar" ? "وصول المسؤول" : "Admin Access"}
-      </div>
-    </div>
-  );
-}
-
-function AdminOverviewView() {
-  const { locale } = useLocale();
-  return (
-    <div className="space-y-4">
-      <AdminViewHeader title={tr("nav_admin", locale)} subtitle={locale === "ar" ? "نظرة عامة على النظام" : "System-wide overview"} />
-      <AdminOverview />
-    </div>
-  );
-}
-
-function AdminAIView() {
-  const { locale } = useLocale();
-  return (
-    <div className="space-y-4">
-      <AdminViewHeader title={tr("admin_ai_providers", locale)} subtitle={locale === "ar" ? "تكوين نماذج اللغة والحواجز الأمنية" : "Configure LLM models & safety guardrails"} />
-      <AdminAIProviders />
-    </div>
-  );
-}
-
-function AdminEnvView() {
-  const { locale } = useLocale();
-  return (
-    <div className="space-y-4">
-      <AdminViewHeader title={tr("admin_env", locale)} subtitle={locale === "ar" ? "إدارة مشفرة لمتغيرات البيئة" : "Encrypted environment variable management"} />
-      <AdminEnvSettings />
-    </div>
-  );
-}
-
-function AdminBillingView() {
-  const { locale } = useLocale();
-  return (
-    <div className="space-y-4">
-      <AdminViewHeader title={tr("admin_billing", locale)} subtitle={locale === "ar" ? "الباقات والاستخدام والإيرادات" : "Plans, usage & revenue"} />
-      <AdminBilling />
-    </div>
-  );
-}
-
-function AdminSecurityView() {
-  const { locale } = useLocale();
-  return (
-    <div className="space-y-4">
-      <AdminViewHeader title={tr("admin_security", locale)} subtitle={locale === "ar" ? "RBAC والمستخدمون والصلاحيات" : "RBAC, users & access control"} />
-      <AdminSecurity />
-    </div>
-  );
-}
-
-function AdminAuditView() {
-  const { locale } = useLocale();
-  return (
-    <div className="space-y-4">
-      <AdminViewHeader title={tr("admin_audit", locale)} subtitle={locale === "ar" ? "سجل تدقيق غير قابل للتغيير" : "Immutable audit trail"} />
-      <AdminAudit />
-    </div>
+    </PageSection>
   );
 }
 
 function ProjectsView() {
   const { locale } = useLocale();
   return (
-    <div className="space-y-4">
-      <ViewHeader
+    <PageSection>
+      <PageHeader
         title={tr("nav_projects", locale)}
-        subtitle={locale === "ar" ? "إدارة مشاريع المناقصات" : "Manage tender projects"}
+        subtitle={
+          locale === "ar" ? "إدارة مشاريع المناقصات" : "Manage tender projects"
+        }
+        locale={locale}
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ProjectsList />
@@ -196,17 +121,22 @@ function ProjectsView() {
           <AgentWorkflow />
         </div>
       </div>
-    </div>
+    </PageSection>
   );
 }
 
 function DocumentsView() {
   const { locale } = useLocale();
   return (
-    <div className="space-y-4">
-      <ViewHeader
+    <PageSection>
+      <PageHeader
         title={tr("nav_documents", locale)}
-        subtitle={locale === "ar" ? "مصفوفة المستندات وإدارة الإصدارات" : "Document matrix & versioning"}
+        subtitle={
+          locale === "ar"
+            ? "مصفوفة المستندات وإدارة الإصدارات"
+            : "Document matrix & versioning"
+        }
+        locale={locale}
       />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 space-y-4">
@@ -218,17 +148,22 @@ function DocumentsView() {
           <ComplianceMonitor />
         </div>
       </div>
-    </div>
+    </PageSection>
   );
 }
 
 function ProposalsView() {
   const { locale } = useLocale();
   return (
-    <div className="space-y-4">
-      <ViewHeader
+    <PageSection>
+      <PageHeader
         title={tr("nav_proposals", locale)}
-        subtitle={locale === "ar" ? "العطاءات الفنية والمالية المُنشأة" : "Generated technical & financial proposals"}
+        subtitle={
+          locale === "ar"
+            ? "العطاءات الفنية والمالية المُنشأة"
+            : "Generated technical & financial proposals"
+        }
+        locale={locale}
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ProposalsList />
@@ -237,17 +172,22 @@ function ProposalsView() {
           <ComplianceMonitor />
         </div>
       </div>
-    </div>
+    </PageSection>
   );
 }
 
 function ComplianceView() {
   const { locale } = useLocale();
   return (
-    <div className="space-y-4">
-      <ViewHeader
+    <PageSection>
+      <PageHeader
         title={tr("nav_compliance", locale)}
-        subtitle={locale === "ar" ? "مراقبة NCA وPDPL والبنية المؤسسية" : "NCA, PDPL & EA compliance monitoring"}
+        subtitle={
+          locale === "ar"
+            ? "مراقبة NCA وPDPL والبنية المؤسسية"
+            : "NCA, PDPL & EA compliance monitoring"
+        }
+        locale={locale}
       />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2">
@@ -258,17 +198,22 @@ function ComplianceView() {
           <VersionHistory />
         </div>
       </div>
-    </div>
+    </PageSection>
   );
 }
 
 function AgentsView() {
   const { locale } = useLocale();
   return (
-    <div className="space-y-4">
-      <ViewHeader
+    <PageSection>
+      <PageHeader
         title={tr("nav_agents", locale)}
-        subtitle={locale === "ar" ? "سير عمل الوكلاء متعددين" : "Multi-agent workflow orchestration"}
+        subtitle={
+          locale === "ar"
+            ? "سير عمل الوكلاء متعددين"
+            : "Multi-agent workflow orchestration"
+        }
+        locale={locale}
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <AgentWorkflow />
@@ -277,35 +222,174 @@ function AgentsView() {
           <ProposalsList />
         </div>
       </div>
-    </div>
+    </PageSection>
   );
 }
 
 function HistoryView() {
   const { locale } = useLocale();
   return (
-    <div className="space-y-4">
-      <ViewHeader
+    <PageSection>
+      <PageHeader
         title={tr("nav_history", locale)}
-        subtitle={locale === "ar" ? "سجل إصدارات المستندات والعطاءات" : "Document & proposal version history"}
+        subtitle={
+          locale === "ar"
+            ? "سجل إصدارات المستندات والعطاءات"
+            : "Document & proposal version history"
+        }
+        locale={locale}
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <VersionHistory />
         <DocumentMatrix />
       </div>
-    </div>
+    </PageSection>
   );
 }
 
 function BrandView() {
   const { locale } = useLocale();
   return (
-    <div className="space-y-4">
-      <ViewHeader
+    <PageSection>
+      <PageHeader
         title={tr("nav_brand", locale)}
-        subtitle={locale === "ar" ? "إعداد هوية الشركة والمشاريع السابقة" : "Company identity & past project corpus"}
+        subtitle={
+          locale === "ar"
+            ? "إعداد هوية الشركة والمشاريع السابقة"
+            : "Company identity & past project corpus"
+        }
+        locale={locale}
       />
       <BrandSetup />
-    </div>
+    </PageSection>
+  );
+}
+
+function BillingView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        title={tr("nav_billing", locale)}
+        subtitle={
+          locale === "ar"
+            ? "الباقات والدفع عبر مي فاتورة"
+            : "Plans and MyFatoorah checkout"
+        }
+        locale={locale}
+        badge="none"
+      />
+      <BillingPanel />
+    </PageSection>
+  );
+}
+
+function AdminOverviewView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        badge="admin"
+        title={tr("nav_admin", locale)}
+        subtitle={
+          locale === "ar" ? "نظرة عامة على النظام" : "System-wide overview"
+        }
+        locale={locale}
+      />
+      <AdminOverview />
+    </PageSection>
+  );
+}
+
+function AdminAIView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        badge="admin"
+        title={tr("admin_ai_providers", locale)}
+        subtitle={
+          locale === "ar"
+            ? "تكوين نماذج اللغة والحواجز الأمنية"
+            : "Configure LLM models & safety guardrails"
+        }
+        locale={locale}
+      />
+      <AdminAIProviders />
+    </PageSection>
+  );
+}
+
+function AdminEnvView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        badge="admin"
+        title={tr("admin_env", locale)}
+        subtitle={
+          locale === "ar"
+            ? "إدارة مشفرة لمتغيرات البيئة"
+            : "Encrypted environment variable management"
+        }
+        locale={locale}
+      />
+      <AdminEnvSettings />
+    </PageSection>
+  );
+}
+
+function AdminBillingView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        badge="admin"
+        title={tr("admin_billing", locale)}
+        subtitle={
+          locale === "ar" ? "الباقات والاستخدام والإيرادات" : "Plans, usage & revenue"
+        }
+        locale={locale}
+      />
+      <AdminBilling />
+    </PageSection>
+  );
+}
+
+function AdminSecurityView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        badge="admin"
+        title={tr("admin_security", locale)}
+        subtitle={
+          locale === "ar"
+            ? "RBAC والمستخدمون والصلاحيات"
+            : "RBAC, users & access control"
+        }
+        locale={locale}
+      />
+      <AdminSecurity />
+    </PageSection>
+  );
+}
+
+function AdminAuditView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        badge="admin"
+        title={tr("admin_audit", locale)}
+        subtitle={
+          locale === "ar"
+            ? "سجل تدقيق غير قابل للتغيير"
+            : "Immutable audit trail"
+        }
+        locale={locale}
+      />
+      <AdminAudit />
+    </PageSection>
   );
 }

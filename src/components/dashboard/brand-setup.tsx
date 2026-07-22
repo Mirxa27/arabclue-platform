@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { VISION_2030_PILLARS } from "@/lib/constants";
+import type { ApiPastProject } from "@/lib/api-types";
 
 const SECTORS = ["GOV", "HEALTH", "FINANCE", "ENERGY", "TELECOM", "OTHER"];
 
@@ -71,6 +72,7 @@ function BrandForm({ brand }: { brand: BrandData }) {
   const { locale } = useLocale();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     primaryColor: brand.primaryColor,
@@ -117,14 +119,54 @@ function BrandForm({ brand }: { brand: BrandData }) {
         {/* Logo upload */}
         <div>
           <Label className="text-xs">{tr("brand_logo", locale)}</Label>
-          <div className="mt-1.5 rounded-lg border-2 border-dashed border-border p-4 text-center cursor-pointer hover:border-primary/40 transition-colors">
-            <div
-              className="mx-auto size-12 rounded-lg flex items-center justify-center mb-2"
-              style={{ background: `linear-gradient(135deg, ${form.primaryColor}, ${form.accentColor})` }}
-            >
-              <Building2 className="size-5 text-white" />
-            </div>
-            <Button size="sm" variant="outline" className="gap-1.5 text-[11px]">
+          <div
+            className="mt-1.5 rounded-lg border-2 border-dashed border-border p-4 text-center cursor-pointer hover:border-primary/40 transition-colors"
+            onClick={() => logoInputRef.current?.click()}
+          >
+            {form.logoUrl ? (
+              <img
+                src={form.logoUrl}
+                alt="logo"
+                className="mx-auto size-12 rounded-lg object-contain mb-2 bg-muted"
+              />
+            ) : (
+              <div
+                className="mx-auto size-12 rounded-lg flex items-center justify-center mb-2"
+                style={{
+                  background: `linear-gradient(135deg, ${form.primaryColor}, ${form.accentColor})`,
+                }}
+              >
+                <Building2 className="size-5 text-white" />
+              </div>
+            )}
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append("file", file);
+                const res = await fetch("/api/brand/logo", { method: "POST", body: fd });
+                const data = await res.json();
+                if (res.ok) {
+                  setForm((f) => ({ ...f, logoUrl: data.logoUrl }));
+                  qc.invalidateQueries({ queryKey: ["brand"] });
+                  toast({
+                    title: locale === "ar" ? "تم رفع الشعار" : "Logo uploaded",
+                  });
+                } else {
+                  toast({
+                    title: locale === "ar" ? "فشل رفع الشعار" : "Logo upload failed",
+                    description: data.error,
+                    variant: "destructive",
+                  });
+                }
+              }}
+            />
+            <Button size="sm" variant="outline" className="gap-1.5 text-[11px]" type="button">
               <Upload className="size-3" />
               {tr("action_upload", locale)}
             </Button>
@@ -191,7 +233,7 @@ function BrandForm({ brand }: { brand: BrandData }) {
   );
 }
 
-function PastProjectsPanel({ pastProjects }: { pastProjects: any[] }) {
+function PastProjectsPanel({ pastProjects }: { pastProjects: ApiPastProject[] }) {
   const { locale } = useLocale();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -244,7 +286,7 @@ function PastProjectsPanel({ pastProjects }: { pastProjects: any[] }) {
       </div>
 
       <div className="p-4 max-h-[24rem] overflow-y-auto scrollbar-thin space-y-2">
-        {pastProjects.map((p: any) => (
+        {pastProjects.map((p) => (
           <div key={p.id} className="rounded-lg border border-border/60 p-3 hover:shadow-sm transition-shadow">
             <div className="flex items-start justify-between gap-2 mb-1">
               <div className="min-w-0">
@@ -255,7 +297,7 @@ function PastProjectsPanel({ pastProjects }: { pastProjects: any[] }) {
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <Badge variant="outline" className="text-[9px] font-mono">
-                  {p.currency} {Number(p.contractValue).toLocaleString()}
+                  {p.currency} {Number(p.contractValue ?? 0).toLocaleString()}
                 </Badge>
                 <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                   {p.outcome}
@@ -267,7 +309,7 @@ function PastProjectsPanel({ pastProjects }: { pastProjects: any[] }) {
             </p>
             {p.tags && (
               <div className="flex flex-wrap gap-1 mt-2">
-                {p.tags.split(",").map((tag: string) => (
+                {p.tags.split(",").map((tag) => (
                   <Badge key={tag} variant="secondary" className="text-[9px] h-4">
                     {tag.trim()}
                   </Badge>

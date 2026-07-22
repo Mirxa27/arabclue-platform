@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
+import { requireAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -10,15 +11,17 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  const { user } = await getBootstrapContext();
+  await getBootstrapContext();
   const body = await req.json();
   const updated = await db.subscriptionPlan.update({
     where: { id },
     data: { ...body, id: undefined, createdAt: undefined, updatedAt: undefined },
   });
   await audit({
-    userId: user.id,
+    userId: session.user.id,
     action: AUDIT_ACTIONS.PLAN_UPDATE,
     resource: "SubscriptionPlan",
     resourceId: id,
@@ -32,11 +35,13 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  const { user } = await getBootstrapContext();
+  await getBootstrapContext();
   await db.subscriptionPlan.delete({ where: { id } });
   await audit({
-    userId: user.id,
+    userId: session.user.id,
     action: AUDIT_ACTIONS.PLAN_UPDATE,
     resource: "SubscriptionPlan",
     resourceId: id,

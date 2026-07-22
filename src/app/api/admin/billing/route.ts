@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
+import { requireAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/admin/billing — revenue, usage, recent billing records
 export async function GET() {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await getBootstrapContext();
 
   const [records, activeSubs, allSubs, plans] = await Promise.all([
@@ -59,7 +62,9 @@ export async function GET() {
 
 // POST /api/admin/billing — record a manual billing event (topup/usage/refund)
 export async function POST(req: NextRequest) {
-  const { user: admin } = await getBootstrapContext();
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await getBootstrapContext();
   const body = await req.json();
   const record = await db.billingRecord.create({
     data: {
@@ -88,7 +93,7 @@ export async function POST(req: NextRequest) {
   }
 
   await audit({
-    userId: admin.id,
+    userId: session.user.id,
     action: AUDIT_ACTIONS.BILLING_CHANGE,
     resource: "BillingRecord",
     resourceId: record.id,

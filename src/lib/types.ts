@@ -1,6 +1,6 @@
 // Domain types shared between frontend & backend
 
-export type Role = "ADMIN" | "BIDDER" | "REVIEWER" | "FINANCE";
+export type Role = "SUPER_ADMIN" | "ADMIN" | "BIDDER" | "REVIEWER" | "FINANCE";
 export type Locale = "ar" | "en";
 
 export type DocCategory =
@@ -30,10 +30,54 @@ export type AgentRunStatus =
 
 export type AgentId =
   | "INGESTION"
-  | "EA_COMPLIANCE"
-  | "LEGAL_REGULATORY"
+  | "COMPLIANCE_REGULATORY"
+  | "TECHNICAL_ARCHITECT"
   | "FINANCIAL_QUALIFICATION"
   | "PROPOSAL_DRAFTING";
+
+/** Structured extract produced by the Ingestion agent */
+export interface IngestionEntities {
+  scope: string;
+  evaluation: { technical: number; financial: number };
+  sla: { perWeek: number; maxPercent: number; capped?: boolean };
+  milestones: { name: string; weeks: number }[];
+  evidence: string[];
+  rawTextExcerpt?: string;
+}
+
+export interface ComplianceMatrixRow {
+  frameworkId: string;
+  controlId: string;
+  title: string;
+  status: "COMPLIANT" | "NON_COMPLIANT" | "PARTIAL" | "PENDING";
+  evidence: string;
+  remediation?: string | null;
+}
+
+export interface FinancialExtract {
+  cashEquivalents: number | null;
+  accountsReceivable: number | null;
+  currentLiabilities: number | null;
+  quickLiquidityRatio: number | null;
+  qlrPasses: boolean | null;
+  saudizationPercent: number | null;
+  boqItems: {
+    item: string;
+    unit: string;
+    qty: number;
+    unitPrice: number;
+    total: number;
+  }[];
+  localContentPreferenceApplied: number;
+  notes: string[];
+}
+
+export interface TechnicalArchitectOutput {
+  methodology: { id: number; name: string; nameAr: string; rationale: string }[];
+  matchedProjects: { id: string; title: string; score: number; why: string }[];
+  solutionApproach: string;
+  vision2030Notes: string;
+}
 
 export interface AgentState {
   id: AgentId;

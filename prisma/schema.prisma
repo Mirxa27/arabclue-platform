@@ -26,6 +26,8 @@ model User {
   avatarUrl       String?
   locale          String   @default("ar") // ar | en
   active          Boolean  @default(true)
+  mustChangePassword Boolean @default(false)
+  activeWorkspaceId String?
   lastLoginAt     DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -38,6 +40,7 @@ model User {
   sessions        UserSession[]
   auditLogs       AuditLog[]
   billingRecords  BillingRecord[]
+  paymentCheckouts PaymentCheckout[]
   subscription    Subscription?
 }
 
@@ -143,22 +146,45 @@ model UploadedDocument {
   project         TenderProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   uploadedBy      User      @relation(fields: [uploadedById], references: [id])
   versions        DocumentVersion[]
+  chunks          DocumentChunk[]
 
   @@index([workspaceId])
   @@index([projectId])
   @@index([docCategory])
 }
 
+// RAG chunks from uploaded tender documents (RFP, specs, contracts, etc.)
+model DocumentChunk {
+  id            String   @id @default(cuid())
+  documentId    String
+  workspaceId   String
+  projectId     String?
+  chunkIndex    Int
+  content       String
+  embeddingJson String?  // JSON number[] for dense retrieval
+  createdAt     DateTime @default(now())
+
+  document      UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([documentId])
+}
+
 model DocumentVersion {
-  id           String   @id @default(cuid())
-  documentId   String
-  version      Int
-  storagePath  String
-  sizeBytes    Int
-  changeLog    String?
-  createdBy    String
-  createdAt    DateTime @default(now())
-  document     UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  id                 String   @id @default(cuid())
+  documentId         String
+  version            Int
+  storagePath        String
+  sizeBytes          Int
+  changeLog          String?
+  parsedSummary      String?
+  extractedEntities  String?
+  checksum           String?
+  createdBy          String
+  createdAt          DateTime @default(now())
+  document           UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, version])
   @@index([documentId])
@@ -200,7 +226,8 @@ model PastProject {
   outcome        String?  // SUCCESSFUL | ONGOING | COMPLETED
   summary        String   // rich text / vectorized for RAG
   summaryAr      String?
-  vectorId       String?  // reference into vector store
+  vectorId       String?  // optional external vector store id
+  embeddingJson  String?  // JSON number[] embedding for local RAG
   tags           String?  // comma-separated
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -271,6 +298,7 @@ model GeneratedProposal {
   status        String   @default("DRAFT") // DRAFT | GENERATED | REVIEWED | EXPORTED
   version       Int      @default(1)
   contentMd     String?  // markdown content
+  locale        String   @default("ar") // ar | en — generation language
   artifactsJson String?  // JSON: list of {type, filename, downloadPath}
   complianceScore Float? // 0-100
   generatedAt   DateTime?
@@ -280,9 +308,25 @@ model GeneratedProposal {
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy     User      @relation(fields: [createdById], references: [id])
+  versions      ProposalVersion[]
 
   @@index([workspaceId])
   @@index([projectId])
+}
+
+model ProposalVersion {
+  id          String   @id @default(cuid())
+  proposalId  String
+  version     Int
+  contentMd   String
+  changeLog   String?
+  locale      String   @default("ar")
+  createdBy   String
+  createdAt   DateTime @default(now())
+  proposal    GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, version])
+  @@index([proposalId])
 }
 
 // ─── AI Provider & Model Configuration ───────────────────────────────────────
@@ -290,11 +334,20 @@ model GeneratedProposal {
 model AIProviderConfig {
   id              String   @id @default(cuid())
   name            String   // e.g. "ZAI GLM-4.6", "OpenAI GPT-4o", "Claude Sonnet"
-  provider        String   // zai | openai | anthropic | azure | mistral | custom
+  provider        String   // zai | openai | anthropic | mistral | openai_compatible | ollama | azure_openai
   modelId         String   // e.g. glm-4.6, gpt-4o, claude-3-5-sonnet
-  apiBase         String?  // custom endpoint
-  isActive        Boolean  @default(false) // only one active at a time
+  apiBase         String?  // OpenAI-compatible base URL ending in /v1 or host root
+  apiKeyEnvKey    String?  // EnvSetting / process.env key for the API token
+  // Which agent engine this config serves (one active provider per engine)
+  engine          String   @default("DEFAULT") // DEFAULT | INGESTION | COMPLIANCE | TECHNICAL | FINANCIAL | DRAFTING | EMBEDDING | REWRITE
+  isActive        Boolean  @default(false)
   isDefault       Boolean  @default(false)
+  priority        Int      @default(0)
+  // Model capabilities (auto-filled from catalog / model list)
+  contextWindow   Int      @default(128000)
+  supportsVision  Boolean  @default(false)
+  supportsJsonMode Boolean @default(true)
+  supportsTools   Boolean  @default(false)
   // Tunable parameters
   temperature     Float    @default(0.2)
   maxTokens       Int      @default(4096)
@@ -302,21 +355,23 @@ model AIProviderConfig {
   frequencyPenalty Float   @default(0.0)
   presencePenalty Float    @default(0.0)
   // Safety guardrails
-  confidenceThreshold Float @default(0.85) // min confidence to accept agent output
+  confidenceThreshold Float @default(0.85)
   toxicityFilter  Boolean  @default(true)
   piiFilter       Boolean  @default(true)
   hallucinationGuard Boolean @default(true)
   maxRetries      Int      @default(2)
   timeoutMs       Int      @default(60000)
   // Cost tracking
-  inputCostPer1k  Float    @default(0.0)  // SAR per 1k input tokens
-  outputCostPer1k Float    @default(0.0)  // SAR per 1k output tokens
-  metadata        String?  // JSON blob for extra config
+  inputCostPer1k  Float    @default(0.0)
+  outputCostPer1k Float    @default(0.0)
+  metadata        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([provider])
   @@index([isActive])
+  @@index([engine])
+  @@index([engine, isActive])
 }
 
 // ─── Encrypted Environment Settings (.env UI management) ─────────────────────
@@ -361,6 +416,7 @@ model SubscriptionPlan {
   updatedAt       DateTime @updatedAt
 
   subscriptions   Subscription[]
+  paymentCheckouts PaymentCheckout[]
 }
 
 model Subscription {
@@ -398,14 +454,46 @@ model BillingRecord {
   proposalsIncluded Int    @default(0)
   status          String   @default("PAID") // PENDING | PAID | FAILED | REFUNDED
   invoiceNumber   String?
-  paymentMethod   String?  // mada | visa | mastercard | stc_pay | bank_transfer
+  paymentMethod   String?  // myfatoorah | mada | visa | mastercard | stc_pay | bank_transfer
+  externalInvoiceId String? // MyFatoorah InvoiceId
+  externalPaymentId String?
   metadata        String?  // JSON
   createdAt       DateTime @default(now())
 
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkout        PaymentCheckout?
 
   @@index([userId])
   @@index([status])
+  @@index([externalInvoiceId])
+}
+
+// MyFatoorah checkout sessions for self-serve plan purchase
+model PaymentCheckout {
+  id                String   @id @default(cuid())
+  userId            String
+  planId            String
+  billingCycle      String   // MONTHLY | YEARLY
+  amount            Float
+  currency          String   @default("SAR")
+  status            String   @default("PENDING") // PENDING | PAID | FAILED | EXPIRED | CANCELLED
+  customerReference String   @unique
+  invoiceId         String?  // MyFatoorah InvoiceId (stringified)
+  paymentId         String?
+  paymentUrl        String?
+  billingRecordId   String?  @unique
+  errorMessage      String?
+  paidAt            DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan              SubscriptionPlan @relation(fields: [planId], references: [id])
+  billingRecord     BillingRecord? @relation(fields: [billingRecordId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([invoiceId])
 }
 
 // ─── Immutable Audit Trail ───────────────────────────────────────────────────

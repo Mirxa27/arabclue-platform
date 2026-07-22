@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { COMPLIANCE_FRAMEWORKS } from "@/lib/constants";
+import { ListSkeleton } from "./loading-skeletons";
+import type { ApiComplianceCheck } from "@/lib/api-types";
 
 const FW_ICONS: Record<string, string> = {
   NCA_ECC1: "🛡️",
@@ -38,18 +40,33 @@ const FW_COLORS: Record<string, string> = {
   LOCAL_CONTENT: "text-amber-600",
 };
 
+type ComplianceSummary = {
+  total: number;
+  compliant: number;
+  partial: number;
+  pending: number;
+  nonCompliant: number;
+  na?: number;
+};
+
+type ComplianceResponse = {
+  summary?: ComplianceSummary;
+  grouped?: Record<string, ApiComplianceCheck[]>;
+};
+
 export function ComplianceMonitor() {
   const { locale } = useLocale();
   const { activeProjectId } = useUI();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["compliance", activeProjectId],
     queryFn: async () => {
       const url = activeProjectId
         ? `/api/compliance?projectId=${activeProjectId}`
         : "/api/compliance";
       const res = await fetch(url);
-      return res.json();
+      if (!res.ok) throw new Error("compliance failed");
+      return res.json() as Promise<ComplianceResponse>;
     },
     refetchInterval: 4000,
   });
@@ -106,62 +123,73 @@ export function ComplianceMonitor() {
 
       {/* Framework breakdown */}
       <div className="px-5 pb-4 space-y-2 max-h-[22rem] overflow-y-auto scrollbar-thin">
-        {COMPLIANCE_FRAMEWORKS.map((fw) => {
-          const checks = grouped[fw.id] ?? [];
-          const fwCompliant = checks.filter((c: any) => c.status === "COMPLIANT").length;
-          const fwTotal = checks.length;
-          const fwPct = fwTotal > 0 ? Math.round((fwCompliant / fwTotal) * 100) : 0;
-          const color = FW_COLORS[fw.id];
-          return (
-            <div
-              key={fw.id}
-              className="rounded-lg border border-border/60 p-3 bg-background/50"
-            >
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-base shrink-0">{FW_ICONS[fw.id]}</span>
-                  <div className="min-w-0">
-                    <div className={cn("text-xs font-semibold truncate", color)}>
-                      {locale === "ar" ? fw.nameAr : fw.name}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground font-mono">
-                      {fw.id} · {fwCompliant}/{fwTotal}
+        {isLoading ? (
+          <ListSkeleton rows={3} className="px-0" />
+        ) : isError ? (
+          <p className="text-xs text-destructive py-4 text-center">
+            {locale === "ar" ? "تعذر تحميل الامتثال" : "Failed to load compliance"}
+          </p>
+        ) : (
+          COMPLIANCE_FRAMEWORKS.map((fw) => {
+            const checks = grouped[fw.id] ?? [];
+            const fwCompliant = checks.filter(
+              (c) => c.status === "COMPLIANT"
+            ).length;
+            const fwTotal = checks.length;
+            const fwPct =
+              fwTotal > 0 ? Math.round((fwCompliant / fwTotal) * 100) : 0;
+            const color = FW_COLORS[fw.id];
+            return (
+              <div
+                key={fw.id}
+                className="rounded-xl border border-border/50 p-3 bg-background/50 hover:border-border transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base shrink-0">{FW_ICONS[fw.id]}</span>
+                    <div className="min-w-0">
+                      <div className={cn("text-xs font-semibold truncate", color)}>
+                        {locale === "ar" ? fw.nameAr : fw.name}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground font-mono">
+                        {fw.id} · {fwCompliant}/{fwTotal}
+                      </div>
                     </div>
                   </div>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-[10px] font-mono shrink-0 tabular-nums",
+                      fwPct === 100
+                        ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                        : fwPct > 0
+                          ? "bg-chart-4/10 text-chart-4 border-chart-4/20"
+                          : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {fwPct}%
+                  </Badge>
                 </div>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "text-[10px] font-mono shrink-0",
-                    fwPct === 100
-                      ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
-                      : fwPct > 0
-                      ? "bg-chart-4/10 text-chart-4 border-chart-4/20"
-                      : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {fwPct}%
-                </Badge>
+                {checks.length > 0 && (
+                  <div className="space-y-1">
+                    {checks.slice(0, 4).map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center gap-2 text-[11px]"
+                      >
+                        <StatusDot status={c.status} />
+                        <span className="font-mono text-muted-foreground shrink-0">
+                          {c.controlId}
+                        </span>
+                        <span className="truncate flex-1">{c.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              {checks.length > 0 && (
-                <div className="space-y-1">
-                  {checks.slice(0, 4).map((c: any) => (
-                    <div key={c.id} className="flex items-center gap-2 text-[11px]">
-                      <StatusDot status={c.status} />
-                      <span className="font-mono text-muted-foreground shrink-0">{c.controlId}</span>
-                      <span className="truncate flex-1">
-                        {locale === "ar" ? c.titleAr : c.title}
-                      </span>
-                      <Badge variant="ghost" className="text-[9px] font-mono px-1 h-4 shrink-0">
-                        {c.complianceLevel}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </Card>
   );

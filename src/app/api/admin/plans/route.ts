@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
+import { requireAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { DEFAULT_PLANS } from "@/lib/constants";
 
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 // GET /api/admin/plans
 export async function GET() {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await getBootstrapContext();
   const plans = await db.subscriptionPlan.findMany({
     orderBy: [{ priceMonthly: "asc" }],
@@ -18,7 +21,9 @@ export async function GET() {
 
 // POST /api/admin/plans — create a plan
 export async function POST(req: NextRequest) {
-  const { user } = await getBootstrapContext();
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await getBootstrapContext();
   const body = await req.json();
   const plan = await db.subscriptionPlan.create({
     data: {
@@ -39,7 +44,7 @@ export async function POST(req: NextRequest) {
     },
   });
   await audit({
-    userId: user.id,
+    userId: session.user.id,
     action: AUDIT_ACTIONS.PLAN_CREATE,
     resource: "SubscriptionPlan",
     resourceId: plan.id,

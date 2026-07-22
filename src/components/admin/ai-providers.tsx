@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +17,9 @@ import {
   Activity,
   Zap,
   Save,
+  Eye,
+  RefreshCw,
+  Layers,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,7 +36,28 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import type { ApiAIProvider, ProviderPatch } from "@/lib/api-types";
+
+type EngineMeta = { id: string; label: { en: string; ar: string } };
+type Preset = Record<string, string | number | boolean | null>;
+type RemoteModel = {
+  id: string;
+  contextWindow: number;
+  maxTokens: number;
+  supportsVision: boolean;
+  supportsJsonMode: boolean;
+  supportsTools: boolean;
+  inputCostPer1k?: number;
+  outputCostPer1k?: number;
+};
 
 export function AdminAIProviders() {
   const { locale } = useLocale();
@@ -41,12 +65,20 @@ export function AdminAIProviders() {
   const { toast } = useToast();
   const [editing, setEditing] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [engineFilter, setEngineFilter] = useState<string>("ALL");
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-ai-providers"],
     queryFn: async () => {
       const res = await fetch("/api/admin/ai-providers");
-      return res.json();
+      if (!res.ok) throw new Error("failed");
+      return res.json() as Promise<{
+        providers: ApiAIProvider[];
+        presets: Preset[];
+        engines: EngineMeta[];
+        providerTypes: string[];
+        activeByEngine: Record<string, string | null>;
+      }>;
     },
   });
 
@@ -57,17 +89,32 @@ export function AdminAIProviders() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: true }),
       });
-      if (!res.ok) throw new Error("failed");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "failed");
+      }
       return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ai-providers"] });
-      toast({ title: locale === "ar" ? "تم تفعيل المزود" : "Provider activated" });
+      toast({
+        title:
+          locale === "ar"
+            ? "تم تفعيل المزود لهذا المحرك"
+            : "Provider activated for engine",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "فشل" : "Failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+    mutationFn: async ({ id, data }: { id: string; data: ProviderPatch }) => {
       const res = await fetch(`/api/admin/ai-providers/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -81,58 +128,98 @@ export function AdminAIProviders() {
       setEditing(null);
       toast({ title: locale === "ar" ? "تم الحفظ" : "Saved" });
     },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "فشل الحفظ" : "Save failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/admin/ai-providers/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("failed");
+      const res = await fetch(`/api/admin/ai-providers/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "failed");
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-ai-providers"] });
       toast({ title: locale === "ar" ? "تم الحذف" : "Deleted" });
     },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "فشل الحذف" : "Delete failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
   });
 
-  const providers = data?.providers ?? [];
+  const providers: ApiAIProvider[] = data?.providers ?? [];
   const presets = data?.presets ?? [];
-  const active = providers.find((p: any) => p.isActive);
+  const engines = data?.engines ?? [];
+  const activeByEngine = data?.activeByEngine ?? {};
+
+  const filtered = useMemo(() => {
+    if (engineFilter === "ALL") return providers;
+    return providers.filter((p) => (p.engine || "DEFAULT") === engineFilter);
+  }, [providers, engineFilter]);
+
+  const activeCount = Object.values(activeByEngine).filter(Boolean).length;
 
   return (
     <Card className="p-0 overflow-hidden border-border/60">
-      {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/30">
         <div className="flex items-center gap-2.5">
           <div className="size-8 rounded-lg bg-chart-1/10 flex items-center justify-center">
             <Cpu className="size-4 text-chart-1" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold">{tr("admin_ai_providers", locale)}</h3>
+            <h3 className="text-sm font-semibold">
+              {tr("admin_ai_providers", locale)}
+            </h3>
             <p className="text-[11px] text-muted-foreground">
-              {locale === "ar" ? "تبديل وتكوين نماذج اللغة" : "Switch & configure language models"}
+              {locale === "ar"
+                ? "مزودات متعددة لكل محرك · OpenAI-compatible · جلب النماذج تلقائياً"
+                : "Multiple providers per engine · OpenAI-compatible · auto-fetch models"}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {active && (
-            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1 text-[10px]">
-              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {active.name}
-            </Badge>
-          )}
+          <Badge
+            variant="outline"
+            className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1 text-[10px]"
+          >
+            <Layers className="size-3" />
+            {activeCount}{" "}
+            {locale === "ar" ? "محركات مفعّلة" : "engines active"}
+          </Badge>
           <Dialog open={showAdd} onOpenChange={setShowAdd}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="gap-1.5 text-[11px]">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-[11px]"
+              >
                 <Plus className="size-3" />
                 {tr("admin_add_provider", locale)}
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{tr("admin_add_provider", locale)}</DialogTitle>
               </DialogHeader>
               <AddProviderForm
                 presets={presets}
+                engines={engines}
+                defaultEngine={
+                  engineFilter === "ALL" ? "DEFAULT" : engineFilter
+                }
                 onAdded={() => {
                   setShowAdd(false);
                   qc.invalidateQueries({ queryKey: ["admin-ai-providers"] });
@@ -143,15 +230,38 @@ export function AdminAIProviders() {
         </div>
       </div>
 
-      {/* Provider cards */}
-      <div className="p-4 space-y-3 max-h-[32rem] overflow-y-auto scrollbar-thin">
+      {/* Engine filter tabs */}
+      <div className="flex flex-wrap gap-1.5 px-4 py-3 border-b border-border/40 bg-muted/10">
+        <EngineChip
+          active={engineFilter === "ALL"}
+          onClick={() => setEngineFilter("ALL")}
+          label={locale === "ar" ? "الكل" : "All"}
+        />
+        {engines.map((e) => (
+          <EngineChip
+            key={e.id}
+            active={engineFilter === e.id}
+            onClick={() => setEngineFilter(e.id)}
+            label={locale === "ar" ? e.label.ar : e.label.en}
+            activeProvider={Boolean(activeByEngine[e.id])}
+          />
+        ))}
+      </div>
+
+      <div className="p-4 space-y-3 max-h-[36rem] overflow-y-auto scrollbar-thin">
         {isLoading ? (
           <div className="p-8 text-center flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             {tr("loading", locale)}
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-xs text-muted-foreground">
+            {locale === "ar"
+              ? "لا توجد مزودات لهذا المحرك — أضف مزوداً"
+              : "No providers for this engine — add one"}
+          </div>
         ) : (
-          providers.map((p: any) => (
+          filtered.map((p) => (
             <div
               key={p.id}
               className={cn(
@@ -169,19 +279,35 @@ export function AdminAIProviders() {
                       p.isActive ? "bg-emerald-500/15" : "bg-muted"
                     )}
                   >
-                    <Cpu className={cn("size-5", p.isActive ? "text-emerald-600" : "text-muted-foreground")} />
+                    <Cpu
+                      className={cn(
+                        "size-5",
+                        p.isActive
+                          ? "text-emerald-600"
+                          : "text-muted-foreground"
+                      )}
+                    />
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold truncate">{p.name}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold truncate">
+                        {p.name}
+                      </span>
                       {p.isActive && (
-                        <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-0.5">
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-0.5"
+                        >
                           <Check className="size-2.5" /> ACTIVE
                         </Badge>
                       )}
+                      <Badge variant="secondary" className="text-[9px]">
+                        {p.engine || "DEFAULT"}
+                      </Badge>
                     </div>
                     <div className="text-[10px] text-muted-foreground font-mono">
                       {p.provider} · {p.modelId}
+                      {p.apiBase ? ` · ${p.apiBase}` : ""}
                     </div>
                   </div>
                 </div>
@@ -202,9 +328,17 @@ export function AdminAIProviders() {
                     size="sm"
                     variant="ghost"
                     className="h-7 text-[10px]"
-                    onClick={() => setEditing(editing === p.id ? null : p.id)}
+                    onClick={() =>
+                      setEditing(editing === p.id ? null : p.id)
+                    }
                   >
-                    {editing === p.id ? (locale === "ar" ? "إغلاق" : "Close") : (locale === "ar" ? "تعديل" : "Edit")}
+                    {editing === p.id
+                      ? locale === "ar"
+                        ? "إغلاق"
+                        : "Close"
+                      : locale === "ar"
+                        ? "تعديل"
+                        : "Edit"}
                   </Button>
                   {!p.isActive && (
                     <Button
@@ -219,25 +353,61 @@ export function AdminAIProviders() {
                 </div>
               </div>
 
-              {/* Quick stats */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-                <Stat icon={Thermometer} label={tr("admin_temperature", locale)} value={p.temperature} color="text-chart-4" />
-                <Stat icon={Hash} label={tr("admin_max_tokens", locale)} value={p.maxTokens} color="text-chart-2" />
-                <Stat icon={Activity} label={tr("admin_confidence", locale)} value={`${(p.confidenceThreshold * 100).toFixed(0)}%`} color="text-emerald-600" />
-                <Stat icon={ShieldAlert} label={locale === "ar" ? "الحواجز" : "Guardrails"} value={`${[p.toxicityFilter, p.piiFilter, p.hallucinationGuard].filter(Boolean).length}/3`} color="text-chart-5" />
+                <Stat
+                  icon={Hash}
+                  label={locale === "ar" ? "سياق" : "Context"}
+                  value={formatTokens(p.contextWindow ?? 128000)}
+                  color="text-chart-1"
+                />
+                <Stat
+                  icon={Thermometer}
+                  label={tr("admin_temperature", locale)}
+                  value={p.temperature}
+                  color="text-chart-4"
+                />
+                <Stat
+                  icon={Hash}
+                  label={tr("admin_max_tokens", locale)}
+                  value={p.maxTokens}
+                  color="text-chart-2"
+                />
+                <Stat
+                  icon={Eye}
+                  label={locale === "ar" ? "رؤية" : "Vision"}
+                  value={p.supportsVision ? "Yes" : "No"}
+                  color="text-chart-3"
+                />
               </div>
 
-              {/* Cost */}
-              <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                 <span className="font-mono">
-                  {locale === "ar" ? "تكلفة:" : "Cost:"} {p.inputCostPer1k.toFixed(3)}/{p.outputCostPer1k.toFixed(3)} SAR/1k tok
+                  {locale === "ar" ? "تكلفة:" : "Cost:"}{" "}
+                  {(p.inputCostPer1k ?? 0).toFixed(3)}/
+                  {(p.outputCostPer1k ?? 0).toFixed(3)} SAR/1k
                 </span>
+                {p.supportsJsonMode && (
+                  <Badge variant="outline" className="text-[9px]">
+                    JSON
+                  </Badge>
+                )}
+                {p.supportsTools && (
+                  <Badge variant="outline" className="text-[9px]">
+                    Tools
+                  </Badge>
+                )}
+                <Stat
+                  icon={ShieldAlert}
+                  label={locale === "ar" ? "حواجز" : "Guardrails"}
+                  value={`${[p.toxicityFilter, p.piiFilter, p.hallucinationGuard].filter(Boolean).length}/3`}
+                  color="text-chart-5"
+                />
               </div>
 
-              {/* Edit form */}
               {editing === p.id && (
                 <ProviderEditForm
                   provider={p}
+                  engines={engines}
                   onSave={(data) => updateMutation.mutate({ id: p.id, data })}
                   saving={updateMutation.isPending}
                 />
@@ -250,48 +420,336 @@ export function AdminAIProviders() {
   );
 }
 
-function Stat({ icon: Icon, label, value, color }: { icon: typeof Cpu; label: string; value: any; color: string }) {
+function EngineChip({
+  active,
+  onClick,
+  label,
+  activeProvider,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  activeProvider?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "px-2.5 py-1 rounded-md text-[10px] border transition-colors",
+        active
+          ? "bg-primary text-primary-foreground border-primary"
+          : "bg-background border-border/60 hover:border-primary/40 text-muted-foreground"
+      )}
+    >
+      {label}
+      {activeProvider && !active && (
+        <span className="ms-1 inline-block size-1.5 rounded-full bg-emerald-500" />
+      )}
+    </button>
+  );
+}
+
+function formatTokens(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.round(n / 1000)}k`;
+  return String(n);
+}
+
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  color,
+}: {
+  icon: typeof Cpu;
+  label: string;
+  value: string | number | boolean | null | undefined;
+  color: string;
+}) {
   return (
     <div className="flex items-center gap-1.5 p-1.5 rounded-md bg-muted/30">
       <Icon className={cn("size-3 shrink-0", color)} />
       <div className="min-w-0">
-        <div className="text-[11px] font-bold tabular-nums leading-none">{value}</div>
-        <div className="text-[8px] text-muted-foreground leading-none mt-0.5 truncate">{label}</div>
+        <div className="text-[11px] font-bold tabular-nums leading-none">
+          {value}
+        </div>
+        <div className="text-[8px] text-muted-foreground leading-none mt-0.5 truncate">
+          {label}
+        </div>
       </div>
     </div>
   );
 }
 
-function ProviderEditForm({ provider, onSave, saving }: { provider: any; onSave: (data: any) => void; saving: boolean }) {
+function ProviderEditForm({
+  provider,
+  engines,
+  onSave,
+  saving,
+}: {
+  provider: ApiAIProvider;
+  engines: EngineMeta[];
+  onSave: (data: ProviderPatch) => void;
+  saving: boolean;
+}) {
   const { locale } = useLocale();
+  const { toast } = useToast();
+  const [models, setModels] = useState<RemoteModel[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
   const [form, setForm] = useState({
-    temperature: provider.temperature,
-    maxTokens: provider.maxTokens,
-    topP: provider.topP,
-    confidenceThreshold: provider.confidenceThreshold,
-    toxicityFilter: provider.toxicityFilter,
-    piiFilter: provider.piiFilter,
-    hallucinationGuard: provider.hallucinationGuard,
-    maxRetries: provider.maxRetries,
-    timeoutMs: provider.timeoutMs,
-    inputCostPer1k: provider.inputCostPer1k,
-    outputCostPer1k: provider.outputCostPer1k,
+    name: provider.name,
+    modelId: provider.modelId ?? "",
+    apiBase: provider.apiBase ?? "",
+    apiKeyEnvKey: provider.apiKeyEnvKey ?? "",
+    engine: provider.engine ?? "DEFAULT",
+    priority: provider.priority ?? 0,
+    contextWindow: provider.contextWindow ?? 128000,
+    supportsVision: provider.supportsVision ?? false,
+    supportsJsonMode: provider.supportsJsonMode ?? true,
+    supportsTools: provider.supportsTools ?? false,
+    temperature: provider.temperature ?? 0.2,
+    maxTokens: provider.maxTokens ?? 4096,
+    topP: provider.topP ?? 0.9,
+    confidenceThreshold: provider.confidenceThreshold ?? 0.85,
+    toxicityFilter: provider.toxicityFilter ?? true,
+    piiFilter: provider.piiFilter ?? true,
+    hallucinationGuard: provider.hallucinationGuard ?? true,
+    maxRetries: provider.maxRetries ?? 2,
+    timeoutMs: provider.timeoutMs ?? 60000,
+    inputCostPer1k: provider.inputCostPer1k ?? 0,
+    outputCostPer1k: provider.outputCostPer1k ?? 0,
   });
+
+  const applyModelCaps = (m: RemoteModel) => {
+    setForm((f) => ({
+      ...f,
+      modelId: m.id,
+      contextWindow: m.contextWindow,
+      maxTokens: m.maxTokens,
+      supportsVision: m.supportsVision,
+      supportsJsonMode: m.supportsJsonMode,
+      supportsTools: m.supportsTools,
+      inputCostPer1k: m.inputCostPer1k ?? f.inputCostPer1k,
+      outputCostPer1k: m.outputCostPer1k ?? f.outputCostPer1k,
+    }));
+  };
+
+  const fetchModels = async () => {
+    setFetchingModels(true);
+    try {
+      const res = await fetch("/api/admin/ai-providers/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providerId: provider.id,
+          provider: provider.provider,
+          apiBase: form.apiBase,
+          apiKeyEnvKey: form.apiKeyEnvKey,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "fetch failed");
+      setModels(data.models ?? []);
+      toast({
+        title:
+          locale === "ar"
+            ? `تم جلب ${data.models?.length ?? 0} نموذج`
+            : `Fetched ${data.models?.length ?? 0} models`,
+      });
+    } catch (err) {
+      toast({
+        title: locale === "ar" ? "فشل جلب النماذج" : "Model fetch failed",
+        description: err instanceof Error ? err.message : "",
+        variant: "destructive",
+      });
+    } finally {
+      setFetchingModels(false);
+    }
+  };
 
   return (
     <div className="mt-3 pt-3 border-t border-border/60 space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label className="text-[10px]">
+            {locale === "ar" ? "الاسم" : "Name"}
+          </Label>
+          <Input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className="h-8 text-xs mt-1"
+          />
+        </div>
+        <div>
+          <Label className="text-[10px]">
+            {locale === "ar" ? "المحرك" : "Engine"}
+          </Label>
+          <Select
+            value={form.engine}
+            onValueChange={(v) => setForm({ ...form, engine: v })}
+          >
+            <SelectTrigger className="h-8 text-xs mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {engines.map((e) => (
+                <SelectItem key={e.id} value={e.id} className="text-xs">
+                  {locale === "ar" ? e.label.ar : e.label.en}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label className="text-[10px]">API Base URL</Label>
+          <Input
+            value={form.apiBase}
+            onChange={(e) => setForm({ ...form, apiBase: e.target.value })}
+            placeholder="https://api.openai.com/v1"
+            className="h-8 text-xs mt-1 font-mono"
+          />
+        </div>
+        <div>
+          <Label className="text-[10px]">API Key Env Key</Label>
+          <Input
+            value={form.apiKeyEnvKey}
+            onChange={(e) =>
+              setForm({ ...form, apiKeyEnvKey: e.target.value })
+            }
+            placeholder="OPENAI_API_KEY"
+            className="h-8 text-xs mt-1 font-mono"
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <Label className="text-[10px]">Model ID</Label>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px] gap-1"
+            onClick={fetchModels}
+            disabled={fetchingModels}
+          >
+            {fetchingModels ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3" />
+            )}
+            {locale === "ar" ? "جلب النماذج" : "Fetch models"}
+          </Button>
+        </div>
+        {models.length > 0 ? (
+          <Select value={form.modelId} onValueChange={(id) => {
+            const m = models.find((x) => x.id === id);
+            if (m) applyModelCaps(m);
+            else setForm({ ...form, modelId: id });
+          }}>
+            <SelectTrigger className="h-8 text-xs font-mono">
+              <SelectValue placeholder="Select model" />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {models.map((m) => (
+                <SelectItem key={m.id} value={m.id} className="text-xs font-mono">
+                  {m.id}
+                  {m.supportsVision ? " · vision" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            value={form.modelId}
+            onChange={(e) => setForm({ ...form, modelId: e.target.value })}
+            className="h-8 text-xs font-mono"
+          />
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label className="text-[10px]">
+            {locale === "ar" ? "نافذة السياق" : "Context window"}
+          </Label>
+          <Input
+            type="number"
+            value={form.contextWindow}
+            onChange={(e) =>
+              setForm({ ...form, contextWindow: Number(e.target.value) })
+            }
+            className="h-8 text-xs mt-1"
+          />
+        </div>
+        <div>
+          <Label className="text-[10px]">Priority</Label>
+          <Input
+            type="number"
+            value={form.priority}
+            onChange={(e) =>
+              setForm({ ...form, priority: Number(e.target.value) })
+            }
+            className="h-8 text-xs mt-1"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <GuardrailToggle
+          label={locale === "ar" ? "رؤية" : "Vision"}
+          checked={form.supportsVision}
+          onChange={(v) => setForm({ ...form, supportsVision: v })}
+        />
+        <GuardrailToggle
+          label="JSON mode"
+          checked={form.supportsJsonMode}
+          onChange={(v) => setForm({ ...form, supportsJsonMode: v })}
+        />
+        <GuardrailToggle
+          label="Tools"
+          checked={form.supportsTools}
+          onChange={(v) => setForm({ ...form, supportsTools: v })}
+        />
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label className="text-[10px] flex items-center gap-1">
-            <Thermometer className="size-2.5" /> {tr("admin_temperature", locale)}: <span className="font-mono">{form.temperature.toFixed(2)}</span>
+            <Thermometer className="size-2.5" />{" "}
+            {tr("admin_temperature", locale)}:{" "}
+            <span className="font-mono">{form.temperature.toFixed(2)}</span>
           </Label>
-          <Slider value={[form.temperature]} min={0} max={2} step={0.05} onValueChange={([v]) => setForm({ ...form, temperature: v })} className="mt-2" />
+          <Slider
+            value={[form.temperature]}
+            min={0}
+            max={2}
+            step={0.05}
+            onValueChange={([v]) => setForm({ ...form, temperature: v })}
+            className="mt-2"
+          />
         </div>
         <div>
           <Label className="text-[10px] flex items-center gap-1">
-            <Activity className="size-2.5" /> {tr("admin_confidence", locale)}: <span className="font-mono">{(form.confidenceThreshold * 100).toFixed(0)}%</span>
+            <Activity className="size-2.5" /> {tr("admin_confidence", locale)}:{" "}
+            <span className="font-mono">
+              {(form.confidenceThreshold * 100).toFixed(0)}%
+            </span>
           </Label>
-          <Slider value={[form.confidenceThreshold]} min={0.5} max={1} step={0.01} onValueChange={([v]) => setForm({ ...form, confidenceThreshold: v })} className="mt-2" />
+          <Slider
+            value={[form.confidenceThreshold]}
+            min={0.5}
+            max={1}
+            step={0.01}
+            onValueChange={([v]) =>
+              setForm({ ...form, confidenceThreshold: v })
+            }
+            className="mt-2"
+          />
         </div>
       </div>
 
@@ -301,7 +759,9 @@ function ProviderEditForm({ provider, onSave, saving }: { provider: any; onSave:
           <Input
             type="number"
             value={form.maxTokens}
-            onChange={(e) => setForm({ ...form, maxTokens: Number(e.target.value) })}
+            onChange={(e) =>
+              setForm({ ...form, maxTokens: Number(e.target.value) })
+            }
             className="h-8 text-xs mt-1"
           />
         </div>
@@ -322,32 +782,81 @@ function ProviderEditForm({ provider, onSave, saving }: { provider: any; onSave:
           <ShieldAlert className="size-2.5" /> {tr("admin_guardrails", locale)}
         </Label>
         <div className="grid grid-cols-3 gap-2">
-          <GuardrailToggle label={tr("admin_toxicity", locale)} checked={form.toxicityFilter} onChange={(v) => setForm({ ...form, toxicityFilter: v })} />
-          <GuardrailToggle label={tr("admin_pii", locale)} checked={form.piiFilter} onChange={(v) => setForm({ ...form, piiFilter: v })} />
-          <GuardrailToggle label={tr("admin_hallucination", locale)} checked={form.hallucinationGuard} onChange={(v) => setForm({ ...form, hallucinationGuard: v })} />
+          <GuardrailToggle
+            label={tr("admin_toxicity", locale)}
+            checked={form.toxicityFilter}
+            onChange={(v) => setForm({ ...form, toxicityFilter: v })}
+          />
+          <GuardrailToggle
+            label={tr("admin_pii", locale)}
+            checked={form.piiFilter}
+            onChange={(v) => setForm({ ...form, piiFilter: v })}
+          />
+          <GuardrailToggle
+            label={tr("admin_hallucination", locale)}
+            checked={form.hallucinationGuard}
+            onChange={(v) => setForm({ ...form, hallucinationGuard: v })}
+          />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label className="text-[10px]">{locale === "ar" ? "تكلفة الإدخال/1k" : "Input Cost / 1k (SAR)"}</Label>
-          <Input type="number" step="0.001" value={form.inputCostPer1k} onChange={(e) => setForm({ ...form, inputCostPer1k: Number(e.target.value) })} className="h-8 text-xs mt-1" />
+          <Label className="text-[10px]">
+            {locale === "ar" ? "تكلفة الإدخال/1k" : "Input Cost / 1k (SAR)"}
+          </Label>
+          <Input
+            type="number"
+            step="0.001"
+            value={form.inputCostPer1k}
+            onChange={(e) =>
+              setForm({ ...form, inputCostPer1k: Number(e.target.value) })
+            }
+            className="h-8 text-xs mt-1"
+          />
         </div>
         <div>
-          <Label className="text-[10px]">{locale === "ar" ? "تكلفة الإخراج/1k" : "Output Cost / 1k (SAR)"}</Label>
-          <Input type="number" step="0.001" value={form.outputCostPer1k} onChange={(e) => setForm({ ...form, outputCostPer1k: Number(e.target.value) })} className="h-8 text-xs mt-1" />
+          <Label className="text-[10px]">
+            {locale === "ar" ? "تكلفة الإخراج/1k" : "Output Cost / 1k (SAR)"}
+          </Label>
+          <Input
+            type="number"
+            step="0.001"
+            value={form.outputCostPer1k}
+            onChange={(e) =>
+              setForm({ ...form, outputCostPer1k: Number(e.target.value) })
+            }
+            className="h-8 text-xs mt-1"
+          />
         </div>
       </div>
 
-      <Button size="sm" className="w-full gap-1.5" onClick={() => onSave(form)} disabled={saving}>
-        {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+      <Button
+        size="sm"
+        className="w-full gap-1.5"
+        onClick={() => onSave(form)}
+        disabled={saving}
+      >
+        {saving ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Save className="size-3.5" />
+        )}
         {tr("action_save", locale)}
       </Button>
     </div>
   );
 }
 
-function GuardrailToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function GuardrailToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <div className="flex items-center justify-between p-2 rounded-md border border-border/60 bg-background">
       <span className="text-[10px]">{label}</span>
@@ -356,25 +865,97 @@ function GuardrailToggle({ label, checked, onChange }: { label: string; checked:
   );
 }
 
-function AddProviderForm({ presets, onAdded }: { presets: any[]; onAdded: () => void }) {
+function AddProviderForm({
+  presets,
+  engines,
+  defaultEngine,
+  onAdded,
+}: {
+  presets: Preset[];
+  engines: EngineMeta[];
+  defaultEngine: string;
+  onAdded: () => void;
+}) {
   const { locale } = useLocale();
   const { toast } = useToast();
   const [selectedPreset, setSelectedPreset] = useState(0);
-  const [form, setForm] = useState({
-    name: presets[0]?.name ?? "",
-    provider: presets[0]?.provider ?? "zai",
-    modelId: presets[0]?.modelId ?? "",
-    apiBase: presets[0]?.apiBase ?? "",
-    temperature: presets[0]?.temperature ?? 0.2,
-    maxTokens: presets[0]?.maxTokens ?? 4096,
+  const [models, setModels] = useState<RemoteModel[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+
+  const applyPreset = (p: Preset, engineOverride?: string) => ({
+    name: String(p.name ?? ""),
+    provider: String(p.provider ?? "openai_compatible"),
+    modelId: String(p.modelId ?? ""),
+    apiBase: String(p.apiBase ?? ""),
+    apiKeyEnvKey: String(p.apiKeyEnvKey ?? ""),
+    engine: engineOverride ?? String(p.engine ?? defaultEngine),
+    temperature: Number(p.temperature ?? 0.2),
+    maxTokens: Number(p.maxTokens ?? 4096),
+    contextWindow: Number(p.contextWindow ?? 128000),
+    supportsVision: Boolean(p.supportsVision),
+    supportsJsonMode: p.supportsJsonMode !== false,
+    supportsTools: Boolean(p.supportsTools),
+    inputCostPer1k: Number(p.inputCostPer1k ?? 0),
+    outputCostPer1k: Number(p.outputCostPer1k ?? 0),
+    isActive: false,
   });
 
+  const [form, setForm] = useState(() =>
+    applyPreset(presets[0] ?? {}, defaultEngine)
+  );
+
+  const applyModelCaps = (m: RemoteModel) => {
+    setForm((f) => ({
+      ...f,
+      modelId: m.id,
+      contextWindow: m.contextWindow,
+      maxTokens: m.maxTokens,
+      supportsVision: m.supportsVision,
+      supportsJsonMode: m.supportsJsonMode,
+      supportsTools: m.supportsTools,
+      inputCostPer1k: m.inputCostPer1k ?? f.inputCostPer1k,
+      outputCostPer1k: m.outputCostPer1k ?? f.outputCostPer1k,
+    }));
+  };
+
+  const fetchModels = async () => {
+    setFetchingModels(true);
+    try {
+      const res = await fetch("/api/admin/ai-providers/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: form.provider,
+          apiBase: form.apiBase,
+          apiKeyEnvKey: form.apiKeyEnvKey,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "fetch failed");
+      setModels(data.models ?? []);
+      toast({
+        title:
+          locale === "ar"
+            ? `تم جلب ${data.models?.length ?? 0} نموذج`
+            : `Fetched ${data.models?.length ?? 0} models`,
+      });
+    } catch (err) {
+      toast({
+        title: locale === "ar" ? "فشل جلب النماذج" : "Model fetch failed",
+        description: err instanceof Error ? err.message : "",
+        variant: "destructive",
+      });
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
   const create = useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async () => {
       const res = await fetch("/api/admin/ai-providers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(form),
       });
       if (!res.ok) throw new Error("failed");
       return res.json();
@@ -383,44 +964,207 @@ function AddProviderForm({ presets, onAdded }: { presets: any[]; onAdded: () => 
       toast({ title: locale === "ar" ? "تمت الإضافة" : "Provider added" });
       onAdded();
     },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "فشل" : "Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
   });
 
   return (
     <div className="space-y-3">
       <div>
-        <Label className="text-xs mb-1.5 block">{locale === "ar" ? "اختر قالباً" : "Choose a preset"}</Label>
-        <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto scrollbar-thin">
+        <Label className="text-xs mb-1.5 block">
+          {locale === "ar" ? "اختر قالباً" : "Choose a preset"}
+        </Label>
+        <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto scrollbar-thin">
           {presets.map((p, i) => (
             <button
-              key={p.name}
+              key={String(p.name ?? i)}
+              type="button"
               onClick={() => {
                 setSelectedPreset(i);
-                setForm({ name: p.name, provider: p.provider, modelId: p.modelId, apiBase: p.apiBase, temperature: p.temperature, maxTokens: p.maxTokens });
+                setModels([]);
+                setForm(applyPreset(p, defaultEngine));
               }}
               className={cn(
                 "flex items-center justify-between p-2 rounded-md border text-xs text-start",
-                selectedPreset === i ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+                selectedPreset === i
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/40"
               )}
             >
-              <span className="font-medium">{p.name}</span>
-              <span className="text-[10px] text-muted-foreground font-mono">{p.modelId}</span>
+              <span className="font-medium">{String(p.name ?? "")}</span>
+              <span className="text-[10px] text-muted-foreground font-mono">
+                {String(p.provider)} · {String(p.modelId ?? "")}
+              </span>
             </button>
           ))}
         </div>
       </div>
       <Separator />
+
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <Label className="text-[10px]">{locale === "ar" ? "الاسم" : "Name"}</Label>
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="h-8 text-xs mt-1" />
+          <Label className="text-[10px]">
+            {locale === "ar" ? "الاسم" : "Name"}
+          </Label>
+          <Input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className="h-8 text-xs mt-1"
+          />
         </div>
         <div>
-          <Label className="text-[10px]">Model ID</Label>
-          <Input value={form.modelId} onChange={(e) => setForm({ ...form, modelId: e.target.value })} className="h-8 text-xs mt-1" />
+          <Label className="text-[10px]">
+            {locale === "ar" ? "المحرك" : "Engine"}
+          </Label>
+          <Select
+            value={form.engine}
+            onValueChange={(v) => setForm({ ...form, engine: v })}
+          >
+            <SelectTrigger className="h-8 text-xs mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {engines.map((e) => (
+                <SelectItem key={e.id} value={e.id} className="text-xs">
+                  {locale === "ar" ? e.label.ar : e.label.en}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
-      <Button size="sm" className="w-full gap-1.5" onClick={() => create.mutate(form)} disabled={create.isPending}>
-        {create.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label className="text-[10px]">Provider type</Label>
+          <Select
+            value={form.provider}
+            onValueChange={(v) => setForm({ ...form, provider: v })}
+          >
+            <SelectTrigger className="h-8 text-xs mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[
+                "openai",
+                "openai_compatible",
+                "ollama",
+                "azure_openai",
+                "anthropic",
+                "mistral",
+                "zai",
+              ].map((t) => (
+                <SelectItem key={t} value={t} className="text-xs font-mono">
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-[10px]">API Key Env Key</Label>
+          <Input
+            value={form.apiKeyEnvKey}
+            onChange={(e) =>
+              setForm({ ...form, apiKeyEnvKey: e.target.value })
+            }
+            className="h-8 text-xs mt-1 font-mono"
+          />
+        </div>
+      </div>
+
+      <div>
+        <Label className="text-[10px]">API Base URL</Label>
+        <Input
+          value={form.apiBase}
+          onChange={(e) => setForm({ ...form, apiBase: e.target.value })}
+          placeholder="https://openrouter.ai/api/v1"
+          className="h-8 text-xs mt-1 font-mono"
+        />
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <Label className="text-[10px]">Model ID</Label>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px] gap-1"
+            onClick={fetchModels}
+            disabled={fetchingModels}
+          >
+            {fetchingModels ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3" />
+            )}
+            {locale === "ar" ? "جلب النماذج" : "Fetch models"}
+          </Button>
+        </div>
+        {models.length > 0 ? (
+          <Select
+            value={form.modelId}
+            onValueChange={(id) => {
+              const m = models.find((x) => x.id === id);
+              if (m) applyModelCaps(m);
+              else setForm({ ...form, modelId: id });
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {models.map((m) => (
+                <SelectItem key={m.id} value={m.id} className="text-xs font-mono">
+                  {m.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            value={form.modelId}
+            onChange={(e) => setForm({ ...form, modelId: e.target.value })}
+            className="h-8 text-xs mt-1 font-mono"
+          />
+        )}
+        <p className="text-[9px] text-muted-foreground mt-1">
+          {locale === "ar"
+            ? `سياق ${form.contextWindow} · max ${form.maxTokens}${form.supportsVision ? " · رؤية" : ""}`
+            : `Context ${form.contextWindow} · max ${form.maxTokens}${form.supportsVision ? " · vision" : ""}`}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between p-2 rounded-md border border-border/60">
+        <span className="text-[10px]">
+          {locale === "ar"
+            ? "تفعيل فوراً لهذا المحرك"
+            : "Activate immediately for this engine"}
+        </span>
+        <Switch
+          checked={form.isActive}
+          onCheckedChange={(v) => setForm({ ...form, isActive: v })}
+          className="scale-75"
+        />
+      </div>
+
+      <Button
+        size="sm"
+        className="w-full gap-1.5"
+        onClick={() => create.mutate()}
+        disabled={create.isPending}
+      >
+        {create.isPending ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Plus className="size-3.5" />
+        )}
         {locale === "ar" ? "إضافة المزود" : "Add Provider"}
       </Button>
     </div>
