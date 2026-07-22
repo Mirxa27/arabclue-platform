@@ -95,18 +95,12 @@ describe("compliance statuses", () => {
 });
 
 describe("MFA login contract (client payload shape)", () => {
-  test("setup/verify payloads must include email and password fields", () => {
-    // Documents the API contract used by /login — both fields required when unauthenticated
-    const setupBody = { email: "u@example.com", password: "secret-pass" };
-    const verifyBody = {
-      email: "u@example.com",
-      password: "secret-pass",
-      token: "123456",
-    };
-    expect(typeof setupBody.email).toBe("string");
-    expect(typeof setupBody.password).toBe("string");
-    expect(typeof verifyBody.token).toBe("string");
-    expect(setupBody.password.length).toBeGreaterThanOrEqual(8);
+  test("setup requires session; verify uses TOTP token", () => {
+    // Setup is session-authenticated; rotation may include currentToken
+    const setupBody = { currentToken: "123456" };
+    const verifyBody = { token: "123456" };
+    expect(typeof setupBody.currentToken).toBe("string");
+    expect(verifyBody.token).toMatch(/^\d{6}$/);
   });
 });
 

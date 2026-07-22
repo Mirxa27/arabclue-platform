@@ -1,25 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { verifyMfaToken } from "@/lib/mfa";
-import { verifyPassword } from "@/lib/password";
+import { requireSession } from "@/lib/auth";
+import { rateLimit } from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
 import { z } from "zod";
-import { emailSchema, zodErrorResponse } from "@/lib/validation";
+import { zodErrorResponse } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
 const mfaVerifySchema = z.object({
   token: z.string().regex(/^\d{6}$/),
-  email: emailSchema.optional(),
-  password: z.string().optional(),
 });
 
-/** POST { token, email?, password? } — verify TOTP and enable MFA */
+/** POST { token } — verify TOTP and enable MFA (session only, rate-limited) */
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await requireSession({ allowMustChangePassword: true });
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const rl = rateLimit({ key: `mfa:verify:${session.user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
+    if (!rl.ok) {
+      return NextResponse.json({ error: "rate_limited_try_later" }, { status: 429 });
+    }
+
     let raw: unknown;
     try {
       raw = await req.json();
@@ -30,31 +34,21 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return zodErrorResponse(parsed.error);
 
     const { token } = parsed.data;
-    const email = parsed.data.email?.trim().toLowerCase();
-    const password = parsed.data.password ?? "";
 
-    let user =
-      session?.user?.id
-        ? await db.user.findUnique({ where: { id: session.user.id } })
-        : null;
-
-    if (!user) {
-      if (!email || !password) {
-        return NextResponse.json(
-          { error: "Authentication required (session or email+password)" },
-          { status: 401 }
-        );
-      }
-      user = await db.user.findUnique({ where: { email } });
-      if (!user || !(await verifyPassword(password, user.passwordHash))) {
-        return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-      }
-    }
+    const user = await db.user.findUnique({ where: { id: session.user.id } });
+    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     if (!user.mfaSecret) {
       return NextResponse.json({ error: "MFA not set up" }, { status: 400 });
     }
     if (!verifyMfaToken(user.mfaSecret, token)) {
+      await audit({
+        userId: user.id,
+        action: "LOGIN_FAILED",
+        details: { reason: "mfa_verify_failed" },
+        severity: "WARN",
+        success: false,
+      });
       return NextResponse.json({ error: "Invalid MFA token" }, { status: 400 });
     }
 

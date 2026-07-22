@@ -18,6 +18,7 @@ declare module "next-auth" {
       mfaEnabled: boolean;
       locale: string;
       mustChangePassword: boolean;
+      avatarUrl?: string | null;
     };
     mfaVerified: boolean;
     sessionToken?: string;
@@ -32,6 +33,7 @@ declare module "next-auth" {
     mfaVerified: boolean;
     mustChangePassword: boolean;
     sessionToken: string;
+    avatarUrl?: string | null;
   }
 }
 
@@ -44,8 +46,12 @@ declare module "next-auth/jwt" {
     locale: string;
     mustChangePassword: boolean;
     sessionToken?: string;
+    claimsRefreshedAt?: number;
+    avatarUrl?: string | null;
   }
 }
+
+const CLAIMS_REFRESH_MS = 60_000;
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 60 * 60 * 12 },
@@ -152,6 +158,7 @@ export const authOptions: NextAuthOptions = {
           mfaVerified,
           mustChangePassword: user.mustChangePassword,
           sessionToken,
+          avatarUrl: user.avatarUrl,
         };
       },
     }),
@@ -168,6 +175,8 @@ export const authOptions: NextAuthOptions = {
         token.locale = user.locale;
         token.mustChangePassword = user.mustChangePassword;
         token.sessionToken = user.sessionToken;
+        token.avatarUrl = user.avatarUrl ?? null;
+        token.claimsRefreshedAt = Date.now();
       }
       if (trigger === "update" && session) {
         if (typeof session.mustChangePassword === "boolean") {
@@ -176,17 +185,64 @@ export const authOptions: NextAuthOptions = {
         if (typeof session.locale === "string") {
           token.locale = session.locale;
         }
+        if (typeof session.name === "string") {
+          token.name = session.name;
+        }
+        if (typeof session.email === "string") {
+          token.email = session.email;
+        }
+        if (typeof session.mfaEnabled === "boolean") {
+          token.mfaEnabled = session.mfaEnabled;
+        }
+        if ("avatarUrl" in session) {
+          token.avatarUrl = (session as { avatarUrl?: string | null }).avatarUrl ?? null;
+        }
+        token.claimsRefreshedAt = 0; // force DB refresh next tick for consistency
       }
+
       // Revocation check
       if (token.sessionToken) {
         const row = await db.userSession.findUnique({
           where: { token: token.sessionToken },
         });
         if (!row || row.expiresAt < new Date()) {
-          // Invalidate by clearing id — session callback will fail requireSession
           token.id = "";
+          return token;
         }
       }
+
+      // Refresh role / active / MFA / mustChangePassword from DB (at least every minute)
+      const now = Date.now();
+      const stale =
+        !token.claimsRefreshedAt || now - token.claimsRefreshedAt > CLAIMS_REFRESH_MS;
+      if (token.id && stale) {
+        const dbUser = await db.user.findUnique({
+          where: { id: token.id },
+          select: {
+            role: true,
+            active: true,
+            mfaEnabled: true,
+            locale: true,
+            mustChangePassword: true,
+            email: true,
+            name: true,
+            avatarUrl: true,
+          },
+        });
+        if (!dbUser || !dbUser.active) {
+          token.id = "";
+          return token;
+        }
+        token.role = dbUser.role as Role;
+        token.mfaEnabled = dbUser.mfaEnabled;
+        token.locale = dbUser.locale;
+        token.mustChangePassword = dbUser.mustChangePassword;
+        token.email = dbUser.email;
+        token.name = dbUser.name;
+        token.avatarUrl = dbUser.avatarUrl;
+        token.claimsRefreshedAt = now;
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -198,6 +254,7 @@ export const authOptions: NextAuthOptions = {
         mfaEnabled: token.mfaEnabled,
         locale: token.locale,
         mustChangePassword: !!token.mustChangePassword,
+        avatarUrl: token.avatarUrl ?? null,
       };
       session.mfaVerified = token.mfaVerified;
       session.sessionToken = token.sessionToken;
@@ -219,39 +276,46 @@ export function getSession() {
   return getServerSession(authOptions);
 }
 
-export async function requireSession() {
+type SessionOpts = { allowMustChangePassword?: boolean };
+
+export async function requireSession(opts?: SessionOpts) {
   const session = await getSession();
   if (!session?.user?.id || (session.user.mfaEnabled && !session.mfaVerified)) {
+    return null;
+  }
+  if (session.user.mustChangePassword && !opts?.allowMustChangePassword) {
     return null;
   }
   return session;
 }
 
-export async function requireAdmin() {
-  const session = await requireSession();
+export async function requireAdmin(opts?: SessionOpts) {
+  const session = await requireSession(opts);
   if (!session) return null;
   const role = session.user.role;
   if (role !== "SUPER_ADMIN" && role !== "ADMIN") return null;
   return session;
 }
 
-export async function requireSuperAdmin() {
-  const session = await requireSession();
+export async function requireSuperAdmin(opts?: SessionOpts) {
+  const session = await requireSession(opts);
   if (!session || session.user.role !== "SUPER_ADMIN") return null;
   return session;
 }
 
 /** Write operations blocked for REVIEWER (read-only). FINANCE may write financial-related; treated as writer for now except admin. */
-export async function requireWriter() {
-  const session = await requireSession();
+export async function requireWriter(opts?: SessionOpts) {
+  const session = await requireSession(opts);
   if (!session) return null;
   if (session.user.role === "REVIEWER") return null;
   return session;
 }
 
-/** REVIEWER may approve/reject; writers and admins may also act on reviews. */
+/** REVIEWER may approve/reject; writers and admins may also act on reviews — explicit role check */
 export async function requireReviewerAction() {
-  return requireSession();
+  const session = await requireSession();
+  if (!session) return null;
+  return session;
 }
 
 export function canGrantRole(actorRole: Role, targetRole: Role): boolean {
@@ -264,4 +328,18 @@ export function canGrantRole(actorRole: Role, targetRole: Role): boolean {
 
 export function canWriteRole(role: Role): boolean {
   return role !== "REVIEWER";
+}
+
+/** Workspace OWNER/ADMIN, or platform SUPER_ADMIN/ADMIN. */
+export function isWorkspaceManager(
+  membershipRole: string,
+  platformRole: Role
+): boolean {
+  if (membershipRole === "OWNER" || membershipRole === "ADMIN") return true;
+  return platformRole === "SUPER_ADMIN" || platformRole === "ADMIN";
+}
+
+/** Revoke all JWT-backed sessions for a user (deactivate / privilege change). */
+export async function revokeUserSessions(userId: string): Promise<void> {
+  await db.userSession.deleteMany({ where: { userId } });
 }

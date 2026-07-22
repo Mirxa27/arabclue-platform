@@ -1,16 +1,22 @@
 import { NextRequest } from "next/server";
 import { fulfillCheckout } from "@/lib/billing";
-import { handleRoute, jsonOk, jsonError } from "@/lib/api-controller";
+import { withTenant, jsonOk, jsonError } from "@/lib/api-controller";
+import { db } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
+import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/billing/callback?paymentId=...&Id=...&ref=...
- * Called by the browser after MyFatoorah redirect (authenticated session).
- * Also accepts PaymentId query param naming variants from MF.
+ * Authenticated + ownership check: checkout must belong to caller.
+ * Rate-limited to prevent ref guessing brute force.
  */
 export async function GET(req: NextRequest) {
-  return handleRoute("billing callback", async () => {
+  return withTenant("session", async ({ session, userId }) => {
+    const rl = rateLimit({ key: `billing:callback:${userId}`, limit: 10, windowMs: 5 * 60 * 1000 });
+    if (!rl.ok) return jsonError("rate_limited", 429);
+
     const paymentId =
       req.nextUrl.searchParams.get("paymentId") ||
       req.nextUrl.searchParams.get("PaymentId") ||
@@ -30,11 +36,34 @@ export async function GET(req: NextRequest) {
       return jsonError("paymentId or ref is required", 400);
     }
 
+    // Ownership pre-check when ref is provided
+    if (ref) {
+      const checkout = await db.paymentCheckout.findUnique({ where: { customerReference: ref } });
+      if (checkout && checkout.userId !== userId) {
+        await audit({
+          userId,
+          action: AUDIT_ACTIONS.BILLING_CHANGE,
+          details: { reason: "callback_ownership_mismatch", ref },
+          severity: "WARN",
+          success: false,
+        });
+        return jsonError("forbidden: checkout not owned", 403);
+      }
+    }
+
     const result = await fulfillCheckout({
       paymentId,
       customerReference: ref ?? undefined,
     });
 
+    // Post-fulfill ownership verification (in case paymentId path)
+    if (result.ok && result.checkoutId) {
+      const c = await db.paymentCheckout.findUnique({ where: { id: result.checkoutId } });
+      if (c && c.userId !== userId) {
+        return jsonError("forbidden", 403);
+      }
+    }
+
     return jsonOk(result);
-  });
+  }, "billing callback");
 }

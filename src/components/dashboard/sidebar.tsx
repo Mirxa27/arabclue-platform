@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ArabclueLogo } from "@/components/brand/arabclue-logo";
 
 const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] = [
   { view: "overview", key: "nav_dashboard", icon: LayoutDashboard },
@@ -81,12 +82,10 @@ export function DashboardSidebar() {
     >
       {/* Brand */}
       <div className="h-16 flex items-center gap-3 px-4 border-b border-sidebar-border shrink-0">
-        <div className="size-9 rounded-lg bg-gradient-to-br from-chart-1 to-chart-2 flex items-center justify-center shrink-0 shadow-lg shadow-chart-1/20">
-          <Cpu className="size-5 text-white" />
-        </div>
+        <ArabclueLogo className="size-9 rounded-lg shadow-lg shadow-chart-1/20 ring-1 ring-white/10" />
         {!sidebarCollapsed && (
           <div className="min-w-0">
-            <div className="text-sm font-bold text-white truncate">
+            <div className="text-sm font-bold text-sidebar-foreground truncate">
               {tr("appName", locale)}
             </div>
             <div className="text-[10px] text-sidebar-foreground/60 truncate uppercase tracking-wider">
@@ -120,14 +119,14 @@ export function DashboardSidebar() {
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group relative",
                 active
                   ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-sidebar-primary/20"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-white",
+                  : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 sidebarCollapsed && "justify-center"
               )}
             >
               <Icon className="size-[18px] shrink-0" />
               {!sidebarCollapsed && <span className="truncate">{tr(item.key, locale)}</span>}
               {active && !sidebarCollapsed && (
-                <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-white rounded-s-full" />
+                <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-sidebar-primary-foreground rounded-s-full" />
               )}
             </button>
           );
@@ -155,7 +154,7 @@ export function DashboardSidebar() {
                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group relative",
                     active
                       ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white",
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                     sidebarCollapsed && "justify-center"
                   )}
                 >
@@ -164,7 +163,7 @@ export function DashboardSidebar() {
                     <span className="truncate text-[13px]">{tr(item.key, locale)}</span>
                   )}
                   {active && !sidebarCollapsed && (
-                    <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-white rounded-s-full" />
+                    <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-white rounded-s-full shadow" />
                   )}
                 </button>
               );
@@ -257,12 +256,12 @@ function WorkspaceSwitcher({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-white truncate">
+          <div className="text-xs font-semibold text-sidebar-foreground truncate">
             {workspaceName ?? "..."}
           </div>
-          <div className="text-[10px] text-sidebar-foreground/50 flex items-center gap-1">
+          <div className="text-[10px] text-sidebar-foreground/60 flex items-center gap-1">
             <CircleDot className="size-2.5 text-emerald-400" />
-            <span className="uppercase">{plan ?? "—"}</span>
+            <span className="uppercase tracking-wider">{plan ?? "—"}</span>
           </div>
         </div>
       </div>

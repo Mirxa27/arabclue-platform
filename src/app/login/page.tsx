@@ -1,16 +1,35 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { signIn, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { ShieldCheck, Loader2, KeyRound } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import {
+  ShieldCheck,
+  Loader2,
+  KeyRound,
+  Sparkles,
+  Globe,
+  Lock,
+  FileText,
+  Eye,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
+import { ArabclueLogo } from "@/components/brand/arabclue-logo";
+import { cn } from "@/lib/utils";
 
-export default function LoginPage() {
+function safeCallbackUrl(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/app";
+  return raw;
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
   const { data: session, update } = useSession();
   const [locale, setLocale] = useState<"ar" | "en">("ar");
   const [email, setEmail] = useState("");
@@ -19,17 +38,24 @@ export default function LoginPage() {
   const [needsMfa, setNeedsMfa] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [qr, setQr] = useState<string | null>(null);
   const [changePwdForced, setChangePwdForced] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const ar = locale === "ar";
 
   const changePwd = changePwdForced || !!session?.user?.mustChangePassword;
 
   useEffect(() => {
-    document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+    document.documentElement.dir = ar ? "rtl" : "ltr";
     document.documentElement.lang = locale;
-  }, [locale]);
+    const saved = localStorage.getItem("arabclue-marketing-locale");
+    if (saved === "ar" || saved === "en") setLocale(saved);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dir = ar ? "rtl" : "ltr";
+    document.documentElement.lang = locale;
+  }, [locale, ar]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,21 +70,13 @@ export default function LoginPage() {
         });
         const preData = await pre.json();
         if (!pre.ok || !preData.ok) {
-          setError(
-            locale === "ar"
-              ? "بيانات الدخول غير صحيحة"
-              : "Invalid email or password"
-          );
+          setError(ar ? "بيانات الدخول غير صحيحة" : "Invalid email or password");
           setLoading(false);
           return;
         }
         if (preData.mfaRequired) {
           setNeedsMfa(true);
-          setError(
-            locale === "ar"
-              ? "أدخل رمز المصادقة الثنائية"
-              : "Enter your MFA authenticator code"
-          );
+          setError(ar ? "أدخل رمز المصادقة الثنائية" : "Enter your MFA code");
           setLoading(false);
           return;
         }
@@ -72,16 +90,11 @@ export default function LoginPage() {
       });
 
       if (res?.error || !res?.ok) {
-        setError(
-          locale === "ar"
-            ? "فشل تسجيل الدخول — تحقق من البيانات ورمز MFA"
-            : "Sign-in failed — check credentials and MFA code"
-        );
+        setError(ar ? "فشل تسجيل الدخول — تحقق من البيانات ورمز MFA" : "Sign-in failed — check credentials and MFA code");
         setLoading(false);
         return;
       }
 
-      // Refresh session to read mustChangePassword
       await update?.();
       const me = await fetch("/api/auth/session").then((r) => r.json());
       if (me?.user?.mustChangePassword) {
@@ -90,80 +103,23 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/");
+      router.replace(callbackUrl);
       router.refresh();
     } catch {
-      setError(locale === "ar" ? "خطأ في الشبكة" : "Network error");
+      setError(ar ? "خطأ في الشبكة" : "Network error");
       setLoading(false);
     }
-  }
-
-  async function setupMfa() {
-    if (!email || !password) {
-      setError(
-        locale === "ar"
-          ? "أدخل البريد وكلمة المرور أولاً"
-          : "Enter email and password first"
-      );
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/auth/mfa/setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Setup failed");
-      } else {
-        setQr(data.qrDataUrl);
-        setNeedsMfa(true);
-      }
-    } catch {
-      setError("Setup failed");
-    }
-    setLoading(false);
-  }
-
-  async function confirmMfaEnable() {
-    if (!mfaToken || !email || !password) return;
-    setLoading(true);
-    const res = await fetch("/api/auth/mfa/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, token: mfaToken }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error ?? "Invalid token");
-    } else {
-      setError(
-        locale === "ar"
-          ? "تم تفعيل MFA — سجّل الدخول الآن بالرمز"
-          : "MFA enabled — sign in with your code"
-      );
-      setQr(null);
-      setNeedsMfa(true);
-    }
-    setLoading(false);
   }
 
   async function submitPasswordChange(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (newPassword.length < 10) {
-      setError(
-        locale === "ar"
-          ? "كلمة المرور الجديدة 10 أحرف على الأقل"
-          : "New password must be at least 10 characters"
-      );
+      setError(ar ? "كلمة المرور الجديدة 10 أحرف على الأقل" : "New password must be at least 10 characters");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError(locale === "ar" ? "كلمتا المرور غير متطابقتين" : "Passwords do not match");
+      setError(ar ? "كلمتا المرور غير متطابقتين" : "Passwords do not match");
       return;
     }
     setLoading(true);
@@ -178,199 +134,148 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-    await update?.({ mustChangePassword: false });
-    router.replace("/");
+    await update?.({ mustChangePassword: false } as any);
+    router.replace(callbackUrl);
     router.refresh();
   }
 
+  const LeftPanel = (
+    <div className="relative hidden lg:flex flex-col justify-between p-10 overflow-hidden bg-[oklch(0.13_0.02_260)] text-white">
+      <div className="absolute inset-0">
+        <div className="aurora aurora-blob-1 left-[-20%] top-[-10%] opacity-60" />
+        <div className="aurora aurora-blob-2 right-[-10%] top-[20%] opacity-50" />
+        <div className="absolute inset-0 grid-bg opacity-[0.06]" />
+      </div>
+      <div className="relative z-10">
+        <Link href="/" className="flex items-center gap-3">
+          <ArabclueLogo className="size-10 rounded-xl" />
+          <div>
+            <p className="font-[family-name:var(--font-ibm-arabic)] text-[18px] font-bold leading-none">أراب كلاو</p>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-white/50">Arabclue SaaS</p>
+          </div>
+        </Link>
+        <div className="mt-16">
+          <motion.h2 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className={cn("text-[32px] font-bold leading-[1.05] tracking-tight", ar ? "font-[family-name:var(--font-ibm-arabic)]" : "")}>
+            {ar ? "ادخل مساحة عملك وشغّل مصنع العطاءات" : "Enter your workspace & run the bid factory"}
+          </motion.h2>
+          <p className="mt-4 text-[14px] leading-relaxed text-white/60 max-w-[36ch]">{ar ? "عربي/إنجليزي، امتثال بأدلة، تسعير يدوي دائماً، وسجل تدقيق كامل." : "AR/EN, evidence-backed compliance, manual pricing always, full audit trail."}</p>
+
+          <div className="mt-10 space-y-3">
+            {[
+              { icon: FileText, title: ar ? "مصفوفة متطلبات حية" : "Live requirements matrix", desc: ar ? "كل بند RFP قابل للتتبع" : "Every RFP clause tracked" },
+              { icon: ShieldCheck, title: ar ? "امتثال NCA/PDPL" : "NCA/PDPL compliance", desc: ar ? "مع أدلة قابلة للتدقيق" : "With auditable evidence" },
+              { icon: Lock, title: ar ? "عزل مستأجر + MFA" : "Tenant isolation + MFA", desc: ar ? "أمان مؤسسي" : "Enterprise security" },
+            ].map((f, i) => (
+              <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 + i * 0.07 }} className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <div className="size-9 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center shrink-0"><f.icon className="size-4 text-white/80" /></div>
+                <div><p className="text-[13px] font-semibold">{f.title}</p><p className="text-[11px] text-white/50">{f.desc}</p></div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="relative z-10 flex items-center justify-between text-[11px] text-white/40 border-t border-white/10 pt-6">
+        <span>© {new Date().getFullYear()} Arabclue</span>
+        <span className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-emerald-500" /> {ar ? "PDPL متوافق" : "PDPL Compliant"}</span>
+      </div>
+    </div>
+  );
+
   if (changePwd) {
     return (
-      <div className="min-h-screen flex items-center justify-center relative overflow-hidden p-4">
-        <div
-          aria-hidden
-          className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_oklch(0.35_0.08_255)_0%,_oklch(0.16_0.03_250)_45%,_oklch(0.12_0.02_250)_100%)]"
-        />
-        <Card className="relative w-full max-w-md p-7 space-y-5 border-white/10 bg-card/95 backdrop-blur-xl shadow-2xl shadow-black/40">
-          <h1 className="text-lg font-semibold tracking-tight">
-            {locale === "ar" ? "تغيير كلمة المرور مطلوب" : "Password change required"}
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            {locale === "ar"
-              ? "يجب تعيين كلمة مرور جديدة قبل المتابعة."
-              : "Set a new password before continuing."}
-          </p>
-          <form onSubmit={submitPasswordChange} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                {locale === "ar" ? "كلمة المرور الحالية" : "Current password"}
-              </Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                {locale === "ar" ? "كلمة المرور الجديدة" : "New password"}
-              </Label>
-              <Input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                minLength={10}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                {locale === "ar" ? "تأكيد كلمة المرور" : "Confirm password"}
-              </Label>
-              <Input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={10}
-              />
-            </div>
-            {error && (
-              <p className="text-[11px] text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1.5">
-                {error}
-              </p>
-            )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-              {locale === "ar" ? "حفظ والمتابعة" : "Save & continue"}
-            </Button>
-          </form>
-        </Card>
+      <div className="min-h-screen grid lg:grid-cols-[1.1fr_0.9fr]">
+        {LeftPanel}
+        <div className="flex items-center justify-center p-6 bg-background">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[420px] rounded-[22px] border border-border bg-card p-8 shadow-xl">
+            <h1 className="text-[20px] font-bold tracking-tight">{ar ? "تغيير كلمة المرور مطلوب" : "Password change required"}</h1>
+            <p className="mt-2 text-[12px] text-muted-foreground">{ar ? "يجب تعيين كلمة مرور جديدة قبل المتابعة." : "Set a new password before continuing."}</p>
+            <form onSubmit={submitPasswordChange} className="mt-6 space-y-4">
+              <div className="space-y-1.5"><Label className="text-xs">{ar ? "الحالية" : "Current"}</Label><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+              <div className="space-y-1.5"><Label className="text-xs">{ar ? "الجديدة" : "New"}</Label><Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={10} /></div>
+              <div className="space-y-1.5"><Label className="text-xs">{ar ? "تأكيد" : "Confirm"}</Label><Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={10} /></div>
+              {error && <p className="text-[11px] text-destructive bg-destructive/10 border border-destructive/20 rounded-xl px-3 py-2">{error}</p>}
+              <Button type="submit" className="w-full rounded-full h-11 gap-2" disabled={loading}>{loading && <Loader2 className="size-4 animate-spin" />}{ar ? "حفظ والمتابعة" : "Save & continue"}</Button>
+            </form>
+          </motion.div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden p-4">
-      <div
-        aria-hidden
-        className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_oklch(0.35_0.08_255)_0%,_oklch(0.16_0.03_250)_45%,_oklch(0.12_0.02_250)_100%)]"
-      />
-      <div
-        aria-hidden
-        className="absolute inset-0 opacity-[0.07]"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, white 1px, transparent 1px), linear-gradient(to bottom, white 1px, transparent 1px)",
-          backgroundSize: "48px 48px",
-        }}
-      />
-      <Card className="relative w-full max-w-md p-7 space-y-6 border-white/10 bg-card/95 backdrop-blur-xl shadow-2xl shadow-black/40">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="size-11 rounded-2xl bg-primary/15 ring-1 ring-primary/25 flex items-center justify-center">
-              <ShieldCheck className="size-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight">Arabclue</h1>
-              <p className="text-[11px] text-muted-foreground tracking-wide">
-                أراب كلاو · Etimad AI
-              </p>
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-[10px]"
-            onClick={() => setLocale((l) => (l === "ar" ? "en" : "ar"))}
-          >
-            {locale === "ar" ? "EN" : "ع"}
-          </Button>
-        </div>
+    <div className="min-h-screen grid lg:grid-cols-[1.1fr_0.9fr] bg-background">
+      {LeftPanel}
 
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs">{locale === "ar" ? "البريد الإلكتروني" : "Email"}</Label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="username"
-              placeholder="you@company.sa"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">{locale === "ar" ? "كلمة المرور" : "Password"}</Label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-            />
-          </div>
-          {needsMfa && (
-            <div className="space-y-1.5">
-              <Label className="text-xs flex items-center gap-1">
-                <KeyRound className="size-3" />
-                {locale === "ar" ? "رمز MFA" : "MFA Code"}
-              </Label>
-              <Input
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                value={mfaToken}
-                onChange={(e) => setMfaToken(e.target.value)}
-                placeholder="000000"
-                className="font-mono tracking-widest"
-              />
+      <div className="relative flex flex-col bg-background">
+        <div className="absolute inset-0 gradient-mesh opacity-40" />
+        <div className="absolute inset-0 dot-bg opacity-[0.25]" />
+        <div className="relative flex flex-1 flex-col">
+          <div className="flex items-center justify-between p-6">
+            <Link href="/" className="lg:hidden flex items-center gap-2"><ArabclueLogo className="size-8 rounded-lg" /><span className="font-[family-name:var(--font-ibm-arabic)] text-sm font-bold">أراب كلاو</span></Link>
+            <div className="flex items-center gap-2 ms-auto">
+              <button onClick={() => setLocale(ar ? "en" : "ar")} className="h-9 rounded-full border border-border bg-card px-3.5 text-[12px] font-bold flex items-center gap-1.5"><Globe className="size-3.5" />{ar ? "EN" : "عربي"}</button>
+              <Button asChild variant="ghost" size="sm" className="rounded-full"><Link href="/">{ar ? "الرئيسية" : "Home"}</Link></Button>
             </div>
-          )}
-          {error && (
-            <p className="text-[11px] text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1.5">
-              {error}
-            </p>
-          )}
-          <Button type="submit" className="w-full gap-2" disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-            {locale === "ar" ? "تسجيل الدخول" : "Sign in"}
-          </Button>
-        </form>
+          </div>
 
-        <div className="border-t border-border/60 pt-3 space-y-2">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="text-[10px] flex-1"
-              onClick={setupMfa}
-              disabled={loading}
-            >
-              {locale === "ar" ? "إعداد MFA" : "Setup MFA"}
-            </Button>
-            {qr && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="text-[10px] flex-1"
-                onClick={confirmMfaEnable}
-                disabled={loading || mfaToken.length < 6}
-              >
-                {locale === "ar" ? "تأكيد التفعيل" : "Confirm enable"}
-              </Button>
-            )}
+          <div className="flex flex-1 items-center justify-center p-6">
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="w-full max-w-[420px]">
+              <div className="mb-8">
+                <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] font-semibold text-primary"><Sparkles className="size-3.5" />{ar ? "تسجيل الدخول الآمن" : "Secure sign-in"}</div>
+                <h1 className={cn("mt-4 text-[26px] font-bold tracking-tight leading-tight", ar ? "font-[family-name:var(--font-ibm-arabic)]" : "")}>{ar ? "مرحباً بعودتك" : "Welcome back"}</h1>
+                <p className="mt-2 text-[13px] text-muted-foreground">{ar ? "ادخل مساحة عملك — الامتثال والتدقيق جاهزان." : "Enter your workspace — compliance & audit ready."}</p>
+              </div>
+
+              <div className="rounded-[20px] border border-border bg-card/90 backdrop-blur-xl p-6 shadow-[0_16px_40px_-24px_oklch(0.2_0.02_260/0.2)]">
+                <form onSubmit={onSubmit} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">{ar ? "البريد الإلكتروني" : "Email"}</Label>
+                    <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" placeholder="you@company.sa" className="h-11 rounded-xl" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold flex items-center justify-between"><span>{ar ? "كلمة المرور" : "Password"}</span><span className="text-[11px] font-normal text-muted-foreground flex items-center gap-1"><Eye className="size-3" />{ar ? "مشفرة" : "Encrypted"}</span></Label>
+                    <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" className="h-11 rounded-xl" />
+                  </div>
+                  {needsMfa && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="space-y-1.5 overflow-hidden">
+                      <Label className="text-xs font-semibold flex items-center gap-1"><KeyRound className="size-3" />{ar ? "رمز MFA" : "MFA Code"}</Label>
+                      <Input inputMode="numeric" pattern="[0-9]*" maxLength={6} value={mfaToken} onChange={(e) => setMfaToken(e.target.value)} placeholder="000000" className="h-11 rounded-xl font-mono tracking-widest text-center text-[16px]" />
+                    </motion.div>
+                  )}
+                  {error && <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2.5 text-[12px] text-destructive leading-snug">{error}</div>}
+                  <Button type="submit" className="w-full h-11 rounded-full font-semibold gap-2 text-[14px]" disabled={loading}>{loading ? <Loader2 className="size-4 animate-spin" /> : <Lock className="size-4" />}{ar ? "تسجيل الدخول" : "Sign in"}</Button>
+                </form>
+
+                <div className="mt-5 pt-5 border-t border-border/60 space-y-3">
+                  <p className="text-[11px] text-muted-foreground leading-relaxed text-center flex items-center justify-center gap-1.5"><ShieldCheck className="size-3.5" />{ar ? "فعّل MFA من الإعدادات بعد تسجيل الدخول · جلسات JWT + تدقيق" : "Enable MFA from Settings after sign-in · JWT sessions + audit"}</p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+                <Link href="/pricing" className="hover:text-foreground underline underline-offset-4">{ar ? "الباقات" : "Pricing"}</Link>
+                <span>•</span>
+                <Link href="/compliance" className="hover:text-foreground underline underline-offset-4">{ar ? "الامتثال" : "Compliance"}</Link>
+                <span>•</span>
+                <span className="flex items-center gap-1"><span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />{ar ? "مباشر" : "Live"}</span>
+              </div>
+            </motion.div>
           </div>
-          {qr && (
-            <div className="flex flex-col items-center gap-2 pt-2">
-              <img src={qr} alt="MFA QR" className="rounded-lg border border-border" />
-            </div>
-          )}
         </div>
-      </Card>
+      </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[oklch(0.13_0.02_260)]">
+          <Loader2 className="size-8 animate-spin text-white" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

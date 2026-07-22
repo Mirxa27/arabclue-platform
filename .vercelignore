@@ -1,0 +1,22 @@
+# Keep Vercel upload under size limits
+node_modules
+.next
+.git
+dev.log
+*.log
+server.log
+db/*.db
+db/*.db-journal
+uploads
+.env
+.env.*
+!.env.example
+.vercel
+coverage
+test
+.claude
+.z-ai-config
+tsconfig.tsbuildinfo
+prisma/template.db
+*.pem
+.DS_Store

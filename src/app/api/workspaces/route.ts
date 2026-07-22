@@ -12,6 +12,7 @@ import {
 } from "@/lib/validation";
 import { setActiveWorkspace } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { isWorkspaceManager } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +72,7 @@ export async function GET() {
 
 // PATCH /api/workspaces — switch active workspace OR update legal profile
 export async function PATCH(req: Request) {
-  return withTenant("session", async ({ session, workspace }) => {
+  return withTenant("session", async ({ session, workspace, membershipRole }) => {
     const body = await req.json().catch(() => ({}));
 
     if (typeof body.workspaceId === "string" && body.workspaceId) {
@@ -83,9 +84,12 @@ export async function PATCH(req: Request) {
       });
     }
 
-    // Legal / profile fields (writers only)
+    // Legal / profile fields — workspace managers only
     if (session.user.role === "REVIEWER") {
       throw new ApiError("Forbidden", 403);
+    }
+    if (!isWorkspaceManager(membershipRole, session.user.role)) {
+      throw new ApiError("Only workspace owners/admins can update workspace settings", 403);
     }
 
     const updated = await db.workspace.update({
@@ -98,6 +102,14 @@ export async function PATCH(req: Request) {
       },
     });
 
+    await audit({
+      userId: session.user.id,
+      action: AUDIT_ACTIONS.CONFIG_CHANGE,
+      resource: "Workspace",
+      resourceId: workspace.id,
+      details: { fields: Object.keys(body).filter((k) => k !== "workspaceId") },
+    });
+
     return jsonOk({ workspace: updated });
   }, "workspaces PATCH");
 }
@@ -105,13 +117,8 @@ export async function PATCH(req: Request) {
 // POST /api/workspaces — invite existing user by email
 export async function POST(req: Request) {
   return withTenant("writer", async ({ session, workspace, membershipRole }) => {
-    if (membershipRole !== "OWNER" && membershipRole !== "ADMIN") {
-      if (
-        session.user.role !== "SUPER_ADMIN" &&
-        session.user.role !== "ADMIN"
-      ) {
-        throw new ApiError("Only workspace owners/admins can invite", 403);
-      }
+    if (!isWorkspaceManager(membershipRole, session.user.role)) {
+      throw new ApiError("Only workspace owners/admins can invite", 403);
     }
 
     const parsed = await parseJsonBody(req, workspaceInviteSchema);

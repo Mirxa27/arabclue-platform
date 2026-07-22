@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 /** Public marketing + health/auth surfaces (no session required). */
 const PUBLIC_PATHS = new Set([
+  "/",
   "/login",
   "/for-owners",
   "/pricing",
@@ -19,10 +20,30 @@ function isPublicPath(path: string): boolean {
   return false;
 }
 
+function isPasswordChangeAllowed(path: string): boolean {
+  if (path === "/login") return true;
+  if (path.startsWith("/api/auth")) return true;
+  return false;
+}
+
 export default withAuth(
   function middleware(req) {
     const token = req.nextauth.token;
     const path = req.nextUrl.pathname;
+
+    // Force password change before any app/API use
+    if (token?.mustChangePassword && !isPasswordChangeAllowed(path)) {
+      if (path.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Password change required", code: "MUST_CHANGE_PASSWORD" },
+          { status: 403 }
+        );
+      }
+      const url = req.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("changePassword", "1");
+      return NextResponse.redirect(url);
+    }
 
     // Admin API: require SUPER_ADMIN or ADMIN
     if (path.startsWith("/api/admin")) {
@@ -46,7 +67,6 @@ export default withAuth(
 );
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|uploads/.*|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  // NOTE: Do NOT exclude uploads — file access must go through /api/files with tenant scoping
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

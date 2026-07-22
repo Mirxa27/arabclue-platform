@@ -45,6 +45,7 @@ export function StatCards() {
     trend: number;
     color: string;
     bg: string;
+    bar: string;
   }[] = [
     {
       key: "stat_active_projects",
@@ -53,6 +54,7 @@ export function StatCards() {
       trend: 12,
       color: "text-chart-1",
       bg: "bg-chart-1/10",
+      bar: "bg-chart-1",
     },
     {
       key: "stat_proposals_generated",
@@ -61,6 +63,7 @@ export function StatCards() {
       trend: 8,
       color: "text-chart-3",
       bg: "bg-chart-3/10",
+      bar: "bg-chart-3",
     },
     {
       key: "stat_compliance_score",
@@ -68,8 +71,9 @@ export function StatCards() {
       suffix: "%",
       icon: ShieldCheck,
       trend: 5,
-      color: "text-emerald-600",
+      color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10",
+      bar: "bg-emerald-500",
     },
     {
       key: "stat_documents_processed",
@@ -78,6 +82,7 @@ export function StatCards() {
       trend: -3,
       color: "text-chart-4",
       bg: "bg-chart-4/10",
+      bar: "bg-chart-4",
     },
   ];
 
@@ -118,11 +123,11 @@ export function StatCards() {
             <div className="text-xs text-muted-foreground mt-1 truncate">
               {tr(c.key, locale)}
             </div>
-            {/* decorative bar */}
+            {/* decorative bar — explicit mapping to survive purge */}
             <div
               className={cn(
                 "absolute bottom-0 inset-x-0 h-0.5 opacity-60 group-hover:opacity-100 transition-opacity",
-                c.color.replace("text-", "bg-")
+                c.bar
               )}
             />
           </Card>

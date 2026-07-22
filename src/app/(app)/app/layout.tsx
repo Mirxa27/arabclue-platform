@@ -1,9 +1,9 @@
 import { createPageMetadata } from "@/lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "Dashboard",
+  title: "Workspace",
   description: "Arabclue tender proposal workspace dashboard.",
-  path: "/",
+  path: "/app",
   noIndex: true,
 });
 

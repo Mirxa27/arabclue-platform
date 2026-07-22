@@ -13,7 +13,8 @@ export class QuotaExceededError extends Error {
 /** Enforce subscription plan limits before billable actions */
 export async function assertWithinQuota(
   userId: string,
-  kind: "document" | "proposal"
+  kind: "document" | "proposal" | "storage" | "tokens",
+  extra?: { bytes?: number; tokens?: number }
 ): Promise<void> {
   const sub = await db.subscription.findUnique({
     where: { userId },
@@ -50,5 +51,47 @@ export async function assertWithinQuota(
         "PROPOSALS"
       );
     }
+  }
+  // Storage quota: maxStorageGb → bytes
+  if (kind === "storage") {
+    if (plan.maxStorageGb > 0) {
+      const added = extra?.bytes ?? 0;
+      const maxBytes = plan.maxStorageGb * 1024 * 1024 * 1024;
+      const used = sub.storageUsedBytes ?? 0;
+      if (used + added > maxBytes) {
+        throw new QuotaExceededError(
+          `Storage quota exceeded (${Math.round(used / 1024 / 1024)}MB / ${plan.maxStorageGb}GB)`,
+          "TOKENS"
+        );
+      }
+    }
+  }
+  // Tokens quota
+  if (kind === "tokens" || kind === "storage") {
+    if (plan.maxTokensPerMonth > 0) {
+      const added = extra?.tokens ?? 0;
+      if (sub.tokensUsed + added > plan.maxTokensPerMonth) {
+        throw new QuotaExceededError(
+          `Token quota exceeded (${sub.tokensUsed}/${plan.maxTokensPerMonth})`,
+          "TOKENS"
+        );
+      }
+    }
+  }
+}
+
+export async function bumpUsage(userId: string, kind: "document" | "proposal" | "storage" | "tokens", amount = 1) {
+  try {
+    if (kind === "document") {
+      await db.subscription.updateMany({ where: { userId }, data: { documentsUsed: { increment: amount } } });
+    } else if (kind === "proposal") {
+      await db.subscription.updateMany({ where: { userId }, data: { proposalsUsed: { increment: amount } } });
+    } else if (kind === "storage") {
+      await db.subscription.updateMany({ where: { userId }, data: { storageUsedBytes: { increment: amount } } });
+    } else if (kind === "tokens") {
+      await db.subscription.updateMany({ where: { userId }, data: { tokensUsed: { increment: amount } } });
+    }
+  } catch {
+    // ignore if no subscription
   }
 }

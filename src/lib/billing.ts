@@ -149,19 +149,25 @@ export async function fulfillCheckout(opts: {
     });
 
     if (existing) {
+      const isExpired = existing.currentPeriodEnd < now;
+      const isPlanChange = existing.planId !== checkout!.planId;
+      // Only reset usage on period expiry (renewal) or first creation, not on mid-cycle plan change
+      const shouldReset = isExpired || !isPlanChange ? false : false;
+      // Correct logic: reset only if period expired (renewal)
+      const resetData = isExpired
+        ? { proposalsUsed: 0, documentsUsed: 0, tokensUsed: 0, storageUsedBytes: 0 }
+        : {};
+      // If plan changed mid-cycle, keep current usage counters
       await tx.subscription.update({
         where: { id: existing.id },
         data: {
           planId: checkout!.planId,
           status: "ACTIVE",
           billingCycle: cycle,
-          currentPeriodStart: now,
-          currentPeriodEnd: periodEnd,
+          currentPeriodStart: isExpired ? now : existing.currentPeriodStart,
+          currentPeriodEnd: isExpired ? periodEnd : existing.currentPeriodEnd,
           cancelledAt: null,
-          // Reset usage on plan change / renewal
-          proposalsUsed: 0,
-          documentsUsed: 0,
-          tokensUsed: 0,
+          ...resetData,
         },
       });
     } else {

@@ -28,7 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useUI, type DashboardView } from "@/lib/store";
 import {
   Popover,
@@ -39,7 +39,7 @@ import type { ApiDocument, ApiProject, ApiNotification } from "@/lib/api-types";
 
 export function DashboardTopbar() {
   const { locale, toggle } = useLocale();
-  const { theme, setTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme } = useTheme();
   const { setView } = useUI();
   const { data: session } = useSession();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -54,12 +54,15 @@ export function DashboardTopbar() {
     },
   });
 
+  const searchActive = searchOpen || q.trim().length > 0;
+
   const { data: projectsData } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => {
       const res = await fetch("/api/projects");
       return res.json();
     },
+    enabled: searchActive,
   });
 
   const { data: docsData } = useQuery({
@@ -68,6 +71,7 @@ export function DashboardTopbar() {
       const res = await fetch("/api/documents");
       return res.json();
     },
+    enabled: searchActive,
   });
 
   const { data: notifData } = useQuery({
@@ -77,9 +81,9 @@ export function DashboardTopbar() {
       if (!res.ok) return { items: [] };
       return res.json();
     },
-    refetchInterval: 30_000,
+    refetchInterval: searchOpen ? 30_000 : 60_000,
+    staleTime: 20_000,
   });
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -195,11 +199,14 @@ export function DashboardTopbar() {
       <Button
         variant="outline"
         size="icon"
-        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-        className="h-10 w-10"
+        onClick={() => {
+          const cur = resolvedTheme ?? theme;
+          setTheme(cur === "dark" ? "light" : "dark");
+        }}
+        className="h-10 w-10 bg-card"
         title={tr("theme_toggle", locale)}
       >
-        {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+        {(resolvedTheme ?? theme) === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
       </Button>
 
       <Popover>
@@ -250,6 +257,9 @@ export function DashboardTopbar() {
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-2.5 ps-1 pe-3 h-10 rounded-lg hover:bg-accent transition-colors">
             <Avatar className="size-8 border-2 border-primary/20">
+              {session?.user?.avatarUrl ? (
+                <AvatarImage src={session.user.avatarUrl} alt={currentUser?.name ?? "User"} />
+              ) : null}
               <AvatarFallback className="bg-gradient-to-br from-chart-1 to-chart-2 text-white text-xs font-bold">
                 {initials ?? "U"}
               </AvatarFallback>

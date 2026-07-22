@@ -12,13 +12,13 @@ const BADGE: Record<
 > = {
   compliance: {
     className:
-      "text-emerald-600 bg-emerald-500/10 border-emerald-500/20",
+      "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/20",
     icon: Sparkles,
     labelEn: "C1 Compliance",
     labelAr: "امتثال C1",
   },
   admin: {
-    className: "text-amber-700 bg-amber-500/10 border-amber-500/20",
+    className: "text-amber-700 dark:text-amber-300 bg-amber-500/10 border-amber-500/20",
     icon: Lock,
     labelEn: "Admin Access",
     labelAr: "وصول المسؤول",

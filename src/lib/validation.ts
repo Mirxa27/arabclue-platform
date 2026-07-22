@@ -61,6 +61,29 @@ export const passwordChangeSchema = z.object({
   newPassword: z.string().min(10).max(200),
 });
 
+/** Self-service profile update — at least one field required */
+export const profileUpdateSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120).optional(),
+    email: emailSchema.optional(),
+    locale: localeSchema.optional(),
+    /** Required when changing email */
+    currentPassword: z.string().min(1).optional(),
+  })
+  .refine(
+    (o) =>
+      o.name !== undefined || o.email !== undefined || o.locale !== undefined,
+    { message: "name, email, or locale required" }
+  )
+  .refine(
+    (o) => o.email === undefined || Boolean(o.currentPassword),
+    { message: "currentPassword required to change email", path: ["currentPassword"] }
+  );
+
+export const mfaDisableSchema = z.object({
+  currentToken: z.string().regex(/^\d{6}$/),
+});
+
 export const authPrecheckSchema = z.object({
   email: emailSchema,
   password: z.string().min(1),

@@ -14,7 +14,19 @@ export async function GET() {
   await getBootstrapContext();
   const users = await db.user.findMany({
     orderBy: { createdAt: "desc" },
-    include: {
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      locale: true,
+      active: true,
+      mfaEnabled: true,
+      avatarUrl: true,
+      mustChangePassword: true,
+      lastLoginAt: true,
+      createdAt: true,
+      updatedAt: true,
       subscription: { include: { plan: true } },
       _count: {
         select: {

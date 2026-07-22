@@ -51,18 +51,23 @@ export type PaymentStatusResult = {
 
 async function loadConfig(): Promise<MyFatoorahConfig> {
   const apiKey = (await getDecryptedEnv("MYFATOORAH_API_KEY")).trim();
-  const apiUrl = (
-    (await getDecryptedEnv("MYFATOORAH_API_URL")) ||
-    "https://apitest.myfatoorah.com"
-  ).replace(/\/$/, "");
-  const webhookSecret = (
-    await getDecryptedEnv("MYFATOORAH_WEBHOOK_SECRET")
-  ).trim();
+  const rawUrl = (await getDecryptedEnv("MYFATOORAH_API_URL")).trim();
+  const apiUrl = (rawUrl || "https://apitest.myfatoorah.com").replace(/\/$/, "");
+  const webhookSecret = (await getDecryptedEnv("MYFATOORAH_WEBHOOK_SECRET")).trim();
+
   if (!apiKey) {
     throw new Error(
       "MYFATOORAH_API_KEY is not configured — set it in Admin → Environment or .env"
     );
   }
+
+  // Guard: fail closed in production if test URL is used
+  if (process.env.NODE_ENV === "production" && apiUrl.includes("apitest.myfatoorah.com")) {
+    throw new Error(
+      "MYFATOORAH_API_URL is set to test endpoint in production — set it to https://api-sa.myfatoorah.com for KSA live"
+    );
+  }
+
   return { apiKey, apiUrl, webhookSecret };
 }
 

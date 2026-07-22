@@ -51,27 +51,29 @@ function ComplianceContent() {
 
   return (
     <div>
-      <section className="relative overflow-hidden border-b border-border/50">
+      <section className="relative overflow-hidden border-b border-white/10">
         <div
           className="absolute inset-0 -z-10"
           style={{
-            background:
-              "radial-gradient(ellipse 60% 50% at 20% 0%, oklch(0.92 0.04 160), transparent), oklch(0.97 0.008 240)",
+            background: `
+              radial-gradient(ellipse 60% 50% at 15% 0%, oklch(0.26 0.05 195 / 0.4), transparent),
+              oklch(0.12 0.02 240)
+            `,
           }}
         />
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 pt-16 pb-14 sm:pt-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-16 pb-14 sm:pt-20">
           <motion.p
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="font-[family-name:var(--font-ibm-arabic)] text-3xl sm:text-4xl font-bold text-[oklch(0.28_0.07_258)]"
+            className="font-[family-name:var(--font-ibm-arabic)] text-4xl sm:text-5xl font-bold text-white"
           >
             أراب كلاو
           </motion.p>
           <motion.h1
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="mt-4 text-xl sm:text-2xl font-semibold max-w-2xl"
+            transition={{ delay: 0.08 }}
+            className="mt-4 text-xl sm:text-2xl font-semibold text-white/90 max-w-2xl"
           >
             {ar
               ? "امتثال يمكن الدفاع عنه أمام المراجعين — لا قوائم شكلية."
@@ -80,8 +82,8 @@ function ComplianceContent() {
           <motion.p
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.18 }}
-            className="mt-3 max-w-xl text-sm text-muted-foreground leading-relaxed"
+            transition={{ delay: 0.14 }}
+            className="mt-3 max-w-xl text-sm text-white/50 leading-relaxed"
           >
             {ar
               ? "يُنشئ خط الوكلاء مصفوفة امتثال مرتبطة بالمشروع، مع حالات واضحة وأدلة للمحتوى المحلي."
@@ -90,7 +92,7 @@ function ComplianceContent() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-4 sm:px-6 py-14 sm:py-16">
+      <section className="mx-auto max-w-6xl px-4 sm:px-6 py-14 sm:py-16">
         <div className="grid gap-10 sm:grid-cols-2">
           {PILLARS.map((p, i) => {
             const Icon = p.icon;
@@ -101,16 +103,16 @@ function ComplianceContent() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.06 }}
-                className="flex gap-4"
+                className="border-t border-white/15 pt-6 flex gap-4"
               >
-                <div className="size-10 rounded-lg bg-emerald-500/10 text-emerald-700 flex items-center justify-center shrink-0 ring-1 ring-emerald-500/20">
+                <div className="size-10 shrink-0 flex items-center justify-center border border-[oklch(0.72_0.12_195)]/30 text-[oklch(0.72_0.12_195)]">
                   <Icon className="size-5" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold">
+                  <h2 className="text-sm font-semibold text-white">
                     {ar ? p.titleAr : p.titleEn}
                   </h2>
-                  <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+                  <p className="mt-1.5 text-sm text-white/50 leading-relaxed">
                     {ar ? p.bodyAr : p.bodyEn}
                   </p>
                 </div>
@@ -120,13 +122,18 @@ function ComplianceContent() {
         </div>
 
         <div className="mt-14 flex flex-wrap gap-3">
-          <Button asChild>
-            <Link href="/for-owners">
-              {ar ? "عرض صفحة الملاك" : "See owner overview"}
-            </Link>
+          <Button
+            asChild
+            className="rounded-none bg-[oklch(0.72_0.12_195)] text-[oklch(0.14_0.02_240)] hover:bg-[oklch(0.78_0.12_195)] font-semibold"
+          >
+            <Link href="/login">{ar ? "ادخل مساحة العمل" : "Enter workspace"}</Link>
           </Button>
-          <Button asChild variant="outline">
-            <Link href="/login">{ar ? "تسجيل الدخول" : "Sign in"}</Link>
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-none border-white/20 bg-transparent text-white hover:bg-white/5 hover:text-white"
+          >
+            <Link href="/">{ar ? "العودة للرئيسية" : "Back to home"}</Link>
           </Button>
         </div>
       </section>
@@ -136,7 +143,7 @@ function ComplianceContent() {
 
 export default function ComplianceMarketingPage() {
   return (
-    <PublicShell activePath="/compliance">
+    <PublicShell activePath="/compliance" variant="dark">
       <ComplianceContent />
     </PublicShell>
   );
