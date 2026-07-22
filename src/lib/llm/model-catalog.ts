@@ -14,6 +14,7 @@ export const AGENT_ENGINES = [
   "REWRITE",
   "EMBEDDING",
   "LAW",
+  "VOICE",
 ] as const;
 
 export type AgentEngine = (typeof AGENT_ENGINES)[number];
@@ -31,6 +32,7 @@ export const AGENT_ENGINE_LABELS: Record<
   REWRITE: { en: "Section Rewrite", ar: "إعادة صياغة الأقسام" },
   EMBEDDING: { en: "Embeddings / RAG", ar: "التضمين / RAG" },
   LAW: { en: "Law & Contracts", ar: "القانون والعقود" },
+  VOICE: { en: "Voice live (speech-to-speech)", ar: "الصوت المباشر (تحدث إلى تحدث)" },
 };
 
 export const LLM_PROVIDER_TYPES = [
@@ -41,6 +43,7 @@ export const LLM_PROVIDER_TYPES = [
   "anthropic",
   "mistral",
   "zai",
+  "google",
 ] as const;
 
 export type LlmProviderType = (typeof LLM_PROVIDER_TYPES)[number];
@@ -131,6 +134,20 @@ export const PROVIDER_CONNECTION_TEMPLATES: ProviderConnectionTemplate[] = [
     apiBase: "https://api.deepseek.com/v1",
     apiKeyEnvKey: "DEEPSEEK_API_KEY",
     engine: "DEFAULT",
+  },
+  {
+    name: "OpenAI Realtime (voice live)",
+    provider: "openai",
+    apiBase: "https://api.openai.com/v1",
+    apiKeyEnvKey: "OPENAI_API_KEY",
+    engine: "VOICE",
+  },
+  {
+    name: "Gemini Live (voice live)",
+    provider: "google",
+    apiBase: "https://generativelanguage.googleapis.com/v1beta",
+    apiKeyEnvKey: "GOOGLE_GENERATIVE_AI_API_KEY",
+    engine: "VOICE",
   },
   {
     name: "Z.AI (OpenAI-compatible)",
@@ -262,6 +279,8 @@ export function defaultApiBase(provider: string): string {
       return "https://api.mistral.ai/v1";
     case "ollama":
       return "http://127.0.0.1:11434/v1";
+    case "google":
+      return "https://generativelanguage.googleapis.com/v1beta";
     case "openai_compatible":
     case "zai":
       return "";
@@ -283,6 +302,8 @@ export function defaultApiKeyEnvKey(provider: string): string {
       return "MISTRAL_API_KEY";
     case "zai":
       return "ZAI_API_KEY";
+    case "google":
+      return "GOOGLE_GENERATIVE_AI_API_KEY";
     case "ollama":
       return "";
     default:

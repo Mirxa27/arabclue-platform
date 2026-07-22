@@ -15,6 +15,25 @@ Each agent is a **principal tender engineer** role (not a generic chatbot). Craf
 7. **Law & Contract (Agent 6)** — Researches the Saudi regulatory registry + tender anchors (`src/lib/saudi-law-research.ts`), then drafts a **front-to-front EN|AR contract** (`GeneratedProposal.type = CONTRACT`). Never claims 100% legal certainty; counsel review is mandatory. Studio: dashboard **Contracts** view; export: bilingual HTML/PDF.
 8. **Validation gate** — blocks proposal export on policy violations (pricing language, invented NORA IDs, AI-priced BoQ, placeholders). Contract export uses `validateContractDraft` (disclaimer required; false-certainty language blocked).
 
+## Voice Platform Copilot (main agent)
+
+Dashboard **Voice Copilot** (`?view=copilot`) is an AI SDK agent that operates the full product for the signed-in user.
+
+### Modes
+
+1. **Live voice (preferred)** — OpenAI Realtime API or Gemini Live API speech-to-speech via AI SDK `experimental_useRealtime` + ephemeral tokens.
+   - Configure under **Admin → AI Providers → Voice live (VOICE) engine**.
+   - Presets: **OpenAI Realtime (voice live)** and **Gemini Live (voice live)**.
+   - Admin fetches live model lists (no hardcoded IDs), selects e.g. a `gpt-realtime-*` or Gemini `*-live*` id, activates the connection.
+   - Setup: `GET/POST /api/platform-agent/realtime/setup` (token mint), tools: `POST /api/platform-agent/realtime/tools`.
+2. **Browser mode (fallback)** — Web Speech STT/TTS + `ToolLoopAgent` chat stream at `POST /api/platform-agent/chat` when no VOICE provider is active.
+
+### Guardrails
+
+Tenant RBAC, pricing-input refuse, constitution instructions (no pricing strategy, no 100% legal certainty, human final author).
+
+Code: `src/lib/agents/platform/*`, `src/components/dashboard/platform-agent-console.tsx`, `src/components/dashboard/live-voice-session.tsx`.
+
 ## 18-section proposal package
 
 1. Executive Summary  

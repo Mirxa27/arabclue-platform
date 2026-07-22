@@ -91,6 +91,13 @@ const AdminAudit = dynamic(
     import("@/components/admin/audit").then((m) => ({ default: m.AdminAudit })),
   { loading: PanelLoading }
 );
+const PlatformAgentConsole = dynamic(
+  () =>
+    import("./platform-agent-console").then((m) => ({
+      default: m.PlatformAgentConsole,
+    })),
+  { loading: PanelLoading }
+);
 const ADMIN_VIEWS = new Set<DashboardView>([
   "admin_overview",
   "admin_ai",
@@ -107,6 +114,7 @@ const ADMIN_VIEWS = new Set<DashboardView>([
  */
 const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   overview: OverviewView,
+  copilot: CopilotView,
   projects: ProjectsView,
   documents: DocumentsView,
   proposals: ProposalsView,
@@ -193,6 +201,14 @@ function OverviewView() {
           <VersionHistory />
         </div>
       </div>
+    </PageSection>
+  );
+}
+
+function CopilotView() {
+  return (
+    <PageSection>
+      <PlatformAgentConsole />
     </PageSection>
   );
 }

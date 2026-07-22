@@ -203,6 +203,7 @@ describe("AI model catalog & engines", () => {
     expect(AGENT_ENGINES).toContain("DEFAULT");
     expect(AGENT_ENGINES).toContain("DRAFTING");
     expect(AGENT_ENGINES).toContain("EMBEDDING");
+    expect(AGENT_ENGINES).toContain("VOICE");
   });
 
   test("infers capabilities from heuristics and remote metadata only", () => {

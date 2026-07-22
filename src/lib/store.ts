@@ -40,6 +40,7 @@ export type DashboardView =
   | "billing"
   | "reviews"
   | "settings"
+  | "copilot"
   // Admin views
   | "admin_overview"
   | "admin_ai"
