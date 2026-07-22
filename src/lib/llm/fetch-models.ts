@@ -132,13 +132,23 @@ async function fetchGoogleModels(
 ): Promise<ModelCapability[]> {
   const base = (apiBase || defaultApiBase("google")).replace(/\/$/, "");
   const url = `${base}/models?key=${encodeURIComponent(apiKey)}&pageSize=200`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(25_000),
+    });
+  } catch (err) {
+    throw new Error(
+      `Cannot reach Google models API (${err instanceof Error ? err.message : "network error"}).`
+    );
+  }
   if (!res.ok) {
     const t = await res.text();
-    throw new Error(`Google models HTTP ${res.status}: ${t.slice(0, 200)}`);
+    throw new Error(
+      `Google models HTTP ${res.status}: ${t.slice(0, 200)}. Verify GOOGLE_GENERATIVE_AI_API_KEY is valid.`
+    );
   }
   const data = await res.json();
   const metas = extractModelsFromPayload(data).map((m) => {

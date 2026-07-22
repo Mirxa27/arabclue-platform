@@ -21,19 +21,52 @@ import {
 } from "lucide-react";
 import type { VoiceLiveConfig } from "@/lib/agents/platform/voice-types";
 
-function partText(message: {
-  parts: Array<{ type: string; text?: string }>;
-}): string {
-  return message.parts
-    .filter((p) => p.type === "text" && typeof p.text === "string")
-    .map((p) => p.text as string)
-    .join("\n")
-    .trim();
-}
-
 function toolLabel(type: string): string {
   return type.replace(/^tool-/, "").replace(/([A-Z])/g, " $1").trim();
 }
+
+function micErrorMessage(err: unknown, ar: boolean): string {
+  if (!window.isSecureContext) {
+    return ar
+      ? "الميكروفون يتطلب HTTPS. افتح https://arabclue.com وأعد المحاولة."
+      : "Microphone access requires HTTPS. Open https://arabclue.com and try again.";
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return ar
+      ? "هذا المتصفح لا يدعم التقاط الميكروفون."
+      : "This browser does not support microphone capture.";
+  }
+  const name = err instanceof DOMException ? err.name : "";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return ar
+      ? "تم رفض إذن الميكروفون. اسمح بالميكروفون لـ arabclue.com من إعدادات الموقع ثم أعد المحاولة."
+      : "Microphone permission was denied. Allow the mic for arabclue.com in site settings, then retry.";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return ar
+      ? "لم يتم العثور على ميكروفون على هذا الجهاز."
+      : "No microphone was found on this device.";
+  }
+  if (err instanceof Error && /Permissions policy|NotAllowedError/i.test(err.message)) {
+    return ar
+      ? "سياسة الصفحة تمنع الميكروفون. حدّث الصفحة بعد نشر الإعدادات الجديدة."
+      : "This page's permissions policy blocks the microphone. Refresh after the latest deploy.";
+  }
+  return err instanceof Error
+    ? err.message
+    : ar
+      ? "تعذّر الوصول إلى الميكروفون."
+      : "Could not access the microphone.";
+}
+
+type LiveTransport = {
+  connect: () => Promise<void>;
+  disconnect: () => void;
+  startAudioCapture: (stream: MediaStream) => void;
+  stopAudioCapture: () => void;
+  stopPlayback: () => void;
+  sendTextMessage: (text: string) => void;
+};
 
 export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
   const { locale } = useLocale();
@@ -42,9 +75,18 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [followView, setFollowView] = useState<DashboardView | null>(null);
+  const [starting, setStarting] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
   const appliedToolKeys = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const transportRef = useRef<LiveTransport | null>(null);
+  const setActiveProjectIdRef = useRef(setActiveProjectId);
+  const setFollowViewRef = useRef(setFollowView);
+
+  useEffect(() => {
+    setActiveProjectIdRef.current = setActiveProjectId;
+    setFollowViewRef.current = setFollowView;
+  });
 
   const model = useMemo(() => {
     if (config.provider === "google") {
@@ -79,16 +121,25 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
       const result = data.result as Record<string, unknown> | undefined;
       if (result && typeof result === "object") {
         if (typeof result.projectId === "string" && result.projectId) {
-          setActiveProjectId(result.projectId);
+          setActiveProjectIdRef.current(result.projectId);
         }
         if (result.uiAction === "navigate" && typeof result.view === "string") {
           const view = result.view as DashboardView;
-          setFollowView(view === "copilot" ? null : view);
+          setFollowViewRef.current(view === "copilot" ? null : view);
         }
       }
       return data.result;
     },
   });
+
+  transportRef.current = {
+    connect: realtime.connect,
+    disconnect: realtime.disconnect,
+    startAudioCapture: realtime.startAudioCapture,
+    stopAudioCapture: realtime.stopAudioCapture,
+    stopPlayback: realtime.stopPlayback,
+    sendTextMessage: realtime.sendTextMessage,
+  };
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -113,47 +164,112 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
         appliedToolKeys.current.add(key);
         const out = toolPart.output;
         if (typeof out.projectId === "string" && out.projectId) {
-          setActiveProjectId(out.projectId);
+          setActiveProjectIdRef.current(out.projectId);
         }
         if (out.uiAction === "navigate" && typeof out.view === "string") {
           const view = out.view as DashboardView;
-          setFollowView(view === "copilot" ? null : view);
+          setFollowViewRef.current(view === "copilot" ? null : view);
         }
       }
     }
-  }, [realtime.messages, setActiveProjectId]);
+  }, [realtime.messages]);
 
-  const stopLive = useCallback(() => {
-    realtime.stopAudioCapture();
-    realtime.stopPlayback();
-    realtime.disconnect();
+  const releaseMic = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-  }, [realtime]);
+  }, []);
+
+  const stopLive = useCallback(() => {
+    const transport = transportRef.current;
+    try {
+      transport?.stopAudioCapture();
+    } catch {
+      /* ignore */
+    }
+    try {
+      transport?.stopPlayback();
+    } catch {
+      /* ignore */
+    }
+    try {
+      transport?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    releaseMic();
+    setStarting(false);
+  }, [releaseMic]);
+
+  // Tear down only on unmount — never when connect/disconnect identities change.
+  useEffect(() => {
+    return () => {
+      const transport = transportRef.current;
+      try {
+        transport?.stopAudioCapture();
+      } catch {
+        /* ignore */
+      }
+      try {
+        transport?.stopPlayback();
+      } catch {
+        /* ignore */
+      }
+      try {
+        transport?.disconnect();
+      } catch {
+        /* ignore */
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
+  }, []);
 
   const startLive = useCallback(async () => {
-    setError(null);
-    try {
-      await realtime.connect();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      streamRef.current = stream;
-      realtime.startAudioCapture(stream);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start live voice");
-      stopLive();
+    if (starting || realtime.status === "connecting" || realtime.status === "connected") {
+      return;
     }
-  }, [realtime, stopLive]);
+    setError(null);
+    setStarting(true);
 
-  useEffect(() => () => stopLive(), [stopLive]);
+    let stream: MediaStream | null = null;
+    try {
+      // Mic first — avoid opening a WebSocket we immediately abandon on permission denial.
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch (micErr) {
+        throw new Error(micErrorMessage(micErr, ar));
+      }
+
+      streamRef.current = stream;
+      await transportRef.current?.connect();
+      transportRef.current?.startAudioCapture(stream);
+    } catch (err) {
+      releaseMic();
+      try {
+        transportRef.current?.disconnect();
+      } catch {
+        /* ignore partial connect */
+      }
+      setError(
+        err instanceof Error
+          ? err.message
+          : ar
+            ? "فشل بدء الصوت المباشر"
+            : "Failed to start live voice"
+      );
+    } finally {
+      setStarting(false);
+    }
+  }, [ar, releaseMic, realtime.status, starting]);
 
   const connected = realtime.status === "connected";
-  const connecting = realtime.status === "connecting";
+  const connecting = realtime.status === "connecting" || starting;
 
   return (
     <div className="flex flex-col gap-3 flex-1 min-h-0" dir={ar ? "rtl" : "ltr"}>
@@ -171,7 +287,11 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
             connecting && "animate-pulse"
           )}
         >
-          {realtime.status}
+          {starting && realtime.status === "disconnected"
+            ? ar
+              ? "يجهّز…"
+              : "starting"
+            : realtime.status}
         </Badge>
         {realtime.isCapturing && (
           <Badge variant="destructive" className="gap-1 animate-pulse">
@@ -296,7 +416,7 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               if (input.trim() && connected) {
-                realtime.sendTextMessage(input.trim());
+                transportRef.current?.sendTextMessage(input.trim());
                 setInput("");
               }
             }
@@ -334,7 +454,7 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
             disabled={!connected || !input.trim()}
             onClick={() => {
               if (!input.trim()) return;
-              realtime.sendTextMessage(input.trim());
+              transportRef.current?.sendTextMessage(input.trim());
               setInput("");
             }}
           >
@@ -346,10 +466,11 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
               type="button"
               variant="outline"
               onClick={() => {
+                const transport = transportRef.current;
                 if (realtime.isCapturing) {
-                  realtime.stopAudioCapture();
+                  transport?.stopAudioCapture();
                 } else if (streamRef.current) {
-                  realtime.startAudioCapture(streamRef.current);
+                  transport?.startAudioCapture(streamRef.current);
                 }
               }}
             >

@@ -755,8 +755,9 @@ function ProviderEditForm({
         </div>
         {models.length > 0 ? (
           <Select
-            value={form.modelId || undefined}
+            value={form.modelId.trim() ? form.modelId : "__none__"}
             onValueChange={(id) => {
+              if (id === "__none__") return;
               const m = models.find((x) => x.id === id);
               if (m) applyModelCaps(m);
               else setForm({ ...form, modelId: id });
@@ -770,6 +771,9 @@ function ProviderEditForm({
               />
             </SelectTrigger>
             <SelectContent className="max-h-60">
+              <SelectItem value="__none__" disabled className="hidden">
+                {locale === "ar" ? "اختر نموذجاً" : "Select a model"}
+              </SelectItem>
               {form.modelId && !models.some((m) => m.id === form.modelId) ? (
                 <SelectItem
                   value={form.modelId}
@@ -1271,8 +1275,9 @@ function AddProviderForm({
         </div>
         {models.length > 0 ? (
           <Select
-            value={form.modelId || undefined}
+            value={form.modelId.trim() ? form.modelId : "__none__"}
             onValueChange={(id) => {
+              if (id === "__none__") return;
               const m = models.find((x) => x.id === id);
               if (m) applyModelCaps(m);
             }}
@@ -1285,6 +1290,9 @@ function AddProviderForm({
               />
             </SelectTrigger>
             <SelectContent className="max-h-60">
+              <SelectItem value="__none__" disabled className="hidden">
+                {locale === "ar" ? "اختر نموذجاً" : "Select a model"}
+              </SelectItem>
               {models.map((m) => (
                 <SelectItem key={m.id} value={m.id} className="text-xs font-mono">
                   {m.id}
