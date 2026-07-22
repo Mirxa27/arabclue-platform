@@ -32,6 +32,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -263,6 +264,11 @@ export function AdminAIProviders() {
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{tr("admin_add_provider", locale)}</DialogTitle>
+                <DialogDescription>
+                  {locale === "ar"
+                    ? "أضف اتصال مزود ذكاء اصطناعي. للمكالمات الصوتية المباشرة اختر محرك «الصوت المباشر»."
+                    : "Add an AI provider connection. For speech-to-speech, choose the Voice live engine."}
+                </DialogDescription>
               </DialogHeader>
               <AddProviderForm
                 presets={presets}
@@ -635,9 +641,14 @@ function ProviderEditForm({
         });
       }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
       toast({
         title: locale === "ar" ? "فشل جلب النماذج" : "Model fetch failed",
-        description: err instanceof Error ? err.message : "",
+        description:
+          msg ||
+          (locale === "ar"
+            ? "تحقق من مفتاح API في إعدادات البيئة"
+            : "Check the API key in Environment settings"),
         variant: "destructive",
       });
     } finally {
@@ -1050,6 +1061,7 @@ function AddProviderForm({
           provider: form.provider,
           apiBase: form.apiBase,
           apiKeyEnvKey: form.apiKeyEnvKey,
+          engine: form.engine,
         }),
       });
       const data = await res.json();
@@ -1064,9 +1076,14 @@ function AddProviderForm({
             : `Fetched ${data.models?.length ?? 0} models`,
       });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
       toast({
         title: locale === "ar" ? "فشل جلب النماذج" : "Model fetch failed",
-        description: err instanceof Error ? err.message : "",
+        description:
+          msg ||
+          (locale === "ar"
+            ? "تحقق من مفتاح API في إعدادات البيئة"
+            : "Check the API key in Environment settings"),
         variant: "destructive",
       });
     } finally {

@@ -18,6 +18,8 @@ type FetchBody = {
   refreshAll?: boolean;
   /** return cached list only (no network) */
   cachedOnly?: boolean;
+  /** Engine context (e.g. VOICE filters live/realtime models) */
+  engine?: string | null;
 };
 
 /**
@@ -26,11 +28,27 @@ type FetchBody = {
  * Never returns a hardcoded model catalog.
  */
 export async function POST(req: NextRequest) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  await getBootstrapContext();
+  try {
+    const session = await requireAdmin();
+    if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    await getBootstrapContext();
 
-  const body = (await req.json().catch(() => ({}))) as FetchBody;
+    const body = (await req.json().catch(() => ({}))) as FetchBody;
+    return await handleModelsPost(body);
+  } catch (err) {
+    console.error("[admin/ai-providers/models]", err);
+    return NextResponse.json(
+      {
+        error: err instanceof Error ? err.message : "Models endpoint failed",
+        models: [],
+        code: "INTERNAL",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleModelsPost(body: FetchBody) {
 
   if (body.refreshAll) {
     const rows = await db.aIProviderConfig.findMany({
@@ -88,7 +106,7 @@ export async function POST(req: NextRequest) {
   let apiBase = body.apiBase ?? null;
   let apiKeyEnvKey = body.apiKeyEnvKey ?? null;
   let providerId = body.providerId ?? null;
-  let engine: string | null = null;
+  let engine: string | null = body.engine ?? null;
 
   if (providerId) {
     const row = await db.aIProviderConfig.findUnique({
@@ -100,7 +118,7 @@ export async function POST(req: NextRequest) {
     provider = row.provider.toLowerCase();
     apiBase = body.apiBase ?? row.apiBase;
     apiKeyEnvKey = body.apiKeyEnvKey ?? row.apiKeyEnvKey;
-    engine = row.engine;
+    engine = body.engine ?? row.engine;
 
     if (body.cachedOnly) {
       const cached = parseModelsCache(row.modelsCacheJson);
@@ -139,6 +157,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch models";
+    const missingKey = /API key missing/i.test(message);
     // Serve last cache on soft failure when providerId present
     if (providerId) {
       const row = await db.aIProviderConfig.findUnique({
@@ -155,6 +174,13 @@ export async function POST(req: NextRequest) {
         });
       }
     }
-    return NextResponse.json({ error: message, models: [] }, { status: 502 });
+    return NextResponse.json(
+      {
+        error: message,
+        models: [],
+        code: missingKey ? "API_KEY_MISSING" : "UPSTREAM_MODELS_FAILED",
+      },
+      { status: missingKey ? 400 : 502 }
+    );
   }
 }
