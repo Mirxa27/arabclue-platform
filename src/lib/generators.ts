@@ -790,10 +790,17 @@ export async function generateBidPackageZIP(
     checks?: Parameters<typeof generateComplianceMatrixXLSX>[2];
     boqItems?: Parameters<typeof generateBoQXLSX>[2];
     slidesMetrics?: SlidesMetrics;
+    validation?: import("./validation-gate").ValidationReport;
   }
 ): Promise<Buffer> {
   const zip = new JSZip();
   const tenderType = getTenderType(project.category);
+  const {
+    buildExportManifest,
+    manifestToJson,
+    validationReportToJson,
+  } = await import("./export-manifest");
+  const { validateProposalOutput } = await import("./validation-gate");
 
   const pdf = await generateProposalPDF(proposal, project, brand);
   zip.file("Technical_Proposal.pdf", pdf);
@@ -807,7 +814,7 @@ export async function generateBidPackageZIP(
   zip.file("Technical_Proposal_Slides.pptx", pptxBuf);
 
   const slides = generateSlidesHTML(proposal, project, brand, opts?.slidesMetrics);
-  zip.file("Technical_Proposal_Slides.html", slides);
+  zip.file("Technical_Proposal_Slides.html", Buffer.from(slides, "utf8"));
 
   const matrix = await generateComplianceMatrixXLSX(project, brand, opts?.checks);
   zip.file("Compliance_Matrix.xlsx", matrix);
@@ -815,7 +822,94 @@ export async function generateBidPackageZIP(
   const boq = await generateBoQXLSX(project, brand, opts?.boqItems);
   zip.file("Financial_BoQ.xlsx", boq);
 
-  zip.file("Proposal_Content.md", proposal.contentMd ?? "");
+  const contentMd = proposal.contentMd ?? "";
+  zip.file("Proposal_Content.md", contentMd);
+
+  const validation =
+    opts?.validation ??
+    validateProposalOutput({
+      contentMd,
+      financial: opts?.boqItems
+        ? {
+            cashEquivalents: null,
+            accountsReceivable: null,
+            currentLiabilities: null,
+            quickLiquidityRatio: null,
+            qlrPasses: null,
+            qlrThreshold: null,
+            qlrFormula: null,
+            saudizationPercent: null,
+            boqItems: opts.boqItems.map((b) => ({
+              item: b.item,
+              unit: b.unit,
+              qty: b.qty,
+              unitPrice: b.unitPrice,
+              total: b.total,
+            })),
+            localContentPreferenceApplied: null,
+            notes: [],
+          }
+        : null,
+      entities: null,
+      complianceRows: [],
+    });
+
+  const validationJson = validationReportToJson(validation);
+  zip.file("Validation_Report.json", validationJson);
+
+  const manifest = buildExportManifest({
+    project: {
+      id: project.id,
+      title: project.title,
+      etimadRef: project.etimadRef,
+      updatedAt: project.updatedAt,
+    },
+    proposal: {
+      id: proposal.id,
+      version: proposal.version,
+      status: proposal.status,
+      locale: proposal.locale,
+      contentMd,
+      approvedAt: proposal.approvedAt,
+    },
+    validation,
+    artifacts: [
+      { name: "Technical_Proposal.pdf", type: "PDF", bytes: pdf },
+      { name: "Technical_Proposal_Slides.pptx", type: "PPTX", bytes: pptxBuf },
+      {
+        name: "Technical_Proposal_Slides.html",
+        type: "HTML",
+        bytes: Buffer.from(slides, "utf8"),
+      },
+      { name: "Compliance_Matrix.xlsx", type: "XLSX", bytes: matrix },
+      { name: "Financial_BoQ.xlsx", type: "XLSX", bytes: boq },
+      {
+        name: "Proposal_Content.md",
+        type: "MD",
+        bytes: Buffer.from(contentMd, "utf8"),
+      },
+      { name: "Validation_Report.json", type: "JSON", bytes: validationJson },
+    ],
+  });
+  zip.file("Export_Manifest.json", manifestToJson(manifest));
+  zip.file(
+    "Traceability_Report.json",
+    Buffer.from(
+      JSON.stringify(
+        {
+          proposalId: proposal.id,
+          projectId: project.id,
+          proposalContentHash: manifest.proposal.contentHash,
+          artifactHashes: manifest.artifacts,
+          generatedAt: manifest.generatedAt,
+          humanAuthorityNotice: manifest.humanAuthorityNotice,
+        },
+        null,
+        2
+      ),
+      "utf8"
+    )
+  );
 
   const readme = `Arabclue Bid Package
 ====================
@@ -825,16 +919,22 @@ Tender Type: ${tenderType.name} / ${tenderType.nameAr}
 Budget: ${project.currency} ${(project.budget ?? 0).toLocaleString()}
 Generated: ${new Date().toISOString()}
 Compliance Score: ${proposal.complianceScore ?? 100}%
+Validation: ${manifest.validation.status}
+Approval: ${manifest.proposal.approvalStatus}
 
 Contents:
-1. Technical_Proposal.pdf          — Binary PDF (Playwright)
-2. Technical_Proposal_Slides.pptx  — Branded PowerPoint slides
-3. Technical_Proposal_Slides.html  — HTML slide preview
-4. Compliance_Matrix.xlsx          — Regulatory compliance matrix
-5. Financial_BoQ.xlsx              — Bill of Quantities (Etimad format)
-6. Proposal_Content.md             — Raw markdown source
+1. Technical_Proposal.pdf
+2. Technical_Proposal_Slides.pptx
+3. Technical_Proposal_Slides.html
+4. Compliance_Matrix.xlsx
+5. Financial_BoQ.xlsx              — structure only; client enters prices
+6. Proposal_Content.md
+7. Export_Manifest.json           — hashes, versions, validation
+8. Validation_Report.json
+9. Traceability_Report.json
 
-Compliance content is not legal advice. Data residency follows tenant and platform policy.
+ArabClue is assisted drafting — the user remains final author of record.
+Compliance content is not legal advice.
 Generated by Arabclue
 `;
   zip.file("README.txt", readme);

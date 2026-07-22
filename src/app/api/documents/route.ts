@@ -102,6 +102,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "file too large (max 50MB)" }, { status: 400 });
     }
 
+    const { validateUploadAllowlist } = await import("@/lib/safe-zip");
+    const allow = validateUploadAllowlist(originalName, mimeType);
+    if (!allow.ok) {
+      return NextResponse.json(
+        { error: `Upload rejected: ${allow.reason}` },
+        { status: 400 }
+      );
+    }
+
     const project = await db.tenderProject.findUnique({ where: { id: projectId } });
     if (!project || !assertWorkspaceMatch(project.workspaceId, workspace.id)) {
       return NextResponse.json({ error: "project not found" }, { status: 404 });

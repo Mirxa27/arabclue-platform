@@ -212,12 +212,41 @@ export async function GET(
           "application/vnd.openxmlformats-officedocument.presentationml.presentation";
         filename = "Technical_Proposal_Slides.pptx";
         break;
+      case "manifest": {
+        const { buildExportManifest, manifestToJson } = await import(
+          "@/lib/export-manifest"
+        );
+        buffer = manifestToJson(
+          buildExportManifest({
+            project: {
+              id: proposal.project.id,
+              title: proposal.project.title,
+              etimadRef: proposal.project.etimadRef,
+              updatedAt: proposal.project.updatedAt,
+            },
+            proposal: {
+              id: proposal.id,
+              version: proposal.version,
+              status: proposal.status,
+              locale: proposal.locale,
+              contentMd: proposal.contentMd,
+              approvedAt: proposal.approvedAt,
+            },
+            validation: gateReport,
+            artifacts: [],
+          })
+        );
+        contentType = "application/json; charset=utf-8";
+        filename = "Export_Manifest.json";
+        break;
+      }
       case "zip":
       default:
         buffer = await generateBidPackageZIP(proposal, proposal.project, brand, {
           checks,
           boqItems,
           slidesMetrics,
+          validation: gateReport,
         });
         contentType = "application/zip";
         filename = "Arabclue_Bid_Package.zip";

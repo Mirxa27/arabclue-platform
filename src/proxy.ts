@@ -9,6 +9,7 @@ const PUBLIC_PATHS = new Set([
   "/pricing",
   "/compliance",
   "/api/health",
+  "/api/ready",
   "/api/billing/webhook",
 ]);
 

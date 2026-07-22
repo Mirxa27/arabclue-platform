@@ -242,6 +242,8 @@ model PastProject {
   vectorId       String?  // optional external vector store id
   embeddingJson  String?  // JSON number[] embedding for local RAG
   tags           String?  // comma-separated
+  approved       Boolean  @default(true)
+  revokedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -595,6 +597,9 @@ model Certificate {
   filePath      String?
   alertDays     Int      @default(30)
   notes         String?
+  approved      Boolean  @default(true)
+  revokedAt     DateTime?
+  contentHash   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

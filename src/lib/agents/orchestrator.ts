@@ -317,9 +317,14 @@ export async function runAgentPipeline(opts: {
       where: { workspaceId: opts.workspaceId },
     });
     const past = await db.pastProject.findMany({
-      where: { workspaceId: opts.workspaceId },
+      where: {
+        workspaceId: opts.workspaceId,
+        approved: true,
+        revokedAt: null,
+      },
     });
-    const [libraryItems, staffMembers, methodologies, restrictions] = await Promise.all([
+    const [libraryItems, staffMembers, methodologies, restrictions, certificates] =
+      await Promise.all([
       db.contentLibraryItem.findMany({
         where: { workspaceId: opts.workspaceId, approved: true, restricted: false },
       }),
@@ -332,7 +337,16 @@ export async function runAgentPipeline(opts: {
       db.restriction.findMany({
         where: { workspaceId: opts.workspaceId, active: true },
       }),
+      db.certificate.findMany({
+        where: {
+          workspaceId: opts.workspaceId,
+          approved: true,
+          revokedAt: null,
+        },
+      }),
     ]);
+    const { filterValidCertificates } = await import("../knowledge-eligibility");
+    const validCerts = filterValidCertificates(certificates);
     const ragDocs: RagDocument[] = [];
     for (const p of past) {
       let embedding: number[] | null = p.embeddingJson
@@ -388,6 +402,30 @@ export async function runAgentPipeline(opts: {
         embedding: null,
       });
     }
+    for (const c of validCerts) {
+      ragDocs.push({
+        id: c.id,
+        title: `[Certificate:${c.certType}] ${c.name}`,
+        summary: [
+          c.number ? `Number: ${c.number}` : null,
+          c.issuer ? `Issuer: ${c.issuer}` : null,
+          c.expiresAt ? `Expires: ${c.expiresAt.toISOString().slice(0, 10)}` : "No expiry",
+          c.notes,
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .slice(0, 1500),
+        tags: c.certType,
+        embedding: null,
+      });
+    }
+    const knowledgeFindings = [
+      `Approved past projects: ${past.length}`,
+      `Approved library items: ${libraryItems.length}`,
+      `Active staff: ${staffMembers.length}`,
+      `Approved methodologies: ${methodologies.length}`,
+      `Valid certificates (non-expired): ${validCerts.length}/${certificates.length}`,
+    ];
     const restrictionsText = restrictions
       .map((r) => `${r.restrictionType}: ${r.text}`)
       .join("\n");
@@ -473,6 +511,7 @@ export async function runAgentPipeline(opts: {
       entities,
       projectBudget: project.budget,
       currency: project.currency,
+      tenderText: combined,
     });
 
     const financialAi = await enrichFinancialWithAi({
@@ -536,6 +575,17 @@ export async function runAgentPipeline(opts: {
       restrictions: restrictionsText,
     });
 
+    // Mandatory validation gate (blocks marking export-ready)
+    const { validateProposalOutput } = await import("../validation-gate");
+    const validationReport = validateProposalOutput({
+      contentMd: draft.contentMd,
+      financial: financial as FinancialExtract,
+      entities,
+      complianceRows: rows as ComplianceMatrixRow[],
+      restrictions: restrictions.map((r) => r.text),
+      approvedEvidenceIds: ragDocs.map((d) => d.id),
+    });
+
     const artifacts = [
       {
         type: "PDF",
@@ -577,7 +627,7 @@ export async function runAgentPipeline(opts: {
         title: `Technical & Financial Proposal — ${project.title}`,
         titleAr: `العطاء الفني والمالي — ${project.titleAr ?? project.title}`,
         type: "COMBINED",
-        status: "GENERATED",
+        status: validationReport.blocking ? "DRAFT" : "GENERATED",
         version: 1,
         locale,
         contentMd: draft.contentMd,
@@ -630,12 +680,16 @@ export async function runAgentPipeline(opts: {
           model: draft.model,
           tokensUsed: draft.tokensUsed,
           fallback: draft.fallback,
+          validation: validationReport,
+          knowledgeFindings,
+          exportReady: !validationReport.blocking,
           slidesMetrics: {
             quickLiquidityRatio: financial.quickLiquidityRatio,
             qlrPasses: financial.qlrPasses,
             saudizationPercent: financial.saudizationPercent,
             saudizationTarget: project.saudizationTarget,
             complianceScore: score,
+            localContentPreference: financial.localContentPreferenceApplied,
           },
         }),
       },
@@ -667,6 +721,13 @@ export async function runAgentPipeline(opts: {
         `Tokens: ${draft.tokensUsed}`,
         `Compliance score: ${score}%`,
         `Artifacts: ${realArtifacts.length}`,
+        ...knowledgeFindings,
+        validationReport.blocking
+          ? `Validation BLOCKED export: ${validationReport.issues
+              .filter((i) => i.severity === "error")
+              .map((i) => i.code)
+              .join(", ")}`
+          : "Validation passed — draft ready for human review",
       ],
     });
 

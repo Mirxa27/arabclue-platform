@@ -94,6 +94,40 @@ export async function extractTextFromBuffer(
     }
   }
 
+  // Safe ZIP package extraction (ZIP-slip and bomb resistant)
+  if (
+    lower.endsWith(".zip") ||
+    mimeType.includes("zip") ||
+    (bytes.length >= 4 &&
+      bytes[0] === 0x50 &&
+      bytes[1] === 0x4b &&
+      bytes[2] === 0x03 &&
+      bytes[3] === 0x04)
+  ) {
+    try {
+      const { extractSafeZip } = await import("../safe-zip");
+      const { entries, skipped } = await extractSafeZip(bytes);
+      const parts: string[] = [];
+      if (skipped.some((s) => s.reason === "zip_slip")) {
+        parts.push("[zip] blocked path-traversal entries");
+      }
+      for (const entry of entries) {
+        const inner = await extractTextFromBuffer(
+          entry.bytes,
+          "application/octet-stream",
+          entry.name
+        );
+        if (inner.trim()) {
+          parts.push(`--- ${entry.name} ---\n${inner}`);
+        }
+      }
+      return sanitizeText(parts.join("\n\n"));
+    } catch (err) {
+      console.warn("[ingestion] safe zip extract failed", err);
+      return "";
+    }
+  }
+
   return "";
 }
 

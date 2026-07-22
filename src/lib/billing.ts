@@ -260,3 +260,71 @@ export async function fulfillCheckout(opts: {
 
   return { ok: true, checkoutId: checkout.id };
 }
+
+/**
+ * Reconcile pending/ambiguous checkouts via MyFatoorah status inquiry.
+ * Idempotent — safe for cron or admin-triggered runs.
+ */
+export async function reconcilePendingCheckouts(opts?: {
+  olderThanMinutes?: number;
+  limit?: number;
+}): Promise<{
+  scanned: number;
+  fulfilled: number;
+  failed: number;
+  pending: number;
+  errors: string[];
+}> {
+  const olderThanMinutes = opts?.olderThanMinutes ?? 5;
+  const limit = opts?.limit ?? 50;
+  const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);
+
+  const pending = await db.paymentCheckout.findMany({
+    where: {
+      status: "PENDING",
+      createdAt: { lte: cutoff },
+      OR: [{ invoiceId: { not: null } }, { paymentId: { not: null } }],
+    },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  });
+
+  let fulfilled = 0;
+  let failed = 0;
+  let stillPending = 0;
+  const errors: string[] = [];
+
+  for (const checkout of pending) {
+    try {
+      const result = await fulfillCheckout({
+        checkoutId: checkout.id,
+        invoiceId: checkout.invoiceId,
+        paymentId: checkout.paymentId,
+        customerReference: checkout.customerReference,
+      });
+      if (result.ok) fulfilled += 1;
+      else if (result.error && /pending|inprogress|in progress/i.test(result.error)) {
+        stillPending += 1;
+      } else if (result.error) {
+        failed += 1;
+        errors.push(`${checkout.id}:${result.error}`);
+      } else {
+        stillPending += 1;
+      }
+    } catch (err) {
+      failed += 1;
+      errors.push(
+        `${checkout.id}:${err instanceof Error ? err.message : "reconcile_error"}`
+      );
+    }
+  }
+
+  return {
+    scanned: pending.length,
+    fulfilled,
+    failed,
+    pending: stillPending,
+    errors: errors.slice(0, 20),
+  };
+}
+
