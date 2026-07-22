@@ -20,6 +20,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { VoiceLiveConfig } from "@/lib/agents/platform/voice-types";
+import { RealtimeAudioWorkletCapture } from "@/lib/agents/platform/realtime-audio-capture";
 
 function toolLabel(type: string): string {
   return type.replace(/^tool-/, "").replace(/([A-Z])/g, " $1").trim();
@@ -62,10 +63,9 @@ function micErrorMessage(err: unknown, ar: boolean): string {
 type LiveTransport = {
   connect: () => Promise<void>;
   disconnect: () => void;
-  startAudioCapture: (stream: MediaStream) => void;
-  stopAudioCapture: () => void;
   stopPlayback: () => void;
   sendTextMessage: (text: string) => void;
+  sendAudio: (base64Audio: string) => void;
 };
 
 export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
@@ -76,7 +76,9 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
   const [error, setError] = useState<string | null>(null);
   const [followView, setFollowView] = useState<DashboardView | null>(null);
   const [starting, setStarting] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
+  const captureRef = useRef<RealtimeAudioWorkletCapture | null>(null);
   const appliedToolKeys = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const transportRef = useRef<LiveTransport | null>(null);
@@ -135,10 +137,9 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
   transportRef.current = {
     connect: realtime.connect,
     disconnect: realtime.disconnect,
-    startAudioCapture: realtime.startAudioCapture,
-    stopAudioCapture: realtime.stopAudioCapture,
     stopPlayback: realtime.stopPlayback,
     sendTextMessage: realtime.sendTextMessage,
+    sendAudio: realtime.sendAudio,
   };
 
   useEffect(() => {
@@ -174,18 +175,36 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
     }
   }, [realtime.messages]);
 
-  const releaseMic = useCallback(() => {
+  const stopCapture = useCallback(async () => {
+    const capture = captureRef.current;
+    captureRef.current = null;
+    if (capture) {
+      await capture.stop();
+    }
+    setIsCapturing(false);
+  }, []);
+
+  const releaseMic = useCallback(async () => {
+    await stopCapture();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+  }, [stopCapture]);
+
+  const startCapture = useCallback(async (stream: MediaStream) => {
+    const capture = new RealtimeAudioWorkletCapture({
+      targetSampleRate: 24_000,
+      onAudio: (base64) => {
+        transportRef.current?.sendAudio(base64);
+      },
+    });
+    captureRef.current = capture;
+    await capture.start(stream);
+    setIsCapturing(true);
   }, []);
 
   const stopLive = useCallback(() => {
     const transport = transportRef.current;
-    try {
-      transport?.stopAudioCapture();
-    } catch {
-      /* ignore */
-    }
+    void releaseMic();
     try {
       transport?.stopPlayback();
     } catch {
@@ -196,19 +215,16 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
     } catch {
       /* ignore */
     }
-    releaseMic();
     setStarting(false);
   }, [releaseMic]);
 
   // Tear down only on unmount — never when connect/disconnect identities change.
   useEffect(() => {
     return () => {
+      const capture = captureRef.current;
+      captureRef.current = null;
+      void capture?.stop();
       const transport = transportRef.current;
-      try {
-        transport?.stopAudioCapture();
-      } catch {
-        /* ignore */
-      }
       try {
         transport?.stopPlayback();
       } catch {
@@ -248,9 +264,10 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
 
       streamRef.current = stream;
       await transportRef.current?.connect();
-      transportRef.current?.startAudioCapture(stream);
+      // Use AudioWorklet capture (not AI SDK ScriptProcessorNode) to avoid deprecation warnings.
+      await startCapture(stream);
     } catch (err) {
-      releaseMic();
+      await releaseMic();
       try {
         transportRef.current?.disconnect();
       } catch {
@@ -266,7 +283,7 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
     } finally {
       setStarting(false);
     }
-  }, [ar, releaseMic, realtime.status, starting]);
+  }, [ar, releaseMic, realtime.status, startCapture, starting]);
 
   const connected = realtime.status === "connected";
   const connecting = realtime.status === "connecting" || starting;
@@ -293,7 +310,7 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
               : "starting"
             : realtime.status}
         </Badge>
-        {realtime.isCapturing && (
+        {isCapturing && (
           <Badge variant="destructive" className="gap-1 animate-pulse">
             <Mic className="size-3" />
             {ar ? "الميكروفون" : "Mic live"}
@@ -466,20 +483,21 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
               type="button"
               variant="outline"
               onClick={() => {
-                const transport = transportRef.current;
-                if (realtime.isCapturing) {
-                  transport?.stopAudioCapture();
-                } else if (streamRef.current) {
-                  transport?.startAudioCapture(streamRef.current);
-                }
+                void (async () => {
+                  if (isCapturing) {
+                    await stopCapture();
+                  } else if (streamRef.current) {
+                    await startCapture(streamRef.current);
+                  }
+                })();
               }}
             >
-              {realtime.isCapturing ? (
+              {isCapturing ? (
                 <MicOff className="size-4 me-2" />
               ) : (
                 <Mic className="size-4 me-2" />
               )}
-              {realtime.isCapturing
+              {isCapturing
                 ? ar
                   ? "كتم الميكروفون"
                   : "Mute mic"
