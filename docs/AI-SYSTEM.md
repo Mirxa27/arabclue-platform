@@ -12,7 +12,8 @@ Each agent is a **principal tender engineer** role (not a generic chatbot). Craf
 4. **Financial (Agent 4)** — Principal Qualification & Financial Forms Structuring Engineer. QLR only from uploaded statements; pass/fail only with tender threshold; BoQ structure-only (blank amounts).
 5. **Coverage planner** — `buildCoveragePlan` maps every requirement to approved evidence (`COVERED` / `PARTIAL` / `GAP` / `NEEDS_USER_INPUT`), computes coverage %, strengths, missing-evidence tasks, and ethical win-strategy notes (coverage-based, never commercial pricing strategy). Statuses sync to `TenderRequirement` rows.
 6. **Drafting (Agent 5)** — Principal Proposal Documentation Engineer. Bilingual 18-section evaluator-scorable package driven by the coverage plan; restrictions enforced.
-7. **Validation gate** — blocks export on policy violations (pricing language, invented NORA IDs, AI-priced BoQ, placeholders).
+7. **Law & Contract (Agent 6)** — Researches the Saudi regulatory registry + tender anchors (`src/lib/saudi-law-research.ts`), then drafts a **front-to-front EN|AR contract** (`GeneratedProposal.type = CONTRACT`). Never claims 100% legal certainty; counsel review is mandatory. Studio: dashboard **Contracts** view; export: bilingual HTML/PDF.
+8. **Validation gate** — blocks proposal export on policy violations (pricing language, invented NORA IDs, AI-priced BoQ, placeholders). Contract export uses `validateContractDraft` (disclaimer required; false-certainty language blocked).
 
 ## 18-section proposal package
 
@@ -49,7 +50,7 @@ Winning is **evaluator score through coverage**, not fabrication:
 
 ## Provider abstraction
 
-`src/lib/llm/index.ts` + `AIProviderConfig` per engine (INGESTION, COMPLIANCE, TECHNICAL, FINANCIAL, DRAFTING, EMBEDDING, REWRITE, DEFAULT).
+`src/lib/llm/index.ts` + `AIProviderConfig` per engine (INGESTION, COMPLIANCE, TECHNICAL, FINANCIAL, DRAFTING, EMBEDDING, REWRITE, LAW, DEFAULT).
 
 ## Guardrails
 
@@ -64,7 +65,7 @@ See `docs/GUARDRAILS.md`.
 
 ## Artifacts
 
-`AgentRun.finalArtifact` includes coverage matrix summary, technical package metadata, validation report, and `exportReady`.
+`AgentRun.finalArtifact` includes coverage matrix summary, technical package metadata, validation report, `exportReady`, and `contractId` for the bilingual draft.
 
 ## Proposal Document Studio
 
@@ -78,6 +79,11 @@ Live editing, redesign, and release loop:
 | Version revert | `POST /api/proposals/[id]/versions/[version]/revert` |
 | Regenerate as version or fork | `POST /api/agents/run` with `regenerateMode` + `targetProposalId` |
 | Final export policy | Approval required when policy exists; ZIP marks `EXPORTED` |
-| Stale agent resume | `GET /api/agents/status` resumes from `configJson` |
 
-Studio UI: `ProposalEditorDialog` (versions, validation, skills, regenerate, export errors).
+## Contract studio
+
+| Capability | Location |
+| --- | --- |
+| Bilingual front-to-front viewer | Dashboard → Contracts |
+| Pre-draft research panel | Registry findings + certainty tags |
+| HTML / PDF export | `GET /api/proposals/:id/download?format=html\|pdf` (type `CONTRACT`) |

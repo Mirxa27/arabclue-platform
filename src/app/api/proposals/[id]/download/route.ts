@@ -55,6 +55,14 @@ export async function GET(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
+  const isContract = proposal.type === "CONTRACT";
+  if (isContract) {
+    // Contracts only support bilingual legal HTML/PDF (and manifest)
+    if (!["html", "pdf", "manifest"].includes(format)) {
+      format = "pdf";
+    }
+  }
+
   // Deterministic validation gate — blocks final export on pricing/placeholder/NORA/etc.
   const restrictions = await db.restriction.findMany({
     where: { workspaceId: workspace.id, active: true },
@@ -86,26 +94,39 @@ export async function GET(
       formsRaw = null;
     }
   }
-  const gateFinancial: FinancialExtract | null =
-    financialForValidationGate(formsRaw);
-  const gateReport = validateProposalOutput({
-    contentMd: proposal.contentMd,
-    financial: gateFinancial,
-    entities: null,
-    complianceRows: checksForGate.map((c) => ({
-      frameworkId: c.framework,
-      controlId: c.controlId,
-      title: c.title,
-      status: (c.status === "GAP" ? "PARTIAL" : c.status) as
-        | "COMPLIANT"
-        | "PARTIAL"
-        | "NON_COMPLIANT"
-        | "PENDING",
-      evidence: c.evidence ?? "",
-      remediation: c.remediation,
-    })),
-    restrictions: restrictions.map((r) => r.text),
-  });
+
+  let gateReport;
+  if (isContract) {
+    const { validateContractDraft } = await import("@/lib/agents/law-contract");
+    const cv = validateContractDraft(proposal.contentMd ?? "");
+    gateReport = {
+      ok: cv.ok,
+      blocking: cv.blocking,
+      issues: cv.issues,
+      checkedAt: new Date().toISOString(),
+    };
+  } else {
+    const gateFinancial: FinancialExtract | null =
+      financialForValidationGate(formsRaw);
+    gateReport = validateProposalOutput({
+      contentMd: proposal.contentMd,
+      financial: gateFinancial,
+      entities: null,
+      complianceRows: checksForGate.map((c) => ({
+        frameworkId: c.framework,
+        controlId: c.controlId,
+        title: c.title,
+        status: (c.status === "GAP" ? "PARTIAL" : c.status) as
+          | "COMPLIANT"
+          | "PARTIAL"
+          | "NON_COMPLIANT"
+          | "PENDING",
+        evidence: c.evidence ?? "",
+        remediation: c.remediation,
+      })),
+      restrictions: restrictions.map((r) => r.text),
+    });
+  }
 
   const policyResult = evaluateExportPolicy({
     proposalStatus: proposal.status,
@@ -185,14 +206,44 @@ export async function GET(
 
     switch (format) {
       case "pdf":
-        buffer = await generateProposalPDF(proposal, proposal.project, brand, pdfLocale);
-        contentType = "application/pdf";
-        filename = "Technical_Proposal.pdf";
+        if (isContract) {
+          const { generateBilingualContractPDF } = await import(
+            "@/lib/contract-export"
+          );
+          buffer = await generateBilingualContractPDF({
+            title: proposal.title,
+            titleAr: proposal.titleAr,
+            contentMd: proposal.contentMd ?? "",
+            projectTitle: proposal.project.title,
+            etimadRef: proposal.project.etimadRef,
+          });
+          contentType = "application/pdf";
+          filename = "Draft_Contract_Bilingual.pdf";
+        } else {
+          buffer = await generateProposalPDF(proposal, proposal.project, brand, pdfLocale);
+          contentType = "application/pdf";
+          filename = "Technical_Proposal.pdf";
+        }
         break;
       case "html":
-        buffer = generateProposalHTMLPreview(proposal, proposal.project, brand, pdfLocale);
-        contentType = "text/html; charset=utf-8";
-        filename = "Technical_Proposal.html";
+        if (isContract) {
+          const { generateBilingualContractHTML } = await import(
+            "@/lib/contract-export"
+          );
+          buffer = generateBilingualContractHTML({
+            title: proposal.title,
+            titleAr: proposal.titleAr,
+            contentMd: proposal.contentMd ?? "",
+            projectTitle: proposal.project.title,
+            etimadRef: proposal.project.etimadRef,
+          });
+          contentType = "text/html; charset=utf-8";
+          filename = "Draft_Contract_Bilingual.html";
+        } else {
+          buffer = generateProposalHTMLPreview(proposal, proposal.project, brand, pdfLocale);
+          contentType = "text/html; charset=utf-8";
+          filename = "Technical_Proposal.html";
+        }
         break;
       case "xlsx-matrix":
         buffer = await generateComplianceMatrixXLSX(proposal.project, brand, checks);

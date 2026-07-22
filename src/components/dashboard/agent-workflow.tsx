@@ -139,7 +139,9 @@ export function AgentWorkflow() {
           setLlmFallback(!!data.finalArtifact.fallback);
           setLlmProvider(data.finalArtifact.provider ?? null);
           setProposalId(data.proposalId ?? data.finalArtifact.proposalId ?? null);
-          setContractId(data.finalArtifact.contractId ?? null);
+          setContractId(
+            data.contractId ?? data.finalArtifact.contractId ?? null
+          );
           setCoveragePercent(
             data.coveragePercent ??
               data.finalArtifact.coverage?.coveragePercent ??
@@ -207,7 +209,7 @@ export function AgentWorkflow() {
           <div>
             <h3 className="text-sm font-semibold">{tr("section_agents", locale)}</h3>
             <p className="text-[11px] text-muted-foreground">
-              {locale === "ar" ? "5 وكلاء ذكاء اصطناعي متخصصون" : "5 specialized AI agents"}
+              {locale === "ar" ? "6 وكلاء ذكاء اصطناعي متخصصون" : "6 specialized AI agents"}
             </p>
           </div>
         </div>

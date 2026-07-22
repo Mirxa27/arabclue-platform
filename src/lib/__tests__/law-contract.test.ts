@@ -75,4 +75,36 @@ describe("Saudi law research + bilingual contract agent", () => {
     expect(bad.blocking).toBe(true);
     expect(bad.issues.some((i) => i.code === "false_certainty")).toBe(true);
   });
+
+  test("bilingual contract HTML export includes both languages", async () => {
+    const { generateBilingualContractHTML } = await import("../contract-export");
+    const research = researchSaudiLawForContract({
+      entities,
+      complianceRows: [],
+      projectTitle: "Portal Ops",
+    });
+    const draft = buildDeterministicContract({
+      projectTitle: "Portal Ops",
+      etimadRef: "ET-1",
+      parties: {
+        clientEn: "Client",
+        clientAr: "العميل",
+        vendorEn: "Vendor",
+        vendorAr: "المتعاقد",
+      },
+      entities,
+      research,
+    });
+    const html = generateBilingualContractHTML({
+      title: draft.contentMd.slice(0, 20),
+      titleAr: "مسودة عقد",
+      contentMd: draft.contentMd,
+      projectTitle: "Portal Ops",
+      etimadRef: "ET-1",
+    }).toString("utf8");
+    expect(html).toContain("lang=\"en\"");
+    expect(html).toContain("lang=\"ar\"");
+    expect(html).toContain("not legal advice");
+    expect(html).toContain("ليست استشارة قانونية");
+  });
 });

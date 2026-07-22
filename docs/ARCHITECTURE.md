@@ -5,19 +5,21 @@
 1. **Web app** — Next.js App Router dashboard (`?view=`) + marketing pages + login.
 2. **API gateway** — Route handlers under `src/app/api/*` using `withTenant` / `withAdmin` (`src/lib/api-controller.ts`).
 3. **Domain services** — onboarding, requirements, billing (MyFatoorah), RAG, quotas, audit, validation gate.
-4. **AI engine** — five-stage in-process pipeline (`src/lib/agents/orchestrator.ts`) with per-engine LLM providers and guardrails.
+4. **AI engine** — six-stage in-process pipeline (`src/lib/agents/orchestrator.ts`) with per-engine LLM providers and guardrails.
 5. **Data store** — Prisma Postgres + workspace-scoped file storage (`uploads/{workspaceId}/` or Vercel Blob).
 
 ## Agent pipeline
 
 ```
-INGESTION → COMPLIANCE_REGULATORY → TECHNICAL_ARCHITECT → FINANCIAL_QUALIFICATION → PROPOSAL_DRAFTING
-→ VALIDATION GATE (export)
+INGESTION → COMPLIANCE_REGULATORY → TECHNICAL_ARCHITECT → FINANCIAL_QUALIFICATION
+→ PROPOSAL_DRAFTING → LAW_CONTRACT → VALIDATION / CONTRACT GATES
 ```
+
+`LAW_CONTRACT` writes a separate `GeneratedProposal` (`type: CONTRACT`) with bilingual EN|AR articles and a Saudi registry research brief. Dashboard **Contracts** view renders the legal studio; proposal list excludes contracts.
 
 ## Regulatory policy registry
 
-`src/lib/procurement-rules.ts` holds versioned instruments (GTPL, PDPL, NCA ECC/CCC, local-content mechanisms) with jurisdiction, authority, applicability, approval status, and review dates. Compliance rows carry `sourceCategory` and `legalReviewStatus`.
+`src/lib/procurement-rules.ts` holds versioned instruments (GTPL, PDPL, NCA ECC/CCC, local-content mechanisms) with jurisdiction, authority, applicability, approval status, and review dates. Compliance rows carry `sourceCategory` and `legalReviewStatus`. Contract research (`saudi-law-research.ts`) reads this registry only — counsel must verify official updates.
 
 ## No-pricing enforcement
 

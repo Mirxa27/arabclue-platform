@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Scale, Loader2, FileText, Sparkles } from "lucide-react";
+import { Scale, Loader2, FileText, Sparkles, Download, FileDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -136,9 +136,27 @@ export function ContractsPanel() {
                     : ""}
                 </p>
               </div>
-              <Button size="sm" variant="outline" onClick={() => setOpenId(c.id)}>
-                {ar ? "عرض العقد" : "Open contract"}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => setOpenId(c.id)}>
+                  {ar ? "عرض العقد" : "Open contract"}
+                </Button>
+                <Button size="sm" variant="ghost" className="gap-1" asChild>
+                  <a
+                    href={`/api/proposals/${c.id}/download?format=html`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Download className="size-3.5" />
+                    HTML
+                  </a>
+                </Button>
+                <Button size="sm" variant="ghost" className="gap-1" asChild>
+                  <a href={`/api/proposals/${c.id}/download?format=pdf`}>
+                    <FileDown className="size-3.5" />
+                    PDF
+                  </a>
+                </Button>
+              </div>
             </Card>
           ))}
         </div>

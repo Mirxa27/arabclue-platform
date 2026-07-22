@@ -93,9 +93,11 @@ export async function GET(req: NextRequest) {
       errorMessage: run.errorMessage,
       resumed,
       proposalId: finalArtifact?.proposalId ?? null,
+      contractId: finalArtifact?.contractId ?? null,
       coveragePercent: finalArtifact?.coverage?.coveragePercent ?? null,
       exportReady: finalArtifact?.exportReady ?? null,
       validation: finalArtifact?.validation ?? null,
+      contractValidation: finalArtifact?.contractValidation ?? null,
     });
   } catch (err) {
     console.error("[agents/status]", err);

@@ -22,6 +22,7 @@ import { embedText } from "../llm";
 import { loadProjectTenderCorpus } from "../document-chunks";
 import { audit, AUDIT_ACTIONS } from "../audit";
 import type { Locale } from "../types";
+import { parseAgentRunConfig } from "../proposal-studio";
 
 export interface OrchestratorResult {
   agentStates: AgentState[];
@@ -917,6 +918,16 @@ export async function runAgentPipeline(opts: {
         model: lawDraft.model,
         fallback: lawDraft.fallback,
       },
+      {
+        type: "HTML",
+        filename: "Draft_Contract_Bilingual.html",
+        downloadPath: `/api/proposals/PLACEHOLDER/download?format=html`,
+      },
+      {
+        type: "PDF",
+        filename: "Draft_Contract_Bilingual.pdf",
+        downloadPath: `/api/proposals/PLACEHOLDER/download?format=pdf`,
+      },
     ];
 
     const contract = await db.generatedProposal.create({
@@ -946,6 +957,19 @@ export async function runAgentPipeline(opts: {
         locale: "ar",
         createdBy: opts.userId,
       },
+    });
+
+    const realContractArtifacts = contractArtifacts.map((a) =>
+      "downloadPath" in a && typeof a.downloadPath === "string"
+        ? {
+            ...a,
+            downloadPath: a.downloadPath.replace("PLACEHOLDER", contract.id),
+          }
+        : a
+    );
+    await db.generatedProposal.update({
+      where: { id: contract.id },
+      data: { artifactsJson: JSON.stringify(realContractArtifacts) },
     });
 
     await mark("LAW_CONTRACT", {
@@ -1086,11 +1110,15 @@ export async function ensurePipelineStarted(runId: string): Promise<Orchestrator
     });
     const project = await db.tenderProject.findUnique({ where: { id: run.projectId } });
     if (!project) return null;
+    const cfg = parseAgentRunConfig(run.configJson);
     return runAgentPipeline({
       runId,
       projectId: run.projectId,
       workspaceId: project.workspaceId,
       userId: run.triggeredById,
+      locale: cfg?.locale,
+      regenerateMode: cfg?.regenerateMode,
+      targetProposalId: cfg?.targetProposalId,
     });
   }
 
