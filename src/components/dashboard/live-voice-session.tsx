@@ -21,8 +21,9 @@ import type { VoiceLiveConfig } from "@/lib/agents/platform/voice-types";
 import { RealtimeAudioWorkletCapture } from "@/lib/agents/platform/realtime-audio-capture";
 import { getLiveVoiceSessionConfig } from "@/lib/agents/platform/realtime-session-config";
 import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
-import { MissionToolTheater } from "./mission-tool-theater";
 import { MissionPerformanceStage } from "./mission-performance-fx";
+import { MissionStage } from "./mission-stage";
+import { MissionConversation } from "./mission-conversation";
 import type { MissionFeedItem } from "./mission-execution-feed";
 
 function micErrorMessage(err: unknown, ar: boolean): string {
@@ -89,7 +90,6 @@ export function LiveVoiceSession({
   const streamRef = useRef<MediaStream | null>(null);
   const captureRef = useRef<RealtimeAudioWorkletCapture | null>(null);
   const appliedToolKeys = useRef<Set<string>>(new Set());
-  const scrollRef = useRef<HTMLDivElement>(null);
   const transportRef = useRef<LiveTransport | null>(null);
   const setActiveProjectIdRef = useRef(setActiveProjectId);
   const setFollowViewRef = useRef(setFollowView);
@@ -156,11 +156,6 @@ export function LiveVoiceSession({
     sendTextMessage: realtime.sendTextMessage,
     sendAudio: realtime.sendAudio,
   };
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [realtime.messages, realtime.status]);
 
   // Apply tool UI follow-alongs from streamed messages
   useEffect(() => {
@@ -383,93 +378,29 @@ export function LiveVoiceSession({
         locale={locale}
         performing={performing}
         tools={theaterTools}
-        className="flex-1 min-h-0"
+        className="flex-1 min-h-0 p-1"
       >
-      <div className="grid flex-1 min-h-0 gap-3 p-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto rounded-2xl border border-cyan-500/15 bg-gradient-to-b from-background/80 via-teal-500/[0.04] to-background/80 p-4 space-y-3 backdrop-blur-[2px]"
-        >
-          {realtime.messages.length === 0 && (
-            <p className="text-sm text-muted-foreground max-w-xl">
-              {ar
-                ? "اضغط اتصال مباشر ثم تحدّث — الوكيل ينقر الأدوات مثلك والمسرح المتلألئ يعرض كل خطوة."
-                : "Tap Connect live, then speak — the agent clicks tools like you would, and the glitter theater shows each step."}
-            </p>
-          )}
-          {realtime.messages.map((message) => (
-            <div
-              key={message.id}
-              className={cn(
-                "rounded-xl px-3 py-2 text-sm max-w-[94%]",
-                message.role === "user"
-                  ? "ms-auto bg-primary text-primary-foreground"
-                  : "me-auto bg-card/90 border border-border/70",
-                message.role === "assistant" &&
-                  performing &&
-                  "shadow-[0_0_24px_rgba(34,211,238,0.12)]"
-              )}
-            >
-              <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
-                {message.role === "user"
-                  ? ar
-                    ? "أنت"
-                    : "You"
-                  : ar
-                    ? "مباشر"
-                    : "Live"}
-              </div>
-              <div className="space-y-2 whitespace-pre-wrap">
-                {message.parts.map((part, i) => {
-                  if (part.type === "text") {
-                    return <p key={i}>{part.text}</p>;
-                  }
-                  if (
-                    part.type.startsWith("tool-") ||
-                    part.type === "dynamic-tool"
-                  ) {
-                    const tp = part as {
-                      type: string;
-                      toolName?: string;
-                      state?: string;
-                    };
-                    const name =
-                      tp.type === "dynamic-tool"
-                        ? tp.toolName || "tool"
-                        : tp.type.replace(/^tool-/, "");
-                    const live =
-                      tp.state === "input-streaming" ||
-                      tp.state === "input-available";
-                    return (
-                      <div
-                        key={i}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono",
-                          live && "mission-tool-live border-cyan-300/50"
-                        )}
-                      >
-                        <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
-                        {name}
-                        <span className="opacity-60">{tp.state}</span>
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <MissionToolTheater
+        <MissionStage
           locale={locale}
           tools={theaterTools}
           voiceLive
-          isCapturing={isCapturing}
-          isSpeaking={realtime.isPlaying}
-          className="overflow-y-auto"
+          listening={isCapturing}
+          speaking={realtime.isPlaying}
+          thinking={connecting}
+          conversation={
+            <MissionConversation
+              locale={locale}
+              messages={realtime.messages}
+              performing={performing}
+              assistantLabel={ar ? "مباشر" : "Live"}
+              emptyHint={
+                ar
+                  ? "اضغط اتصال مباشر ثم تحدّث — الوكيل ينقر الأدوات مثلك والمسرح المتلألئ يعرض كل خطوة."
+                  : "Tap Connect live, then speak — the agent clicks tools like you would, and the glitter theater shows each step."
+              }
+            />
+          }
         />
-      </div>
       </MissionPerformanceStage>
 
       {(error || realtime.status === "error") && (

@@ -544,7 +544,7 @@ export function MissionToolTheater({
     >
       <div
         className={cn(
-          "relative overflow-hidden rounded-2xl border px-4 py-3",
+          "relative overflow-hidden rounded-2xl border px-3.5 py-2.5",
           "border-teal-500/20 bg-[linear-gradient(120deg,rgba(13,148,136,0.08),rgba(8,145,178,0.06),transparent)]"
         )}
       >
@@ -552,56 +552,31 @@ export function MissionToolTheater({
           <div className="flex items-center gap-2">
             <div
               className={cn(
-                "relative flex size-9 items-center justify-center rounded-full border border-teal-500/30 bg-teal-500/10",
+                "relative flex size-7 items-center justify-center rounded-full border border-teal-500/30 bg-teal-500/10",
                 active && "mission-orb"
               )}
             >
-              <Sparkles className="size-4 text-teal-700 dark:text-teal-300" />
+              <Sparkles className="size-3.5 text-teal-700 dark:text-teal-300" />
               {active ? (
                 <span className="absolute inset-0 rounded-full border border-teal-400/40 animate-ping" />
               ) : null}
             </div>
-            <div>
-              <p className="text-sm font-semibold">
-                {ar ? "يد الوكيل · المسرح الحي" : "Agent hand · live theater"}
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                {ar
-                  ? "ينقر الأدوات كما تفعل أنت — مع تلألؤ أثناء التنفيذ"
-                  : "Clicks tools the way you would — glitter while each step runs"}
-              </p>
-            </div>
+            <p className="text-sm font-semibold">
+              {ar ? "مسرح الأدوات الحي" : "Live tool theater"}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-1.5 justify-end">
+          <div className="flex flex-wrap items-center gap-1.5 justify-end">
             {voiceLive ? (
               <Badge variant="secondary" className="gap-1 text-[10px]">
                 <Radio className="size-3" />
                 {ar ? "صوت" : "voice"}
               </Badge>
             ) : null}
-            {isCapturing ? (
-              <Badge variant="destructive" className="gap-1 text-[10px] animate-pulse">
-                {ar ? "يستمع" : "listening"}
-              </Badge>
-            ) : null}
-            {isSpeaking ? (
-              <Badge className="gap-1 text-[10px] bg-teal-700">
-                {ar ? "يتحدث" : "speaking"}
-              </Badge>
-            ) : null}
-            <Badge variant="outline" className="text-[10px] font-mono">
-              {runningCount}/{tools.length}
+            <Badge variant="outline" className="text-[10px] font-mono tabular-nums">
+              {ar ? "حي" : "live"} {runningCount} · {ar ? "مكتمل" : "done"}{" "}
+              {doneCount}
             </Badge>
           </div>
-        </div>
-
-        <div className="mt-3 flex gap-3 text-[10px] uppercase tracking-wider text-muted-foreground">
-          <span>
-            {ar ? "حي" : "live"} {runningCount}
-          </span>
-          <span>
-            {ar ? "مكتمل" : "done"} {doneCount}
-          </span>
         </div>
       </div>
 

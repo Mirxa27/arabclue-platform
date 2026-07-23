@@ -27,11 +27,12 @@ import {
   MissionExecutionFeed,
   type MissionFeedItem,
 } from "./mission-execution-feed";
-import { MissionToolTheater } from "./mission-tool-theater";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionExtensionBridge } from "./mission-extension-bridge";
 import { MissionPulseWidget } from "./mission-pulse-widget";
 import { MissionControlShell } from "./mission-control-shell";
+import { MissionStage } from "./mission-stage";
+import { MissionConversation } from "./mission-conversation";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -93,7 +94,6 @@ export function PlatformAgentConsole() {
   const [feedItems, setFeedItems] = useState<MissionFeedItem[]>([]);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const spokenIdsRef = useRef<Set<string>>(new Set());
-  const scrollRef = useRef<HTMLDivElement>(null);
   const appliedToolKeys = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -307,11 +307,6 @@ export function PlatformAgentConsole() {
       }
     }
   }, [messages, setActiveProjectId]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, interim, status]);
 
   useEffect(() => {
     if (!voiceOut || typeof window === "undefined" || !window.speechSynthesis) {
@@ -688,106 +683,35 @@ export function PlatformAgentConsole() {
           locale={locale}
           performing={performing}
           tools={theaterTools}
-          className="flex-1 min-h-0"
+          className="flex-1 min-h-0 p-1"
         >
-          <div className="grid flex-1 min-h-0 gap-3 p-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
-            <div className="flex flex-col min-h-0 gap-2">
-              <div
-                ref={scrollRef}
-                className="flex-1 overflow-y-auto rounded-2xl border border-cyan-500/15 bg-gradient-to-b from-background/80 via-teal-500/[0.04] to-background/80 p-4 space-y-4 backdrop-blur-[2px]"
-              >
-                {messages.length === 0 && (
-                  <div className="text-sm text-muted-foreground max-w-xl leading-relaxed">
-                    {ar
-                      ? "جرّب: «اعرض مشاريعي»، «أنشئ مشروع مناقصة»، «شغّل الوكلاء» — المسرح يعرض كل نقرة أداة متلألئة."
-                      : "Try: “List my projects”, “Create a tender”, “Run the agents” — the theater shows every glittery tool click."}
-                  </div>
-                )}
-
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={cn(
-                      "rounded-xl px-3 py-2 text-sm max-w-[94%] transition-shadow",
-                      message.role === "user"
-                        ? "ms-auto bg-primary text-primary-foreground"
-                        : "me-auto bg-card/90 border border-border/70",
-                      message.role === "assistant" &&
-                        busy &&
-                        "shadow-[0_0_24px_rgba(34,211,238,0.12)]"
-                    )}
-                  >
-                    <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
-                      {message.role === "user"
-                        ? ar
-                          ? "أنت"
-                          : "You"
-                        : ar
-                          ? "الوكيل"
-                          : "Copilot"}
-                    </div>
-                    <div className="space-y-2 whitespace-pre-wrap">
-                      {message.parts.map((part, i) => {
-                        if (part.type === "text") {
-                          return <p key={i}>{part.text}</p>;
-                        }
-                        if (
-                          part.type.startsWith("tool-") ||
-                          part.type === "dynamic-tool"
-                        ) {
-                          const tp = part as {
-                            type: string;
-                            toolName?: string;
-                            state?: string;
-                          };
-                          const name =
-                            tp.type === "dynamic-tool"
-                              ? tp.toolName || "tool"
-                              : tp.type.replace(/^tool-/, "");
-                          const live =
-                            tp.state === "input-streaming" ||
-                            tp.state === "input-available";
-                          return (
-                            <div
-                              key={i}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono",
-                                live && "mission-tool-live border-cyan-300/50"
-                              )}
-                            >
-                              <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
-                              {name}
-                              <span className="opacity-60">{tp.state}</span>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })}
-                    </div>
-                  </div>
-                ))}
-
-                {interim ? (
-                  <div className="text-sm text-muted-foreground italic">
-                    {interim}…
-                  </div>
-                ) : null}
-              </div>
-
+          <MissionStage
+            locale={locale}
+            tools={theaterTools}
+            listening={listening}
+            speaking={busy && voiceOut}
+            thinking={busy}
+            conversation={
+              <MissionConversation
+                locale={locale}
+                messages={messages}
+                interim={interim}
+                performing={performing}
+                assistantLabel={ar ? "الوكيل" : "Copilot"}
+                emptyHint={
+                  ar
+                    ? "جرّب: «اعرض مشاريعي»، «أنشئ مشروع مناقصة»، «شغّل الوكلاء» — المسرح يعرض كل نقرة أداة متلألئة."
+                    : "Try: “List my projects”, “Create a tender”, “Run the agents” — the theater shows every glittery tool click."
+                }
+              />
+            }
+            feed={
               <MissionExecutionFeed
                 locale={locale}
                 items={feedItems.slice(0, 5)}
               />
-            </div>
-
-            <MissionToolTheater
-              locale={locale}
-              tools={theaterTools}
-              isCapturing={listening}
-              isSpeaking={busy && voiceOut}
-              className="overflow-y-auto"
-            />
-          </div>
+            }
+          />
         </MissionPerformanceStage>
       )}
     </MissionControlShell>

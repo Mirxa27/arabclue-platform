@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  currentAgentAction,
   extractDocumentPreview,
   extractRegulatoryPreview,
   extractTheaterTools,
@@ -8,6 +9,7 @@ import {
   summarizeToolOutput,
   toolDisplayName,
   unwrapToolPayload,
+  type TheaterToolEvent,
 } from "@/lib/agents/platform/mission-tool-parts";
 import { listRegistrySnapshot } from "@/lib/agents/platform/regulatory-synthesis";
 import { researchSaudiLawForContract } from "@/lib/saudi-law-research";
@@ -108,5 +110,40 @@ describe("mission tool theater parts", () => {
     expect(humanActionLabel("navigateToView", false)).toContain("sidebar");
     expect(humanActionLabel("listProjects", false)).toContain("Projects");
     expect(humanActionLabel("startAgentPipeline", true)).toContain("الوكلاء");
+  });
+
+  test("currentAgentAction reflects the most recent running tool", () => {
+    const tools: TheaterToolEvent[] = [
+      {
+        id: "t1",
+        name: "listProjects",
+        state: "output-available",
+        messageId: "m1",
+      },
+      {
+        id: "t2",
+        name: "startAgentPipeline",
+        state: "input-available",
+        messageId: "m1",
+      },
+    ];
+    const action = currentAgentAction({ tools, locale: "en" });
+    expect(action.phase).toBe("acting");
+    expect(action.label).toContain("Run agents");
+    expect(action.toolName).toBeTruthy();
+  });
+
+  test("currentAgentAction prioritizes listening/speaking/idle when no tool runs", () => {
+    const done: TheaterToolEvent[] = [
+      { id: "t1", name: "listProjects", state: "output-available", messageId: "m" },
+    ];
+    expect(currentAgentAction({ tools: done, locale: "en", listening: true }).phase).toBe(
+      "listening"
+    );
+    expect(currentAgentAction({ tools: done, locale: "en", speaking: true }).phase).toBe(
+      "speaking"
+    );
+    expect(currentAgentAction({ tools: [], locale: "en" }).phase).toBe("idle");
+    expect(currentAgentAction({ tools: [], locale: "ar" }).label).toContain("جاهز");
   });
 });

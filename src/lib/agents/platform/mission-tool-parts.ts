@@ -267,6 +267,87 @@ export function humanActionLabel(name: string, ar: boolean): string {
   return ar ? fallback.ar : fallback.en;
 }
 
+export type AgentActionPhase =
+  | "idle"
+  | "listening"
+  | "thinking"
+  | "acting"
+  | "speaking";
+
+export type AgentAction = {
+  phase: AgentActionPhase;
+  /** Human-style label, e.g. "Pressing Run agents…" */
+  label: string;
+  /** Tool display name when acting, else null */
+  toolName: string | null;
+  kind: string;
+  /** Count of tools currently running */
+  runningCount: number;
+};
+
+/**
+ * Derive the single most relevant "what is the agent doing right now" action,
+ * expressed the way a human operator would describe their own clicks.
+ */
+export function currentAgentAction(opts: {
+  tools: TheaterToolEvent[];
+  locale: "ar" | "en";
+  listening?: boolean;
+  speaking?: boolean;
+  thinking?: boolean;
+}): AgentAction {
+  const ar = opts.locale === "ar";
+  const running = opts.tools.filter(
+    (t) => isToolRunning(t.state) || t.preliminary
+  );
+  // Most recent running tool wins (agents act sequentially, like a human).
+  const active = running.length ? running[running.length - 1] : null;
+
+  if (active) {
+    return {
+      phase: "acting",
+      label: humanActionLabel(active.name, ar),
+      toolName: toolDisplayName(active.name, ar),
+      kind: toolKind(active.name),
+      runningCount: running.length,
+    };
+  }
+  if (opts.listening) {
+    return {
+      phase: "listening",
+      label: ar ? "ينصت إليك…" : "Listening to you…",
+      toolName: null,
+      kind: "general",
+      runningCount: 0,
+    };
+  }
+  if (opts.speaking) {
+    return {
+      phase: "speaking",
+      label: ar ? "يشرح ما ينفّذه…" : "Explaining as it works…",
+      toolName: null,
+      kind: "general",
+      runningCount: 0,
+    };
+  }
+  if (opts.thinking) {
+    return {
+      phase: "thinking",
+      label: ar ? "يخطّط للخطوة التالية…" : "Planning the next step…",
+      toolName: null,
+      kind: "general",
+      runningCount: 0,
+    };
+  }
+  return {
+    phase: "idle",
+    label: ar ? "جاهز — تحدّث أو اكتب" : "Ready — speak or type",
+    toolName: null,
+    kind: "general",
+    runningCount: 0,
+  };
+}
+
 const DOC_TOOLS = new Set([
   "getProposal",
   "getDocumentSummary",
