@@ -464,7 +464,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
 
     getProposal: platformTool({
       description:
-        "Get a proposal or contract overview with a short content excerpt.",
+        "Get a proposal or contract overview with excerpt; contracts include regulatory research artifacts when present.",
       inputSchema: z.object({ proposalId: z.string() }),
       execute: async ({ proposalId }) => {
         const proposal = await db.generatedProposal.findFirst({
@@ -477,8 +477,20 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         });
         if (!proposal) return { ok: false as const, error: "not found" };
         const content = proposal.contentMd ?? "";
+        const { parseProposalArtifacts } = await import(
+          "./regulatory-synthesis"
+        );
+        const artifacts = parseProposalArtifacts(proposal.artifactsJson);
+        const research = artifacts.research as
+          | {
+              findings?: Array<{ topicEn?: string; certainty?: string }>;
+              disclaimerEn?: string;
+            }
+          | undefined;
         return {
           ok: true as const,
+          title: proposal.title,
+          content: content.slice(0, 1500),
           proposal: {
             id: proposal.id,
             type: proposal.type,
@@ -490,23 +502,33 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
             createdAt: proposal.createdAt,
             excerpt: content.slice(0, 1500),
             contentLength: content.length,
+            articleCount: artifacts.articles?.length ?? 0,
+            research: research
+              ? {
+                  findingsCount: research.findings?.length ?? 0,
+                  findings: (research.findings ?? []).slice(0, 12),
+                  disclaimerEn: research.disclaimerEn,
+                }
+              : null,
           },
         };
       },
     }),
 
     getCompliance: platformTool({
-      description: "Compliance summary and failing controls for a project.",
+      description:
+        "Compliance matrix summary, framework breakdown, and gap controls with evidence for a project.",
       inputSchema: z.object({
         projectId: z.string().optional(),
       }),
       execute: async ({ projectId }) => {
-        if (projectId) {
-          const p = await requireProject(ctx, projectId);
+        const pid = projectId || ctx.activeProjectId || undefined;
+        if (pid) {
+          const p = await requireProject(ctx, pid);
           if (!p) return { ok: false as const, error: "project not found" };
         }
-        const where = projectId
-          ? { projectId }
+        const where = pid
+          ? { projectId: pid }
           : { project: { workspaceId: ctx.workspace.id } };
         const checks = await db.complianceCheck.findMany({
           where,
@@ -522,6 +544,21 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           ).length,
           pending: checks.filter((c) => c.status === "PENDING").length,
         };
+        const frameworks = Array.from(
+          new Set(checks.map((c) => c.framework))
+        ).map((fw) => {
+          const rows = checks.filter((c) => c.framework === fw);
+          return {
+            framework: fw,
+            total: rows.length,
+            gaps: rows.filter(
+              (c) =>
+                c.status === "NON_COMPLIANT" ||
+                c.status === "GAP" ||
+                c.status === "PARTIAL"
+            ).length,
+          };
+        });
         const gaps = checks
           .filter(
             (c) =>
@@ -529,15 +566,119 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
               c.status === "GAP" ||
               c.status === "PARTIAL"
           )
-          .slice(0, 15)
+          .slice(0, 20)
           .map((c) => ({
             id: c.id,
             framework: c.framework,
             controlId: c.controlId,
             title: c.title,
+            titleAr: c.titleAr,
             status: c.status,
+            evidence: c.evidence,
+            remediation: c.remediation,
+            complianceLevel: c.complianceLevel,
           }));
-        return { ok: true as const, summary, gaps };
+        return {
+          ok: true as const,
+          projectId: pid ?? null,
+          summary,
+          frameworks,
+          gaps,
+          disclaimer:
+            "Compliance assistance is not legal advice. Counsel review is required.",
+        };
+      },
+    }),
+
+    researchSaudiLaw: platformTool({
+      description:
+        "Synthesize a real-time Saudi regulatory research brief (GTPL/PDPL/NCA/NORA registry + tender anchors) for a project. Draft-grade only — never 100% legal certainty.",
+      inputSchema: z.object({
+        projectId: z.string().optional(),
+      }),
+      execute: async ({ projectId }) => {
+        const pid = projectId || ctx.activeProjectId;
+        if (!pid) {
+          return {
+            ok: false as const,
+            error: "projectId or active project required",
+          };
+        }
+        const project = await requireProject(ctx, pid);
+        if (!project) return { ok: false as const, error: "project not found" };
+
+        const { synthesizeSaudiLawForProject } = await import(
+          "./regulatory-synthesis"
+        );
+        const { recordMissionAction, completeMissionAction } = await import(
+          "./mission"
+        );
+
+        let actionId: string | null = null;
+        if (ctx.missionId) {
+          const action = await recordMissionAction({
+            missionId: ctx.missionId,
+            workspaceId: ctx.workspace.id,
+            userId: ctx.userId,
+            toolName: "researchSaudiLaw",
+            status: "RUNNING",
+            input: { projectId: pid },
+          });
+          actionId = action.id;
+        }
+
+        const result = await synthesizeSaudiLawForProject({
+          workspaceId: ctx.workspace.id,
+          projectId: pid,
+          projectTitle: project.title,
+        });
+
+        if (!result.ok) {
+          if (actionId) {
+            await completeMissionAction(actionId, {
+              status: "FAILED",
+              errorText: result.error,
+            });
+          }
+          return result;
+        }
+
+        if (actionId) {
+          await completeMissionAction(actionId, {
+            status: "SUCCEEDED",
+            output: {
+              projectId: result.projectId,
+              findings: result.research.findings.length,
+              sources: result.research.sources.length,
+            },
+          });
+        }
+
+        return {
+          ok: true as const,
+          projectId: result.projectId,
+          title: `Regulatory synthesis · ${project.title}`,
+          checksUsed: result.checksUsed,
+          research: result.research,
+          findings: result.research.findings,
+          sources: result.research.sources.slice(0, 12),
+          disclaimerEn: result.research.disclaimerEn,
+          disclaimerAr: result.research.disclaimerAr,
+          certaintyNote:
+            "REGISTRY_BACKED / TENDER_EXPLICIT / REQUIRES_COUNSEL — never 100% legal certainty.",
+          uiAction: "navigate" as const,
+          view: "compliance" as const,
+        };
+      },
+    }),
+
+    listRegulatoryRegistry: platformTool({
+      description:
+        "List ArabClue regulatory policy registry instruments (PDPL, NCA, GTPL, NORA posture) used for synthesis.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const { listRegistrySnapshot } = await import("./regulatory-synthesis");
+        return { ok: true as const, ...listRegistrySnapshot() };
       },
     }),
 
@@ -723,6 +864,11 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         }
         return {
           ok: true as const,
+          runId: run.id,
+          status: run.status,
+          overallProgress: run.overallProgress,
+          agentStates,
+          title: run.project.title,
           run: {
             id: run.id,
             status: run.status,

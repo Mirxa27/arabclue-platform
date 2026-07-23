@@ -33,12 +33,13 @@ Dashboard **Voice Mission Control** (`?view=copilot`) is an AI SDK agent that op
 - Durable `CopilotMission` / messages / attachments / actions (Prisma).
 - Drop zone + URL/camera/browser/email-Drive paste via `POST /api/platform-agent/missions/:id/attachments`.
 - Heuristic classify → route → high-confidence RFP starts the 6-agent pipeline (`maybeAutopilotAfterIngest`).
-- Tools: `ingestDroppedFile`, `classifyAndRouteAttachment`, `ingestUrl`, `captureClientArtifact`, `listMissionAttachments`, `searchDocumentChunks`, `undoLastRouting`, `importExternalSource`, plus existing platform tools.
+- Tools: `ingestDroppedFile`, `classifyAndRouteAttachment`, `ingestUrl`, `captureClientArtifact`, `listMissionAttachments`, `searchDocumentChunks`, `undoLastRouting`, `importExternalSource`, `researchSaudiLaw`, `listRegulatoryRegistry`, `getCompliance` (enriched), plus existing platform tools.
+- Live UI: **execution theater**, **document forge**, **regulatory forge** (PDPL/NCA/NORA certainty tags) while speaking.
 - Shared ingest: `ingestDocumentForWorkspace` used by Documents API and Mission Control.
 
 ### Guardrails
 
-Tenant RBAC, pricing-input refuse, constitution instructions (no pricing strategy, no 100% legal certainty, human final author). Maximum autonomy under RBAC (no confirm dialogs); Undo within 30s for routing.
+Tenant RBAC, pricing-input refuse, constitution instructions (no pricing strategy, no 100% legal certainty, human final author). Maximum autonomy under RBAC (no confirm dialogs); Undo within 30s for routing. Regulatory synthesis is draft-grade registry+tender research — not legal advice.
 
 Code: `src/lib/agents/platform/*`, `src/components/dashboard/platform-agent-console.tsx`, `src/components/dashboard/mission-*.tsx`, `src/components/dashboard/live-voice-session.tsx`.
 

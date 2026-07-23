@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
   extractDocumentPreview,
+  extractRegulatoryPreview,
   extractTheaterTools,
   isToolRunning,
   summarizeToolOutput,
   toolDisplayName,
+  unwrapToolPayload,
 } from "@/lib/agents/platform/mission-tool-parts";
+import { listRegistrySnapshot } from "@/lib/agents/platform/regulatory-synthesis";
+import { researchSaudiLawForContract } from "@/lib/saudi-law-research";
 
 describe("mission tool theater parts", () => {
   test("extracts static tool-* and dynamic-tool parts", () => {
@@ -48,5 +52,54 @@ describe("mission tool theater parts", () => {
     });
     expect(preview?.title).toBe("Proposal EN|AR");
     expect(preview?.sections.length).toBeGreaterThan(0);
+  });
+
+  test("unwraps nested proposal/run payloads for theater", () => {
+    const flat = unwrapToolPayload({
+      ok: true,
+      proposal: { title: "Bid pack", excerpt: "Hello tender" },
+    });
+    expect(flat.title).toBe("Bid pack");
+    expect(flat.excerpt).toBe("Hello tender");
+    const runPreview = extractDocumentPreview({
+      ok: true,
+      run: {
+        projectTitle: "Cloud RFP",
+        overallProgress: 50,
+        agentStates: [
+          { name: "Ingestion", status: "completed", progress: 1 },
+          { name: "Compliance", status: "running", progress: 0.4 },
+        ],
+      },
+    });
+    expect(runPreview?.title).toBe("Cloud RFP");
+    expect(runPreview?.sections).toContain("Ingestion");
+  });
+
+  test("extracts regulatory forge preview from synthesis", () => {
+    const brief = researchSaudiLawForContract({
+      entities: null,
+      complianceRows: [],
+      projectTitle: "Hello World Tender 2026",
+    });
+    const preview = extractRegulatoryPreview({
+      ok: true,
+      title: "Regulatory synthesis · Hello World Tender 2026",
+      research: brief,
+      findings: brief.findings,
+      disclaimerEn: brief.disclaimerEn,
+    });
+    expect(preview).toBeTruthy();
+    expect(preview!.findings.length).toBeGreaterThan(0);
+    expect(preview!.disclaimer.length).toBeGreaterThan(10);
+    expect(
+      summarizeToolOutput({ findings: brief.findings }, false)
+    ).toContain("regulatory findings");
+  });
+
+  test("registry snapshot exposes instruments", () => {
+    const snap = listRegistrySnapshot();
+    expect(snap.instruments.length).toBeGreaterThan(0);
+    expect(snap.disclaimer.length).toBeGreaterThan(10);
   });
 });

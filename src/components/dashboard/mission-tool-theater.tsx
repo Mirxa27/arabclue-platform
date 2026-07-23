@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import {
   extractDocumentPreview,
+  extractRegulatoryPreview,
+  isComplianceishTool,
   isDocumentishTool,
   isToolDone,
   isToolFailed,
@@ -197,6 +199,172 @@ function DocumentForge({
             {preview.body.length > 900 ? "…" : ""}
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function certaintyTone(certainty: string): string {
+  if (certainty === "TENDER_EXPLICIT") return "border-emerald-500/40 text-emerald-800 dark:text-emerald-200";
+  if (certainty === "REGISTRY_BACKED") return "border-cyan-500/40 text-cyan-800 dark:text-cyan-200";
+  return "border-amber-500/40 text-amber-800 dark:text-amber-200";
+}
+
+function RegulatoryForge({
+  locale,
+  tools,
+  voiceLive,
+}: {
+  locale: "ar" | "en";
+  tools: TheaterToolEvent[];
+  voiceLive?: boolean;
+}) {
+  const ar = locale === "ar";
+  const regTools = tools.filter((t) => isComplianceishTool(t.name));
+  const active =
+    [...regTools].reverse().find((t) => isToolRunning(t.state) || t.preliminary) ||
+    [...regTools].reverse().find((t) => isToolDone(t.state) && t.output != null);
+
+  const preview = active?.output ? extractRegulatoryPreview(active.output) : null;
+  const running = active ? isToolRunning(active.state) || !!active.preliminary : false;
+
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), 140);
+    return () => window.clearInterval(id);
+  }, [running]);
+
+  if (!active && !voiceLive) {
+    return (
+      <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.08),_transparent_55%)] px-4 py-5">
+        <p className="text-xs text-muted-foreground">
+          {ar
+            ? "مصهر الامتثال ينتظر — اسأل عن PDPL أو NCA أو NORA ليُركَّب البحث التنظيمي حيّاً."
+            : "Regulatory forge idle — ask about PDPL, NCA, or NORA to synthesize live."}
+        </p>
+      </div>
+    );
+  }
+
+  const visibleFindings = preview?.findings.slice(
+    0,
+    running ? Math.min(preview.findings.length, 1 + (tick % 5)) : preview?.findings.length
+  ) ?? [];
+
+  return (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-2xl border border-emerald-500/25",
+        "bg-[radial-gradient(circle_at_10%_0%,_rgba(16,185,129,0.14),_transparent_42%),radial-gradient(circle_at_90%_10%,_rgba(20,184,166,0.1),_transparent_45%),linear-gradient(165deg,rgba(6,78,59,0.04),transparent)]"
+      )}
+    >
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.1]"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(-12deg, rgba(16,185,129,0.35) 0 1px, transparent 1px 14px)",
+        }}
+      />
+      <div className="relative p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-semibold tracking-wide uppercase text-emerald-800 dark:text-emerald-200">
+            <Shield className={cn("size-3.5", running && "animate-pulse")} />
+            {ar ? "مصهر الامتثال التنظيمي" : "Regulatory forge"}
+          </div>
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-[10px] border-emerald-500/40",
+              running && "animate-pulse"
+            )}
+          >
+            {running
+              ? ar
+                ? "يُركَّب…"
+                : "synthesizing…"
+              : ar
+                ? "مُركَّب"
+                : "synthesized"}
+          </Badge>
+        </div>
+
+        <p className="text-sm font-medium">
+          {preview?.title ||
+            toolDisplayName(active?.name || "researchSaudiLaw", ar)}
+        </p>
+
+        {preview?.frameworks?.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {preview.frameworks.map((fw) => (
+              <Badge
+                key={fw}
+                variant="secondary"
+                className="text-[10px] font-mono bg-emerald-500/10"
+              >
+                {fw}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+
+        {visibleFindings.length ? (
+          <div className="space-y-2">
+            {visibleFindings.map((f, i) => (
+              <div
+                key={`${f.topic}-${i}`}
+                className="rounded-xl border border-white/40 bg-background/70 backdrop-blur-sm px-3 py-2"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold">{f.topic}</span>
+                  <Badge
+                    variant="outline"
+                    className={cn("text-[9px] h-5", certaintyTone(f.certainty))}
+                  >
+                    {f.certainty}
+                  </Badge>
+                </div>
+                {f.statement ? (
+                  <p className="mt-1 text-[11px] text-muted-foreground line-clamp-3">
+                    {f.statement}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {preview?.gaps?.length ? (
+          <div className="space-y-1.5">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              {ar ? "فجوات المصفوفة" : "Matrix gaps"}
+            </p>
+            {preview.gaps.slice(0, 5).map((g) => (
+              <div
+                key={`${g.framework}-${g.controlId}`}
+                className="flex flex-wrap items-center gap-2 text-[11px] font-mono"
+              >
+                <span className="text-emerald-700 dark:text-emerald-300">
+                  {g.framework}
+                </span>
+                <span>{g.controlId}</span>
+                <Badge variant="outline" className="h-5 text-[9px]">
+                  {g.status}
+                </Badge>
+                <span className="text-muted-foreground truncate max-w-[12rem]">
+                  {g.title}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <p className="text-[10px] text-muted-foreground border-t border-emerald-500/15 pt-2 leading-relaxed">
+          {preview?.disclaimer ||
+            (ar
+              ? "ليست استشارة قانونية — يلزم مراجعة مستشار معتمد."
+              : "Not legal advice — authorized counsel review required.")}
+        </p>
       </div>
     </div>
   );
@@ -407,6 +575,7 @@ export function MissionToolTheater({
       </div>
 
       <DocumentForge locale={locale} tools={tools} voiceLive={voiceLive} />
+      <RegulatoryForge locale={locale} tools={tools} voiceLive={voiceLive} />
       <ToolTimeline locale={locale} tools={tools} />
     </aside>
   );
