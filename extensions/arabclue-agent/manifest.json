@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ArabClue Voice Agent",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Give ArabClue Mission Control superpowers: capture any page, selection, or screenshot into the Voice AI agent with live glitter FX.",
   "minimum_chrome_version": "116",
   "icons": {

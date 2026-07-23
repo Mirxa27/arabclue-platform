@@ -106,7 +106,10 @@ async function send(type, payload = {}) {
 
 async function loadSettings() {
   const res = await send(MSG.GET_SETTINGS);
-  if (res?.settings) $("apiBase").value = res.settings.apiBase || "";
+  if (res?.settings) {
+    // Always show origin-only base (migrates bad /app values on read)
+    $("apiBase").value = res.settings.apiBase || "https://arabclue.com";
+  }
   const ping = await send(MSG.PING);
   $("version").textContent = ping?.version ? `v${ping.version}` : "";
 }
@@ -163,18 +166,24 @@ async function capture(mode = "page") {
     void refreshQueue();
     return;
   }
-  burst(160, 140, 40);
+  // Queued responses still return ok:true with result.queued
   if (ingest.result?.queued) {
-    setStatus("Saved offline", ingest.result.message, false);
-  } else {
     setStatus(
-      "Agent strengthened",
-      ingest.result?.autopilot?.message ||
-        ingest.result?.message ||
-        "Page context staged in Mission Control.",
+      "Saved offline",
+      `${ingest.result.message} Tip: API base must be https://arabclue.com (no /app) and you must be signed in.`,
       false
     );
+    void refreshQueue();
+    return;
   }
+  burst(160, 140, 40);
+  setStatus(
+    "Agent strengthened",
+    ingest.result?.autopilot?.message ||
+      ingest.result?.message ||
+      "Page context staged in Mission Control.",
+    false
+  );
   void refreshQueue();
 }
 
@@ -213,10 +222,15 @@ $("btnSelection").addEventListener("click", () => void capture("selection"));
 $("btnShot").addEventListener("click", () => void captureShot());
 $("btnOpen").addEventListener("click", () => void send(MSG.OPEN_MISSION_CONTROL));
 $("btnSave").addEventListener("click", async () => {
-  await send(MSG.SET_SETTINGS, {
+  const res = await send(MSG.SET_SETTINGS, {
     settings: { apiBase: $("apiBase").value.trim() },
   });
-  setStatus("Saved", "API base updated for this browser profile.", false);
+  if (res?.settings?.apiBase) $("apiBase").value = res.settings.apiBase;
+  setStatus(
+    "Saved",
+    `API base set to ${res?.settings?.apiBase || "https://arabclue.com"} (origin only).`,
+    false
+  );
 });
 $("btnFlush").addEventListener("click", async () => {
   setStatus("Retrying…", "Flushing offline capture queue.", true);
@@ -228,10 +242,14 @@ $("btnFlush").addEventListener("click", async () => {
       `${res.flushed} capture(s) beamed into Mission Control.`,
       false
     );
+  } else if ((res?.remaining ?? 0) === 0 && !res?.lastError) {
+    setStatus("Queue empty", "Nothing waiting — capture a page to uplink.", false);
   } else {
     setStatus(
       "Still offline",
-      res?.lastError || "Captures kept — auto-retry continues.",
+      res?.lastError
+        ? `${res.lastError} — check API base is https://arabclue.com (not /app) and that you are signed in.`
+        : "Captures kept — auto-retry continues.",
       false
     );
   }

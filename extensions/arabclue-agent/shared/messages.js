@@ -18,3 +18,22 @@ export const DEFAULT_SETTINGS = {
   locale: "en",
   autoOpenDashboard: true,
 };
+
+/**
+ * Normalize user-entered API base to origin only.
+ * Fixes common mistake of pasting https://arabclue.com/app
+ */
+export function normalizeApiBase(raw) {
+  const fallback = DEFAULT_SETTINGS.apiBase;
+  if (!raw || typeof raw !== "string") return fallback;
+  let value = raw.trim().replace(/\/+$/, "");
+  if (!value) return fallback;
+  try {
+    if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+    const u = new URL(value);
+    // Strip accidental /app or other paths — ingest lives at origin root.
+    return u.origin;
+  } catch {
+    return fallback;
+  }
+}

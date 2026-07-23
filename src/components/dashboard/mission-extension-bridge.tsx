@@ -26,7 +26,10 @@ import {
 type Props = {
   locale: "ar" | "en";
   onExtensionEvent?: (data: unknown) => void;
-  /** Auto-open wizard when extension is missing (default true). */
+  /**
+   * Auto-open the install wizard when the extension is missing.
+   * Default false — the extension is optional, not required.
+   */
   autoPrompt?: boolean;
 };
 
@@ -65,14 +68,28 @@ function useExtensionPresence(onExtensionEvent?: (data: unknown) => void) {
   const [version, setVersion] = useState<string | null>(null);
 
   const ping = useCallback(() => {
+    // Dual channel: custom DOM event + postMessage (content script listens to both)
     window.dispatchEvent(new Event("arabclue-extension-ping"));
+    window.postMessage(
+      { source: "arabclue-page", type: "extension-ping" },
+      window.location.origin
+    );
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    let sawPong = false;
 
-    const onReady = () => {
-      if (!cancelled) setPresent(true);
+    const markPresent = (v?: string | null) => {
+      if (cancelled) return;
+      sawPong = true;
+      setPresent(true);
+      if (v) setVersion(v);
+    };
+
+    const onReady = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { version?: string } | undefined;
+      markPresent(detail?.version ?? null);
     };
     const onPong = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as {
@@ -80,32 +97,43 @@ function useExtensionPresence(onExtensionEvent?: (data: unknown) => void) {
         version?: string;
       };
       if (cancelled) return;
-      setPresent(Boolean(detail?.ok));
-      if (detail?.version) setVersion(detail.version);
+      if (detail?.ok) markPresent(detail.version ?? null);
+      else if (!sawPong) setPresent(false);
     };
     const onEvent = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as {
         event?: string;
         data?: unknown;
+        type?: string;
       };
-      if (detail?.event === "extension-ingest") {
+      if (
+        detail?.event === "extension-ingest" ||
+        detail?.type === "extension-event"
+      ) {
         setLastEvent("extension-ingest");
-        setPresent(true);
+        markPresent(null);
         onExtensionEvent?.(detail.data);
       }
     };
     const onMessage = (ev: MessageEvent) => {
       if (ev.origin !== window.location.origin) return;
+      if (ev.source !== window) return;
       const data = ev.data as {
         source?: string;
         type?: string;
         event?: string;
         data?: unknown;
+        ok?: boolean;
+        version?: string;
       };
       if (data?.source !== "arabclue-extension") return;
+      if (data.type === "extension-ready" || data.type === "extension-pong") {
+        if (data.ok !== false) markPresent(data.version ?? null);
+        return;
+      }
       if (data.type === "extension-event" && data.event === "extension-ingest") {
         setLastEvent("extension-ingest");
-        setPresent(true);
+        markPresent(null);
         onExtensionEvent?.(data.data);
       }
     };
@@ -116,13 +144,18 @@ function useExtensionPresence(onExtensionEvent?: (data: unknown) => void) {
     window.addEventListener("message", onMessage);
     ping();
 
+    // First verdict after a short wait; keep light polling so late injects link up
     const t = window.setTimeout(() => {
-      if (!cancelled) setPresent((p) => (p == null ? false : p));
-    }, 900);
+      if (!cancelled && !sawPong) setPresent(false);
+    }, 1200);
+    const poll = window.setInterval(() => {
+      if (!cancelled) ping();
+    }, 4000);
 
     return () => {
       cancelled = true;
       window.clearTimeout(t);
+      window.clearInterval(poll);
       window.removeEventListener("arabclue-extension-ready", onReady);
       window.removeEventListener("arabclue-extension-pong", onPong);
       window.removeEventListener("arabclue-extension-event", onEvent);
@@ -134,12 +167,13 @@ function useExtensionPresence(onExtensionEvent?: (data: unknown) => void) {
 }
 
 /**
- * Smart in-app Chrome extension installer + live link status for Mission Control.
+ * Optional Chrome extension uplink for Mission Control.
+ * Never blocks core Mission Control — install is opt-in via Smart install.
  */
 export function MissionExtensionBridge({
   locale,
   onExtensionEvent,
-  autoPrompt = true,
+  autoPrompt = false,
 }: Props) {
   const ar = locale === "ar";
   const { present, lastEvent, version, ping } =
@@ -164,7 +198,7 @@ export function MissionExtensionBridge({
       .catch(() => undefined);
   }, []);
 
-  // Auto-open install wizard once when missing
+  // Optional auto-prompt only when explicitly enabled
   useEffect(() => {
     if (!autoPrompt || present !== false) return;
     try {
@@ -172,28 +206,22 @@ export function MissionExtensionBridge({
     } catch {
       /* ignore */
     }
+    setWizardMode("install");
     setOpen(true);
     setStep("download");
   }, [autoPrompt, present]);
 
-  // Poll while wizard is open until linked (or, in update mode, until the
-  // reloaded extension reports the new version).
   useEffect(() => {
     if (!open) return;
     if (present && wizardMode !== "update") return;
-    const id = window.setInterval(() => {
-      ping();
-    }, 2000);
+    const id = window.setInterval(() => ping(), 1500);
     return () => window.clearInterval(id);
   }, [open, present, wizardMode, ping]);
 
   useEffect(() => {
-    if (present && open && wizardMode === "install") {
-      setStep("verify");
-    }
+    if (present && open && wizardMode === "install") setStep("verify");
   }, [present, open, wizardMode]);
 
-  // Update completes once the reported version catches up.
   useEffect(() => {
     if (open && wizardMode === "update" && present && !updateAvailable) {
       setStep("verify");
@@ -238,12 +266,14 @@ export function MissionExtensionBridge({
               ? ar
                 ? "استبدل ثم أعد التحميل"
                 : "Replace & reload"
-              : "Load unpacked",
+              : ar
+                ? "Load unpacked"
+                : "Load unpacked",
           body:
             wizardMode === "update"
               ? ar
-                ? "استبدل محتوى مجلد arabclue-agent بالجديد ثم اضغط ⟳ Reload على بطاقة الامتداد."
-                : "Replace the arabclue-agent folder contents, then click ⟳ Reload on the extension card."
+                ? "استبدل محتوى مجلد arabclue-agent بالجديد ثم اضغط ⟳ Reload."
+                : "Replace the arabclue-agent folder contents, then click ⟳ Reload."
               : ar
                 ? "اضغط Load unpacked واختر مجلد arabclue-agent."
                 : "Click Load unpacked and select the arabclue-agent folder.",
@@ -252,8 +282,8 @@ export function MissionExtensionBridge({
           id: "verify" as const,
           title: ar ? "تحقق من الربط" : "Verify link",
           body: ar
-            ? "ارجع هنا — سنكتشف الامتداد تلقائياً."
-            : "Come back here — we detect the extension automatically.",
+            ? "أعد تحميل تبويب ArabClue هذا ثم اضغط تحقق — نكتشف الامتداد تلقائياً."
+            : "Refresh this ArabClue tab, then Check now — we detect the extension automatically.",
         },
       ] as const,
     [ar, wizardMode]
@@ -305,19 +335,25 @@ export function MissionExtensionBridge({
       <div
         className={cn(
           "rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-3",
-          "border-cyan-500/25 bg-[linear-gradient(120deg,rgba(13,148,136,0.1),rgba(8,145,178,0.06),transparent)]",
-          present === false && "mission-tool-live"
+          "border-border/70 bg-muted/20",
+          present === true &&
+            "border-cyan-500/25 bg-[linear-gradient(120deg,rgba(13,148,136,0.1),rgba(8,145,178,0.06),transparent)]"
         )}
       >
         <div className="flex items-start gap-3 min-w-0">
-          <div className="mt-0.5 flex size-9 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-500/10">
-            <Puzzle className="size-4 text-cyan-700 dark:text-cyan-200" />
+          <div className="mt-0.5 flex size-9 items-center justify-center rounded-full border border-border/60 bg-background">
+            <Puzzle className="size-4 text-muted-foreground" />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-semibold">
-                {ar ? "امتداد كروم الذكي" : "Smart Chrome extension"}
+                {ar
+                  ? "امتداد كروم (اختياري)"
+                  : "Chrome extension (optional)"}
               </p>
+              <Badge variant="outline" className="text-[10px]">
+                {ar ? "غير إلزامي" : "not required"}
+              </Badge>
               <Badge
                 variant={present ? "secondary" : "outline"}
                 className={cn(
@@ -335,10 +371,10 @@ export function MissionExtensionBridge({
                       ? "متصل"
                       : "linked"
                     : ar
-                      ? "يحتاج تثبيتاً"
-                      : "needs install"}
+                      ? "غير مثبت"
+                      : "not installed"}
               </Badge>
-              {(version || metaVersion) && (
+              {(version || metaVersion) && present && (
                 <Badge variant="outline" className="text-[10px] font-mono">
                   v{version || metaVersion}
                 </Badge>
@@ -353,11 +389,11 @@ export function MissionExtensionBridge({
             <p className="text-xs text-muted-foreground mt-1">
               {present
                 ? ar
-                  ? "الامتداد يغذي Mission Control من أي تبويب — شاهد التلألؤ أثناء التنفيذ."
-                  : "Extension feeds Mission Control from any tab — glitter while it performs."
+                  ? "الامتداد يغذي Mission Control من أي تبويب — اختياري ويقوّي الوكيل."
+                  : "Extension feeds Mission Control from any tab — optional uplink that strengthens the agent."
                 : ar
-                  ? "ثبّته من داخل ArabClue بخطوات ذكية — بدون البحث عن المجلد يدوياً."
-                  : "Install from inside ArabClue with a guided wizard — no hunting for folders."}
+                  ? "Mission Control يعمل بالكامل بدونه. ثبّته فقط إذا أردت التقاط تبويبات خارجية."
+                  : "Mission Control works fully without it. Install only if you want to capture external browser tabs."}
             </p>
             {lastEvent ? (
               <p className="text-[11px] text-teal-700 dark:text-teal-300 mt-1 flex items-center gap-1">
@@ -402,6 +438,7 @@ export function MissionExtensionBridge({
             <Button
               type="button"
               size="sm"
+              variant="outline"
               className="gap-1"
               onClick={() => {
                 setWizardMode("install");
@@ -410,7 +447,7 @@ export function MissionExtensionBridge({
               }}
             >
               <Wand2 className="size-3.5" />
-              {ar ? "تثبيت ذكي" : "Smart install"}
+              {ar ? "تثبيت اختياري" : "Optional install"}
             </Button>
           )}
         </div>
@@ -434,8 +471,8 @@ export function MissionExtensionBridge({
                   ? `تحديث الامتداد إلى v${metaVersion}`
                   : `Update extension to v${metaVersion}`
                 : ar
-                  ? "تثبيت امتداد الوكيل الصوتي"
-                  : "Install Voice Agent extension"}
+                  ? "تثبيت اختياري لامتداد الوكيل"
+                  : "Optional Voice Agent extension"}
             </DialogTitle>
             <DialogDescription>
               {wizardMode === "update"
@@ -443,8 +480,8 @@ export function MissionExtensionBridge({
                   ? "نزّل الحزمة الجديدة واستبدل المجلد ثم أعد تحميل الامتداد."
                   : "Download the new package, replace the folder, and reload the extension."
                 : ar
-                  ? "معالج من داخل ArabClue يقوّي الوكيل بالتقاط أي تبويب."
-                  : "In-app wizard that strengthens the agent by capturing any browser tab."}
+                  ? "اختياري بالكامل — Mission Control يعمل بدونه. يقوّي الوكيل بالتقاط أي تبويب."
+                  : "Fully optional — Mission Control works without it. Strengthens the agent by capturing any browser tab."}
             </DialogDescription>
           </DialogHeader>
 
@@ -462,8 +499,8 @@ export function MissionExtensionBridge({
               </div>
               <p className="text-muted-foreground text-xs">
                 {ar
-                  ? "افتح لوحة الامتداد من أي تبويب وابعث الصفحة إلى Mission Control."
-                  : "Open the extension side panel on any tab and beam the page into Mission Control."}
+                  ? "افتح لوحة الامتداد من أي تبويب وابعث الصفحة إلى Mission Control. تأكد أن API base = https://arabclue.com (بدون /app)."
+                  : "Open the extension side panel on any tab and beam the page into Mission Control. Keep API base = https://arabclue.com (no /app)."}
               </p>
               <Button type="button" onClick={() => dismiss(false)}>
                 {ar ? "متابعة" : "Continue"}
@@ -473,15 +510,19 @@ export function MissionExtensionBridge({
             <div className="space-y-4">
               <ol className="space-y-2">
                 {steps.map((s, i) => {
-                  const done = i < stepIndex || (s.id === "verify" && present);
+                  const done =
+                    i < stepIndex || (s.id === "verify" && present === true);
                   const active = s.id === step;
                   return (
                     <li
                       key={s.id}
                       className={cn(
                         "rounded-xl border px-3 py-2.5 text-sm transition-colors",
-                        active && "border-cyan-500/45 bg-cyan-500/5 mission-tool-live",
-                        done && !active && "border-emerald-500/30 bg-emerald-500/5",
+                        active &&
+                          "border-cyan-500/45 bg-cyan-500/5 mission-tool-live",
+                        done &&
+                          !active &&
+                          "border-emerald-500/30 bg-emerald-500/5",
                         !done && !active && "border-border/70"
                       )}
                     >
@@ -546,30 +587,39 @@ export function MissionExtensionBridge({
                   </Button>
                 ) : null}
                 {step === "load" || step === "verify" ? (
-                  <Button
-                    type="button"
-                    className="gap-1"
-                    onClick={() => void recheck()}
-                  >
-                    <RefreshCw
-                      className={cn("size-3.5", checking && "animate-spin")}
-                    />
-                    {ar ? "تحقق الآن" : "Check now"}
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => window.location.reload()}
+                    >
+                      {ar ? "أعد تحميل الصفحة" : "Refresh page"}
+                    </Button>
+                    <Button
+                      type="button"
+                      className="gap-1"
+                      onClick={() => void recheck()}
+                    >
+                      <RefreshCw
+                        className={cn("size-3.5", checking && "animate-spin")}
+                      />
+                      {ar ? "تحقق الآن" : "Check now"}
+                    </Button>
+                  </>
                 ) : null}
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={() => dismiss(true)}
                 >
-                  {ar ? "لاحقاً" : "Later"}
+                  {ar ? "تخطي — غير مطلوب" : "Skip — not required"}
                 </Button>
               </div>
 
               <p className="text-[11px] text-muted-foreground">
                 {ar
-                  ? "لا يمكن للمتصفح فتح chrome://extensions تلقائياً — انسخه في شريط العنوان."
-                  : "Browsers block auto-opening chrome://extensions — paste it in the address bar."}
+                  ? "بعد Load unpacked أعد تحميل تبويب ArabClue. في اللوحة الجانبية اضبط API base على https://arabclue.com (بدون /app) وكن مسجّل الدخول."
+                  : "After Load unpacked, refresh this ArabClue tab. In the side panel set API base to https://arabclue.com (no /app) and stay signed in."}
               </p>
             </div>
           )}

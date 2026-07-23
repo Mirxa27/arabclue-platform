@@ -6,14 +6,19 @@ Research baseline: **Chrome Manifest V3 + Side Panel API** (Chrome 116+, sidePan
 
 ## Install
 
-### Smart Install (recommended)
+### Smart Install (optional)
 
-While signed in to ArabClue → **Mission Control**, use **Smart Install**:
+The extension is **optional** — Mission Control works fully without it.
 
-1. Click **Smart install** (or accept the auto-prompt when the extension is missing)
+While signed in to ArabClue → **Mission Control**, use **Optional install**:
+
+1. Click **Optional install** (the wizard does not auto-force itself)
 2. Download the ZIP from ArabClue
 3. Unzip → open `chrome://extensions` → Developer mode → **Load unpacked** → select the `arabclue-agent` folder
-4. Return to Mission Control — it detects the link automatically
+4. **Refresh the ArabClue tab** so the content-script bridge can link
+5. In the side panel, keep **API base** as `https://arabclue.com` (origin only — never `/app`) and stay signed in
+
+Mission Control detects the link automatically after refresh.
 
 ### Load unpacked (manual)
 

@@ -1,4 +1,8 @@
-import { MSG, DEFAULT_SETTINGS } from "../shared/messages.js";
+import {
+  MSG,
+  DEFAULT_SETTINGS,
+  normalizeApiBase,
+} from "../shared/messages.js";
 
 const QUEUE_KEY = "arabclue.captureQueue";
 const QUEUE_LIMIT = 20;
@@ -8,6 +12,24 @@ const RETRY_ALARM = "arabclue-retry-queue";
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((err) => console.warn("[arabclue]", err));
+
+/** Inject the bridge into already-open ArabClue tabs (Load unpacked / update). */
+async function injectBridgeIntoOpenTabs() {
+  const tabs = await chrome.tabs.query({
+    url: ["https://arabclue.com/*", "https://*.arabclue.com/*"],
+  });
+  for (const tab of tabs) {
+    if (!tab.id) continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content/arabclue-bridge.js"],
+      });
+    } catch {
+      /* tab may be restricted or already injecting */
+    }
+  }
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -26,11 +48,27 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ["action", "page"],
   });
   void refreshQueueBadge();
+  void migrateApiBase();
+  void injectBridgeIntoOpenTabs();
 });
+
+chrome.runtime.onStartup.addListener(() => {
+  void migrateApiBase();
+  void refreshQueueBadge();
+});
+
+async function migrateApiBase() {
+  const stored = await chrome.storage.sync.get({ apiBase: DEFAULT_SETTINGS.apiBase });
+  const normalized = normalizeApiBase(stored.apiBase);
+  if (normalized !== stored.apiBase) {
+    await chrome.storage.sync.set({ apiBase: normalized });
+  }
+}
 
 async function getSettings() {
   const stored = await chrome.storage.sync.get(DEFAULT_SETTINGS);
-  return { ...DEFAULT_SETTINGS, ...stored };
+  const apiBase = normalizeApiBase(stored.apiBase);
+  return { ...DEFAULT_SETTINGS, ...stored, apiBase };
 }
 
 async function extractPageContext(tabId) {
@@ -86,11 +124,11 @@ async function notifyDashboards(data) {
 /** Raw network uplink — throws on failure without queueing. */
 async function postToIngest(payload) {
   const settings = await getSettings();
-  const base = (settings.apiBase || DEFAULT_SETTINGS.apiBase).replace(/\/$/, "");
+  const base = normalizeApiBase(settings.apiBase);
 
   // Request optional host access when API base is not the production host.
   try {
-    const origin = new URL(base).origin + "/*";
+    const origin = `${base}/*`;
     if (!origin.includes("arabclue.com")) {
       const has = await chrome.permissions.contains({ origins: [origin] });
       if (!has) {
@@ -165,7 +203,7 @@ async function flushQueue() {
   const queue = await getQueue();
   if (!queue.length) {
     await chrome.alarms.clear(RETRY_ALARM);
-    return { ok: true, flushed: 0, remaining: 0 };
+    return { ok: true, flushed: 0, remaining: 0, empty: true };
   }
   const remaining = [];
   let flushed = 0;
@@ -230,7 +268,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: true, settings: await getSettings() });
         break;
       case MSG.SET_SETTINGS: {
-        await chrome.storage.sync.set(message.settings || {});
+        const next = { ...(message.settings || {}) };
+        if (next.apiBase != null) next.apiBase = normalizeApiBase(next.apiBase);
+        await chrome.storage.sync.set(next);
         sendResponse({ ok: true, settings: await getSettings() });
         break;
       }
@@ -277,10 +317,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       case MSG.OPEN_MISSION_CONTROL: {
         const settings = await getSettings();
-        const base = (settings.apiBase || DEFAULT_SETTINGS.apiBase).replace(
-          /\/$/,
-          ""
-        );
+        const base = normalizeApiBase(settings.apiBase);
         await chrome.tabs.create({
           url: `${base}/app?view=copilot&extension=1`,
         });

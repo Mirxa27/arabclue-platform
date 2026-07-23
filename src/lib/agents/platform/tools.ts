@@ -1489,7 +1489,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
             status: "ready",
             note:
               note ||
-              "Use Smart Install in Mission Control (Download ZIP → Load unpacked arabclue-agent). Captures land via extension ingest.",
+              "Optional. Use Optional install in Mission Control (Download ZIP → Load unpacked arabclue-agent). Set API base to https://arabclue.com (no /app), stay signed in, and refresh the ArabClue tab after install.",
             uiAction: "navigate" as const,
             view: "copilot" as const,
           };
