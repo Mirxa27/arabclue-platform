@@ -55,4 +55,4 @@
 - Google/Microsoft OAuth *app* linking (paste/upload path is production-complete without third-party app registration)
 - Etimad portal submission API (explicitly out of scope)
 - SSO/OIDC (explicitly out of scope per PRD)
-- Parallel deep research on Saudi market/contracts (requires `PARALLEL_API_KEY` / `parallel-cli login`)
+- Parallel deep research on Saudi market/contracts: saved under `docs/research/saudi-procurement-contracts-2026.{md,json}`
