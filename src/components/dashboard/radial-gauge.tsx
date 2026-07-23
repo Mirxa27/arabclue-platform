@@ -13,7 +13,7 @@ export function RadialGauge({
   size = 44,
   strokeWidth = 4,
   className,
-  trackClassName = "text-muted-foreground/20",
+  trackClassName = "text-muted-foreground/30",
   children,
   ariaLabel,
 }: {

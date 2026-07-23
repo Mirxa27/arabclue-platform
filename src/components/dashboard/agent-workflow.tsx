@@ -312,6 +312,9 @@ export function AgentWorkflow() {
                   value={isDone ? 100 : a.progress}
                   size={44}
                   strokeWidth={4}
+                  trackClassName={cn(
+                    isRunning ? "text-primary/20" : "text-muted-foreground/25"
+                  )}
                   className={cn(
                     isDone
                       ? "text-emerald-500"
