@@ -28,6 +28,7 @@ import {
   isToolDone,
   isToolFailed,
   isToolRunning,
+  summarizeToolInput,
   summarizeToolOutput,
   toolDisplayName,
   toolKind,
@@ -530,13 +531,16 @@ function ToolTimeline({
                 >
                   {humanActionLabel(tool.name, ar)}
                 </p>
-                {tool.input != null && running ? (
-                  <p className="mt-1 text-muted-foreground line-clamp-2 font-mono">
-                    {typeof tool.input === "string"
-                      ? tool.input.slice(0, 160)
-                      : JSON.stringify(tool.input).slice(0, 160)}
-                  </p>
-                ) : null}
+                {tool.input != null && running
+                  ? (() => {
+                      const preview = summarizeToolInput(tool.input, ar);
+                      return preview ? (
+                        <p className="mt-1 text-muted-foreground line-clamp-2">
+                          {preview}
+                        </p>
+                      ) : null;
+                    })()
+                  : null}
                 {summary ? (
                   <p className="mt-1 text-muted-foreground line-clamp-3 whitespace-pre-wrap">
                     {summary}
@@ -611,9 +615,16 @@ export function MissionToolTheater({
                 {ar ? "صوت" : "voice"}
               </Badge>
             ) : null}
-            <Badge variant="outline" className="text-[10px] font-mono tabular-nums">
-              {ar ? "حي" : "live"} {runningCount} · {ar ? "مكتمل" : "done"}{" "}
-              {doneCount}
+            <Badge variant="outline" className="text-[10px] tabular-nums">
+              {runningCount > 0
+                ? ar
+                  ? `${runningCount} قيد التنفيذ`
+                  : `${runningCount} running`
+                : ar
+                  ? "في الانتظار"
+                  : "idle"}
+              {" · "}
+              {ar ? `${doneCount} مكتمل` : `${doneCount} done`}
             </Badge>
           </div>
         </div>

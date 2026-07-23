@@ -436,6 +436,77 @@ export function unwrapToolPayload(output: unknown): Record<string, unknown> {
   return { ...o, ...(nested || {}) };
 }
 
+/**
+ * Human-readable preview of tool arguments while a step is running.
+ * Never dump raw JSON into the theater UI.
+ */
+export function summarizeToolInput(input: unknown, ar: boolean): string {
+  if (input == null) return "";
+  if (typeof input === "string") {
+    const t = input.trim();
+    return t.slice(0, 160);
+  }
+  if (typeof input !== "object") return String(input).slice(0, 160);
+  const o = input as Record<string, unknown>;
+
+  const pickStr = (...keys: string[]): string | null => {
+    for (const k of keys) {
+      const v = o[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return null;
+  };
+
+  const view = pickStr("view", "targetView", "screen");
+  if (view) return ar ? `الشاشة: ${view}` : `Screen: ${view}`;
+
+  const title = pickStr("title", "titleAr", "name", "projectTitle");
+  if (title) return title.slice(0, 160);
+
+  const query = pickStr("query", "q", "search", "term", "prompt");
+  if (query) return ar ? `بحث: ${query.slice(0, 140)}` : `Search: ${query.slice(0, 140)}`;
+
+  const projectId = pickStr("projectId", "activeProjectId");
+  if (projectId) {
+    return ar
+      ? `مشروع ${projectId.slice(0, 12)}…`
+      : `Project ${projectId.slice(0, 12)}…`;
+  }
+
+  const runId = pickStr("runId");
+  if (runId) {
+    return ar ? `تشغيل ${runId.slice(0, 12)}…` : `Run ${runId.slice(0, 12)}…`;
+  }
+
+  const documentId = pickStr("documentId", "docId", "proposalId");
+  if (documentId) {
+    return ar
+      ? `مستند ${documentId.slice(0, 12)}…`
+      : `Document ${documentId.slice(0, 12)}…`;
+  }
+
+  const url = pickStr("url", "href", "sourceUrl");
+  if (url) return url.slice(0, 160);
+
+  const message = pickStr("message", "question", "note", "reason");
+  if (message) return message.slice(0, 160);
+
+  if (typeof o.tenderType === "string") {
+    return ar ? `نوع المناقصة: ${o.tenderType}` : `Tender type: ${o.tenderType}`;
+  }
+
+  // Prefer a short key=value preview over JSON dumps
+  const pairs: string[] = [];
+  for (const [k, v] of Object.entries(o)) {
+    if (pairs.length >= 3) break;
+    if (v == null) continue;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      pairs.push(`${k}=${String(v).slice(0, 40)}`);
+    }
+  }
+  return pairs.length ? pairs.join(" · ").slice(0, 160) : "";
+}
+
 export function summarizeToolOutput(output: unknown, ar: boolean): string {
   if (output == null) return "";
   if (typeof output === "string") return output.slice(0, 220);
@@ -507,11 +578,11 @@ export function summarizeToolOutput(output: unknown, ar: boolean): string {
   if (typeof o.content === "string") return o.content.slice(0, 220);
   if (typeof o.excerpt === "string") return o.excerpt.slice(0, 220);
   if (typeof o.parsedSummary === "string") return o.parsedSummary.slice(0, 220);
-  try {
-    return JSON.stringify(o).slice(0, 180);
-  } catch {
-    return "";
+  if (o.ok === true) {
+    return ar ? "تم بنجاح" : "Completed successfully";
   }
+  // Avoid dumping raw JSON into the UI — keep theater human-readable.
+  return "";
 }
 
 export function extractDocumentPreview(output: unknown): {

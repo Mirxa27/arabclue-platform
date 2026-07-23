@@ -107,12 +107,19 @@ export function MissionControlShell({
               <Badge variant="secondary" className="font-mono text-[10px]">
                 {liveModelLabel}
               </Badge>
-            ) : null}
+            ) : (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                {ar ? "الصوت المباشر غير متاح" : "Live voice unavailable"}
+              </Badge>
+            )}
           </div>
         </div>
 
         {!liveEnabled && liveHint ? (
-          <p className="text-xs text-muted-foreground">{liveHint}</p>
+          <p className="text-xs text-muted-foreground rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+            {ar ? "سبب التعطيل: " : "Why it’s off: "}
+            {liveHint}
+          </p>
         ) : null}
 
         {statusBadges ? (

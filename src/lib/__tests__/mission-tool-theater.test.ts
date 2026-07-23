@@ -6,6 +6,7 @@ import {
   extractTheaterTools,
   humanActionLabel,
   isToolRunning,
+  summarizeToolInput,
   summarizeToolOutput,
   toolDisplayName,
   unwrapToolPayload,
@@ -55,6 +56,20 @@ describe("mission tool theater parts", () => {
     });
     expect(preview?.title).toBe("Proposal EN|AR");
     expect(preview?.sections.length).toBeGreaterThan(0);
+  });
+
+  test("summarizes tool inputs without dumping JSON", () => {
+    expect(summarizeToolInput({ view: "agents" }, false)).toBe("Screen: agents");
+    expect(summarizeToolInput({ query: "NCA ECC" }, false)).toContain("Search:");
+    expect(summarizeToolInput({ projectId: "proj_abcdefghijk" }, false)).toContain(
+      "Project"
+    );
+    const opaque = summarizeToolInput({ nested: { a: 1 }, flag: true }, false);
+    expect(opaque).not.toContain("{");
+    expect(opaque).toContain("flag=true");
+    expect(summarizeToolOutput({ ok: true, mysteryBlob: { x: 1 } }, false)).toBe(
+      "Completed successfully"
+    );
   });
 
   test("unwraps nested proposal/run payloads for theater", () => {

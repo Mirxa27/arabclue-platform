@@ -6,11 +6,17 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ShieldCheck,
   ShieldAlert,
-  Loader2,
   CheckCircle2,
   Clock,
   XCircle,
   FileWarning,
+  Cloud,
+  Lock,
+  Building2,
+  KeyRound,
+  Ban,
+  Landmark,
+  type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,14 +26,14 @@ import { COMPLIANCE_FRAMEWORKS } from "@/lib/constants";
 import { ListSkeleton } from "./loading-skeletons";
 import type { ApiComplianceCheck } from "@/lib/api-types";
 
-const FW_ICONS: Record<string, string> = {
-  NCA_ECC1: "🛡️",
-  NCA_CCC1: "☁️",
-  PDPL: "🔒",
-  EA_TP1: "🏗️",
-  EA_SP1: "🔐",
-  EA_SP2: "🚫",
-  LOCAL_CONTENT: "🇸🇦",
+const FW_ICONS: Record<string, LucideIcon> = {
+  NCA_ECC1: ShieldCheck,
+  NCA_CCC1: Cloud,
+  PDPL: Lock,
+  EA_TP1: Building2,
+  EA_SP1: KeyRound,
+  EA_SP2: Ban,
+  LOCAL_CONTENT: Landmark,
 };
 
 const FW_COLORS: Record<string, string> = {
@@ -97,7 +103,7 @@ export function ComplianceMonitor() {
             {isLoading ? "—" : `${pct}%`}
           </div>
           <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-            {locale === "ar" ? "مستوى C1" : "Level C1"}
+            {locale === "ar" ? "نسبة الامتثال" : "Compliance score"}
           </div>
         </div>
       </div>
@@ -105,18 +111,49 @@ export function ComplianceMonitor() {
       {/* Overall progress */}
       <div className="px-5 py-3">
         <div className="flex items-center justify-between text-xs mb-1.5">
-          <span className="text-muted-foreground">
-            {locale === "ar" ? "إجمالي الضوابط المُتحقَّق منها" : "Total controls verified"}
+          <span className="text-foreground/70 font-medium">
+            {locale === "ar" ? "الضوابط المطابقة" : "Controls compliant"}
           </span>
           <span className="font-mono font-semibold tabular-nums">
             {compliant} / {total}
           </span>
         </div>
-        <Progress value={pct} className="h-2" />
+        <Progress value={pct} className="h-2.5" />
+        {/* Stacked status bar for at-a-glance mix */}
+        {total > 0 ? (
+          <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+            <div
+              className="bg-emerald-500 transition-all"
+              style={{ width: `${(compliant / total) * 100}%` }}
+              title={`${compliant} compliant`}
+            />
+            <div
+              className="bg-amber-400 transition-all"
+              style={{
+                width: `${((summary?.partial ?? 0) / total) * 100}%`,
+              }}
+              title={`${summary?.partial ?? 0} partial`}
+            />
+            <div
+              className="bg-slate-400/80 transition-all"
+              style={{
+                width: `${((summary?.pending ?? 0) / total) * 100}%`,
+              }}
+              title={`${summary?.pending ?? 0} pending`}
+            />
+            <div
+              className="bg-destructive transition-all"
+              style={{
+                width: `${((summary?.nonCompliant ?? 0) / total) * 100}%`,
+              }}
+              title={`${summary?.nonCompliant ?? 0} non-compliant`}
+            />
+          </div>
+        ) : null}
         <div className="grid grid-cols-4 gap-2 mt-3 text-center">
           <Stat label={tr("status_COMPLIANT", locale)} value={compliant} color="text-emerald-600" bg="bg-emerald-500/10" />
-          <Stat label={tr("status_PARTIAL", locale)} value={summary?.partial ?? 0} color="text-chart-4" bg="bg-chart-4/10" />
-          <Stat label={tr("status_PENDING", locale)} value={summary?.pending ?? 0} color="text-muted-foreground" bg="bg-muted" />
+          <Stat label={tr("status_PARTIAL", locale)} value={summary?.partial ?? 0} color="text-amber-600" bg="bg-amber-500/10" />
+          <Stat label={tr("status_PENDING", locale)} value={summary?.pending ?? 0} color="text-slate-600 dark:text-slate-300" bg="bg-slate-500/10" />
           <Stat label={tr("status_NON_COMPLIANT", locale)} value={summary?.nonCompliant ?? 0} color="text-destructive" bg="bg-destructive/10" />
         </div>
       </div>
@@ -146,13 +183,33 @@ export function ComplianceMonitor() {
               >
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-base shrink-0">{FW_ICONS[fw.id]}</span>
+                    {(() => {
+                      const Icon = FW_ICONS[fw.id] ?? ShieldCheck;
+                      return (
+                        <span
+                          className={cn(
+                            "size-7 rounded-md flex items-center justify-center shrink-0 bg-muted/60",
+                            color
+                          )}
+                        >
+                          <Icon className="size-3.5" />
+                        </span>
+                      );
+                    })()}
                     <div className="min-w-0">
                       <div className={cn("text-xs font-semibold truncate", color)}>
                         {locale === "ar" ? fw.nameAr : fw.name}
                       </div>
-                      <div className="text-[10px] text-muted-foreground font-mono">
-                        {fw.id} · {fwCompliant}/{fwTotal}
+                      <div className="text-[10px] text-muted-foreground">
+                        <span className="font-mono">{fw.id}</span>
+                        {" · "}
+                        {fwTotal === 0
+                          ? locale === "ar"
+                            ? "لا ضوابط بعد"
+                            : "No controls yet"
+                          : locale === "ar"
+                            ? `${fwCompliant} من ${fwTotal} مطابق`
+                            : `${fwCompliant} of ${fwTotal} compliant`}
                       </div>
                     </div>
                   </div>
@@ -172,7 +229,12 @@ export function ComplianceMonitor() {
                 </div>
                 {checks.length > 0 && (
                   <div className="space-y-1">
-                    {checks.slice(0, 4).map((c) => (
+                    {/* Deduplicate by controlId — seed races can create repeats */}
+                    {Array.from(
+                      new Map(checks.map((c) => [c.controlId, c])).values()
+                    )
+                      .slice(0, 5)
+                      .map((c) => (
                       <div
                         key={c.id}
                         className="flex items-center gap-2 text-[11px]"

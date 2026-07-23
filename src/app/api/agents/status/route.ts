@@ -22,16 +22,54 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const { workspace } = await getTenantContext(session.user.id);
-    const runId = req.nextUrl.searchParams.get("runId");
-    if (!runId) return NextResponse.json({ error: "runId required" }, { status: 400 });
+    const runIdParam = req.nextUrl.searchParams.get("runId");
+    const projectId = req.nextUrl.searchParams.get("projectId");
 
-    let run = await db.agentRun.findUnique({
-      where: { id: runId },
-      include: { project: { select: { workspaceId: true } } },
-    });
+    let run =
+      runIdParam != null
+        ? await db.agentRun.findUnique({
+            where: { id: runIdParam },
+            include: { project: { select: { workspaceId: true } } },
+          })
+        : null;
+
+    // Latest run for a project (used to hydrate the agent UI after reload)
+    if (!run && projectId) {
+      const project = await db.tenderProject.findFirst({
+        where: { id: projectId, workspaceId: workspace.id },
+        select: { id: true },
+      });
+      if (!project) {
+        return NextResponse.json({ error: "not found" }, { status: 404 });
+      }
+      run = await db.agentRun.findFirst({
+        where: { projectId },
+        orderBy: { createdAt: "desc" },
+        include: { project: { select: { workspaceId: true } } },
+      });
+      if (!run) {
+        return NextResponse.json({
+          runId: null,
+          status: null,
+          overallProgress: 0,
+          agentStates: [],
+          finalArtifact: null,
+        });
+      }
+    }
+
+    if (!runIdParam && !projectId) {
+      return NextResponse.json(
+        { error: "runId or projectId required" },
+        { status: 400 }
+      );
+    }
+
     if (!run || !assertWorkspaceMatch(run.project.workspaceId, workspace.id)) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
+
+    const runId = run.id;
 
     let resumed = false;
     if (

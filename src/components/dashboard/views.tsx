@@ -19,7 +19,9 @@ import { ProposalsList } from "./proposals-list";
 import { ContractsPanel } from "./contracts-panel";
 import { ProjectsList } from "./projects-list";
 import { TenderFlowBoard } from "./tender-flow-board";
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldCheck, FileText } from "lucide-react";
+import { ONBOARDING_STEPS } from "@/lib/onboarding";
+import { Button } from "@/components/ui/button";
 
 function PanelLoading() {
   return (
@@ -223,11 +225,12 @@ function ProjectsView() {
         }
         locale={locale}
       />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ProjectsList />
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+        <div className="xl:col-span-3">
+          <ProjectsList />
+        </div>
+        <div className="xl:col-span-2">
           <FileIngestion />
-          <AgentWorkflow />
         </div>
       </div>
     </PageSection>
@@ -275,13 +278,7 @@ function ProposalsView() {
         }
         locale={locale}
       />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ProposalsList />
-        <div className="space-y-4">
-          <AgentWorkflow />
-          <ComplianceMonitor />
-        </div>
-      </div>
+      <ProposalsList />
     </PageSection>
   );
 }
@@ -317,15 +314,9 @@ function ComplianceView() {
         }
         locale={locale}
       />
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 space-y-4">
-          <RequirementsMatrix />
-          <ComplianceMonitor />
-        </div>
-        <div className="space-y-4">
-          <AgentWorkflow />
-          <VersionHistory />
-        </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <RequirementsMatrix />
+        <ComplianceMonitor />
       </div>
     </PageSection>
   );
@@ -333,23 +324,41 @@ function ComplianceView() {
 
 function AgentsView() {
   const { locale } = useLocale();
+  const { setView } = useUI();
+  const ar = locale === "ar";
   return (
     <PageSection>
       <PageHeader
         title={tr("nav_agents", locale)}
         subtitle={
-          locale === "ar"
-            ? "سير عمل الوكلاء متعددين"
-            : "Multi-agent workflow orchestration"
+          ar
+            ? "خط أنابيب من 6 وكلاء — راقب التقدم الحي ثم افتح العطاء والامتثال"
+            : "6-agent pipeline — watch live progress, then open proposals & compliance"
         }
         locale={locale}
       />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <AgentWorkflow />
-        <div className="space-y-4">
-          <ComplianceMonitor />
-          <ProposalsList />
-        </div>
+      <AgentWorkflow />
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setView("compliance")}
+        >
+          <ShieldCheck className="size-3.5" />
+          {ar ? "الامتثال" : "Compliance"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setView("proposals")}
+        >
+          <FileText className="size-3.5" />
+          {ar ? "العطاءات" : "Proposals"}
+        </Button>
       </div>
     </PageSection>
   );
@@ -609,12 +618,21 @@ function OnboardingBanner() {
 
   if (ready !== false) return null;
 
+  const labels = missing.map((key) => {
+    if (key === "status_unavailable") {
+      return locale === "ar" ? "تعذر التحقق من الحالة" : "Could not verify setup status";
+    }
+    const step = ONBOARDING_STEPS.find((s) => s.key === key);
+    if (!step) return key;
+    return locale === "ar" ? step.labelAr : step.labelEn;
+  });
+
   return (
     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-3">
       <span>
         {locale === "ar"
-          ? `أكمل إعداد الحساب قبل توليد العروض. ناقص: ${missing.join(", ")}`
-          : `Complete account setup before generating proposals. Missing: ${missing.join(", ")}`}
+          ? `أكمل إعداد الحساب قبل توليد العروض. مطلوب: ${labels.join(" · ")}`
+          : `Complete account setup before generating proposals. Needed: ${labels.join(" · ")}`}
       </span>
       <button
         type="button"

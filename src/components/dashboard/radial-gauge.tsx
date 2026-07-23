@@ -4,16 +4,15 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Lightweight SVG radial progress gauge.
- * The progress arc uses `currentColor` — set the color via `className`
- * (e.g. "text-primary"). Center content is rendered via `children`.
+ * SVG radial progress gauge with a high-contrast track so idle/pending
+ * states stay visible (not washed out against light backgrounds).
  */
 export function RadialGauge({
   value,
-  size = 44,
-  strokeWidth = 4,
+  size = 52,
+  strokeWidth = 5,
   className,
-  trackClassName = "text-muted-foreground/30",
+  trackClassName = "text-slate-300 dark:text-slate-600",
   children,
   ariaLabel,
 }: {
@@ -60,7 +59,10 @@ export function RadialGauge({
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           stroke="currentColor"
-          className={cn("transition-[stroke-dashoffset] duration-500 ease-out", className)}
+          className={cn(
+            "transition-[stroke-dashoffset] duration-500 ease-out",
+            className
+          )}
           strokeDasharray={circumference}
           strokeDashoffset={dashOffset}
         />
