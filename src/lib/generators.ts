@@ -13,6 +13,24 @@ function resolveLocale(proposal: GeneratedProposal, override?: PdfLocale): PdfLo
   return loc === "en" ? "en" : "ar";
 }
 
+function saudizationExportLabel(
+  saudizationPercent: number | null | undefined,
+  saudizationTarget: number | null | undefined
+): string {
+  const target =
+    saudizationTarget != null && !Number.isNaN(saudizationTarget)
+      ? saudizationTarget
+      : null;
+  if (saudizationPercent != null) {
+    return target != null
+      ? `${saudizationPercent}% (tender target ${target}%)`
+      : `${saudizationPercent}% (no tender target stated)`;
+  }
+  return target != null
+    ? `Tender target ${target}% (not extracted from statements)`
+    : "Not stated in tender (no blanket minimum)";
+}
+
 export type ProposalCompanyLetterhead = {
   name?: string | null;
   nameAr?: string | null;
@@ -453,7 +471,7 @@ export function generateSlidesHTML(
   const qlr = metrics?.quickLiquidityRatio;
   const qlrOk = metrics?.qlrPasses;
   const saud = metrics?.saudizationPercent;
-  const saudTarget = metrics?.saudizationTarget ?? project.saudizationTarget ?? 35;
+  const saudTarget = metrics?.saudizationTarget ?? project.saudizationTarget ?? null;
   const score = metrics?.complianceScore ?? proposal.complianceScore;
   const lcPref = metrics?.localContentPreference ?? null;
   const lcLabel =
@@ -467,10 +485,7 @@ export function generateSlidesHTML(
         ? `${qlr.toFixed(2)} (no tender threshold)`
         : `${qlr.toFixed(2)} ${qlrOk ? "PASS" : "FAIL"}`
       : "Not extracted from financial docs";
-  const saudLabel =
-    saud != null
-      ? `${saud}% (target ${saudTarget}% when set by tender)`
-      : `Target ${saudTarget}% when set by tender (not extracted)`;
+  const saudLabel = saudizationExportLabel(saud, saudTarget);
 
   const slides = [
     {
@@ -574,7 +589,7 @@ export async function generateProposalPPTX(
   const qlr = metrics?.quickLiquidityRatio;
   const qlrOk = metrics?.qlrPasses;
   const saud = metrics?.saudizationPercent;
-  const saudTarget = metrics?.saudizationTarget ?? project.saudizationTarget ?? 35;
+  const saudTarget = metrics?.saudizationTarget ?? project.saudizationTarget ?? null;
   const score = metrics?.complianceScore ?? proposal.complianceScore ?? 0;
   const lcPref = metrics?.localContentPreference ?? null;
   const lcLabel =
@@ -588,10 +603,7 @@ export async function generateProposalPPTX(
         ? `${qlr.toFixed(2)} (no tender threshold)`
         : `${qlr.toFixed(2)} ${qlrOk ? "PASS" : "FAIL"}`
       : "Not extracted from financial documents";
-  const saudLabel =
-    saud != null
-      ? `${saud}% (target ${saudTarget}% when set by tender)`
-      : `Target ${saudTarget}% when set by tender (not extracted)`;
+  const saudLabel = saudizationExportLabel(saud, saudTarget);
 
   {
     const s = pptx.addSlide();

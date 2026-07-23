@@ -199,16 +199,18 @@ export const COMPLIANCE_FRAMEWORKS: ComplianceFramework[] = [
     controls: [
       {
         controlId: "LC-1",
-        title: "10% Price Preference",
-        titleAr: "تفضيل سعري 10%",
-        requirement: "Apply mandatory 10% price preference for Local Content and SMEs",
+        title: "Local Content / SME Price Preference",
+        titleAr: "آلية تفضيل المحتوى المحلي والمنشآت الصغيرة والمتوسطة",
+        requirement:
+          "Apply the local-content or SME price preference mechanism and percentage only when stated in the tender or an approved official rule matching applicability — never a blanket default.",
         level: "C1",
       },
       {
         controlId: "LC-2",
-        title: "Saudization Rate",
-        titleAr: "نسبة السعودة",
-        requirement: "Minimum 35% Saudization, target 50%+ for technical roles",
+        title: "Saudization / Nitaqat Requirements",
+        titleAr: "متطلبات السعودة / نطاقات",
+        requirement:
+          "Meet Saudization or Nitaqat targets only when and as specified in the tender or approved eligibility rules — do not assume a universal minimum percentage.",
         level: "C1",
       },
     ],
