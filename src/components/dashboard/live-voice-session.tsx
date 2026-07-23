@@ -69,7 +69,15 @@ type LiveTransport = {
   sendAudio: (base64Audio: string) => void;
 };
 
-export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
+export function LiveVoiceSession({
+  config,
+  missionId,
+  activeProjectId,
+}: {
+  config: VoiceLiveConfig;
+  missionId?: string | null;
+  activeProjectId?: string | null;
+}) {
   const { locale } = useLocale();
   const { setView, setActiveProjectId } = useUI();
   const ar = locale === "ar";
@@ -85,11 +93,19 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
   const transportRef = useRef<LiveTransport | null>(null);
   const setActiveProjectIdRef = useRef(setActiveProjectId);
   const setFollowViewRef = useRef(setFollowView);
+  const missionIdRef = useRef(missionId ?? null);
+  const activeProjectIdRef = useRef(activeProjectId ?? null);
 
   useEffect(() => {
     setActiveProjectIdRef.current = setActiveProjectId;
     setFollowViewRef.current = setFollowView;
   });
+  useEffect(() => {
+    missionIdRef.current = missionId ?? null;
+  }, [missionId]);
+  useEffect(() => {
+    activeProjectIdRef.current = activeProjectId ?? null;
+  }, [activeProjectId]);
 
   const model = useMemo(() => {
     if (config.provider === "google") {
@@ -111,6 +127,8 @@ export function LiveVoiceSession({ config }: { config: VoiceLiveConfig }) {
         body: JSON.stringify({
           toolName: toolCall.toolName,
           args: toolCall.args,
+          missionId: missionIdRef.current,
+          activeProjectId: activeProjectIdRef.current,
         }),
       });
       const data = await res.json().catch(() => ({}));

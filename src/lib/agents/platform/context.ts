@@ -10,6 +10,8 @@ export type PlatformAgentContext = {
   locale: "ar" | "en";
   isAdmin: boolean;
   canWrite: boolean;
+  missionId?: string | null;
+  activeProjectId?: string | null;
 };
 
 export const DASHBOARD_VIEWS = [

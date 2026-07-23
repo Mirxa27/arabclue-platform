@@ -44,6 +44,10 @@ model User {
   subscription    Subscription?
   approvalSteps   ApprovalStep[]
   proposalReviews ProposalReview[]
+  copilotMissions CopilotMission[]
+  copilotMessages CopilotMessage[]
+  copilotAttachments CopilotAttachment[]
+  copilotActions  CopilotAction[]
 }
 
 model UserSession {
@@ -88,6 +92,9 @@ model Workspace {
   approvalPolicy     ApprovalPolicy?
   restrictions       Restriction[]
   onboardingProgress OnboardingProgress?
+  copilotMissions    CopilotMission[]
+  copilotAttachments CopilotAttachment[]
+  copilotActions     CopilotAction[]
 }
 
 model WorkspaceMember {
@@ -160,10 +167,101 @@ model UploadedDocument {
   uploadedBy      User      @relation(fields: [uploadedById], references: [id])
   versions        DocumentVersion[]
   chunks          DocumentChunk[]
+  copilotAttachments CopilotAttachment[]
 
   @@index([workspaceId])
   @@index([projectId])
   @@index([docCategory])
+}
+
+// ─── Voice Mission Control (durable Copilot sessions) ────────────────────────
+
+model CopilotMission {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  userId           String
+  title            String   @default("Mission Control")
+  status           String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  activeProjectId  String?
+  locale           String   @default("ar")
+  lastActivityAt   DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    CopilotMessage[]
+  attachments CopilotAttachment[]
+  actions     CopilotAction[]
+
+  @@index([workspaceId, userId, status])
+  @@index([userId, lastActivityAt])
+}
+
+model CopilotMessage {
+  id        String   @id @default(cuid())
+  missionId String
+  userId    String?
+  role      String   // user | assistant | system
+  partsJson String   // JSON UIMessage parts / text payload
+  createdAt DateTime @default(now())
+
+  mission CopilotMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  user    User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([missionId, createdAt])
+}
+
+model CopilotAttachment {
+  id              String   @id @default(cuid())
+  missionId       String
+  workspaceId     String
+  userId          String
+  documentId      String?
+  projectId       String?
+  source          String   @default("upload") // upload | url | camera | browser | email | drive | paste
+  originalName    String
+  mimeType        String
+  sizeBytes       Int      @default(0)
+  storagePath     String?
+  textPreview     String?
+  docCategory     String   @default("OTHER")
+  confidence      Float    @default(0)
+  routeStatus     String   @default("STAGED") // STAGED | ROUTED | AUTOPILOT | NEEDS_CLARIFICATION | FAILED | UNDONE
+  classificationJson String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  mission  CopilotMission    @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document UploadedDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([missionId, createdAt])
+  @@index([workspaceId])
+  @@index([documentId])
+}
+
+model CopilotAction {
+  id         String   @id @default(cuid())
+  missionId  String
+  workspaceId String
+  userId     String
+  toolName   String
+  status     String   @default("RUNNING") // RUNNING | SUCCEEDED | FAILED | UNDONE
+  inputJson  String?
+  outputJson String?
+  errorText  String?
+  reversible Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  mission   CopilotMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([missionId, createdAt])
+  @@index([workspaceId])
 }
 
 // RAG chunks from uploaded tender documents (RFP, specs, contracts, etc.)

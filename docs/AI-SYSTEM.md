@@ -15,9 +15,9 @@ Each agent is a **principal tender engineer** role (not a generic chatbot). Craf
 7. **Law & Contract (Agent 6)** — Researches the Saudi regulatory registry + tender anchors (`src/lib/saudi-law-research.ts`), then drafts a **front-to-front EN|AR contract** (`GeneratedProposal.type = CONTRACT`). Never claims 100% legal certainty; counsel review is mandatory. Studio: dashboard **Contracts** view; export: bilingual HTML/PDF.
 8. **Validation gate** — blocks proposal export on policy violations (pricing language, invented NORA IDs, AI-priced BoQ, placeholders). Contract export uses `validateContractDraft` (disclaimer required; false-certainty language blocked).
 
-## Voice Platform Copilot (main agent)
+## Voice Platform Copilot (Mission Control)
 
-Dashboard **Voice Copilot** (`?view=copilot`) is an AI SDK agent that operates the full product for the signed-in user.
+Dashboard **Voice Mission Control** (`?view=copilot`) is an AI SDK agent that operates the full product for the signed-in user with durable missions, multimodal drops, and adaptive autopilot.
 
 ### Modes
 
@@ -28,11 +28,19 @@ Dashboard **Voice Copilot** (`?view=copilot`) is an AI SDK agent that operates t
    - Setup: `GET/POST /api/platform-agent/realtime/setup` (token mint), tools: `POST /api/platform-agent/realtime/tools`.
 2. **Browser mode (fallback)** — Web Speech STT/TTS + `ToolLoopAgent` chat stream at `POST /api/platform-agent/chat` when no VOICE provider is active.
 
+### Mission Control
+
+- Durable `CopilotMission` / messages / attachments / actions (Prisma).
+- Drop zone + URL/camera/browser/email-Drive paste via `POST /api/platform-agent/missions/:id/attachments`.
+- Heuristic classify → route → high-confidence RFP starts the 6-agent pipeline (`maybeAutopilotAfterIngest`).
+- Tools: `ingestDroppedFile`, `classifyAndRouteAttachment`, `ingestUrl`, `captureClientArtifact`, `listMissionAttachments`, `searchDocumentChunks`, `undoLastRouting`, `importExternalSource`, plus existing platform tools.
+- Shared ingest: `ingestDocumentForWorkspace` used by Documents API and Mission Control.
+
 ### Guardrails
 
-Tenant RBAC, pricing-input refuse, constitution instructions (no pricing strategy, no 100% legal certainty, human final author).
+Tenant RBAC, pricing-input refuse, constitution instructions (no pricing strategy, no 100% legal certainty, human final author). Maximum autonomy under RBAC (no confirm dialogs); Undo within 30s for routing.
 
-Code: `src/lib/agents/platform/*`, `src/components/dashboard/platform-agent-console.tsx`, `src/components/dashboard/live-voice-session.tsx`.
+Code: `src/lib/agents/platform/*`, `src/components/dashboard/platform-agent-console.tsx`, `src/components/dashboard/mission-*.tsx`, `src/components/dashboard/live-voice-session.tsx`.
 
 ## 18-section proposal package
 

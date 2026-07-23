@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { messages?: unknown[] };
+  let body: { messages?: unknown[]; missionId?: string; activeProjectId?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -48,7 +48,22 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { agent } = await createPlatformAgent(session);
+    const { getOrCreateMission } = await import(
+      "@/lib/agents/platform/mission"
+    );
+    const { getTenantContext } = await import("@/lib/workspace-context");
+    const tenant = await getTenantContext(session.user.id);
+    const locale = session.user.locale === "en" ? "en" : "ar";
+    const mission = await getOrCreateMission({
+      workspaceId: tenant.workspace.id,
+      userId: session.user.id,
+      locale,
+      activeProjectId: body.activeProjectId,
+    });
+    const { agent } = await createPlatformAgent(session, {
+      missionId: body.missionId || mission.id,
+      activeProjectId: body.activeProjectId ?? mission.activeProjectId ?? null,
+    });
     return createAgentUIStreamResponse({
       agent,
       uiMessages: messages,

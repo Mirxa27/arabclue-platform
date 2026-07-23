@@ -1027,6 +1027,345 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         return { ok: true as const, events };
       },
     }),
+
+    listMissionAttachments: platformTool({
+      description: "List files and captures staged in the current Mission Control session.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        if (!ctx.missionId) {
+          return { ok: false as const, error: "No active mission" };
+        }
+        const attachments = await db.copilotAttachment.findMany({
+          where: { missionId: ctx.missionId, workspaceId: ctx.workspace.id },
+          orderBy: { createdAt: "desc" },
+          take: 40,
+        });
+        return { ok: true as const, attachments };
+      },
+    }),
+
+    ingestDroppedFile: platformTool({
+      description:
+        "Ingest dropped/pasted file text (or base64 UTF-8 content) into Mission Control, classify, and auto-route when confident. Prefer the Mission Control drop zone for binary PDFs/ZIPs.",
+      inputSchema: z.object({
+        fileName: z.string().min(1),
+        text: z.string().min(1).describe("Extracted or pasted file text"),
+        mimeType: z.string().optional(),
+        source: z
+          .enum(["upload", "paste", "browser", "email", "drive", "camera"])
+          .optional(),
+      }),
+      execute: async ({ fileName, text, mimeType, source }) => {
+        if (!ctx.canWrite) return denyWrite(ctx);
+        if (!ctx.missionId) return { ok: false as const, error: "No active mission" };
+        const { stageMissionAttachment } = await import("./stage-attachment");
+        const staged = await stageMissionAttachment({
+          missionId: ctx.missionId,
+          workspaceId: ctx.workspace.id,
+          userId: ctx.userId,
+          locale: ctx.locale,
+          canWrite: ctx.canWrite,
+          activeProjectId: ctx.activeProjectId,
+          originalName: fileName,
+          mimeType: mimeType || "text/plain",
+          bytes: Buffer.from(text, "utf8"),
+          source: source || "upload",
+          textPreview: text.slice(0, 4000),
+          autoRoute: true,
+        });
+        return {
+          ok: true as const,
+          attachmentId: staged.attachment.id,
+          documentId: staged.document.id,
+          decision: staged.decision,
+          autopilot: staged.autopilot,
+          uiAction: "navigate" as const,
+          view:
+            staged.autopilot?.mode === "autopilot"
+              ? ("agents" as const)
+              : ("documents" as const),
+          projectId:
+            staged.autopilot && "projectId" in staged.autopilot
+              ? staged.autopilot.projectId
+              : staged.attachment.projectId,
+        };
+      },
+    }),
+
+    classifyAndRouteAttachment: platformTool({
+      description:
+        "Re-classify a staged Mission Control attachment and run adaptive autopilot / routing.",
+      inputSchema: z.object({
+        attachmentId: z.string().min(1),
+        forcePipeline: z.boolean().optional(),
+      }),
+      execute: async ({ attachmentId, forcePipeline }) => {
+        if (!ctx.canWrite) return denyWrite(ctx);
+        if (!ctx.missionId) return { ok: false as const, error: "No active mission" };
+        const attachment = await db.copilotAttachment.findFirst({
+          where: {
+            id: attachmentId,
+            missionId: ctx.missionId,
+            workspaceId: ctx.workspace.id,
+          },
+        });
+        if (!attachment) {
+          return { ok: false as const, error: "Attachment not found" };
+        }
+        if (!attachment.documentId) {
+          return { ok: false as const, error: "Attachment has no document" };
+        }
+        const { classifyAttachment } = await import("./classify-attachment");
+        const { maybeAutopilotAfterIngest } = await import("./autopilot");
+        const decision = classifyAttachment({
+          originalName: attachment.originalName,
+          mimeType: attachment.mimeType,
+          textPreview: attachment.textPreview,
+          source: attachment.source as
+            | "upload"
+            | "url"
+            | "camera"
+            | "browser"
+            | "email"
+            | "drive"
+            | "paste",
+        });
+        if (forcePipeline && decision.category === "RFP") {
+          decision.confidence = Math.max(decision.confidence, 0.9);
+          decision.runPipeline = true;
+          decision.createProject = true;
+          decision.clarifyingQuestion = null;
+        }
+        await db.copilotAttachment.update({
+          where: { id: attachment.id },
+          data: {
+            docCategory: decision.category,
+            confidence: decision.confidence,
+            classificationJson: JSON.stringify(decision),
+          },
+        });
+        const autopilot = await maybeAutopilotAfterIngest({
+          workspaceId: ctx.workspace.id,
+          userId: ctx.userId,
+          locale: ctx.locale,
+          attachmentId: attachment.id,
+          documentId: attachment.documentId,
+          decision,
+          activeProjectId: ctx.activeProjectId ?? attachment.projectId,
+          canWrite: ctx.canWrite,
+        });
+        return {
+          ok: true as const,
+          attachmentId: attachment.id,
+          decision,
+          autopilot,
+          uiAction: "navigate" as const,
+          view:
+            autopilot.mode === "autopilot"
+              ? ("agents" as const)
+              : ("documents" as const),
+          projectId:
+            "projectId" in autopilot ? autopilot.projectId : attachment.projectId,
+        };
+      },
+    }),
+
+    ingestUrl: platformTool({
+      description:
+        "Fetch a public URL into Mission Control, classify it, and autonomously route / autopilot when confident.",
+      inputSchema: z.object({
+        url: z.string().url(),
+      }),
+      execute: async ({ url }) => {
+        if (!ctx.canWrite) return denyWrite(ctx);
+        if (!ctx.missionId) return { ok: false as const, error: "No active mission" };
+        const { fetchUrlAsAttachment } = await import("./connectors");
+        const { stageMissionAttachment } = await import("./stage-attachment");
+        const fetched = await fetchUrlAsAttachment(url);
+        const staged = await stageMissionAttachment({
+          missionId: ctx.missionId,
+          workspaceId: ctx.workspace.id,
+          userId: ctx.userId,
+          locale: ctx.locale,
+          canWrite: ctx.canWrite,
+          activeProjectId: ctx.activeProjectId,
+          originalName: fetched.originalName,
+          mimeType: fetched.mimeType,
+          bytes: fetched.bytes,
+          source: "url",
+          textPreview: fetched.textPreview,
+          autoRoute: true,
+        });
+        return {
+          ok: true as const,
+          attachmentId: staged.attachment.id,
+          documentId: staged.document.id,
+          decision: staged.decision,
+          autopilot: staged.autopilot,
+          uiAction: "navigate" as const,
+          view:
+            staged.autopilot?.mode === "autopilot"
+              ? ("agents" as const)
+              : ("documents" as const),
+          projectId:
+            staged.autopilot && "projectId" in staged.autopilot
+              ? staged.autopilot.projectId
+              : staged.attachment.projectId,
+        };
+      },
+    }),
+
+    captureClientArtifact: platformTool({
+      description:
+        "Stage pasted/captured client text (browser page or note) into Mission Control and auto-route when possible.",
+      inputSchema: z.object({
+        text: z.string().min(1),
+        fileName: z.string().optional(),
+        source: z.enum(["paste", "browser", "email"]).optional(),
+      }),
+      execute: async ({ text, fileName, source }) => {
+        if (!ctx.canWrite) return denyWrite(ctx);
+        if (!ctx.missionId) return { ok: false as const, error: "No active mission" };
+        const { stageMissionAttachment } = await import("./stage-attachment");
+        const staged = await stageMissionAttachment({
+          missionId: ctx.missionId,
+          workspaceId: ctx.workspace.id,
+          userId: ctx.userId,
+          locale: ctx.locale,
+          canWrite: ctx.canWrite,
+          activeProjectId: ctx.activeProjectId,
+          originalName: fileName || "capture.txt",
+          mimeType: "text/plain",
+          bytes: Buffer.from(text, "utf8"),
+          source: source || "paste",
+          textPreview: text.slice(0, 4000),
+          autoRoute: true,
+        });
+        return {
+          ok: true as const,
+          attachmentId: staged.attachment.id,
+          decision: staged.decision,
+          autopilot: staged.autopilot,
+        };
+      },
+    }),
+
+    searchDocumentChunks: platformTool({
+      description: "Search indexed document chunks for a project or the whole workspace.",
+      inputSchema: z.object({
+        query: z.string().min(2),
+        projectId: z.string().optional(),
+        limit: z.number().int().min(1).max(20).optional(),
+      }),
+      execute: async ({ query, projectId, limit }) => {
+        const q = query.toLowerCase();
+        const chunks = await db.documentChunk.findMany({
+          where: {
+            workspaceId: ctx.workspace.id,
+            ...(projectId ? { projectId } : {}),
+          },
+          orderBy: { createdAt: "desc" },
+          take: 200,
+          select: {
+            id: true,
+            documentId: true,
+            projectId: true,
+            chunkIndex: true,
+            content: true,
+          },
+        });
+        const hits = chunks
+          .filter((c) => c.content.toLowerCase().includes(q))
+          .slice(0, limit ?? 8)
+          .map((c) => ({
+            ...c,
+            excerpt: c.content.slice(0, 400),
+          }));
+        return { ok: true as const, hits, totalScanned: chunks.length };
+      },
+    }),
+
+    undoLastRouting: platformTool({
+      description:
+        "Undo the latest reversible Mission Control routing action (within the undo window).",
+      inputSchema: z.object({}),
+      execute: async () => {
+        if (!ctx.canWrite) return denyWrite(ctx);
+        if (!ctx.missionId) return { ok: false as const, error: "No active mission" };
+        const action = await db.copilotAction.findFirst({
+          where: {
+            missionId: ctx.missionId,
+            reversible: true,
+            status: "SUCCEEDED",
+          },
+          orderBy: { createdAt: "desc" },
+        });
+        if (!action) return { ok: false as const, error: "Nothing to undo" };
+        const ageMs = Date.now() - action.createdAt.getTime();
+        if (ageMs > 30_000) {
+          return { ok: false as const, error: "Undo window expired (30s)" };
+        }
+        const output = action.outputJson
+          ? (JSON.parse(action.outputJson) as { attachmentId?: string })
+          : {};
+        if (output.attachmentId) {
+          await db.copilotAttachment.update({
+            where: { id: output.attachmentId },
+            data: { routeStatus: "UNDONE", projectId: null },
+          });
+        }
+        await db.copilotAction.update({
+          where: { id: action.id },
+          data: { status: "UNDONE" },
+        });
+        return { ok: true as const, undoneActionId: action.id };
+      },
+    }),
+
+    importExternalSource: platformTool({
+      description:
+        "Import from email/Drive connectors. v1 accepts pasted content while OAuth connectors remain stubs.",
+      inputSchema: z.object({
+        connector: z.enum(["email", "google_drive", "onedrive"]),
+        text: z.string().optional(),
+        note: z.string().optional(),
+      }),
+      execute: async ({ connector, text, note }) => {
+        if (!text?.trim()) {
+          return {
+            ok: false as const,
+            error: `${connector} OAuth is not connected yet. Paste the email/file text and retry.`,
+            connector,
+            status: "stub",
+          };
+        }
+        if (!ctx.canWrite) return denyWrite(ctx);
+        if (!ctx.missionId) return { ok: false as const, error: "No active mission" };
+        const { stageMissionAttachment } = await import("./stage-attachment");
+        const staged = await stageMissionAttachment({
+          missionId: ctx.missionId,
+          workspaceId: ctx.workspace.id,
+          userId: ctx.userId,
+          locale: ctx.locale,
+          canWrite: ctx.canWrite,
+          activeProjectId: ctx.activeProjectId,
+          originalName: `${connector}-import.txt`,
+          mimeType: "text/plain",
+          bytes: Buffer.from(text, "utf8"),
+          source: connector === "email" ? "email" : "drive",
+          textPreview: text.slice(0, 4000),
+          autoRoute: true,
+        });
+        return {
+          ok: true as const,
+          connector,
+          note: note ?? null,
+          attachmentId: staged.attachment.id,
+          decision: staged.decision,
+          autopilot: staged.autopilot,
+        };
+      },
+    }),
   };
 }
 

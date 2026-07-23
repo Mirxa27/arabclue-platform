@@ -73,7 +73,8 @@ export async function getVoiceLiveConfig(): Promise<VoiceLiveConfigResponse> {
 }
 
 export async function mintVoiceLiveSession(
-  session: Session
+  session: Session,
+  opts?: { missionId?: string | null; activeProjectId?: string | null }
 ): Promise<Experimental_RealtimeSetupResponse & VoiceLiveConfig> {
   const config = await getVoiceLiveConfig();
   if (!config.enabled) {
@@ -83,7 +84,19 @@ export async function mintVoiceLiveSession(
   const row = await getProviderForEngine("VOICE");
   if (!row) throw new Error("VOICE provider missing");
 
-  const ctx = await buildPlatformAgentContext(session);
+  const { getOrCreateMission } = await import("./mission");
+  const base = await buildPlatformAgentContext(session);
+  const mission = await getOrCreateMission({
+    workspaceId: base.workspace.id,
+    userId: base.userId,
+    locale: base.locale,
+    activeProjectId: opts?.activeProjectId ?? undefined,
+  });
+  const ctx = await buildPlatformAgentContext(session, {
+    missionId: opts?.missionId || mission.id,
+    activeProjectId:
+      opts?.activeProjectId ?? mission.activeProjectId ?? null,
+  });
   const tools = createPlatformTools(ctx);
   const toolDefinitions = await experimental_getRealtimeToolDefinitions({
     tools,
@@ -155,9 +168,22 @@ export async function mintVoiceLiveSession(
 export async function executeVoiceLiveTool(
   session: Session,
   toolName: string,
-  args: unknown
+  args: unknown,
+  opts?: { missionId?: string | null; activeProjectId?: string | null }
 ): Promise<unknown> {
-  const ctx = await buildPlatformAgentContext(session);
+  const { getOrCreateMission } = await import("./mission");
+  const base = await buildPlatformAgentContext(session);
+  const mission = await getOrCreateMission({
+    workspaceId: base.workspace.id,
+    userId: base.userId,
+    locale: base.locale,
+    activeProjectId: opts?.activeProjectId ?? undefined,
+  });
+  const ctx = await buildPlatformAgentContext(session, {
+    missionId: opts?.missionId || mission.id,
+    activeProjectId:
+      opts?.activeProjectId ?? mission.activeProjectId ?? null,
+  });
   const tools = createPlatformTools(ctx) as Record<
     string,
     { execute?: (input: unknown, opts?: unknown) => Promise<unknown> | unknown }

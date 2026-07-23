@@ -8,7 +8,7 @@ export const maxDuration = 120;
 /**
  * POST /api/platform-agent/realtime/tools
  * Server-side execution of platform tools for live voice sessions.
- * Body: { toolName: string, args: unknown }
+ * Body: { toolName: string, args: unknown, missionId?: string, activeProjectId?: string }
  */
 export async function POST(req: Request) {
   const session = await requireSession();
@@ -16,7 +16,12 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { toolName?: string; args?: unknown };
+  let body: {
+    toolName?: string;
+    args?: unknown;
+    missionId?: string | null;
+    activeProjectId?: string | null;
+  };
   try {
     body = await req.json();
   } catch {
@@ -47,7 +52,11 @@ export async function POST(req: Request) {
     const result = await executeVoiceLiveTool(
       session,
       toolName,
-      body.args ?? {}
+      body.args ?? {},
+      {
+        missionId: body.missionId,
+        activeProjectId: body.activeProjectId,
+      }
     );
     return Response.json({ ok: true, result });
   } catch (err) {

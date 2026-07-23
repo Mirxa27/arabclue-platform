@@ -24,6 +24,11 @@ import {
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
 import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
 import { LiveVoiceSession } from "./live-voice-session";
+import { MissionAttachmentTray } from "./mission-attachment-tray";
+import {
+  MissionExecutionFeed,
+  type MissionFeedItem,
+} from "./mission-execution-feed";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -64,7 +69,7 @@ function toolLabel(type: string): string {
 
 export function PlatformAgentConsole() {
   const { locale } = useLocale();
-  const { setView, setActiveProjectId } = useUI();
+  const { setView, setActiveProjectId, activeProjectId } = useUI();
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
   const [voiceOut, setVoiceOut] = useState(true);
@@ -75,6 +80,18 @@ export function PlatformAgentConsole() {
     null
   );
   const [mode, setMode] = useState<"live" | "classic">("live");
+  const [missionId, setMissionId] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<
+    Array<{
+      id: string;
+      originalName: string;
+      docCategory: string;
+      confidence: number;
+      routeStatus: string;
+      source: string;
+    }>
+  >([]);
+  const [feedItems, setFeedItems] = useState<MissionFeedItem[]>([]);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const spokenIdsRef = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -103,12 +120,52 @@ export function PlatformAgentConsole() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/platform-agent/missions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activeProjectId }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !data?.mission?.id) return;
+        setMissionId(data.mission.id);
+        setAttachments(data.mission.attachments ?? []);
+        setFeedItems(
+          (data.mission.actions ?? []).map(
+            (a: {
+              id: string;
+              toolName: string;
+              status: string;
+              outputJson?: string | null;
+              createdAt?: string;
+            }) => ({
+              id: a.id,
+              toolName: a.toolName,
+              status: a.status,
+              summary: a.outputJson?.slice(0, 280),
+              at: a.createdAt,
+            })
+          )
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId]);
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport<PlatformAgentUIMessage>({
         api: "/api/platform-agent/chat",
+        body: {
+          missionId,
+          activeProjectId,
+        },
       }),
-    []
+    [missionId, activeProjectId]
   );
 
   const { messages, sendMessage, status, stop, error } =
@@ -153,6 +210,15 @@ export function PlatformAgentConsole() {
         if (out.uiAction === "setActiveProject") {
           setFollowNote("active project focused");
         }
+        setFeedItems((prev) => [
+          {
+            id: key,
+            toolName: toolPart.type.replace(/^tool-/, ""),
+            status: toolPart.state || "output-available",
+            summary: JSON.stringify(out).slice(0, 280),
+          },
+          ...prev,
+        ].slice(0, 40));
       }
     }
   }, [messages, setActiveProjectId]);
@@ -275,15 +341,76 @@ export function PlatformAgentConsole() {
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-8rem)] min-h-[520px]">
       <PageHeader
-        title={ar ? "وكيل المنصة الصوتي" : "Voice Platform Copilot"}
+        title={ar ? "مركز قيادة الصوت" : "Voice Mission Control"}
         subtitle={
           ar
-            ? "تحدث مع الوكيل الرئيسي — صوت مباشر (OpenAI / Gemini) أو وضع المتصفح، مع تنفيذ مباشر للأدوات."
-            : "Speak with the main agent — OpenAI/Gemini live voice or browser mode, with live tool execution."
+            ? "أسقط الملفات وتحدث — الوكيل يشغّل المنصة بالكامل ضمن صلاحياتك، مع تنفيذ حيّ للوكلاء."
+            : "Drop files and speak — the agent runs the full platform within your role, with live agent execution."
         }
         locale={locale}
         badge="none"
       />
+
+      <MissionAttachmentTray
+        locale={locale}
+        missionId={missionId}
+        activeProjectId={activeProjectId}
+        attachments={attachments}
+        onUploaded={(payload) => {
+          const data = payload as {
+            attachment?: {
+              id: string;
+              originalName: string;
+              docCategory: string;
+              confidence: number;
+              routeStatus: string;
+              source: string;
+            };
+            autopilot?: {
+              mode?: string;
+              projectId?: string;
+              runId?: string;
+              message?: string;
+              question?: string;
+            };
+            decision?: { category?: string; confidence?: number };
+          };
+          if (data.attachment) {
+            setAttachments((prev) => [data.attachment!, ...prev].slice(0, 40));
+          }
+          if (data.autopilot?.projectId) {
+            setActiveProjectId(data.autopilot.projectId);
+          }
+          if (data.autopilot?.mode === "autopilot") {
+            setFollowView("agents");
+            setFollowNote(data.autopilot.message || "autopilot pipeline started");
+            setMode("classic");
+          }
+          setFeedItems((prev) =>
+            [
+              {
+                id: `upload-${Date.now()}`,
+                toolName: "stageMissionAttachment",
+                status: "SUCCEEDED",
+                summary:
+                  data.autopilot?.message ||
+                  data.autopilot?.question ||
+                  `${data.decision?.category ?? "file"} · ${Math.round((data.decision?.confidence ?? 0) * 100)}%`,
+              },
+              ...prev,
+            ].slice(0, 40)
+          );
+        }}
+        onUndo={() => {
+          void sendMessage({
+            text: ar
+              ? "تراجع عن آخر توجيه للملف"
+              : "Undo the last file routing action",
+          });
+        }}
+      />
+
+      <MissionExecutionFeed locale={locale} items={feedItems} />
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -318,7 +445,11 @@ export function PlatformAgentConsole() {
       </div>
 
       {mode === "live" && liveConfig?.enabled ? (
-        <LiveVoiceSession config={liveConfig} />
+        <LiveVoiceSession
+          config={liveConfig}
+          missionId={missionId}
+          activeProjectId={activeProjectId}
+        />
       ) : (
         <>
       <div className="flex flex-wrap items-center gap-2">

@@ -28,9 +28,16 @@ export async function POST(req: Request) {
   }
 
   try {
+    const body = (await req.json().catch(() => ({}))) as {
+      missionId?: string | null;
+      activeProjectId?: string | null;
+      sessionConfig?: unknown;
+    };
     // Optional body.sessionConfig is ignored — server owns instructions + tools
-    await req.json().catch(() => ({}));
-    const setup = await mintVoiceLiveSession(session);
+    const setup = await mintVoiceLiveSession(session, {
+      missionId: body.missionId,
+      activeProjectId: body.activeProjectId,
+    });
     return Response.json(setup);
   } catch (err) {
     console.error("[platform-agent/realtime/setup]", err);

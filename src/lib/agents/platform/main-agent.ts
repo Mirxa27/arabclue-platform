@@ -20,7 +20,8 @@ export type PlatformAgentUIMessage = UIMessage<
 >;
 
 export async function buildPlatformAgentContext(
-  session: Session
+  session: Session,
+  opts?: { missionId?: string | null; activeProjectId?: string | null }
 ): Promise<PlatformAgentContext> {
   const tenant = await getTenantContext(session.user.id);
   const role = session.user.role;
@@ -36,11 +37,16 @@ export async function buildPlatformAgentContext(
     locale,
     isAdmin,
     canWrite: canWriteRole(role),
+    missionId: opts?.missionId ?? null,
+    activeProjectId: opts?.activeProjectId ?? null,
   };
 }
 
-export async function createPlatformAgent(session: Session) {
-  const ctx = await buildPlatformAgentContext(session);
+export async function createPlatformAgent(
+  session: Session,
+  opts?: { missionId?: string | null; activeProjectId?: string | null }
+) {
+  const ctx = await buildPlatformAgentContext(session, opts);
   const { model, providerLabel, modelId } = await resolvePlatformAgentModel();
   const tools = createPlatformTools(ctx);
 
@@ -59,7 +65,7 @@ export async function createPlatformAgent(session: Session) {
       isAdmin: ctx.isAdmin,
     }),
     tools,
-    stopWhen: stepCountIs(24),
+    stopWhen: stepCountIs(28),
     temperature: 0.3,
   });
 
