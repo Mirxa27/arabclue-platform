@@ -18,6 +18,7 @@ export const t: Dict = {
   nav_compliance: { ar: "الامتثال", en: "Compliance" },
   nav_brand: { ar: "إعداد الحساب", en: "Account Setup" },
   nav_account: { ar: "إعداد الحساب", en: "Account Setup" },
+  nav_business_profile: { ar: "ملف الشركة", en: "Business Profile" },
   nav_copilot: { ar: "الوكيل الصوتي", en: "Voice Copilot" },
   nav_agents: { ar: "وكلاء الذكاء", en: "AI Agents" },
   nav_history: { ar: "الإصدارات", en: "Version History" },

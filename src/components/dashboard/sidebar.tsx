@@ -26,6 +26,7 @@ import {
   Lock,
   Loader2,
   Scale,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +44,7 @@ const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] 
   { view: "agents", key: "nav_agents", icon: Bot },
   { view: "history", key: "nav_history", icon: History },
   { view: "account", key: "nav_account", icon: Building2 },
+  { view: "business-profile", key: "nav_business_profile", icon: Sparkles },
   { view: "reviews", key: "nav_reviews", icon: ScrollText },
   { view: "billing", key: "nav_billing", icon: CreditCard },
   { view: "settings", key: "nav_settings", icon: Lock },

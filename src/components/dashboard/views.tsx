@@ -97,6 +97,13 @@ const PlatformAgentConsole = dynamic(
     })),
   { loading: PanelLoading }
 );
+const BusinessProfileView = dynamic(
+  () =>
+    import("./business-profile-view").then((m) => ({
+      default: m.BusinessProfileView,
+    })),
+  { loading: PanelLoading }
+);
 const ADMIN_VIEWS = new Set<DashboardView>([
   "admin_overview",
   "admin_ai",
@@ -123,6 +130,7 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   history: HistoryView,
   brand: AccountView,
   account: AccountView,
+  "business-profile": BusinessProfileView,
   reviews: ReviewsView,
   settings: SettingsView,
   billing: BillingView,

@@ -108,10 +108,34 @@ export async function GET(
   } else {
     const gateFinancial: FinancialExtract | null =
       financialForValidationGate(formsRaw);
+    // Prefer ingestion entities from project documents so NORA gate is tender-aware.
+    let entities: import("@/lib/types").IngestionEntities | null = null;
+    const docs = await db.uploadedDocument.findMany({
+      where: {
+        projectId: proposal.projectId,
+        extractedEntities: { not: null },
+      },
+      select: { extractedEntities: true },
+      orderBy: { updatedAt: "desc" },
+      take: 8,
+    });
+    for (const doc of docs) {
+      if (!doc.extractedEntities) continue;
+      try {
+        const parsed = JSON.parse(doc.extractedEntities) as import("@/lib/types").IngestionEntities;
+        if (parsed && (parsed.noraPrinciplesFromTender?.length || parsed.requirements?.length)) {
+          entities = parsed;
+          break;
+        }
+        if (!entities) entities = parsed;
+      } catch {
+        /* ignore bad JSON */
+      }
+    }
     gateReport = validateProposalOutput({
       contentMd: proposal.contentMd,
       financial: gateFinancial,
-      entities: null,
+      entities,
       complianceRows: checksForGate.map((c) => ({
         frameworkId: c.framework,
         controlId: c.controlId,
@@ -161,6 +185,12 @@ export async function GET(
   }
 
   const brand = proposal.workspace.brandProfiles[0] ?? null;
+  const companyLetterhead = {
+    name: proposal.workspace.name,
+    nameAr: proposal.workspace.nameAr,
+    crNumber: proposal.workspace.crNumber,
+    vatNumber: proposal.workspace.vatNumber,
+  };
   const checks = checksForGate;
 
   // Prefer human-entered financial forms; fall back to structure-only agent BoQ
@@ -220,7 +250,13 @@ export async function GET(
           contentType = "application/pdf";
           filename = "Draft_Contract_Bilingual.pdf";
         } else {
-          buffer = await generateProposalPDF(proposal, proposal.project, brand, pdfLocale);
+          buffer = await generateProposalPDF(
+            proposal,
+            proposal.project,
+            brand,
+            pdfLocale,
+            companyLetterhead
+          );
           contentType = "application/pdf";
           filename = "Technical_Proposal.pdf";
         }
@@ -240,7 +276,13 @@ export async function GET(
           contentType = "text/html; charset=utf-8";
           filename = "Draft_Contract_Bilingual.html";
         } else {
-          buffer = generateProposalHTMLPreview(proposal, proposal.project, brand, pdfLocale);
+          buffer = generateProposalHTMLPreview(
+            proposal,
+            proposal.project,
+            brand,
+            pdfLocale,
+            companyLetterhead
+          );
           contentType = "text/html; charset=utf-8";
           filename = "Technical_Proposal.html";
         }
@@ -311,6 +353,7 @@ export async function GET(
           boqItems,
           slidesMetrics,
           validation: gateReport,
+          company: companyLetterhead,
         });
         contentType = "application/zip";
         filename = "Arabclue_Bid_Package.zip";

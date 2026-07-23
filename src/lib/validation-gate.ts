@@ -4,6 +4,7 @@
  */
 
 import { detectPricingSuggestion } from "./guardrails";
+import { allowedNoraIdsFromSources, extractNoraIds } from "./nora-ids";
 import type {
   ComplianceMatrixRow,
   FinancialExtract,
@@ -26,6 +27,18 @@ export type ValidationReport = {
 
 const PLACEHOLDER_RE =
   /\b(lorem ipsum|TODO|FIXME|TBD|\[insert|\[placeholder|xxx+)\b/i;
+
+function dedupeIssues(issues: ValidationIssue[]): ValidationIssue[] {
+  const seen = new Set<string>();
+  const out: ValidationIssue[] = [];
+  for (const issue of issues) {
+    const key = `${issue.code}|${issue.message}|${issue.path ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(issue);
+  }
+  return out;
+}
 
 export function validateProposalOutput(opts: {
   contentMd: string | null | undefined;
@@ -65,22 +78,31 @@ export function validateProposalOutput(opts: {
     });
   }
 
-  // Fabricated NORA IDs that were not in tender
-  const tenderNora = new Set(
-    (opts.entities?.noraPrinciplesFromTender ?? []).map((p) =>
-      p.id.toUpperCase()
-    )
+  // Fabricated NORA IDs — allow tender extracts, project compliance scope, and
+  // the platform NORA/EA catalog. Block only truly invented identifiers (e.g. TP99).
+  const tenderNora = (opts.entities?.noraPrinciplesFromTender ?? []).map(
+    (p) => p.id
   );
-  const inventedNora = md.match(/\b((?:TP|SP|BP|IP)\d+)\b/g) ?? [];
+  const complianceTexts = (opts.complianceRows ?? []).flatMap((r) => [
+    r.frameworkId,
+    r.controlId,
+    r.title,
+    r.evidence ?? "",
+  ]);
+  const allowedNora = allowedNoraIdsFromSources({
+    tenderIds: tenderNora,
+    complianceTexts,
+    includeCatalog: true,
+  });
+
+  const inventedNora = extractNoraIds(md).filter((id) => !allowedNora.has(id));
   for (const id of inventedNora) {
-    if (!tenderNora.has(id.toUpperCase())) {
-      issues.push({
-        code: "invented_nora_id",
-        severity: "error",
-        message: `NORA identifier ${id} is not present in tender extract`,
-        path: "contentMd",
-      });
-    }
+    issues.push({
+      code: "invented_nora_id",
+      severity: "error",
+      message: `NORA identifier ${id} is not present in tender extract, project compliance scope, or the NORA/EA catalog`,
+      path: "contentMd",
+    });
   }
 
   // Blanket 10% preference without tender statement
@@ -163,21 +185,46 @@ export function validateProposalOutput(opts: {
     });
   }
 
-  const errors = issues.filter((i) => i.severity === "error");
+  const unique = dedupeIssues(issues);
+  const errors = unique.filter((i) => i.severity === "error");
   return {
     ok: errors.length === 0,
     blocking: errors.length > 0,
-    issues,
+    issues: unique,
     checkedAt: new Date().toISOString(),
   };
 }
 
 export function assertExportAllowed(report: ValidationReport): void {
   if (report.blocking) {
-    const codes = report.issues
-      .filter((i) => i.severity === "error")
-      .map((i) => i.code)
-      .join(", ");
+    const codes = [
+      ...new Set(
+        report.issues
+          .filter((i) => i.severity === "error")
+          .map((i) => i.code)
+      ),
+    ].join(", ");
     throw new Error(`Export blocked by validation gate: ${codes}`);
   }
+}
+
+/** Human-readable summary for toasts (deduped, capped). */
+export function formatValidationToast(
+  report: ValidationReport,
+  locale: "ar" | "en" = "en"
+): string {
+  const errors = report.issues.filter((i) => i.severity === "error");
+  if (errors.length === 0) {
+    return locale === "ar" ? "تم تجاوز بوابة التحقق" : "Validation passed";
+  }
+  const uniqueMsgs = [
+    ...new Set(errors.map((e) => e.message || e.code)),
+  ].slice(0, 4);
+  const more =
+    errors.length > uniqueMsgs.length
+      ? locale === "ar"
+        ? ` (+${errors.length - uniqueMsgs.length} أخرى)`
+        : ` (+${errors.length - uniqueMsgs.length} more)`
+      : "";
+  return uniqueMsgs.join(" · ") + more;
 }

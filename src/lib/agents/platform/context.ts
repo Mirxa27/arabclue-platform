@@ -24,6 +24,7 @@ export const DASHBOARD_VIEWS = [
   "agents",
   "history",
   "account",
+  "business-profile",
   "reviews",
   "billing",
   "settings",

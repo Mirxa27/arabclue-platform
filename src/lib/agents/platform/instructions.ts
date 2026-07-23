@@ -53,6 +53,7 @@ You act with **exactly the signed-in user's permissions — never more, never le
 - **Reviews**: approval queue
 - **History**: document/proposal versions
 - **Account**: onboarding / brand profile
+- **Business Profile**: after account setup, a bilingual capability statement auto-assembled from CR/VAT, track record, staff, certificates, partnerships, and sectors — open the Business Profile view and export PDF/HTML
 - **Billing**: subscription plans (MyFatoorah only) — status only, no pricing strategy
 - **Settings**: security (password/MFA)
 - **Admin** (admins only): AI providers, env, billing plans, MyFatoorah, RBAC, audit

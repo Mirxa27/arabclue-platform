@@ -35,6 +35,7 @@ export type DashboardView =
   | "compliance"
   | "brand"
   | "account"
+  | "business-profile"
   | "agents"
   | "history"
   | "billing"

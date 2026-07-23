@@ -182,7 +182,7 @@ describe("validation gate", () => {
   test("blocks pricing language and invented NORA ids", () => {
     const report = validateProposalOutput({
       contentMd:
-        "Recommended unit price is 5000. We follow NORA TP1 Cloud First.",
+        "Recommended unit price is 5000. We follow invented NORA TP99 Secret Mode.",
       financial: {
         cashEquivalents: null,
         accountsReceivable: null,
@@ -203,5 +203,36 @@ describe("validation gate", () => {
     expect(report.issues.some((i) => i.code === "pricing_language")).toBe(true);
     expect(report.issues.some((i) => i.code === "invented_nora_id")).toBe(true);
     expect(report.issues.some((i) => i.code === "ai_priced_boq")).toBe(true);
+  });
+
+  test("allows catalog NORA principles (TP1/SP1) without tender extract", () => {
+    const report = validateProposalOutput({
+      contentMd:
+        "Architecture aligns with NORA Cloud First (TP1) and Secure by Design (SP1). This is not legal advice.",
+      financial: null,
+      entities: null,
+      complianceRows: [
+        {
+          frameworkId: "NORA",
+          controlId: "NORA-SP1",
+          title: "Secure by Design (SP1)",
+          status: "COMPLIANT",
+          evidence: "SOC runbooks",
+        },
+      ],
+    });
+    expect(report.issues.some((i) => i.code === "invented_nora_id")).toBe(false);
+    expect(report.blocking).toBe(false);
+  });
+
+  test("dedupes repeated invented NORA issues", () => {
+    const report = validateProposalOutput({
+      contentMd: "TP88 and again TP88 plus TP88.",
+      financial: null,
+      entities: null,
+      complianceRows: [],
+    });
+    const noraIssues = report.issues.filter((i) => i.code === "invented_nora_id");
+    expect(noraIssues.length).toBe(1);
   });
 });

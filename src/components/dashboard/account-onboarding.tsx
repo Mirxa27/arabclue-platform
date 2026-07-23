@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useLocale } from "@/lib/store";
+import { useLocale, useUI } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -57,6 +57,7 @@ const STEPS: { key: StepKey; icon: typeof Building2; en: string; ar: string }[] 
 
 export function AccountOnboarding() {
   const { locale } = useLocale();
+  const { setView } = useUI();
   const [step, setStep] = useState<StepKey>("brand");
 
   const { data, isLoading } = useQuery({
@@ -81,18 +82,29 @@ export function AccountOnboarding() {
 
   return (
     <div className="space-y-4">
-      <Card className="p-4 flex flex-wrap items-center gap-3">
+      <Card className="p-4 flex flex-wrap items-center gap-3 justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          {ready ? (
+            <Badge className="bg-emerald-600">
+              {locale === "ar" ? "جاهز لتوليد العروض" : "Ready for proposals"}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="border-amber-500 text-amber-700">
+              {locale === "ar"
+                ? `أكمل الخطوات المطلوبة: ${(data?.missing ?? []).join(", ")}`
+                : `Complete required steps: ${(data?.missing ?? []).join(", ")}`}
+            </Badge>
+          )}
+        </div>
         {ready ? (
-          <Badge className="bg-emerald-600">
-            {locale === "ar" ? "جاهز لتوليد العروض" : "Ready for proposals"}
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="border-amber-500 text-amber-700">
-            {locale === "ar"
-              ? `أكمل الخطوات المطلوبة: ${(data?.missing ?? []).join(", ")}`
-              : `Complete required steps: ${(data?.missing ?? []).join(", ")}`}
-          </Badge>
-        )}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setView("business-profile")}
+          >
+            {locale === "ar" ? "عرض ملف الشركة" : "View business profile"}
+          </Button>
+        ) : null}
       </Card>
 
       <div className="flex flex-wrap gap-2">

@@ -96,6 +96,8 @@ function BrandForm({ brand }: { brand: BrandData }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["brand"] });
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({ title: locale === "ar" ? "تم حفظ الهوية" : "Brand saved" });
     },
   });

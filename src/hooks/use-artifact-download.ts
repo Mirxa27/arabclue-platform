@@ -33,9 +33,21 @@ export function useArtifactDownload() {
           fallbackName: opts.fallbackName,
         });
         if (!result.ok) {
+          // Collapse repeated gate codes: "invented_nora_id, invented_nora_id, …"
+          const description = result.error
+            .replace(
+              /Export blocked by validation gate:\s*/i,
+              ar ? "بوابة التحقق منعت التصدير: " : "Export blocked: "
+            )
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .slice(0, 5)
+            .join(", ");
           toast({
             title: ar ? "فشل التنزيل" : "Download failed",
-            description: result.error,
+            description: description || result.error,
             variant: "destructive",
           });
           return false;
