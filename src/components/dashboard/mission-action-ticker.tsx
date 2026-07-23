@@ -100,10 +100,10 @@ export function MissionActionTicker({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-2xl border px-3.5 py-2.5",
+        "relative overflow-hidden rounded-2xl border px-3.5 py-2.5 shadow-sm",
         active
           ? "border-cyan-400/40 bg-[linear-gradient(120deg,rgba(13,148,136,0.12),rgba(8,145,178,0.1),transparent)]"
-          : "border-border/60 bg-muted/20",
+          : "border-border bg-card/80",
         active && "mission-tool-live",
         className
       )}
