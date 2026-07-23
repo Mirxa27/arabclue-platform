@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { Sparkles } from "lucide-react";
+import { MessageSquareText } from "lucide-react";
 
 type LoosePart = {
   type: string;
@@ -18,8 +18,7 @@ type LooseMessage = {
 };
 
 /**
- * Shared conversation transcript for classic + live Mission Control.
- * Renders text bubbles and inline tool chips, auto-scrolls to newest.
+ * Clean conversation transcript for Mission Control.
  */
 export function MissionConversation({
   locale,
@@ -50,16 +49,16 @@ export function MissionConversation({
     <div
       ref={scrollRef}
       className={cn(
-        "flex-1 min-h-0 overflow-y-auto rounded-2xl border border-cyan-500/15 bg-gradient-to-b from-background/80 via-teal-500/[0.04] to-background/80 p-4 space-y-3 backdrop-blur-[2px]",
+        "min-h-0 flex-1 space-y-3 overflow-y-auto rounded-xl border border-border/70 bg-background/80 p-4",
         className
       )}
     >
       {messages.length === 0 ? (
-        <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-2 text-center">
-          <span className="flex size-11 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/10">
-            <Sparkles className="size-5 text-cyan-600 dark:text-cyan-300" />
+        <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-3 px-4 text-center">
+          <span className="flex size-10 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
+            <MessageSquareText className="size-5 text-muted-foreground" />
           </span>
-          <p className="max-w-sm text-sm text-muted-foreground leading-relaxed">
+          <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
             {emptyHint}
           </p>
         </div>
@@ -71,16 +70,14 @@ export function MissionConversation({
           <div
             key={message.id}
             className={cn(
-              "rounded-xl px-3 py-2 text-sm max-w-[94%] transition-shadow",
+              "max-w-[92%] rounded-xl px-3.5 py-2.5 text-sm transition-colors",
               isUser
                 ? "ms-auto bg-primary text-primary-foreground"
-                : "me-auto bg-card/90 border border-border/70",
-              !isUser &&
-                performing &&
-                "shadow-[0_0_24px_rgba(34,211,238,0.12)]"
+                : "me-auto border border-border/70 bg-card",
+              !isUser && performing && "border-teal-600/30"
             )}
           >
-            <div className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">
               {isUser ? (ar ? "أنت" : "You") : assistantLabel}
             </div>
             <div className="space-y-2 whitespace-pre-wrap">
@@ -103,15 +100,17 @@ export function MissionConversation({
                     <div
                       key={i}
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono",
-                        live && "mission-tool-live border-cyan-300/50"
+                        "inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/40 px-2 py-0.5 text-[10px] font-mono",
+                        live && "border-teal-600/35 bg-teal-600/8"
                       )}
                     >
-                      <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
+                      <span
+                        className={cn(
+                          "size-1.5 rounded-full",
+                          live ? "bg-teal-600 animate-pulse" : "bg-slate-400"
+                        )}
+                      />
                       {name}
-                      {part.state ? (
-                        <span className="opacity-60">{part.state}</span>
-                      ) : null}
                     </div>
                   );
                 }

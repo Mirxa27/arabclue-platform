@@ -533,10 +533,7 @@
 }
 
 .mission-tool-live {
-  animation: mission-tool-in 0.35s ease-out both, mission-tool-sparkle 1.4s ease-in-out infinite;
-  box-shadow:
-    0 0 0 1px rgba(251, 191, 36, 0.25),
-    0 0 24px rgba(45, 212, 191, 0.18);
+  animation: mission-tool-in 0.28s ease-out both;
 }
 
 .mission-tool-glitter {

@@ -427,16 +427,16 @@ function ToolTimeline({
 
   if (!recent.length) {
     return (
-      <p className="text-xs text-muted-foreground px-1">
+      <p className="px-1 text-xs text-muted-foreground">
         {ar
-          ? "الأدوات ستظهر هنا كأن الوكيل ينقر الواجهة مثلك — خطوة بخطوة."
-          : "Tools appear here as the agent clicks the UI like you would — step by step."}
+          ? "خطوات الأدوات تظهر هنا لحظة بلحظة أثناء عمل الوكيل."
+          : "Tool steps appear here live while the agent works."}
       </p>
     );
   }
 
   return (
-    <div className="relative space-y-2 max-h-[min(52vh,420px)] overflow-y-auto pr-1">
+    <div className="relative max-h-[min(56vh,460px)] space-y-2 overflow-y-auto pr-1">
       {recent.map((tool, idx) => {
         const running = isToolRunning(tool.state) || !!tool.preliminary;
         const done = isToolDone(tool.state) && !tool.preliminary;
@@ -452,34 +452,16 @@ function ToolTimeline({
             key={tool.id}
             data-tool-id={tool.id}
             className={cn(
-              "relative rounded-xl border px-3 py-2.5 text-xs transition-all duration-300 mission-tool-card",
-              "bg-background/80 backdrop-blur-sm",
-              running && "border-amber-500/45 mission-tool-live mission-tool-sparkle",
-              done && "border-emerald-500/40",
+              "relative rounded-xl border px-3 py-2.5 text-xs transition-colors mission-tool-card",
+              "bg-background/90",
+              running && "border-amber-500/40 bg-amber-500/[0.06]",
+              done && "border-emerald-500/35",
               failed && "border-destructive/40",
               !running && !done && !failed && "border-border/70",
-              isActive && "scale-[1.015] shadow-[0_0_28px_rgba(34,211,238,0.18)]"
+              isActive && "ring-1 ring-teal-600/25"
             )}
             style={{ animationDelay: `${Math.min(idx, 6) * 40}ms` }}
           >
-            {isActive ? (
-              <span
-                aria-hidden
-                className="mission-agent-hand pointer-events-none absolute -start-1.5 top-3 z-10"
-              >
-                <span className="mission-agent-hand-dot" />
-                <span className="mission-agent-hand-ring" />
-              </span>
-            ) : null}
-            {running ? (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl"
-              >
-                <span className="absolute inset-x-0 top-0 h-px mission-energy-beam" />
-                <span className="absolute inset-0 mission-tool-glitter" />
-              </span>
-            ) : null}
             <div className="flex items-start gap-2.5">
               <div
                 className={cn(
@@ -505,11 +487,11 @@ function ToolTimeline({
                   <span className="font-semibold">
                     {toolDisplayName(tool.name, ar)}
                   </span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     {running
                       ? ar
                         ? "ينفّذ"
-                        : "live"
+                        : "running"
                       : done
                         ? ar
                           ? "اكتمل"
@@ -525,7 +507,7 @@ function ToolTimeline({
                   className={cn(
                     "mt-0.5 text-[11px]",
                     running
-                      ? "text-teal-700 dark:text-teal-300 font-medium"
+                      ? "font-medium text-teal-800 dark:text-teal-200"
                       : "text-muted-foreground"
                   )}
                 >
@@ -535,14 +517,14 @@ function ToolTimeline({
                   ? (() => {
                       const preview = summarizeToolInput(tool.input, ar);
                       return preview ? (
-                        <p className="mt-1 text-muted-foreground line-clamp-2">
+                        <p className="mt-1 line-clamp-2 text-muted-foreground">
                           {preview}
                         </p>
                       ) : null;
                     })()
                   : null}
                 {summary ? (
-                  <p className="mt-1 text-muted-foreground line-clamp-3 whitespace-pre-wrap">
+                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-muted-foreground">
                     {summary}
                   </p>
                 ) : null}
@@ -580,53 +562,56 @@ export function MissionToolTheater({
   return (
     <aside
       className={cn(
-        "flex flex-col gap-3 min-h-0",
+        "flex min-h-0 flex-col gap-3 rounded-xl border border-border/70 bg-background/70 p-3",
         className
       )}
-      aria-label={ar ? "مسرح الأدوات الحي" : "Live tool theater"}
+      aria-label={ar ? "نشاط الأدوات" : "Tool activity"}
     >
-      <div
-        className={cn(
-          "relative overflow-hidden rounded-2xl border px-3.5 py-2.5",
-          "border-teal-500/20 bg-[linear-gradient(120deg,rgba(13,148,136,0.08),rgba(8,145,178,0.06),transparent)]"
-        )}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                "relative flex size-7 items-center justify-center rounded-full border border-teal-500/30 bg-teal-500/10",
-                active && "mission-orb"
-              )}
-            >
-              <Sparkles className="size-3.5 text-teal-700 dark:text-teal-300" />
-              {active ? (
-                <span className="absolute inset-0 rounded-full border border-teal-400/40 animate-ping" />
-              ) : null}
-            </div>
+      <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2.5">
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              "flex size-7 items-center justify-center rounded-lg border",
+              active
+                ? "border-teal-600/35 bg-teal-600/10 text-teal-800 dark:text-teal-200"
+                : "border-border bg-muted/40 text-muted-foreground"
+            )}
+          >
+            <Sparkles className="size-3.5" />
+          </div>
+          <div>
             <p className="text-sm font-semibold">
-              {ar ? "مسرح الأدوات الحي" : "Live tool theater"}
+              {ar ? "نشاط الأدوات" : "Tool activity"}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {voiceLive
+                ? ar
+                  ? "جلسة صوت مباشرة"
+                  : "Live voice session"
+                : ar
+                  ? "وضع المتصفح"
+                  : "Browser mode"}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 justify-end">
-            {voiceLive ? (
-              <Badge variant="secondary" className="gap-1 text-[10px]">
-                <Radio className="size-3" />
-                {ar ? "صوت" : "voice"}
-              </Badge>
-            ) : null}
-            <Badge variant="outline" className="text-[10px] tabular-nums">
-              {runningCount > 0
-                ? ar
-                  ? `${runningCount} قيد التنفيذ`
-                  : `${runningCount} running`
-                : ar
-                  ? "في الانتظار"
-                  : "idle"}
-              {" · "}
-              {ar ? `${doneCount} مكتمل` : `${doneCount} done`}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {voiceLive ? (
+            <Badge variant="secondary" className="gap-1 rounded-md text-[10px]">
+              <Radio className="size-3" />
+              {ar ? "صوت" : "voice"}
             </Badge>
-          </div>
+          ) : null}
+          <Badge variant="outline" className="rounded-md text-[10px] tabular-nums">
+            {runningCount > 0
+              ? ar
+                ? `${runningCount} يعمل`
+                : `${runningCount} running`
+              : ar
+                ? "خامل"
+                : "idle"}
+            {" · "}
+            {ar ? `${doneCount} تم` : `${doneCount} done`}
+          </Badge>
         </div>
       </div>
 

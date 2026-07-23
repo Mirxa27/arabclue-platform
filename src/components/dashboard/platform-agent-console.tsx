@@ -23,10 +23,7 @@ import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types"
 import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
 import { LiveVoiceSession } from "./live-voice-session";
 import { MissionAttachmentTray } from "./mission-attachment-tray";
-import {
-  MissionExecutionFeed,
-  type MissionFeedItem,
-} from "./mission-execution-feed";
+import type { MissionFeedItem } from "./mission-execution-feed";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionExtensionBridge } from "./mission-extension-bridge";
 import { MissionPulseWidget } from "./mission-pulse-widget";
@@ -422,8 +419,8 @@ export function PlatformAgentConsole() {
       title={ar ? "مركز قيادة الصوت" : "Voice Mission Control"}
       subtitle={
         ar
-          ? "تحدّث — الوكيل ينقر الأدوات مثلك، والمسرح المتلألئ يعرض كل خطوة."
-          : "Speak — the agent clicks tools like you would, and the glitter theater shows every step."
+          ? "تحدّث أو اكتب — الوكيل ينفّذ أدوات المنصة ويعرض كل خطوة بوضوح."
+          : "Speak or type — the agent runs platform tools and shows every step clearly."
       }
       mode={mode}
       onModeChange={setMode}
@@ -584,9 +581,9 @@ export function PlatformAgentConsole() {
       }
       composer={
         mode === "live" && liveConfig?.enabled ? undefined : (
-          <div className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/80 p-3 backdrop-blur-sm">
+          <div className="flex flex-col gap-2">
             {error ? (
-              <div className="text-sm text-destructive border border-destructive/30 rounded-md px-3 py-2">
+              <div className="rounded-lg border border-destructive/30 px-3 py-2 text-sm text-destructive">
                 {error.message}
               </div>
             ) : null}
@@ -595,10 +592,11 @@ export function PlatformAgentConsole() {
               onChange={(e) => setInput(e.target.value)}
               placeholder={
                 ar
-                  ? "اكتب أو تحدّث… اطلب أي إجراء على المنصة"
-                  : "Type or speak… ask for any platform action"
+                  ? "اكتب أمراً… مثل: اعرض مشاريعي، أنشئ مناقصة، شغّل الوكلاء"
+                  : "Type a command… e.g. list projects, create a tender, run agents"
               }
               rows={2}
+              className="min-h-[72px] resize-none"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -607,11 +605,11 @@ export function PlatformAgentConsole() {
               }}
               disabled={busy}
             />
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 size="lg"
-                className={cn(listening && "animate-pulse")}
+                className={cn("min-w-[9.5rem]", listening && "animate-pulse")}
                 onClick={() => (listening ? stopListening() : speakAndSend())}
                 disabled={busy && !listening}
               >
@@ -622,15 +620,16 @@ export function PlatformAgentConsole() {
                 )}
                 {listening
                   ? ar
-                    ? "إيقاف الاستماع"
-                    : "Stop listening"
+                    ? "إيقاف"
+                    : "Stop"
                   : ar
-                    ? "تحدّث وأرسل"
-                    : "Speak & send"}
+                    ? "تحدّث"
+                    : "Speak"}
               </Button>
               <Button
                 type="button"
                 variant="secondary"
+                size="lg"
                 onClick={() => void submit()}
                 disabled={busy || !input.trim()}
               >
@@ -640,12 +639,13 @@ export function PlatformAgentConsole() {
               {busy ? (
                 <Button type="button" variant="outline" onClick={() => stop()}>
                   <Square className="size-4 me-2" />
-                  {ar ? "إيقاف" : "Stop"}
+                  {ar ? "إيقاف التنفيذ" : "Stop run"}
                 </Button>
               ) : null}
               <Button
                 type="button"
                 variant="ghost"
+                className="ms-auto"
                 onClick={() => {
                   setVoiceOut((v) => {
                     if (v) window.speechSynthesis?.cancel();
@@ -661,7 +661,7 @@ export function PlatformAgentConsole() {
                 {voiceOut
                   ? ar
                     ? "صوت الرد"
-                    : "Voice replies"
+                    : "Voice on"
                   : ar
                     ? "صامت"
                     : "Muted"}
@@ -683,7 +683,7 @@ export function PlatformAgentConsole() {
           locale={locale}
           performing={performing}
           tools={theaterTools}
-          className="flex-1 min-h-0 p-1"
+          className="flex-1 min-h-0"
         >
           <MissionStage
             locale={locale}
@@ -697,18 +697,12 @@ export function PlatformAgentConsole() {
                 messages={messages}
                 interim={interim}
                 performing={performing}
-                assistantLabel={ar ? "الوكيل" : "Copilot"}
+                assistantLabel={ar ? "الوكيل" : "Agent"}
                 emptyHint={
                   ar
-                    ? "جرّب: «اعرض مشاريعي»، «أنشئ مشروع مناقصة»، «شغّل الوكلاء» — المسرح يعرض كل نقرة أداة متلألئة."
-                    : "Try: “List my projects”, “Create a tender”, “Run the agents” — the theater shows every glittery tool click."
+                    ? "جرّب: «اعرض مشاريعي»، «أنشئ مناقصة»، «شغّل الوكلاء» — شريط الحالة ونشاط الأدوات يوضحان كل خطوة."
+                    : "Try: “List my projects”, “Create a tender”, “Run the agents” — the status bar and activity pane show every step."
                 }
-              />
-            }
-            feed={
-              <MissionExecutionFeed
-                locale={locale}
-                items={feedItems.slice(0, 5)}
               />
             }
           />

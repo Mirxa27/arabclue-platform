@@ -12,7 +12,6 @@ import {
   Navigation,
   Search,
   Shield,
-  Sparkles,
   Volume2,
   Workflow,
   Zap,
@@ -27,8 +26,8 @@ function PhaseIcon({ kind, phase }: { kind: string; phase: string }) {
   const c = "size-4";
   if (phase === "listening") return <Mic className={c} />;
   if (phase === "speaking") return <Volume2 className={c} />;
-  if (phase === "thinking") return <Sparkles className={c} />;
-  if (phase === "idle") return <Sparkles className={c} />;
+  if (phase === "thinking") return <Loader2 className={cn(c, "animate-spin")} />;
+  if (phase === "idle") return <Bot className={c} />;
   switch (kind) {
     case "navigate":
       return <Navigation className={c} />;
@@ -51,8 +50,7 @@ function PhaseIcon({ kind, phase }: { kind: string; phase: string }) {
 }
 
 /**
- * Premium, always-visible "what the agent is doing right now" strip.
- * Mirrors how a human would narrate their own clicks, with glitter while active.
+ * Always-visible "what the agent is doing now" status strip.
  */
 export function MissionActionTicker({
   locale,
@@ -82,112 +80,104 @@ export function MissionActionTicker({
   const doneCount = tools.filter(
     (t) => isToolDone(t.state) && !t.preliminary
   ).length;
+  const runningCount = action.runningCount;
   const totalCount = tools.length;
 
-  // Freshly completed pulse
   const [justDone, setJustDone] = useState(false);
   const prevDone = useRef(doneCount);
   useEffect(() => {
     if (doneCount > prevDone.current) {
       setJustDone(true);
-      const id = window.setTimeout(() => setJustDone(false), 1400);
+      const id = window.setTimeout(() => setJustDone(false), 1200);
       prevDone.current = doneCount;
       return () => window.clearTimeout(id);
     }
     prevDone.current = doneCount;
   }, [doneCount]);
 
+  const phaseLabel =
+    action.phase === "listening"
+      ? ar
+        ? "يستمع"
+        : "Listening"
+      : action.phase === "speaking"
+        ? ar
+          ? "يتحدث"
+          : "Speaking"
+        : action.phase === "acting"
+          ? ar
+            ? "ينفّذ"
+            : "Acting"
+          : action.phase === "thinking"
+            ? ar
+              ? "يفكّر"
+              : "Thinking"
+            : ar
+              ? "جاهز"
+              : "Ready";
+
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-2xl border px-3.5 py-2.5 shadow-sm",
+        "relative overflow-hidden rounded-xl border px-3.5 py-2.5 transition-colors",
         active
-          ? "border-cyan-400/50 bg-[linear-gradient(120deg,rgba(13,148,136,0.16),rgba(8,145,178,0.12),transparent)]"
-          : "border-teal-500/25 bg-[linear-gradient(120deg,rgba(13,148,136,0.07),rgba(8,145,178,0.05),transparent)]",
-        active && "mission-tool-live",
+          ? "border-teal-600/35 bg-teal-600/[0.07]"
+          : "border-border/70 bg-muted/25",
         className
       )}
       role="status"
       aria-live="polite"
     >
-      {active ? (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 mission-tool-glitter opacity-40"
-        />
-      ) : null}
       <div className="relative flex items-center gap-3">
         <span
           className={cn(
-            "relative flex size-9 shrink-0 items-center justify-center rounded-full border",
+            "relative flex size-9 shrink-0 items-center justify-center rounded-lg border",
             action.phase === "listening"
-              ? "border-rose-400/50 bg-rose-500/10 text-rose-600 dark:text-rose-300"
+              ? "border-rose-400/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
               : action.phase === "speaking"
-                ? "border-teal-400/50 bg-teal-500/10 text-teal-700 dark:text-teal-200"
+                ? "border-teal-600/40 bg-teal-600/10 text-teal-800 dark:text-teal-200"
                 : active
-                  ? "border-cyan-400/50 bg-cyan-500/10 text-cyan-700 dark:text-cyan-200"
-                  : "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-200"
+                  ? "border-teal-600/40 bg-teal-600/10 text-teal-800 dark:text-teal-200"
+                  : "border-border bg-background text-muted-foreground"
           )}
         >
           <PhaseIcon kind={action.kind} phase={action.phase} />
-          {active ? (
-            <span className="absolute inset-0 rounded-full border border-cyan-300/40 animate-ping" />
-          ) : null}
         </span>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              {action.phase === "listening"
-                ? ar
-                  ? "يستمع"
-                  : "Listening"
-                : action.phase === "speaking"
-                  ? ar
-                    ? "يتحدث"
-                    : "Speaking"
-                  : action.phase === "acting"
-                    ? ar
-                      ? "ينفّذ كإنسان"
-                      : "Acting like a human"
-                    : action.phase === "thinking"
-                      ? ar
-                        ? "يفكّر"
-                        : "Thinking"
-                      : ar
-                        ? "جاهز"
-                        : "Ready"}
-            </span>
-            {action.runningCount > 1 ? (
-              <span className="rounded-full bg-cyan-500/15 px-1.5 text-[9px] font-mono text-cyan-700 dark:text-cyan-200">
-                ×{action.runningCount}
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {phaseLabel}
+            {runningCount > 1 ? (
+              <span className="ms-1.5 font-mono normal-case tracking-normal">
+                · {runningCount} {ar ? "أدوات" : "tools"}
               </span>
             ) : null}
-          </div>
+          </p>
           <p
             className={cn(
-              "truncate text-sm font-medium",
+              "truncate text-sm font-medium transition-opacity",
               active ? "text-foreground" : "text-muted-foreground"
             )}
           >
             {action.label}
-            {action.toolName ? (
-              <span className="ms-1 font-mono text-[11px] text-cyan-700/80 dark:text-cyan-300/80">
-                · {action.toolName}
-              </span>
-            ) : null}
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-2">
           {active ? (
-            <Loader2 className="size-4 animate-spin text-cyan-600" />
+            <Loader2 className="size-4 animate-spin text-teal-700 dark:text-teal-300" />
           ) : justDone ? (
-            <CheckCircle2 className="size-4 text-emerald-500 mission-tool-sparkle" />
+            <CheckCircle2 className="size-4 text-emerald-600" />
           ) : null}
           {totalCount > 0 ? (
-            <span className="rounded-md border border-border/60 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">
-              {doneCount}/{totalCount}
+            <span className="rounded-md border border-border/70 bg-background/80 px-2 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+              {runningCount > 0
+                ? ar
+                  ? `${runningCount} يعمل · ${doneCount} تم`
+                  : `${runningCount} running · ${doneCount} done`
+                : ar
+                  ? `${doneCount} مكتمل`
+                  : `${doneCount} done`}
             </span>
           ) : null}
         </div>

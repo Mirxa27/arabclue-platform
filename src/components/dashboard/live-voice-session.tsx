@@ -6,7 +6,6 @@ import { experimental_useRealtime } from "@ai-sdk/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
@@ -372,33 +371,60 @@ export function LiveVoiceSession({
       ) ||
       connecting);
 
+  const statusLabel =
+    starting && realtime.status === "disconnected"
+      ? ar
+        ? "يجهّز…"
+        : "Starting…"
+      : connected
+        ? ar
+          ? "متصل"
+          : "Connected"
+        : connecting
+          ? ar
+            ? "يتصل…"
+            : "Connecting…"
+          : ar
+            ? "غير متصل"
+            : "Disconnected";
+
   return (
-    <div className="flex flex-col gap-3 flex-1 min-h-0" dir={ar ? "rtl" : "ltr"}>
-      <div className="flex flex-wrap items-center gap-2 shrink-0">
-        <Badge
+    <div className="flex min-h-0 flex-1 flex-col gap-3" dir={ar ? "rtl" : "ltr"}>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <span
           className={cn(
-            connected && "bg-emerald-600",
-            connecting && "animate-pulse"
+            "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium",
+            connected
+              ? "border-emerald-600/30 bg-emerald-600/10 text-emerald-800 dark:text-emerald-200"
+              : connecting || starting
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+                : "border-border/70 bg-muted/30 text-muted-foreground"
           )}
         >
-          {starting && realtime.status === "disconnected"
-            ? ar
-              ? "يجهّز…"
-              : "starting"
-            : realtime.status}
-        </Badge>
-        {isCapturing && (
-          <Badge variant="destructive" className="gap-1 animate-pulse">
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              connected
+                ? "bg-emerald-600"
+                : connecting || starting
+                  ? "bg-amber-500 animate-pulse"
+                  : "bg-slate-400"
+            )}
+          />
+          {statusLabel}
+        </span>
+        {isCapturing ? (
+          <span className="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:text-rose-300">
             <Mic className="size-3" />
             {ar ? "الميكروفون" : "Mic live"}
-          </Badge>
-        )}
-        {realtime.isPlaying && (
-          <Badge className="gap-1 bg-teal-700">
+          </span>
+        ) : null}
+        {realtime.isPlaying ? (
+          <span className="inline-flex items-center gap-1 rounded-md border border-teal-600/30 bg-teal-600/10 px-2 py-0.5 text-[11px] font-medium text-teal-800 dark:text-teal-200">
             {ar ? "يتحدث…" : "Speaking…"}
-          </Badge>
-        )}
-        {followView && (
+          </span>
+        ) : null}
+        {followView ? (
           <Button
             type="button"
             size="sm"
@@ -406,16 +432,16 @@ export function LiveVoiceSession({
             className="h-7"
             onClick={() => setView(followView)}
           >
-            {ar ? "عرض الشاشة:" : "Watch screen:"} {followView}
+            {ar ? "افتح الشاشة:" : "Open view:"} {followView}
           </Button>
-        )}
+        ) : null}
       </div>
 
       <MissionPerformanceStage
         locale={locale}
         performing={performing}
         tools={theaterTools}
-        className="flex-1 min-h-0 p-1"
+        className="min-h-0 flex-1"
       >
         <MissionStage
           locale={locale}
@@ -432,8 +458,8 @@ export function LiveVoiceSession({
               assistantLabel={ar ? "مباشر" : "Live"}
               emptyHint={
                 ar
-                  ? "اضغط اتصال مباشر ثم تحدّث — الوكيل ينقر الأدوات مثلك والمسرح المتلألئ يعرض كل خطوة."
-                  : "Tap Connect live, then speak — the agent clicks tools like you would, and the glitter theater shows each step."
+                  ? "اضغط اتصال مباشر ثم تحدّث — الوكيل ينفّذ الأدوات ويعرض كل خطوة في لوحة النشاط."
+                  : "Tap Connect live, then speak — the agent runs tools and shows each step in the activity pane."
               }
             />
           }
@@ -446,10 +472,10 @@ export function LiveVoiceSession({
         </div>
       )}
 
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+      <div className="flex shrink-0 flex-col gap-2 rounded-xl border border-border/70 bg-background/80 p-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <AudioLines className="size-3.5 text-teal-600 dark:text-teal-300" />
+            <AudioLines className="size-3.5 text-muted-foreground" />
             <span className="text-[11px] font-medium text-muted-foreground">
               {ar ? "الصوت" : "Voice"}
             </span>
@@ -472,7 +498,7 @@ export function LiveVoiceSession({
             </Select>
           </div>
           <div className="flex items-center gap-1.5">
-            <Wand2 className="size-3.5 text-chart-4" />
+            <Wand2 className="size-3.5 text-muted-foreground" />
             <span className="text-[11px] font-medium text-muted-foreground">
               {ar ? "الأسلوب" : "Style"}
             </span>
@@ -492,8 +518,8 @@ export function LiveVoiceSession({
           {connected ? (
             <span className="text-[10px] text-muted-foreground">
               {ar
-                ? "أعد الاتصال لتغيير الصوت"
-                : "Reconnect to change voice"}
+                ? "أعد الاتصال لتغيير الصوت/الأسلوب"
+                : "Reconnect to change voice/style"}
             </span>
           ) : null}
         </div>
@@ -501,10 +527,11 @@ export function LiveVoiceSession({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           rows={2}
+          className="min-h-[64px] resize-none"
           placeholder={
             ar
-              ? "أو اكتب رسالة نصية أثناء الجلسة المباشرة…"
-              : "Or type a text message during the live session…"
+              ? "اكتب رسالة أثناء الجلسة المباشرة…"
+              : "Type during the live session…"
           }
           disabled={!connected}
           onKeyDown={(e) => {
@@ -522,6 +549,7 @@ export function LiveVoiceSession({
             <Button
               type="button"
               size="lg"
+              className="min-w-[10rem]"
               onClick={() => void startLive()}
               disabled={connecting}
             >
@@ -537,26 +565,28 @@ export function LiveVoiceSession({
               type="button"
               size="lg"
               variant="destructive"
+              className="min-w-[10rem]"
               onClick={stopLive}
             >
               <PhoneOff className="size-4 me-2" />
-              {ar ? "إنهاء" : "End call"}
+              {ar ? "إنهاء المكالمة" : "End call"}
             </Button>
           )}
           <Button
             type="button"
             variant="secondary"
+            size="lg"
             disabled={!connected || !input.trim()}
             onClick={() => {
-              if (!input.trim()) return;
+              if (!input.trim() || !connected) return;
               transportRef.current?.sendTextMessage(input.trim());
               setInput("");
             }}
           >
             <Send className="size-4 me-2" />
-            {ar ? "إرسال نص" : "Send text"}
+            {ar ? "إرسال" : "Send"}
           </Button>
-          {connected && (
+          {connected ? (
             <Button
               type="button"
               variant="outline"
@@ -583,7 +613,7 @@ export function LiveVoiceSession({
                   ? "تفعيل الميكروفون"
                   : "Unmute mic"}
             </Button>
-          )}
+          ) : null}
         </div>
         <p className="text-[11px] text-muted-foreground">
           {config.connectionName} · {config.providerLabel}

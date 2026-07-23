@@ -32,9 +32,9 @@ export function MissionExecutionFeed({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <Zap className="size-3.5 text-amber-500" />
-        {ar ? "تغذية التنفيذ" : "Execution feed"}
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <Zap className="size-3.5 text-amber-600" />
+        {ar ? "أحداث الملفات" : "File events"}
       </div>
       <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
         {items.map((item) => {

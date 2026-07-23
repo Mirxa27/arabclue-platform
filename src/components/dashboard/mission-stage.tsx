@@ -2,8 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { MessageSquare, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { ListTodo, MessageSquare } from "lucide-react";
 import {
   isToolRunning,
   type TheaterToolEvent,
@@ -11,12 +10,10 @@ import {
 import { MissionActionTicker } from "./mission-action-ticker";
 import { MissionToolTheater } from "./mission-tool-theater";
 
-type Tab = "conversation" | "theater";
+type Tab = "conversation" | "activity";
 
 /**
- * Unified Mission Control stage: action ticker on top, then a clean two-pane
- * body — conversation and live tool theater. Side-by-side on large screens,
- * tabbed on narrow screens so neither pane is ever cramped.
+ * Mission stage: status ticker + conversation | activity panes.
  */
 export function MissionStage({
   locale,
@@ -44,7 +41,7 @@ export function MissionStage({
   ).length;
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <MissionActionTicker
         locale={locale}
         tools={tools}
@@ -53,15 +50,14 @@ export function MissionStage({
         thinking={thinking}
       />
 
-      {/* Mobile / narrow: tab switch so panes are never squished */}
-      <div className="flex shrink-0 gap-1.5 rounded-full border border-border/60 bg-muted/20 p-0.5 lg:hidden">
+      <div className="flex shrink-0 gap-1 rounded-lg border border-border/70 bg-muted/20 p-0.5 lg:hidden">
         <button
           type="button"
           onClick={() => setTab("conversation")}
           className={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
             tab === "conversation"
-              ? "bg-background shadow-sm"
+              ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground"
           )}
         >
@@ -70,37 +66,43 @@ export function MissionStage({
         </button>
         <button
           type="button"
-          onClick={() => setTab("theater")}
+          onClick={() => setTab("activity")}
           className={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-            tab === "theater"
-              ? "bg-background shadow-sm"
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            tab === "activity"
+              ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground"
           )}
         >
-          <Sparkles className="size-3.5" />
-          {ar ? "مسرح الأدوات" : "Tool theater"}
+          <ListTodo className="size-3.5" />
+          {ar ? "النشاط" : "Activity"}
           {runningCount > 0 ? (
-            <Badge className="h-4 px-1 text-[9px]">{runningCount}</Badge>
+            <span className="rounded bg-teal-600/15 px-1.5 py-0.5 font-mono text-[10px] text-teal-800 dark:text-teal-200">
+              {runningCount}
+            </span>
           ) : null}
         </button>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
         <div
           className={cn(
-            "flex min-h-0 flex-col gap-3",
+            "flex min-h-0 flex-col gap-2",
             tab === "conversation" ? "flex" : "hidden lg:flex"
           )}
         >
           {conversation}
-          {feed}
+          {feed ? (
+            <div className="shrink-0 rounded-xl border border-border/60 bg-muted/15 px-3 py-2">
+              {feed}
+            </div>
+          ) : null}
         </div>
 
         <div
           className={cn(
             "min-h-0",
-            tab === "theater" ? "block" : "hidden lg:block"
+            tab === "activity" ? "block" : "hidden lg:block"
           )}
         >
           <MissionToolTheater
