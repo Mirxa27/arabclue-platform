@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Bot, ShieldCheck, Users, FileCheck2, BarChart3, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PublicShell, usePublicLocale } from "@/components/marketing/public-shell";
+import { TenderInsightsChart } from "@/components/marketing/tender-insights-chart";
 
 const CAPABILITIES = [
   {
@@ -155,6 +156,8 @@ function OwnersContent() {
           })}
         </div>
       </section>
+
+      <TenderInsightsChart />
     </div>
   );
 }

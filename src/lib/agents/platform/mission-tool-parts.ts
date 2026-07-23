@@ -377,6 +377,45 @@ export function isComplianceishTool(name: string): boolean {
   return COMPLIANCE_TOOLS.has(name) || toolKind(name) === "compliance";
 }
 
+export type DelegationStep = {
+  id: string;
+  order: number;
+  label: string;
+  command: string;
+};
+
+/**
+ * Find a delegation plan emitted by `orchestrateTenderPackage` / `getMyCapabilities`
+ * in the most recent tool output so the theater can show the commanded team.
+ */
+export function extractDelegationPlan(
+  tools: TheaterToolEvent[]
+): DelegationStep[] | null {
+  for (const t of [...tools].reverse()) {
+    if (!t.output || typeof t.output !== "object") continue;
+    const o = t.output as Record<string, unknown>;
+    const raw = Array.isArray(o.delegationPlan)
+      ? o.delegationPlan
+      : Array.isArray(o.team)
+        ? o.team
+        : null;
+    if (!raw) continue;
+    const steps: DelegationStep[] = [];
+    raw.forEach((item, i) => {
+      if (!item || typeof item !== "object") return;
+      const s = item as Record<string, unknown>;
+      steps.push({
+        id: typeof s.id === "string" ? s.id : `step-${i}`,
+        order: typeof s.order === "number" ? s.order : i + 1,
+        label: typeof s.label === "string" ? s.label : `Agent ${i + 1}`,
+        command: typeof s.command === "string" ? s.command : "",
+      });
+    });
+    if (steps.length) return steps.sort((a, b) => a.order - b.order);
+  }
+  return null;
+}
+
 /** Flatten nested tool payloads so theater can preview them. */
 export function unwrapToolPayload(output: unknown): Record<string, unknown> {
   if (!output || typeof output !== "object") return {};

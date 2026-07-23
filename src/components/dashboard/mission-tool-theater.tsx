@@ -19,6 +19,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  extractDelegationPlan,
   extractDocumentPreview,
   extractRegulatoryPreview,
   humanActionLabel,
@@ -202,6 +203,44 @@ function DocumentForge({
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function DelegationTeam({
+  locale,
+  tools,
+}: {
+  locale: "ar" | "en";
+  tools: TheaterToolEvent[];
+}) {
+  const ar = locale === "ar";
+  const plan = extractDelegationPlan(tools);
+  if (!plan) return null;
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-violet-500/25 bg-[radial-gradient(circle_at_15%_0%,_rgba(139,92,246,0.12),_transparent_45%),linear-gradient(165deg,rgba(76,29,149,0.05),transparent)] p-4">
+      <div className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-200">
+        <Workflow className="size-3.5" />
+        {ar ? "الوكيل يقود الفريق" : "Copilot is commanding the team"}
+      </div>
+      <ol className="space-y-1.5">
+        {plan.map((step) => (
+          <li key={step.id} className="flex items-start gap-2.5">
+            <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-violet-400/40 bg-violet-500/10 text-[10px] font-mono text-violet-700 dark:text-violet-200">
+              {step.order}
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-medium">{step.label}</p>
+              {step.command ? (
+                <p className="text-[11px] leading-snug text-muted-foreground line-clamp-2">
+                  {step.command}
+                </p>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -580,6 +619,7 @@ export function MissionToolTheater({
         </div>
       </div>
 
+      <DelegationTeam locale={locale} tools={tools} />
       <DocumentForge locale={locale} tools={tools} voiceLive={voiceLive} />
       <RegulatoryForge locale={locale} tools={tools} voiceLive={voiceLive} />
       <ToolTimeline locale={locale} tools={tools} />

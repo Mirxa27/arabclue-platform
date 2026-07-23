@@ -15,6 +15,7 @@ import {
   DASHBOARD_VIEWS,
   type PlatformAgentContext,
 } from "./context";
+import { buildDelegationPlan, roleCapabilities } from "./delegation";
 
 /** Bridge Zod 4 schemas into AI SDK tool() overload resolution. */
 function platformTool<SCHEMA extends z.ZodType, OUTPUT>(opts: {
@@ -52,6 +53,146 @@ async function requireProject(
   });
   if (!project) return null;
   return project;
+}
+
+/**
+ * Shared pipeline launcher — commands the full 6-agent team for a project.
+ * Used by both `startAgentPipeline` and `orchestrateTenderPackage`.
+ * Enforces onboarding, quota, and single-run concurrency; returns a structured
+ * result (never throws for the expected onboarding/quota/conflict cases).
+ */
+async function launchProjectPipeline(
+  ctx: PlatformAgentContext,
+  projectId: string,
+  opts?: { tenderType?: string; budget?: number }
+) {
+  try {
+    await assertOnboardingReady(ctx.workspace.id);
+  } catch (e) {
+    if (e instanceof ApiError) {
+      return { ok: false as const, error: e.message, code: e.code };
+    }
+    throw e;
+  }
+  try {
+    await assertWithinQuota(ctx.userId, "proposal");
+  } catch (e) {
+    if (e instanceof QuotaExceededError) {
+      return { ok: false as const, error: e.message, code: e.code };
+    }
+    throw e;
+  }
+
+  let project = await requireProject(ctx, projectId);
+  if (!project) return { ok: false as const, error: "project not found" };
+
+  const active = await db.agentRun.findFirst({
+    where: {
+      projectId: project.id,
+      status: { in: ["QUEUED", "RUNNING"] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (active) {
+    return {
+      ok: false as const,
+      error: "An agent run is already in progress",
+      runId: active.id,
+      status: active.status,
+      uiAction: "navigate" as const,
+      view: "agents" as const,
+      projectId: project.id,
+    };
+  }
+
+  if (opts?.tenderType && opts.tenderType !== project.category) {
+    project = await db.tenderProject.update({
+      where: { id: project.id },
+      data: {
+        category: opts.tenderType,
+        ...(opts.budget != null ? { budget: opts.budget } : {}),
+      },
+    });
+  }
+
+  await seedComplianceChecks(project.id);
+  await db.tenderProject.update({
+    where: { id: project.id },
+    data: { status: "PARSING" },
+  });
+
+  const locale = ctx.locale;
+  const agentStates: AgentState[] = AGENTS.map((a) => ({
+    id: a.id,
+    name: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "en"),
+    nameAr: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "ar"),
+    status: "pending",
+    progress: 0,
+  }));
+
+  const run = await db.$transaction(async (tx) => {
+    const racing = await tx.agentRun.findFirst({
+      where: {
+        projectId: project.id,
+        status: { in: ["QUEUED", "RUNNING"] },
+      },
+    });
+    if (racing) return { conflict: true as const, run: racing };
+    const created = await tx.agentRun.create({
+      data: {
+        projectId: project.id,
+        triggeredById: ctx.userId,
+        status: "QUEUED",
+        overallProgress: 0,
+        agentStates: JSON.stringify(agentStates),
+        configJson: JSON.stringify({
+          locale,
+          workspaceId: ctx.workspace.id,
+          userId: ctx.userId,
+          projectId: project.id,
+          regenerateMode: null,
+          targetProposalId: null,
+        }),
+      },
+    });
+    return { conflict: false as const, run: created };
+  });
+
+  if (run.conflict) {
+    return {
+      ok: false as const,
+      error: "An agent run is already in progress",
+      runId: run.run.id,
+      status: run.run.status,
+    };
+  }
+
+  await audit({
+    userId: ctx.userId,
+    action: AUDIT_ACTIONS.AGENT_RUN,
+    resource: "AgentRun",
+    resourceId: run.run.id,
+    details: { projectId: project.id, source: "platform-agent" },
+  });
+
+  void runAgentPipeline({
+    runId: run.run.id,
+    projectId: project.id,
+    workspaceId: ctx.workspace.id,
+    userId: ctx.userId,
+    locale,
+    targetProposalId: null,
+  }).catch((err) => console.error("[platform-agent pipeline]", err));
+
+  return {
+    ok: true as const,
+    runId: run.run.id,
+    projectId: project.id,
+    status: "QUEUED" as const,
+    agentStates,
+    uiAction: "navigate" as const,
+    view: "agents" as const,
+  };
 }
 
 export function createPlatformTools(ctx: PlatformAgentContext) {
@@ -692,134 +833,113 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
       }),
       execute: async ({ projectId, tenderType, budget }) => {
         if (!ctx.canWrite) return denyWrite(ctx);
-        try {
-          await assertOnboardingReady(ctx.workspace.id);
-        } catch (e) {
-          if (e instanceof ApiError) {
-            return { ok: false as const, error: e.message, code: e.code };
-          }
-          throw e;
-        }
-        try {
-          await assertWithinQuota(ctx.userId, "proposal");
-        } catch (e) {
-          if (e instanceof QuotaExceededError) {
-            return { ok: false as const, error: e.message, code: e.code };
-          }
-          throw e;
-        }
+        return launchProjectPipeline(ctx, projectId, { tenderType, budget });
+      },
+    }),
 
-        let project = await requireProject(ctx, projectId);
-        if (!project) return { ok: false as const, error: "project not found" };
-
-        const active = await db.agentRun.findFirst({
-          where: {
-            projectId: project.id,
-            status: { in: ["QUEUED", "RUNNING"] },
-          },
-          orderBy: { createdAt: "desc" },
+    getMyCapabilities: platformTool({
+      description:
+        "Report exactly what you (the agent) may do on behalf of this user — role, permissions, and role-scoped skills, plus the sub-agent team you command. Use when the user asks 'what can you do', 'what are your permissions', or to confirm you operate at their access level.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const caps = roleCapabilities({
+          role: ctx.session.user.role,
+          canWrite: ctx.canWrite,
+          isAdmin: ctx.isAdmin,
         });
-        if (active) {
-          return {
-            ok: false as const,
-            error: "An agent run is already in progress",
-            runId: active.id,
-            status: active.status,
-            uiAction: "navigate" as const,
-            view: "agents" as const,
-            projectId: project.id,
-          };
-        }
-
-        if (tenderType && tenderType !== project.category) {
-          project = await db.tenderProject.update({
-            where: { id: project.id },
-            data: {
-              category: tenderType,
-              ...(budget != null ? { budget } : {}),
-            },
-          });
-        }
-
-        await seedComplianceChecks(project.id);
-        await db.tenderProject.update({
-          where: { id: project.id },
-          data: { status: "PARSING" },
-        });
-
-        const locale = ctx.locale;
-        const agentStates: AgentState[] = AGENTS.map((a) => ({
-          id: a.id,
-          name: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "en"),
-          nameAr: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "ar"),
-          status: "pending",
-          progress: 0,
-        }));
-
-        const run = await db.$transaction(async (tx) => {
-          const racing = await tx.agentRun.findFirst({
-            where: {
-              projectId: project.id,
-              status: { in: ["QUEUED", "RUNNING"] },
-            },
-          });
-          if (racing) return { conflict: true as const, run: racing };
-          const created = await tx.agentRun.create({
-            data: {
-              projectId: project.id,
-              triggeredById: ctx.userId,
-              status: "QUEUED",
-              overallProgress: 0,
-              agentStates: JSON.stringify(agentStates),
-              configJson: JSON.stringify({
-                locale,
-                workspaceId: ctx.workspace.id,
-                userId: ctx.userId,
-                projectId: project.id,
-                regenerateMode: null,
-                targetProposalId: null,
-              }),
-            },
-          });
-          return { conflict: false as const, run: created };
-        });
-
-        if (run.conflict) {
-          return {
-            ok: false as const,
-            error: "An agent run is already in progress",
-            runId: run.run.id,
-            status: run.run.status,
-          };
-        }
-
-        await audit({
-          userId: ctx.userId,
-          action: AUDIT_ACTIONS.AGENT_RUN,
-          resource: "AgentRun",
-          resourceId: run.run.id,
-          details: { projectId: project.id, source: "platform-agent" },
-        });
-
-        void runAgentPipeline({
-          runId: run.run.id,
-          projectId: project.id,
-          workspaceId: ctx.workspace.id,
-          userId: ctx.userId,
-          locale,
-          targetProposalId: null,
-        }).catch((err) =>
-          console.error("[platform-agent pipeline]", err)
-        );
-
         return {
           ok: true as const,
-          runId: run.run.id,
-          projectId: project.id,
-          status: "QUEUED",
-          agentStates,
-          uiAction: "navigate" as const,
-          view: "agents" as const,
+          ...caps,
+          team: buildDelegationPlan().map((a) => ({
+            id: a.id,
+            order: a.order,
+            label: ctx.locale === "ar" ? a.labelAr : a.label,
+            command: ctx.locale === "ar" ? a.commandAr : a.command,
+          })),
+        };
+      },
+    }),
+
+    orchestrateTenderPackage: platformTool({
+      description:
+        "One-shot orchestration: command the full agent team to produce the ENTIRE tender package (technical proposal + bilingual contract + downloadable documents) for a project. If no projectId is given, creates the project from `title` first, then runs Ingestion → Compliance → Technical → Financial → Proposal → Law as a delegated team. Use this for 'generate the whole tender', 'do everything', or 'finish the proposal and documents' voice requests. Requires write access.",
+      inputSchema: z.object({
+        projectId: z
+          .string()
+          .optional()
+          .describe("Existing project id; omit to create from title"),
+        title: z
+          .string()
+          .optional()
+          .describe("New tender title when no projectId is provided"),
+        titleAr: z.string().optional(),
+        tenderType: z
+          .string()
+          .optional()
+          .describe("IT | CONSTRUCTION | CONSULTING | OPERATIONS | MEDICAL | GENERAL"),
+        budget: z.number().optional(),
+        etimadRef: z.string().optional(),
+      }),
+      execute: async ({ projectId, title, titleAr, tenderType, budget, etimadRef }) => {
+        if (!ctx.canWrite) return denyWrite(ctx);
+        const plan = buildDelegationPlan();
+        const planForLocale = plan.map((a) => ({
+          id: a.id,
+          order: a.order,
+          label: ctx.locale === "ar" ? a.labelAr : a.label,
+          command: ctx.locale === "ar" ? a.commandAr : a.command,
+        }));
+
+        let pid = projectId ?? ctx.activeProjectId ?? null;
+        let createdProject: { id: string; title: string } | null = null;
+
+        if (!pid) {
+          if (!title?.trim()) {
+            return {
+              ok: false as const,
+              error:
+                "Provide a tender title (or select a project) so I can build the package.",
+              needs: "title" as const,
+              delegationPlan: planForLocale,
+            };
+          }
+          const project = await db.tenderProject.create({
+            data: {
+              workspaceId: ctx.workspace.id,
+              createdById: ctx.userId,
+              etimadRef:
+                etimadRef || `ETM-${Date.now().toString(36).toUpperCase()}`,
+              title: title.trim(),
+              titleAr: titleAr ?? null,
+              category: tenderType || "IT",
+              budget: budget ?? null,
+              currency: "SAR",
+              saudizationTarget: 35,
+              localContentTarget: 40,
+              status: "DRAFT",
+            },
+          });
+          await audit({
+            userId: ctx.userId,
+            action: AUDIT_ACTIONS.PROJECT_CREATE,
+            resource: "TenderProject",
+            resourceId: project.id,
+            details: { title: project.title, source: "orchestrate" },
+          });
+          pid = project.id;
+          createdProject = { id: project.id, title: project.title };
+        }
+
+        const result = await launchProjectPipeline(ctx, pid, {
+          tenderType,
+          budget,
+        });
+
+        return {
+          ...result,
+          createdProject,
+          delegationPlan: planForLocale,
+          orchestration: true as const,
         };
       },
     }),
