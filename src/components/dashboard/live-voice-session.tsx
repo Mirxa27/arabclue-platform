@@ -16,10 +16,26 @@ import {
   Phone,
   PhoneOff,
   Send,
+  AudioLines,
+  Wand2,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { VoiceLiveConfig } from "@/lib/agents/platform/voice-types";
 import { RealtimeAudioWorkletCapture } from "@/lib/agents/platform/realtime-audio-capture";
 import { getLiveVoiceSessionConfig } from "@/lib/agents/platform/realtime-session-config";
+import {
+  DEFAULT_STYLE,
+  DEFAULT_VOICE,
+  VOICE_STYLES,
+  resolveVoice,
+  voicesForProvider,
+} from "@/lib/agents/platform/voice-options";
 import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionStage } from "./mission-stage";
@@ -87,6 +103,14 @@ export function LiveVoiceSession({
   const [followView, setFollowView] = useState<DashboardView | null>(null);
   const [starting, setStarting] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
+  const voiceOptions = useMemo(
+    () => voicesForProvider(config.provider),
+    [config.provider]
+  );
+  const [voice, setVoice] = useState<string>(
+    () => DEFAULT_VOICE[config.provider]
+  );
+  const [style, setStyle] = useState<string>(DEFAULT_STYLE);
   const streamRef = useRef<MediaStream | null>(null);
   const captureRef = useRef<RealtimeAudioWorkletCapture | null>(null);
   const appliedToolKeys = useRef<Set<string>>(new Set());
@@ -113,11 +137,24 @@ export function LiveVoiceSession({
     }
     return createOpenAI().experimental_realtime(config.modelId);
   }, [config.provider, config.modelId]);
-  const sessionConfig = getLiveVoiceSessionConfig();
+  const resolvedVoice = resolveVoice(config.provider, voice);
+  const sessionConfig = useMemo(
+    () => getLiveVoiceSessionConfig(resolvedVoice),
+    [resolvedVoice]
+  );
+  // Style shapes server-side instructions; voice is also passed so the minted
+  // token and the client session-update agree.
+  const tokenUrl = useMemo(
+    () =>
+      `/api/platform-agent/realtime/setup?voice=${encodeURIComponent(
+        resolvedVoice
+      )}&style=${encodeURIComponent(style)}`,
+    [resolvedVoice, style]
+  );
 
   const realtime = experimental_useRealtime({
     model,
-    api: { token: "/api/platform-agent/realtime/setup" },
+    api: { token: tokenUrl },
     sessionConfig,
     onError: (err) => setError(err.message),
     onToolCall: async ({ toolCall }) => {
@@ -410,6 +447,56 @@ export function LiveVoiceSession({
       )}
 
       <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <AudioLines className="size-3.5 text-teal-600 dark:text-teal-300" />
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {ar ? "الصوت" : "Voice"}
+            </span>
+            <Select value={voice} onValueChange={setVoice} disabled={connected}>
+              <SelectTrigger className="h-8 w-[150px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {voiceOptions.map((v) => (
+                  <SelectItem key={v.id} value={v.id} className="text-xs">
+                    <span className="font-medium">{v.label}</span>
+                    {v.note ? (
+                      <span className="ms-1.5 text-[10px] text-muted-foreground">
+                        {ar ? v.noteAr ?? v.note : v.note}
+                      </span>
+                    ) : null}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Wand2 className="size-3.5 text-chart-4" />
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {ar ? "الأسلوب" : "Style"}
+            </span>
+            <Select value={style} onValueChange={setStyle} disabled={connected}>
+              <SelectTrigger className="h-8 w-[140px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {VOICE_STYLES.map((s) => (
+                  <SelectItem key={s.id} value={s.id} className="text-xs">
+                    {ar ? s.labelAr : s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {connected ? (
+            <span className="text-[10px] text-muted-foreground">
+              {ar
+                ? "أعد الاتصال لتغيير الصوت"
+                : "Reconnect to change voice"}
+            </span>
+          ) : null}
+        </div>
         <Textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}

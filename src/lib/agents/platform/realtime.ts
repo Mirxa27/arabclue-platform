@@ -74,7 +74,12 @@ export async function getVoiceLiveConfig(): Promise<VoiceLiveConfigResponse> {
 
 export async function mintVoiceLiveSession(
   session: Session,
-  opts?: { missionId?: string | null; activeProjectId?: string | null }
+  opts?: {
+    missionId?: string | null;
+    activeProjectId?: string | null;
+    voice?: string | null;
+    style?: string | null;
+  }
 ): Promise<Experimental_RealtimeSetupResponse & VoiceLiveConfig> {
   const config = await getVoiceLiveConfig();
   if (!config.enabled) {
@@ -102,7 +107,7 @@ export async function mintVoiceLiveSession(
     tools,
   });
 
-  const instructions = buildPlatformAgentInstructions({
+  const baseInstructions = buildPlatformAgentInstructions({
     locale: ctx.locale,
     userName: session.user.name || session.user.email,
     userRole: session.user.role,
@@ -114,11 +119,18 @@ export async function mintVoiceLiveSession(
     isAdmin: ctx.isAdmin,
   });
 
+  const { resolveVoice, styleInstruction } = await import("./voice-options");
+  const voice = resolveVoice(config.provider, opts?.voice);
+  const styleSuffix = styleInstruction(opts?.style);
+  const instructions = styleSuffix
+    ? `${baseInstructions}\n\n## Delivery\n${styleSuffix}`
+    : baseInstructions;
+
   const sessionConfig = {
     instructions,
     tools: toolDefinitions,
     inputAudioTranscription: {},
-    voice: "alloy" as const,
+    voice,
     turnDetection: { type: "server-vad" as const },
   };
 

@@ -32,11 +32,20 @@ export async function POST(req: Request) {
       missionId?: string | null;
       activeProjectId?: string | null;
       sessionConfig?: unknown;
+      voice?: string | null;
+      style?: string | null;
     };
+    // Voice + style may also arrive as query params (the realtime hook only
+    // sends { sessionConfig } in the body, so the client encodes them in the URL).
+    const url = new URL(req.url);
+    const voice = body.voice ?? url.searchParams.get("voice");
+    const style = body.style ?? url.searchParams.get("style");
     // Optional body.sessionConfig is ignored — server owns instructions + tools
     const setup = await mintVoiceLiveSession(session, {
       missionId: body.missionId,
       activeProjectId: body.activeProjectId,
+      voice,
+      style,
     });
     return Response.json(setup);
   } catch (err) {

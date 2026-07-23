@@ -25,6 +25,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { RadialGauge } from "./radial-gauge";
 import { cn } from "@/lib/utils";
 import type { AgentState, AgentId } from "@/lib/types";
 
@@ -307,9 +308,31 @@ export function AgentWorkflow() {
               )}
             >
               <div className="flex items-start gap-3">
-                <div className={cn("size-9 rounded-lg flex items-center justify-center shrink-0", meta.bg, isRunning && "agent-pulse")}>
-                  <Icon className={cn("size-4", meta.color)} />
-                </div>
+                <RadialGauge
+                  value={isDone ? 100 : a.progress}
+                  size={44}
+                  strokeWidth={4}
+                  className={cn(
+                    isDone
+                      ? "text-emerald-500"
+                      : isRunning
+                        ? "text-primary"
+                        : "text-muted-foreground/40"
+                  )}
+                  ariaLabel={`${tr(`agent_${a.id}_name`, locale)} ${
+                    isDone ? 100 : a.progress
+                  }%`}
+                >
+                  <div
+                    className={cn(
+                      "size-8 rounded-full flex items-center justify-center",
+                      meta.bg,
+                      isRunning && "agent-pulse"
+                    )}
+                  >
+                    <Icon className={cn("size-4", meta.color)} />
+                  </div>
+                </RadialGauge>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -320,18 +343,25 @@ export function AgentWorkflow() {
                         {tr(`agent_${a.id}_name`, locale)}
                       </span>
                     </div>
-                    {isDone && <CheckCircle2 className="size-3.5 text-emerald-600 shrink-0" />}
-                    {isRunning && <Loader2 className="size-3.5 text-primary animate-spin shrink-0" />}
-                    {isPending && <CircleDashed className="size-3.5 text-muted-foreground shrink-0" />}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {(isRunning || isDone) && (
+                        <span
+                          className={cn(
+                            "text-[10px] font-mono font-semibold tabular-nums",
+                            isDone ? "text-emerald-600" : "text-primary"
+                          )}
+                        >
+                          {isDone ? 100 : a.progress}%
+                        </span>
+                      )}
+                      {isDone && <CheckCircle2 className="size-3.5 text-emerald-600" />}
+                      {isRunning && <Loader2 className="size-3.5 text-primary animate-spin" />}
+                      {isPending && <CircleDashed className="size-3.5 text-muted-foreground" />}
+                    </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">
                     {tr(`agent_${a.id}_desc`, locale)}
                   </p>
-                  {(isRunning || isDone) && (
-                    <div className="mt-2">
-                      <Progress value={a.progress} className="h-1" />
-                    </div>
-                  )}
                   {a.findings && a.findings.length > 0 && (isRunning || isDone) && (
                     <ul className="mt-2 space-y-0.5">
                       {a.findings.slice(0, isDone ? 4 : 2).map((f, i) => (
