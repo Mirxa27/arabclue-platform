@@ -102,8 +102,8 @@ export function MissionActionTicker({
       className={cn(
         "relative overflow-hidden rounded-2xl border px-3.5 py-2.5 shadow-sm",
         active
-          ? "border-cyan-400/40 bg-[linear-gradient(120deg,rgba(13,148,136,0.12),rgba(8,145,178,0.1),transparent)]"
-          : "border-border bg-card/80",
+          ? "border-cyan-400/50 bg-[linear-gradient(120deg,rgba(13,148,136,0.16),rgba(8,145,178,0.12),transparent)]"
+          : "border-teal-500/25 bg-[linear-gradient(120deg,rgba(13,148,136,0.07),rgba(8,145,178,0.05),transparent)]",
         active && "mission-tool-live",
         className
       )}
@@ -126,7 +126,7 @@ export function MissionActionTicker({
                 ? "border-teal-400/50 bg-teal-500/10 text-teal-700 dark:text-teal-200"
                 : active
                   ? "border-cyan-400/50 bg-cyan-500/10 text-cyan-700 dark:text-cyan-200"
-                  : "border-border bg-background text-muted-foreground"
+                  : "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-200"
           )}
         >
           <PhaseIcon kind={action.kind} phase={action.phase} />
