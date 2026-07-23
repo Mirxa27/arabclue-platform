@@ -1,0 +1,105 @@
+{
+  "generatedAt": "2026-07-23T09:51:06.578Z",
+  "documents": [
+    {
+      "id": "01-etimad-rfp-cloud-services",
+      "category": "RFP",
+      "titleEn": "Etimad-style RFP — Government Cloud Hosting Services",
+      "titleAr": "كراسة شروط منافسة — خدمات الحوسبة السحابية الحكومية",
+      "ref": "ETIMAD-SAMPLE-2026-0142",
+      "html": "html/01-etimad-rfp-cloud-services.html",
+      "pdf": "pdf/01-etimad-rfp-cloud-services.pdf",
+      "bytes": 201382
+    },
+    {
+      "id": "02-it-services-agreement",
+      "category": "IT_CONTRACT",
+      "titleEn": "IT Managed Services Agreement",
+      "titleAr": "عقد خدمات تقنية معلومات",
+      "ref": "CTR-SAMPLE-MSA-2026-008",
+      "html": "html/02-it-services-agreement.html",
+      "pdf": "pdf/02-it-services-agreement.pdf",
+      "bytes": 206282
+    },
+    {
+      "id": "03-technical-specifications",
+      "category": "TECHNICAL_SPECS",
+      "titleEn": "Technical Specifications — Secured Cloud Platform",
+      "titleAr": "المواصفات الفنية — منصة سحابية مؤمّنة",
+      "ref": "SPEC-SAMPLE-CLOUD-2026",
+      "html": "html/03-technical-specifications.html",
+      "pdf": "pdf/03-technical-specifications.pdf",
+      "bytes": 180435
+    },
+    {
+      "id": "04-financial-statements-excerpt",
+      "category": "FINANCIAL",
+      "titleEn": "Financial Statements Excerpt — Qualification Only",
+      "titleAr": "مقتطف القوائم المالية — لأغراض التأهيل",
+      "ref": "FIN-SAMPLE-QLR-2025",
+      "html": "html/04-financial-statements-excerpt.html",
+      "pdf": "pdf/04-financial-statements-excerpt.pdf",
+      "bytes": 182334
+    },
+    {
+      "id": "05-local-content-saudization",
+      "category": "QUALIFICATION",
+      "titleEn": "Local Content & Saudization Declaration",
+      "titleAr": "إقرار المحتوى المحلي والسعودة",
+      "ref": "LC-SAMPLE-DECL-2026",
+      "html": "html/05-local-content-saudization.html",
+      "pdf": "pdf/05-local-content-saudization.pdf",
+      "bytes": 192657
+    },
+    {
+      "id": "06-nca-pdpl-compliance-checklist",
+      "category": "EA_COMPLIANCE",
+      "titleEn": "Compliance Checklist — NCA Controls & PDPL",
+      "titleAr": "قائمة امتثال — ضوابط NCA و نظام PDPL",
+      "ref": "CMP-SAMPLE-NCA-PDPL-2026",
+      "html": "html/06-nca-pdpl-compliance-checklist.html",
+      "pdf": "pdf/06-nca-pdpl-compliance-checklist.pdf",
+      "bytes": 158203
+    },
+    {
+      "id": "07-nda-confidentiality-agreement",
+      "category": "IT_CONTRACT",
+      "titleEn": "Mutual Non-Disclosure Agreement",
+      "titleAr": "اتفاقية عدم إفشاء وسرية",
+      "ref": "NDA-SAMPLE-2026-019",
+      "html": "html/07-nda-confidentiality-agreement.html",
+      "pdf": "pdf/07-nda-confidentiality-agreement.pdf",
+      "bytes": 178687
+    },
+    {
+      "id": "08-qualification-commercial-registration",
+      "category": "QUALIFICATION",
+      "titleEn": "Commercial Registration Summary",
+      "titleAr": "ملخص السجل التجاري",
+      "ref": "CR-SAMPLE-1010XXXXXX",
+      "html": "html/08-qualification-commercial-registration.html",
+      "pdf": "pdf/08-qualification-commercial-registration.pdf",
+      "bytes": 153305
+    },
+    {
+      "id": "09-zatca-vat-certificate",
+      "category": "FINANCIAL",
+      "titleEn": "ZATCA VAT Registration Certificate (Sample)",
+      "titleAr": "شهادة تسجيل ضريبة القيمة المضافة (عيّنة)",
+      "ref": "VAT-SAMPLE-300XXXXXX00003",
+      "html": "html/09-zatca-vat-certificate.html",
+      "pdf": "pdf/09-zatca-vat-certificate.pdf",
+      "bytes": 171045
+    },
+    {
+      "id": "10-sow-digital-transformation",
+      "category": "RFP",
+      "titleEn": "Scope of Work — Municipal Services Digital Transformation",
+      "titleAr": "نطاق عمل — برنامج التحول الرقمي للخدمات البلدية",
+      "ref": "SOW-SAMPLE-MUNI-2026",
+      "html": "html/10-sow-digital-transformation.html",
+      "pdf": "pdf/10-sow-digital-transformation.pdf",
+      "bytes": 175443
+    }
+  ]
+}

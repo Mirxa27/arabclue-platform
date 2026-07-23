@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>نطاق عمل — برنامج التحول الرقمي للخدمات البلدية · Scope of Work — Municipal Services Digital Transformation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #0c1222;
+    --muted: #5b6478;
+    --line: #d8dee9;
+    --accent: #1e3a8a;
+    --accent-2: #0ea5e9;
+    --teal: #0f766e;
+    --paper: #f7f8fb;
+    --panel: #ffffff;
+    --warn: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    color: var(--ink);
+    background:
+      radial-gradient(ellipse 80% 45% at 0% 0%, rgba(30,58,138,0.08), transparent),
+      radial-gradient(ellipse 55% 35% at 100% 0%, rgba(14,165,233,0.07), transparent),
+      var(--paper);
+    font-family: "Space Grotesk", "IBM Plex Sans Arabic", system-ui, sans-serif;
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 28px 24px 48px; }
+  .banner {
+    display: flex; justify-content: space-between; gap: 16px; align-items: flex-start;
+    border: 1px solid #fcd34d; background: #fffbeb; color: #92400e;
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 18px; font-size: 11px;
+  }
+  .mast {
+    display: grid; grid-template-columns: 1fr auto; gap: 16px;
+    border-bottom: 2px solid var(--ink); padding-bottom: 16px; margin-bottom: 22px;
+  }
+  .brand { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  h1 {
+    margin: 6px 0 4px; font-size: 22px; line-height: 1.25;
+    font-family: "IBM Plex Sans Arabic", sans-serif;
+  }
+  .h1-en { margin: 0; font-size: 14px; color: var(--muted); font-weight: 600; }
+  .meta { text-align: end; font-size: 11px; color: var(--muted); }
+  .meta strong { color: var(--ink); display: block; font-size: 12px; }
+  .chip {
+    display: inline-block; margin-top: 6px; padding: 3px 8px; border-radius: 999px;
+    background: #eff6ff; color: #1e40af; font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  }
+  h2 {
+    margin: 22px 0 10px; font-size: 15px;
+    font-family: "IBM Plex Sans Arabic", sans-serif;
+    border-right: 3px solid var(--accent-2); padding-right: 10px;
+  }
+  h2 .en { display: block; font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 2px;
+    font-family: "Space Grotesk", sans-serif; border: 0; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; background: var(--panel); }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; vertical-align: top; text-align: start; }
+  th { background: #eef2ff; font-size: 11px; }
+  .bi {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 16px;
+  }
+  .col {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  }
+  .col .lang {
+    display: inline-block; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 700; color: var(--teal); margin-bottom: 6px;
+  }
+  .col.ar { direction: rtl; text-align: right; font-family: "IBM Plex Sans Arabic", sans-serif; }
+  .col.en { direction: ltr; text-align: left; }
+  ul { margin: 6px 0 0; padding-inline-start: 18px; }
+  .sig {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 28px;
+  }
+  .sig .box {
+    border-top: 1px solid var(--line); padding-top: 12px; min-height: 90px; font-size: 11px; color: var(--muted);
+  }
+  .foot {
+    margin-top: 28px; padding-top: 12px; border-top: 1px dashed var(--line);
+    font-size: 10px; color: var(--muted);
+  }
+  .art { margin: 14px 0; page-break-inside: avoid; }
+  .art header { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 8px; }
+  .art .num {
+    width: 36px; height: 36px; border-radius: 10px; background: var(--teal); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: 12px; flex-shrink: 0;
+  }
+  .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; font-size: 12px; margin: 8px 0; }
+  .kv span:first-child { color: var(--muted); }
+  @media print {
+    body { background: #fff; }
+    .banner { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="banner">
+      <div><strong>عيّنة تدريبية / SAMPLE ONLY</strong> — وثيقة وهمية لأغراض العرض والتجربة على منصة أراب كلاو. ليست صادرة عن جهة حكومية ولا تُستخدم للتقديم الرسمي.</div>
+      <div style="direction:ltr;text-align:left"><strong>FICTIONAL</strong> — Demo fixture for ArabClue. Not an official government instrument.</div>
+    </div>
+    <header class="mast">
+      <div>
+        <div class="brand">ArabClue Sample Pack · حزمة العينات</div>
+        <h1>نطاق عمل — برنامج التحول الرقمي للخدمات البلدية</h1>
+        <p class="h1-en">Scope of Work — Municipal Services Digital Transformation</p>
+        <span class="chip">RFP / نطاق عمل</span>
+      </div>
+      <div class="meta">
+        <strong>SOW-SAMPLE-MUNI-2026</strong>
+        المملكة العربية السعودية<br/>Kingdom of Saudi Arabia<br/>
+        تاريخ الإصدار / Issued: 2026-07-01
+      </div>
+    </header>
+    
+      <h2>الأهداف<span class="en">Objectives</span></h2>
+      <div class="bi">
+  <div class="col en" lang="en" dir="ltr"><span class="lang">English</span><ul>
+          <li>Digitize permit intake with bilingual citizen UX</li>
+          <li>Integrate national identity verification patterns</li>
+          <li>Publish open performance dashboards for Vision 2030 KPIs</li>
+        </ul></div>
+  <div class="col ar" lang="ar" dir="rtl"><span class="lang">العربية</span><ul>
+          <li>رقمنة استقبال التصاريح بواجهة مواطن ثنائية اللغة</li>
+          <li>دمج أنماط التحقق من الهوية الوطنية</li>
+          <li>نشر لوحات أداء مفتوحة لمؤشرات رؤية ٢٠٣٠</li>
+        </ul></div>
+</div>
+      <h2>المراحل<span class="en">Phases</span></h2>
+      <table>
+        <tr><th>Phase</th><th>المخرجات / Deliverables</th><th>المدة / Duration</th></tr>
+        <tr><td>1 Discovery</td><td>As-is / to-be + risk register</td><td>6 weeks</td></tr>
+        <tr><td>2 Build</td><td>MVP permits + integrations</td><td>16 weeks</td></tr>
+        <tr><td>3 Harden</td><td>Security test + training</td><td>6 weeks</td></tr>
+        <tr><td>4 Operate</td><td>Hypercare + SLA handover</td><td>8 weeks</td></tr>
+      </table>
+      <h2>قيود الامتثال<span class="en">Compliance constraints</span></h2>
+      <div class="bi">
+  <div class="col en" lang="en" dir="ltr"><span class="lang">English</span><p>Solution must honor PDPL, applicable NCA ECC controls, and municipal records retention schedules. Arabic is the authoritative UI language; English is supporting.</p></div>
+  <div class="col ar" lang="ar" dir="rtl"><span class="lang">العربية</span><p>يجب أن يراعي الحل نظام حماية البيانات الشخصية وضوابط NCA المعمول بها وجداول حفظ السجلات البلدية. العربية لغة الواجهة المعتمدة؛ والإنجليزية مساندة.</p></div>
+</div>
+    
+    <div class="foot">
+      ArabClue sample documents · EN|AR · Vision 2030 / Etimad-oriented demo content · © sample data only
+    </div>
+  </div>
+</body>
+</html>
