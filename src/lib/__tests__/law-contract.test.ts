@@ -18,6 +18,65 @@ const entities: IngestionEntities = {
   noraPrinciplesFromTender: [],
 };
 
+function validContractFixture(article2En = "English clause body.", article2Ar = "نص البند بالعربية.") {
+  return `# DRAFT CONTRACT | مسودة عقد
+> NOT LEGAL ADVICE | ليست استشارة قانونية
+> Authorized human legal review required before signature.
+
+# RESEARCH SUMMARY | موجز البحث
+
+## Findings | النتائج
+- Finding grounded in tender context.
+
+## Sources (registry) | المصادر (السجل)
+- Saudi instrument (current, review 2026-01-01) — registry reference
+
+# OPERATIVE ARTICLES | البنود النافذة
+
+### Article 1 — Parties | المادة 1 — الأطراف
+:::en
+English parties clause.
+:::
+:::ar
+نص بند الأطراف بالعربية.
+:::
+
+### Article 2 — Scope | المادة 2 — النطاق
+:::en
+${article2En}
+:::
+:::ar
+${article2Ar}
+:::
+
+### Article 3 — Term | المادة 3 — المدة
+:::en
+English term clause.
+:::
+:::ar
+نص بند المدة بالعربية.
+:::
+
+### Article 4 — Obligations | المادة 4 — الالتزامات
+:::en
+English obligations clause.
+:::
+:::ar
+نص بند الالتزامات بالعربية.
+:::
+
+### Article 5 — Review | المادة 5 — المراجعة
+:::en
+Human legal review is required before signature.
+:::
+:::ar
+يلزم مراجعة قانونية بشرية قبل التوقيع.
+:::
+
+---
+Contract drafts and regulatory comments are drafting aids, not legal advice. Authorized human legal review and approval required before signature.`;
+}
+
 describe("Saudi law research + bilingual contract agent", () => {
   test("registers LAW_CONTRACT agent and LAW engine", () => {
     expect(AGENTS.some((a) => a.id === "LAW_CONTRACT")).toBe(true);
@@ -64,16 +123,76 @@ describe("Saudi law research + bilingual contract agent", () => {
   });
 
   test("validation rejects false 100% certainty claims", () => {
-    const ok = validateContractDraft(
-      "# DRAFT\n> NOT LEGAL ADVICE | ليست استشارة قانونية\n### Article 1 — A | المادة 1 — أ\n:::en\nx\n:::\n:::ar\nص\n:::"
-    );
+    const ok = validateContractDraft(validContractFixture());
     expect(ok.blocking).toBe(false);
 
     const bad = validateContractDraft(
-      "# DRAFT\n> NOT LEGAL ADVICE\nThis clause is 100% certain and guaranteed.\n### Article 1 — A | المادة 1 — أ\n:::en\nx\n:::\n:::ar\nص\n:::"
+      validContractFixture().replace(
+        "English obligations clause.",
+        "This clause is 100% certain and guaranteed."
+      )
     );
     expect(bad.blocking).toBe(true);
     expect(bad.issues.some((i) => i.code === "false_certainty")).toBe(true);
+  });
+
+  test("validation rejects missing mandatory legal disclaimer", () => {
+    const bad = validateContractDraft(
+      validContractFixture()
+        .replace(
+          /> NOT LEGAL ADVICE \| ليست استشارة قانونية\n> Authorized human legal review required before signature\.\n/,
+          ""
+        )
+        .replace(
+          "Contract drafts and regulatory comments are drafting aids, not legal advice. Authorized human legal review and approval required before signature.",
+          "Contract drafts and regulatory comments are drafting aids. Human approval required before signature."
+        )
+    );
+    expect(bad.blocking).toBe(true);
+    expect(bad.issues.some((i) => i.code === "missing_legal_disclaimer")).toBe(true);
+  });
+
+  test("validation rejects AI pricing language in contracts", () => {
+    const bad = validateContractDraft(
+      validContractFixture().replace(
+        "English obligations clause.",
+        "Recommended unit price: 12000 SAR."
+      )
+    );
+    expect(bad.blocking).toBe(true);
+    expect(bad.issues.some((i) => i.code === "pricing_language")).toBe(true);
+  });
+
+  test("validation rejects AI commercial pricing strategy language in contracts", () => {
+    const bad = validateContractDraft(
+      validContractFixture().replace(
+        "English obligations clause.",
+        "Commercial strategy: use a win price to improve bid competitiveness."
+      )
+    );
+    expect(bad.blocking).toBe(true);
+    expect(bad.issues.some((i) => i.code === "pricing_language")).toBe(true);
+  });
+
+  test("validation rejects bilingual article body asymmetry", () => {
+    const missingEnglish = validateContractDraft(validContractFixture("", "نص عربي موجود."));
+    const missingArabic = validateContractDraft(validContractFixture("English body present.", ""));
+
+    expect(missingEnglish.blocking).toBe(true);
+    expect(missingEnglish.issues.some((i) => i.code === "bilingual_asymmetry")).toBe(true);
+    expect(missingArabic.blocking).toBe(true);
+    expect(missingArabic.issues.some((i) => i.code === "bilingual_asymmetry")).toBe(true);
+  });
+
+  test("validation rejects contracts without research and source section markers", () => {
+    const bad = validateContractDraft(
+      validContractFixture().replace(
+        /# RESEARCH SUMMARY \| موجز البحث[\s\S]*?# OPERATIVE ARTICLES \| البنود النافذة/,
+        "# OPERATIVE ARTICLES | البنود النافذة"
+      )
+    );
+    expect(bad.blocking).toBe(true);
+    expect(bad.issues.some((i) => i.code === "missing_research_sources")).toBe(true);
   });
 
   test("bilingual contract HTML export includes both languages", async () => {

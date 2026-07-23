@@ -23,6 +23,7 @@ import {
   parseContractArticles,
   type ContractArticle,
 } from "../contract-format";
+import { detectPricingRequest, detectPricingSuggestion } from "../guardrails";
 
 export type { ContractArticle };
 export { parseContractArticles };
@@ -393,7 +394,36 @@ export function validateContractDraft(contentMd: string): {
       message: "Contract must not claim 100% legal certainty",
     });
   }
+  if (detectPricingSuggestion(contentMd) || detectPricingRequest(contentMd)) {
+    issues.push({
+      code: "pricing_language",
+      severity: "error",
+      message: "Contract contains pricing recommendation language",
+    });
+  }
+  if (
+    !/#\s*RESEARCH SUMMARY\s*\|\s*موجز البحث/i.test(contentMd) ||
+    !/##\s*Sources\b[^|\n]*(?:\|\s*المصادر|\n)|##\s*المصادر/i.test(contentMd)
+  ) {
+    issues.push({
+      code: "missing_research_sources",
+      severity: "error",
+      message: "Contract missing mandatory research summary and source section markers",
+    });
+  }
   const articles = parseContractArticles(contentMd);
+  const asymmetric = articles.some((a) => {
+    const hasEnglish = a.bodyEn.trim().length > 0;
+    const hasArabic = a.bodyAr.trim().length > 0;
+    return hasEnglish !== hasArabic;
+  });
+  if (asymmetric) {
+    issues.push({
+      code: "bilingual_asymmetry",
+      severity: "error",
+      message: "Contract article has content in only one language body",
+    });
+  }
   if (articles.length < 5) {
     issues.push({
       code: "insufficient_articles",
