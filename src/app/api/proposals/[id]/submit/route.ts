@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
 import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { getSubmittedForReviewStatus } from "@/lib/contract-review";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,11 @@ export async function POST(
     if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
       throw new ApiError("not found", 404);
     }
-    if (["REVIEW", "APPROVED"].includes(proposal.status)) {
+    if (
+      ["IN_REVIEW", "REVIEW", "REVIEWED", "APPROVED", "EXPORTED"].includes(
+        proposal.status
+      )
+    ) {
       throw new ApiError(`Proposal already ${proposal.status}`, 409);
     }
 
@@ -72,7 +77,7 @@ export async function POST(
 
     const updated = await db.generatedProposal.update({
       where: { id },
-      data: { status: "REVIEW", submittedAt: new Date() },
+      data: { status: getSubmittedForReviewStatus(), submittedAt: new Date() },
     });
 
     await audit({

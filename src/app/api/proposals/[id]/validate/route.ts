@@ -7,6 +7,7 @@ import {
   evaluateExportPolicy,
   financialForValidationGate,
 } from "@/lib/proposal-studio";
+import { getContractExportReadiness } from "@/lib/contract-review";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,24 @@ export async function GET(
       })()
     : null;
 
+  const hasApprovalPolicy = Boolean(policy && policy.steps.length > 0);
+  if (proposal.type === "CONTRACT") {
+    const contractReadiness = getContractExportReadiness({
+      contentMd: proposal.contentMd,
+      proposalStatus: proposal.status,
+      format: "pdf",
+      hasApprovalPolicy,
+    });
+    return NextResponse.json({
+      validation: contractReadiness.validation,
+      hasApprovalPolicy,
+      exportReady: contractReadiness.exportReady,
+      exportBlocker: contractReadiness.exportBlocker,
+      status: proposal.status,
+      version: proposal.version,
+    });
+  }
+
   const validation = validateProposalOutput({
     contentMd: proposal.contentMd,
     financial: financialForValidationGate(forms),
@@ -67,8 +86,6 @@ export async function GET(
     })),
     restrictions: restrictions.map((r) => r.text),
   });
-
-  const hasApprovalPolicy = Boolean(policy && policy.steps.length > 0);
   const zipPolicy = evaluateExportPolicy({
     proposalStatus: proposal.status,
     validation,

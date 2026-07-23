@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Scale,
   FileText,
@@ -10,6 +10,7 @@ import {
   FileDown,
   Eye,
   Loader2,
+  Send,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import type { ContractArticle } from "@/lib/contract-format";
 import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
 
 function parseArtifacts(raw: string | null | undefined): {
   research?: SaudiLawResearchBrief;
@@ -56,6 +58,8 @@ export function ContractsPanel() {
   const { activeProjectId, setView } = useUI();
   const [openId, setOpenId] = useState<string | null>(null);
   const { download, busyFormat } = useArtifactDownload();
+  const qc = useQueryClient();
+  const { toast } = useToast();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["proposals", activeProjectId],
@@ -83,6 +87,30 @@ export function ContractsPanel() {
   });
   const active = activeData?.proposal ?? activeListItem;
   const artifacts = parseArtifacts(active?.artifactsJson);
+
+  const submitForReview = useMutation({
+    mutationFn: async (proposalId: string) => {
+      const res = await fetch(`/api/proposals/${proposalId}/submit`, {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Submit failed");
+      return json as { proposal?: ApiProposal };
+    },
+    onSuccess: (json) => {
+      qc.invalidateQueries({ queryKey: ["proposals"] });
+      if (json.proposal?.id) {
+        qc.invalidateQueries({ queryKey: ["proposal", json.proposal.id] });
+      }
+      qc.invalidateQueries({ queryKey: ["reviews"] });
+      toast({
+        title: ar ? "أُرسل العقد للمراجعة القانونية" : "Contract sent for legal review",
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: err.message, variant: "destructive" });
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -144,76 +172,108 @@ export function ContractsPanel() {
         </Card>
       ) : (
         <div className="grid gap-3">
-          {contracts.map((c) => (
-            <Card
-              key={c.id}
-              className="p-4 border-border/60 flex flex-wrap items-center justify-between gap-3 hover:border-teal-500/30 transition-colors"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-semibold truncate">
-                    {ar ? c.titleAr || c.title : c.title}
+          {contracts.map((c) => {
+            const canSubmit = ![
+              "IN_REVIEW",
+              "REVIEW",
+              "REVIEWED",
+              "APPROVED",
+              "EXPORTED",
+            ].includes(c.status);
+            return (
+              <Card
+                key={c.id}
+                className="p-4 border-border/60 flex flex-wrap items-center justify-between gap-3 hover:border-teal-500/30 transition-colors"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold truncate">
+                      {ar ? c.titleAr || c.title : c.title}
+                    </p>
+                    <Badge variant="outline" className="text-[10px]">
+                      {c.status}
+                    </Badge>
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] bg-teal-500/10 text-teal-700 dark:text-teal-300"
+                    >
+                      EN | AR
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    v{c.version}
+                    {c.project?.title ? ` · ${c.project.title}` : ""}
+                    {c.generatedAt
+                      ? ` · ${new Date(c.generatedAt).toLocaleString()}`
+                      : ""}
                   </p>
-                  <Badge variant="outline" className="text-[10px]">
-                    {c.status}
-                  </Badge>
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] bg-teal-500/10 text-teal-700 dark:text-teal-300"
-                  >
-                    EN | AR
-                  </Badge>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  v{c.version}
-                  {c.project?.title ? ` · ${c.project.title}` : ""}
-                  {c.generatedAt
-                    ? ` · ${new Date(c.generatedAt).toLocaleString()}`
-                    : ""}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" className="gap-1" onClick={() => setOpenId(c.id)}>
-                  <Eye className="size-3.5" />
-                  {ar ? "معاينة" : "Preview"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-1"
-                  disabled={busyFormat === "html"}
-                  onClick={() =>
-                    void download({
-                      proposalId: c.id,
-                      format: "html",
-                      fallbackName: "Contract.html",
-                      locale,
-                    })
-                  }
-                >
-                  <Download className="size-3.5" />
-                  HTML
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-1"
-                  disabled={busyFormat === "pdf"}
-                  onClick={() =>
-                    void download({
-                      proposalId: c.id,
-                      format: "pdf",
-                      fallbackName: "Contract.pdf",
-                      locale,
-                    })
-                  }
-                >
-                  <FileDown className="size-3.5" />
-                  PDF
-                </Button>
-              </div>
-            </Card>
-          ))}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    onClick={() => setOpenId(c.id)}
+                  >
+                    <Eye className="size-3.5" />
+                    {ar ? "معاينة" : "Preview"}
+                  </Button>
+                  {canSubmit ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="gap-1"
+                      disabled={submitForReview.isPending}
+                      onClick={() => submitForReview.mutate(c.id)}
+                    >
+                      {submitForReview.isPending ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Send className="size-3.5" />
+                      )}
+                      {ar
+                        ? "إرسال للمراجعة القانونية"
+                        : "Submit for legal review"}
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1"
+                    disabled={busyFormat === "html"}
+                    onClick={() =>
+                      void download({
+                        proposalId: c.id,
+                        format: "html",
+                        fallbackName: "Contract.html",
+                        locale,
+                      })
+                    }
+                  >
+                    <Download className="size-3.5" />
+                    HTML
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1"
+                    disabled={busyFormat === "pdf"}
+                    onClick={() =>
+                      void download({
+                        proposalId: c.id,
+                        format: "pdf",
+                        fallbackName: "Contract.pdf",
+                        locale,
+                      })
+                    }
+                  >
+                    <FileDown className="size-3.5" />
+                    PDF
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 

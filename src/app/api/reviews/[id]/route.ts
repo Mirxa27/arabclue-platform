@@ -5,6 +5,7 @@ import { reviewDecisionSchema, parseJsonBody } from "@/lib/validation";
 import { assertWorkspaceMatch, getTenantContext } from "@/lib/workspace-context";
 import { requireReviewerAction } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { getReviewDecisionProposalStatus } from "@/lib/contract-review";
 
 export const dynamic = "force-dynamic";
 
@@ -62,30 +63,26 @@ export async function PATCH(
       },
     });
 
-    if (parsed.data.status === "REJECTED") {
-      await db.generatedProposal.update({
-        where: { id: review.proposalId },
-        data: { status: "REJECTED" },
-      });
-    } else {
-      const remaining = await db.proposalReview.count({
-        where: {
-          proposalId: review.proposalId,
-          status: "PENDING",
-        },
-      });
-      if (remaining === 0) {
-        await db.generatedProposal.update({
-          where: { id: review.proposalId },
-          data: { status: "APPROVED", approvedAt: new Date() },
-        });
-      } else {
-        await db.generatedProposal.update({
-          where: { id: review.proposalId },
-          data: { status: "REVIEWED" },
-        });
-      }
-    }
+    const remaining =
+      parsed.data.status === "APPROVED"
+        ? await db.proposalReview.count({
+            where: {
+              proposalId: review.proposalId,
+              status: "PENDING",
+            },
+          })
+        : 0;
+    const nextStatus = getReviewDecisionProposalStatus({
+      decision: parsed.data.status,
+      pendingReviewsAfterDecision: remaining,
+    });
+    await db.generatedProposal.update({
+      where: { id: review.proposalId },
+      data: {
+        status: nextStatus,
+        approvedAt: nextStatus === "APPROVED" ? new Date() : undefined,
+      },
+    });
 
     await audit({
       userId: session.user.id,

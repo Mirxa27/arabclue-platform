@@ -19,6 +19,8 @@ export async function GET() {
           select: {
             id: true,
             title: true,
+            titleAr: true,
+            type: true,
             status: true,
             project: { select: { id: true, title: true } },
           },

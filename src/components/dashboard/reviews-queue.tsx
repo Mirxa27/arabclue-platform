@@ -10,6 +10,36 @@ import { CheckCircle2, Loader2, XCircle, Inbox, Pencil } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ProposalEditorDialog } from "./proposal-editor";
+import { BilingualContractStudio } from "./contract-studio";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { apiJson } from "@/lib/api-client";
+import type { ApiProposal, ApiProposalReview } from "@/lib/api-types";
+import type { ContractArticle } from "@/lib/contract-format";
+import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
+
+function parseContractArtifacts(raw: string | null | undefined): {
+  research?: SaudiLawResearchBrief;
+  articles?: ContractArticle[];
+} {
+  if (!raw) return {};
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    const first = Array.isArray(arr) ? arr[0] : arr;
+    if (!first || typeof first !== "object") return {};
+    const obj = first as Record<string, unknown>;
+    return {
+      research: obj.research as SaudiLawResearchBrief | undefined,
+      articles: obj.articles as ContractArticle[] | undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 
 export function ReviewsQueue() {
   const { locale } = useLocale();
@@ -18,6 +48,7 @@ export function ReviewsQueue() {
   const { toast } = useToast();
   const [comments, setComments] = useState<Record<string, string>>({});
   const [editId, setEditId] = useState<string | null>(null);
+  const [contractId, setContractId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["reviews"],
@@ -56,6 +87,20 @@ export function ReviewsQueue() {
       toast({ title: e.message, variant: "destructive" }),
   });
 
+  const {
+    data: contractData,
+    isFetching: isContractFetching,
+  } = useQuery({
+    queryKey: ["proposal", contractId],
+    enabled: Boolean(contractId),
+    queryFn: () => {
+      if (!contractId) throw new Error("Missing contract id");
+      return apiJson<{ proposal: ApiProposal }>(`/api/proposals/${contractId}`);
+    },
+  });
+  const activeContract = contractData?.proposal ?? null;
+  const contractArtifacts = parseContractArtifacts(activeContract?.artifactsJson);
+
   return (
     <>
       <Panel
@@ -79,22 +124,25 @@ export function ReviewsQueue() {
           </p>
         ) : (
           <ul className="divide-y">
-            {(data?.items ?? []).map(
-              (r: {
-                id: string;
-                stepIndex: number;
-                stepRole: string;
-                proposal: {
-                  id: string;
-                  title: string;
-                  project?: { title: string };
-                };
-              }) => (
+            {(data?.items ?? []).map((r: ApiProposalReview) => {
+              if (!r.proposal) return null;
+              const isContract = r.proposal.type === "CONTRACT";
+              return (
                 <li key={r.id} className="p-4 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-sm">
-                      {r.proposal.title}
+                      {locale === "ar"
+                        ? r.proposal.titleAr || r.proposal.title
+                        : r.proposal.title}
                     </span>
+                    {isContract ? (
+                      <Badge
+                        variant="secondary"
+                        className="bg-teal-500/10 text-teal-700 dark:text-teal-300"
+                      >
+                        {locale === "ar" ? "عقد" : "Contract"}
+                      </Badge>
+                    ) : null}
                     <Badge variant="outline">
                       Step {r.stepIndex + 1} · {r.stepRole}
                     </Badge>
@@ -120,12 +168,22 @@ export function ReviewsQueue() {
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        setEditId(r.proposal.id);
-                        setView("proposals");
+                        if (isContract) {
+                          setContractId(r.proposal?.id ?? null);
+                        } else {
+                          setEditId(r.proposal?.id ?? null);
+                          setView("proposals");
+                        }
                       }}
                     >
                       <Pencil className="size-4 me-1" />
-                      {locale === "ar" ? "فتح الاستوديو" : "Open studio"}
+                      {isContract
+                        ? locale === "ar"
+                          ? "فتح استوديو العقد"
+                          : "Open contract studio"
+                        : locale === "ar"
+                          ? "فتح الاستوديو"
+                          : "Open studio"}
                     </Button>
                     <Button
                       size="sm"
@@ -150,8 +208,8 @@ export function ReviewsQueue() {
                     </Button>
                   </div>
                 </li>
-              )
-            )}
+              );
+            })}
           </ul>
         )}
       </Panel>
@@ -165,6 +223,53 @@ export function ReviewsQueue() {
           }}
         />
       )}
+
+      <Dialog
+        open={Boolean(contractId)}
+        onOpenChange={(open) => {
+          if (!open) setContractId(null);
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-auto p-0 gap-0">
+          <DialogHeader className="px-5 py-3 border-b border-border/60">
+            <DialogTitle className="flex items-center gap-2">
+              <span>
+                {activeContract
+                  ? activeContract.titleAr || activeContract.title
+                  : locale === "ar"
+                    ? "العقد"
+                    : "Contract"}
+              </span>
+              {isContractFetching ? (
+                <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+              ) : null}
+            </DialogTitle>
+          </DialogHeader>
+          {activeContract ? (
+            <div className="p-4">
+              <BilingualContractStudio
+                title={activeContract.title}
+                titleAr={activeContract.titleAr}
+                contentMd={activeContract.contentMd || ""}
+                proposalId={activeContract.id}
+                status={activeContract.status}
+                version={activeContract.version}
+                versions={activeContract.versions ?? []}
+                research={contractArtifacts.research}
+                articles={contractArtifacts.articles}
+                onSaved={() => {
+                  qc.invalidateQueries({ queryKey: ["proposals"] });
+                  qc.invalidateQueries({ queryKey: ["proposal", contractId] });
+                }}
+              />
+            </div>
+          ) : (
+            <div className="p-8 flex justify-center">
+              <Loader2 className="size-5 animate-spin" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

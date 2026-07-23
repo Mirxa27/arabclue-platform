@@ -21,6 +21,7 @@ import {
   evaluateExportPolicy,
   financialForValidationGate,
 } from "@/lib/proposal-studio";
+import { getContractValidationReport } from "@/lib/contract-review";
 import type { FinancialExtract } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -97,14 +98,9 @@ export async function GET(
 
   let gateReport;
   if (isContract) {
-    const { validateContractDraft } = await import("@/lib/agents/law-contract");
-    const cv = validateContractDraft(proposal.contentMd ?? "");
-    gateReport = {
-      ok: cv.ok,
-      blocking: cv.blocking,
-      issues: cv.issues,
-      checkedAt: new Date().toISOString(),
-    };
+    gateReport = getContractValidationReport({
+      contentMd: proposal.contentMd,
+    });
   } else {
     const gateFinancial: FinancialExtract | null =
       financialForValidationGate(formsRaw);

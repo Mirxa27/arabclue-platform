@@ -294,6 +294,8 @@ export type ApiProposalReview = {
   proposal?: {
     id: string;
     title: string;
+    titleAr?: string | null;
+    type?: string | null;
     status: string;
     project?: { id: string; title: string } | null;
   };
