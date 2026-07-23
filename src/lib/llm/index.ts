@@ -12,6 +12,7 @@ import {
 import {
   type AgentEngine,
   normalizeOpenAiBase,
+  providerServesEngine,
   requireConfiguredModelId,
 } from "./model-catalog";
 
@@ -34,29 +35,26 @@ export async function getActiveProvider(): Promise<AIProviderConfig | null> {
 
 /**
  * Resolve active provider for an agent engine.
+ * Matches providers that list the engine in enginesJson (or legacy engine field).
  * Falls back to DEFAULT active provider, then any active provider.
  */
 export async function getProviderForEngine(
   engine: AgentEngine = "DEFAULT"
 ): Promise<AIProviderConfig | null> {
-  const forEngine = await db.aIProviderConfig.findFirst({
-    where: { engine, isActive: true },
-    orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
-  });
-  if (forEngine) return forEngine;
-
-  if (engine !== "DEFAULT") {
-    const fallback = await db.aIProviderConfig.findFirst({
-      where: { engine: "DEFAULT", isActive: true },
-      orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
-    });
-    if (fallback) return fallback;
-  }
-
-  return db.aIProviderConfig.findFirst({
+  const actives = await db.aIProviderConfig.findMany({
     where: { isActive: true },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
   });
+
+  const forEngine = actives.find((p) => providerServesEngine(p, engine));
+  if (forEngine) return forEngine;
+
+  if (engine !== "DEFAULT") {
+    const fallback = actives.find((p) => providerServesEngine(p, "DEFAULT"));
+    if (fallback) return fallback;
+  }
+
+  return actives[0] ?? null;
 }
 
 export interface LLMResult {

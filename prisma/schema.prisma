@@ -460,8 +460,10 @@ model AIProviderConfig {
   modelId         String   @default("") // selected from live /models fetch — never hardcoded
   apiBase         String?  // OpenAI-compatible base URL ending in /v1 or host root
   apiKeyEnvKey    String?  // EnvSetting / process.env key for the API token
-  // Which agent engine this config serves (one active provider per engine)
-  engine          String   @default("DEFAULT") // DEFAULT | INGESTION | COMPLIANCE | TECHNICAL | FINANCIAL | DRAFTING | EMBEDDING | REWRITE
+  // Primary engine (first of enginesJson) — kept for indexes / backward compat
+  engine          String   @default("DEFAULT") // DEFAULT | INGESTION | COMPLIANCE | TECHNICAL | FINANCIAL | DRAFTING | EMBEDDING | REWRITE | LAW | VOICE
+  // JSON string[] of agent engines this connection serves (multi-select)
+  enginesJson     String?
   isActive        Boolean  @default(false)
   isDefault       Boolean  @default(false)
   priority        Int      @default(0)

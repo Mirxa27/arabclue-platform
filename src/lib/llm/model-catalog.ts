@@ -335,3 +335,64 @@ export function requireConfiguredModelId(modelId: string | null | undefined): st
   }
   return id;
 }
+
+const ENGINE_SET = new Set<string>(AGENT_ENGINES);
+
+/** Normalize a list of engine ids; always returns at least ["DEFAULT"]. */
+export function normalizeEngines(
+  input: unknown,
+  fallbackPrimary?: string | null
+): AgentEngine[] {
+  const raw: string[] = [];
+  if (Array.isArray(input)) {
+    for (const v of input) {
+      if (typeof v === "string" && v.trim()) raw.push(v.trim().toUpperCase());
+    }
+  } else if (typeof input === "string" && input.trim()) {
+    try {
+      const parsed = JSON.parse(input);
+      if (Array.isArray(parsed)) {
+        for (const v of parsed) {
+          if (typeof v === "string" && v.trim())
+            raw.push(v.trim().toUpperCase());
+        }
+      }
+    } catch {
+      raw.push(input.trim().toUpperCase());
+    }
+  }
+  if (
+    raw.length === 0 &&
+    typeof fallbackPrimary === "string" &&
+    fallbackPrimary.trim()
+  ) {
+    raw.push(fallbackPrimary.trim().toUpperCase());
+  }
+  const out: AgentEngine[] = [];
+  const seen = new Set<string>();
+  for (const id of raw) {
+    if (!ENGINE_SET.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id as AgentEngine);
+  }
+  return out.length > 0 ? out : ["DEFAULT"];
+}
+
+export function parseProviderEngines(row: {
+  engine?: string | null;
+  enginesJson?: string | null;
+}): AgentEngine[] {
+  return normalizeEngines(row.enginesJson, row.engine);
+}
+
+export function serializeEngines(engines: AgentEngine[]): string {
+  return JSON.stringify(normalizeEngines(engines));
+}
+
+export function providerServesEngine(
+  row: { engine?: string | null; enginesJson?: string | null },
+  engine: string
+): boolean {
+  const target = engine.toUpperCase();
+  return parseProviderEngines(row).some((e) => e === target);
+}

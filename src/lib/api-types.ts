@@ -144,6 +144,8 @@ export type ApiAIProvider = {
   model: string;
   modelId?: string;
   engine?: string;
+  /** Engines/services this connection serves (multi-select). */
+  engines?: string[];
   isActive: boolean;
   isDefault?: boolean;
   priority?: number;
@@ -185,6 +187,7 @@ export type ProviderPatch = Partial<{
   modelId: string;
   provider: string;
   engine: string;
+  engines: string[];
   temperature: number;
   maxTokens: number;
   topP: number;

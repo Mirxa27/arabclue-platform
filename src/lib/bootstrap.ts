@@ -216,6 +216,7 @@ async function seedAdminData(userId: string) {
         apiBase: p.apiBase || null,
         apiKeyEnvKey: p.apiKeyEnvKey || null,
         engine: p.engine ?? "DEFAULT",
+        enginesJson: JSON.stringify([p.engine ?? "DEFAULT"]),
         isActive: false,
         isDefault: i === 0,
         priority: 0,

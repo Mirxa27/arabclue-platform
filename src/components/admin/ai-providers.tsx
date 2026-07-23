@@ -169,7 +169,13 @@ export function AdminAIProviders() {
 
   const filtered = useMemo(() => {
     if (engineFilter === "ALL") return providers;
-    return providers.filter((p) => (p.engine || "DEFAULT") === engineFilter);
+    return providers.filter((p) => {
+      const engines =
+        p.engines && p.engines.length > 0
+          ? p.engines
+          : [p.engine || "DEFAULT"];
+      return engines.includes(engineFilter);
+    });
   }, [providers, engineFilter]);
 
   const activeCount = Object.values(activeByEngine).filter(Boolean).length;
@@ -223,7 +229,7 @@ export function AdminAIProviders() {
             <p className="text-[11px] text-muted-foreground">
               {locale === "ar"
                 ? "مزودات متعددة لكل محرك · OpenAI-compatible · جلب النماذج تلقائياً"
-                : "Multiple providers per engine · OpenAI-compatible · auto-fetch models"}
+                : "Assign one connection to multiple services · OpenAI-compatible · auto-fetch models"}
             </p>
           </div>
         </div>
@@ -357,9 +363,18 @@ export function AdminAIProviders() {
                           <Check className="size-2.5" /> ACTIVE
                         </Badge>
                       )}
-                      <Badge variant="secondary" className="text-[9px]">
-                        {p.engine || "DEFAULT"}
-                      </Badge>
+                      {(p.engines && p.engines.length > 0
+                        ? p.engines
+                        : [p.engine || "DEFAULT"]
+                      ).map((eng) => (
+                        <Badge
+                          key={eng}
+                          variant="secondary"
+                          className="text-[9px]"
+                        >
+                          {eng}
+                        </Badge>
+                      ))}
                     </div>
                     <div className="text-[10px] text-muted-foreground font-mono">
                       {p.provider} · {p.modelId || (locale === "ar" ? "بدون نموذج" : "no model")}
@@ -550,6 +565,58 @@ function Stat({
   );
 }
 
+function EngineMultiSelect({
+  engines,
+  value,
+  onChange,
+  locale,
+}: {
+  engines: EngineMeta[];
+  value: string[];
+  onChange: (next: string[]) => void;
+  locale: string;
+}) {
+  const selected = value.length > 0 ? value : ["DEFAULT"];
+  const toggle = (id: string) => {
+    if (selected.includes(id)) {
+      const next = selected.filter((e) => e !== id);
+      onChange(next.length > 0 ? next : ["DEFAULT"]);
+      return;
+    }
+    onChange([...selected, id]);
+  };
+  return (
+    <div className="mt-1 space-y-1.5">
+      <div className="flex flex-wrap gap-1.5">
+        {engines.map((e) => {
+          const on = selected.includes(e.id);
+          return (
+            <button
+              key={e.id}
+              type="button"
+              onClick={() => toggle(e.id)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors",
+                on
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-background text-muted-foreground hover:border-primary/40"
+              )}
+            >
+              {on ? <Check className="size-2.5" /> : null}
+              {locale === "ar" ? e.label.ar : e.label.en}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[9px] text-muted-foreground">
+        {locale === "ar"
+          ? `${selected.length} خدمة محددةلة — نفس المزود والنموذج لكل المحدد`
+          : `${selected.length} service(s) selected — same provider & model for all`}
+      </p>
+    </div>
+  );
+}
+
 function ProviderEditForm({
   provider,
   engines,
@@ -570,7 +637,10 @@ function ProviderEditForm({
     modelId: provider.modelId ?? "",
     apiBase: provider.apiBase ?? "",
     apiKeyEnvKey: provider.apiKeyEnvKey ?? "",
-    engine: provider.engine ?? "DEFAULT",
+    engines:
+      provider.engines && provider.engines.length > 0
+        ? provider.engines
+        : [provider.engine ?? "DEFAULT"],
     priority: provider.priority ?? 0,
     contextWindow: provider.contextWindow ?? 128000,
     supportsVision: provider.supportsVision ?? false,
@@ -670,37 +740,27 @@ function ProviderEditForm({
 
   return (
     <div className="mt-3 pt-3 border-t border-border/60 space-y-3">
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <Label className="text-[10px]">
-            {locale === "ar" ? "الاسم" : "Name"}
-          </Label>
-          <Input
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="h-8 text-xs mt-1"
-          />
-        </div>
-        <div>
-          <Label className="text-[10px]">
-            {locale === "ar" ? "المحرك" : "Engine"}
-          </Label>
-          <Select
-            value={form.engine}
-            onValueChange={(v) => setForm({ ...form, engine: v })}
-          >
-            <SelectTrigger className="h-8 text-xs mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {engines.map((e) => (
-                <SelectItem key={e.id} value={e.id} className="text-xs">
-                  {locale === "ar" ? e.label.ar : e.label.en}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div>
+        <Label className="text-[10px]">
+          {locale === "ar" ? "الاسم" : "Name"}
+        </Label>
+        <Input
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          className="h-8 text-xs mt-1"
+        />
+      </div>
+
+      <div>
+        <Label className="text-[10px]">
+          {locale === "ar" ? "الخدمات / المحركات" : "Services / engines"}
+        </Label>
+        <EngineMultiSelect
+          engines={engines}
+          value={form.engines}
+          onChange={(next) => setForm({ ...form, engines: next })}
+          locale={locale}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -973,7 +1033,13 @@ function ProviderEditForm({
       <Button
         size="sm"
         className="w-full gap-1.5"
-        onClick={() => onSave(form)}
+        onClick={() =>
+          onSave({
+            ...form,
+            engines: form.engines,
+            engine: form.engines[0] ?? "DEFAULT",
+          })
+        }
         disabled={saving}
       >
         {saving ? (
@@ -1022,23 +1088,26 @@ function AddProviderForm({
   const [modelsFetchedAt, setModelsFetchedAt] = useState<string | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
 
-  const applyPreset = (p: Preset, engineOverride?: string) => ({
-    name: String(p.name ?? ""),
-    provider: String(p.provider ?? "openai_compatible"),
-    modelId: "",
-    apiBase: String(p.apiBase ?? ""),
-    apiKeyEnvKey: String(p.apiKeyEnvKey ?? ""),
-    engine: engineOverride ?? String(p.engine ?? defaultEngine),
-    temperature: 0.2,
-    maxTokens: 4096,
-    contextWindow: 128000,
-    supportsVision: false,
-    supportsJsonMode: true,
-    supportsTools: false,
-    inputCostPer1k: 0,
-    outputCostPer1k: 0,
-    isActive: false,
-  });
+  const applyPreset = (p: Preset, engineOverride?: string) => {
+    const primary = engineOverride ?? String(p.engine ?? defaultEngine);
+    return {
+      name: String(p.name ?? ""),
+      provider: String(p.provider ?? "openai_compatible"),
+      modelId: "",
+      apiBase: String(p.apiBase ?? ""),
+      apiKeyEnvKey: String(p.apiKeyEnvKey ?? ""),
+      engines: [primary],
+      temperature: 0.2,
+      maxTokens: 4096,
+      contextWindow: 128000,
+      supportsVision: false,
+      supportsJsonMode: true,
+      supportsTools: false,
+      inputCostPer1k: 0,
+      outputCostPer1k: 0,
+      isActive: false,
+    };
+  };
 
   const [form, setForm] = useState(() =>
     applyPreset(presets[0] ?? {}, defaultEngine)
@@ -1068,7 +1137,7 @@ function AddProviderForm({
           provider: form.provider,
           apiBase: form.apiBase,
           apiKeyEnvKey: form.apiKeyEnvKey,
-          engine: form.engine,
+          engine: form.engines[0] ?? defaultEngine,
         }),
       });
       const data = await res.json();
@@ -1112,6 +1181,8 @@ function AddProviderForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          engines: form.engines,
+          engine: form.engines[0] ?? "DEFAULT",
           modelsCache: models,
           modelsFetchedAt,
         }),
@@ -1170,37 +1241,27 @@ function AddProviderForm({
       </div>
       <Separator />
 
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <Label className="text-[10px]">
-            {locale === "ar" ? "الاسم" : "Name"}
-          </Label>
-          <Input
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="h-8 text-xs mt-1"
-          />
-        </div>
-        <div>
-          <Label className="text-[10px]">
-            {locale === "ar" ? "المحرك" : "Engine"}
-          </Label>
-          <Select
-            value={form.engine}
-            onValueChange={(v) => setForm({ ...form, engine: v })}
-          >
-            <SelectTrigger className="h-8 text-xs mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {engines.map((e) => (
-                <SelectItem key={e.id} value={e.id} className="text-xs">
-                  {locale === "ar" ? e.label.ar : e.label.en}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div>
+        <Label className="text-[10px]">
+          {locale === "ar" ? "الاسم" : "Name"}
+        </Label>
+        <Input
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          className="h-8 text-xs mt-1"
+        />
+      </div>
+
+      <div>
+        <Label className="text-[10px]">
+          {locale === "ar" ? "الخدمات / المحركات" : "Services / engines"}
+        </Label>
+        <EngineMultiSelect
+          engines={engines}
+          value={form.engines}
+          onChange={(next) => setForm({ ...form, engines: next })}
+          locale={locale}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-2">

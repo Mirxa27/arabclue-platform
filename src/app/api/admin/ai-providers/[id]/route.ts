@@ -3,7 +3,14 @@ import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { requireAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { inferModelCapabilities } from "@/lib/llm/model-catalog";
+import {
+  inferModelCapabilities,
+  parseProviderEngines,
+} from "@/lib/llm/model-catalog";
+import {
+  deactivateConflictingProviders,
+  enginesPayloadFromBody,
+} from "@/lib/llm/provider-engines";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +65,18 @@ export async function PATCH(
     if (ALLOWED_FIELDS.has(k) && v !== undefined) data[k] = v;
   }
 
+  // Multi-engine assignment (engines[]) — sync primary engine + enginesJson
+  let targetEngines = parseProviderEngines(existing);
+  if (body.engines !== undefined || body.engine !== undefined) {
+    const payload = enginesPayloadFromBody({
+      engines: body.engines ?? body.engine,
+      engine: body.engine,
+    });
+    targetEngines = payload.engines;
+    data.engine = payload.primary;
+    data.enginesJson = payload.enginesJson;
+  }
+
   // Auto-fill capabilities when modelId changes (unless explicitly overridden)
   if (typeof data.modelId === "string" && data.modelId !== existing.modelId) {
     const caps = inferModelCapabilities(data.modelId);
@@ -73,7 +92,6 @@ export async function PATCH(
       data.outputCostPer1k = caps.outputCostPer1k;
   }
 
-  const targetEngine = String(data.engine ?? existing.engine);
   const nextModelId = String(
     data.modelId !== undefined ? data.modelId : existing.modelId
   ).trim();
@@ -93,24 +111,21 @@ export async function PATCH(
     );
   }
 
-  // Activation is scoped per engine: only one active provider per engine
-  if (data.isActive === true) {
-    await db.aIProviderConfig.updateMany({
-      where: {
-        engine: targetEngine,
-        isActive: true,
-        NOT: { id },
-      },
-      data: { isActive: false },
-    });
-    await audit({
-      userId: session.user.id,
-      action: AUDIT_ACTIONS.AI_PROVIDER_ACTIVATE,
-      resource: "AIProviderConfig",
-      resourceId: id,
-      severity: "WARN",
-      details: { engine: targetEngine, modelId: nextModelId },
-    });
+  // Activation / engine change: only one active provider per served engine
+  if (data.isActive === true || body.engines !== undefined) {
+    if (willBeActive) {
+      await deactivateConflictingProviders(targetEngines, id);
+    }
+    if (data.isActive === true) {
+      await audit({
+        userId: session.user.id,
+        action: AUDIT_ACTIONS.AI_PROVIDER_ACTIVATE,
+        resource: "AIProviderConfig",
+        resourceId: id,
+        severity: "WARN",
+        details: { engines: targetEngines, modelId: nextModelId },
+      });
+    }
   }
 
   const updated = await db.aIProviderConfig.update({
@@ -126,7 +141,12 @@ export async function PATCH(
     details: { changes: data },
   });
 
-  return NextResponse.json({ provider: updated });
+  return NextResponse.json({
+    provider: {
+      ...updated,
+      engines: parseProviderEngines(updated),
+    },
+  });
 }
 
 // DELETE /api/admin/ai-providers/[id]

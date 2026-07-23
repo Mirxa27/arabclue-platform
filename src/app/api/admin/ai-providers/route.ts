@@ -12,7 +12,12 @@ import {
   defaultApiKeyEnvKey,
   inferModelCapabilities,
   parseModelsCache,
+  parseProviderEngines,
 } from "@/lib/llm/model-catalog";
+import {
+  deactivateConflictingProviders,
+  enginesPayloadFromBody,
+} from "@/lib/llm/provider-engines";
 
 export const dynamic = "force-dynamic";
 
@@ -33,15 +38,21 @@ export async function GET() {
   const activeByEngine: Record<string, string | null> = {};
   for (const eng of AGENT_ENGINES) {
     activeByEngine[eng] =
-      providers.find((p) => p.engine === eng && p.isActive)?.id ?? null;
+      providers.find((p) => p.isActive && parseProviderEngines(p).includes(eng))
+        ?.id ?? null;
   }
 
   return NextResponse.json({
-    providers: providers.map((p) => ({
-      ...p,
-      modelsCache: parseModelsCache(p.modelsCacheJson),
-      modelsFetchedAt: p.modelsFetchedAt?.toISOString() ?? null,
-    })),
+    providers: providers.map((p) => {
+      const engines = parseProviderEngines(p);
+      return {
+        ...p,
+        engines,
+        engine: engines[0] ?? p.engine ?? "DEFAULT",
+        modelsCache: parseModelsCache(p.modelsCacheJson),
+        modelsFetchedAt: p.modelsFetchedAt?.toISOString() ?? null,
+      };
+    }),
     // Connection templates only — no model IDs
     presets: PROVIDER_CONNECTION_TEMPLATES,
     connectionTemplates: PROVIDER_CONNECTION_TEMPLATES,
@@ -86,7 +97,7 @@ export async function POST(req: NextRequest) {
             outputCostPer1k: 0,
           };
 
-  const engine = String(body.engine || "DEFAULT");
+  const { engines, primary: engine, enginesJson } = enginesPayloadFromBody(body);
   const activate = body.isActive === true;
   if (activate && !modelId) {
     return NextResponse.json(
@@ -100,10 +111,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (activate) {
-    await db.aIProviderConfig.updateMany({
-      where: { engine, isActive: true },
-      data: { isActive: false },
-    });
+    await deactivateConflictingProviders(engines);
   }
 
   const modelsCache = parseModelsCache(
@@ -127,6 +135,7 @@ export async function POST(req: NextRequest) {
       apiKeyEnvKey:
         body.apiKeyEnvKey ?? (defaultApiKeyEnvKey(provider) || null),
       engine,
+      enginesJson,
       isActive: activate,
       isDefault: body.isDefault === true,
       priority: Number(body.priority ?? 0),
@@ -163,7 +172,13 @@ export async function POST(req: NextRequest) {
       provider: created.provider,
       modelId: created.modelId,
       engine: created.engine,
+      engines,
     },
   });
-  return NextResponse.json({ provider: created });
+  return NextResponse.json({
+    provider: {
+      ...created,
+      engines: parseProviderEngines(created),
+    },
+  });
 }
