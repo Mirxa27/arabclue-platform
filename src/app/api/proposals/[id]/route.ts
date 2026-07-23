@@ -4,6 +4,7 @@ import { requireSession, requireWriter } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { parseJsonBody, proposalPatchSchema } from "@/lib/validation";
+import { isProposalEditLocked } from "@/lib/proposal-status";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +76,15 @@ export async function PATCH(
     const existing = await db.generatedProposal.findUnique({ where: { id } });
     if (!existing || !assertWorkspaceMatch(existing.workspaceId, workspace.id)) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+    if (isProposalEditLocked(existing.status)) {
+      return NextResponse.json(
+        {
+          error: "Proposal is locked for editing in current status",
+          code: "status_locked",
+        },
+        { status: 409 }
+      );
     }
 
     const nextVersion =

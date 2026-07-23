@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireWriter } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+import { isProposalEditLocked } from "@/lib/proposal-status";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +28,10 @@ export async function POST(
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  if (["REVIEW", "APPROVED"].includes(proposal.status)) {
+  if (isProposalEditLocked(proposal.status)) {
     return NextResponse.json(
       {
-        error: "Cannot revert while proposal is in review or approved — reject/withdraw first",
+        error: "Cannot revert while proposal is locked for editing",
         code: "status_locked",
       },
       { status: 409 }

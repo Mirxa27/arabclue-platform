@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Scale,
@@ -9,10 +10,18 @@ import {
   Columns2,
   AlignLeft,
   Loader2,
+  Eye,
+  GitCompare,
+  History,
+  Pencil,
+  RotateCcw,
+  Save,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/store";
 import {
@@ -20,33 +29,135 @@ import {
   type ContractArticle,
 } from "@/lib/contract-format";
 import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
+import { isProposalEditLocked } from "@/lib/proposal-status";
+import type { ApiProposal, ApiProposalVersion } from "@/lib/api-types";
 
 type Props = {
   title: string;
   titleAr?: string | null;
   contentMd: string;
+  proposalId?: string;
+  status?: string | null;
+  version?: number | null;
+  versions?: ApiProposalVersion[];
   research?: SaudiLawResearchBrief | null;
   articles?: ContractArticle[] | null;
   className?: string;
+  onSaved?: (proposal: ApiProposal) => void;
 };
 
 export function BilingualContractStudio({
   title,
   titleAr,
   contentMd,
+  proposalId,
+  status,
+  version,
+  versions = [],
   research,
   articles: articlesProp,
   className,
+  onSaved,
 }: Props) {
   const { locale } = useLocale();
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const ar = locale === "ar";
   const [mode, setMode] = useState<"split" | "en" | "ar">("split");
+  const [studioMode, setStudioMode] = useState<"preview" | "edit" | "versions">(
+    "preview"
+  );
   const [showResearch, setShowResearch] = useState(true);
+  const [draftMd, setDraftMd] = useState(contentMd);
+  const [diffLines, setDiffLines] = useState<string[]>([]);
+
+  useEffect(() => {
+    setDraftMd(contentMd);
+    setDiffLines([]);
+  }, [contentMd, proposalId]);
+
+  const currentVersion = version ?? versions[0]?.version ?? 1;
+  const locked = isProposalEditLocked(status);
+  const isDirty = draftMd !== contentMd;
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!proposalId) throw new Error("Missing contract id");
+      const res = await fetch(`/api/proposals/${proposalId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contentMd: draftMd,
+          changeLog: "Contract studio save",
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Save failed");
+      return json as { proposal: ApiProposal };
+    },
+    onSuccess: ({ proposal }) => {
+      setDraftMd(proposal.contentMd ?? "");
+      setStudioMode("preview");
+      qc.invalidateQueries({ queryKey: ["proposals"] });
+      qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
+      onSaved?.(proposal);
+      toast({
+        title: ar ? "تم حفظ العقد" : "Contract saved",
+        description: `v${proposal.version ?? currentVersion}`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: err.message, variant: "destructive" });
+    },
+  });
+
+  const revertMutation = useMutation({
+    mutationFn: async (targetVersion: number) => {
+      if (!proposalId) throw new Error("Missing contract id");
+      const res = await fetch(
+        `/api/proposals/${proposalId}/versions/${targetVersion}/revert`,
+        { method: "POST" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Revert failed");
+      return json as { proposal: ApiProposal };
+    },
+    onSuccess: ({ proposal }) => {
+      setDraftMd(proposal.contentMd ?? "");
+      setStudioMode("preview");
+      setDiffLines([]);
+      qc.invalidateQueries({ queryKey: ["proposals"] });
+      qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
+      onSaved?.(proposal);
+      toast({ title: ar ? "تمت استعادة الإصدار" : "Version restored" });
+    },
+    onError: (err: Error) => {
+      toast({ title: err.message, variant: "destructive" });
+    },
+  });
+
+  const compareMutation = useMutation({
+    mutationFn: async ({ a, b }: { a: number; b: number }) => {
+      if (!proposalId) throw new Error("Missing contract id");
+      const res = await fetch(
+        `/api/proposals/${proposalId}/versions/compare?a=${a}&b=${b}`
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Compare failed");
+      return json as { contentDiff: string[] };
+    },
+    onSuccess: (json) => {
+      setDiffLines(json.contentDiff ?? []);
+    },
+    onError: (err: Error) => {
+      toast({ title: err.message, variant: "destructive" });
+    },
+  });
 
   const articles = useMemo(() => {
-    if (articlesProp?.length) return articlesProp;
-    return parseContractArticles(contentMd);
-  }, [articlesProp, contentMd]);
+    if (!isDirty && articlesProp?.length) return articlesProp;
+    return parseContractArticles(draftMd);
+  }, [articlesProp, draftMd, isDirty]);
 
   return (
     <div
@@ -94,45 +205,107 @@ export function BilingualContractStudio({
           </div>
         </div>
 
-        <div className="relative mt-5 flex flex-wrap gap-2">
-          {(
-            [
-              ["split", ar ? "متقابل" : "Front-to-front", Columns2],
-              ["en", "English", AlignLeft],
-              ["ar", "العربية", AlignLeft],
-            ] as const
-          ).map(([id, label, Icon]) => (
+        <div className="relative mt-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["split", ar ? "متقابل" : "Front-to-front", Columns2],
+                ["en", "English", AlignLeft],
+                ["ar", "العربية", AlignLeft],
+              ] as const
+            ).map(([id, label, Icon]) => (
+              <Button
+                key={id}
+                size="sm"
+                variant="ghost"
+                onClick={() => setMode(id)}
+                className={cn(
+                  "h-8 rounded-full text-[11px] gap-1.5 border",
+                  mode === id
+                    ? "bg-white text-black border-white"
+                    : "border-white/15 text-white/60 hover:text-white hover:bg-white/10"
+                )}
+              >
+                <Icon className="size-3.5" />
+                {label}
+              </Button>
+            ))}
             <Button
-              key={id}
               size="sm"
               variant="ghost"
-              onClick={() => setMode(id)}
+              onClick={() => setShowResearch((v) => !v)}
               className={cn(
                 "h-8 rounded-full text-[11px] gap-1.5 border",
-                mode === id
-                  ? "bg-white text-black border-white"
+                showResearch
+                  ? "bg-[oklch(0.72_0.12_195)]/20 text-[oklch(0.85_0.1_195)] border-[oklch(0.72_0.12_195)]/30"
                   : "border-white/15 text-white/60 hover:text-white hover:bg-white/10"
               )}
             >
-              <Icon className="size-3.5" />
-              {label}
+              <BookOpen className="size-3.5" />
+              {ar ? "البحث النظامي" : "Law research"}
             </Button>
-          ))}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setShowResearch((v) => !v)}
-            className={cn(
-              "h-8 rounded-full text-[11px] gap-1.5 border",
-              showResearch
-                ? "bg-[oklch(0.72_0.12_195)]/20 text-[oklch(0.85_0.1_195)] border-[oklch(0.72_0.12_195)]/30"
-                : "border-white/15 text-white/60 hover:text-white hover:bg-white/10"
-            )}
-          >
-            <BookOpen className="size-3.5" />
-            {ar ? "البحث النظامي" : "Law research"}
-          </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="border-white/15 text-white/60">
+              v{currentVersion}
+            </Badge>
+            {status ? (
+              <Badge variant="outline" className="border-white/15 text-white/60">
+                {status}
+              </Badge>
+            ) : null}
+            {(
+              [
+                ["preview", Eye, ar ? "معاينة" : "Preview"],
+                ["edit", Pencil, ar ? "تحرير" : "Edit"],
+                ["versions", History, ar ? "الإصدارات" : "Versions"],
+              ] as const
+            ).map(([id, Icon, label]) => (
+              <Button
+                key={id}
+                size="sm"
+                variant="ghost"
+                disabled={id === "edit" && locked}
+                onClick={() => setStudioMode(id)}
+                className={cn(
+                  "h-8 rounded-full text-[11px] gap-1.5 border",
+                  studioMode === id
+                    ? "bg-white text-black border-white"
+                    : "border-white/15 text-white/60 hover:text-white hover:bg-white/10"
+                )}
+              >
+                <Icon className="size-3.5" />
+                {label}
+              </Button>
+            ))}
+            <Button
+              size="sm"
+              disabled={
+                locked ||
+                !proposalId ||
+                !isDirty ||
+                saveMutation.isPending
+              }
+              onClick={() => saveMutation.mutate()}
+              className="h-8 rounded-full text-[11px] gap-1.5"
+            >
+              {saveMutation.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Save className="size-3.5" />
+              )}
+              {ar ? "حفظ" : "Save"}
+            </Button>
+          </div>
         </div>
+        {locked ? (
+          <p className="relative mt-3 text-[11px] text-amber-100/80">
+            {ar
+              ? "هذا العقد مقفل بعد إرساله للمراجعة أو الاعتماد أو التصدير."
+              : "This contract is locked after review submission, approval, or export."}
+          </p>
+        ) : null}
       </div>
 
       {/* Research brief */}
@@ -174,7 +347,101 @@ export function BilingualContractStudio({
         </motion.div>
       ) : null}
 
-      {/* Articles */}
+      {studioMode === "edit" ? (
+        <div className="h-[min(70vh,720px)] p-4 sm:p-6">
+          <Textarea
+            value={draftMd}
+            disabled={locked}
+            onChange={(e) => setDraftMd(e.target.value)}
+            dir="ltr"
+            spellCheck
+            className="h-full min-h-[520px] resize-none border-white/10 bg-black/25 font-mono text-xs leading-relaxed text-white placeholder:text-white/30"
+            placeholder={
+              ar ? "حرر نص العقد بصيغة Markdown..." : "Edit contract markdown..."
+            }
+          />
+        </div>
+      ) : studioMode === "versions" ? (
+        <ScrollArea className="h-[min(70vh,720px)]">
+          <div className="px-4 sm:px-8 py-8 space-y-4">
+            {versions.length === 0 ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-white/40 text-sm">
+                <History className="size-4" />
+                {ar ? "لا توجد إصدارات محفوظة بعد" : "No saved versions yet"}
+              </div>
+            ) : (
+              versions.map((item, i) => (
+                <div
+                  key={item.id}
+                  className="rounded-xl border border-white/10 bg-white/[0.025] p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-white text-black">
+                          v{item.version}
+                        </Badge>
+                        {item.version === currentVersion ? (
+                          <Badge
+                            variant="outline"
+                            className="border-emerald-400/30 text-emerald-200"
+                          >
+                            {ar ? "الحالي" : "Current"}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 text-xs text-white/55">
+                        {item.changeLog ?? (ar ? "تعديل عقد" : "Contract edit")} ·{" "}
+                        {new Date(item.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {versions[i + 1] ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={compareMutation.isPending}
+                          onClick={() =>
+                            compareMutation.mutate({
+                              a: versions[i + 1].version,
+                              b: item.version,
+                            })
+                          }
+                          className="h-8 text-[11px] gap-1 border border-white/15 text-white/60 hover:text-white hover:bg-white/10"
+                        >
+                          <GitCompare className="size-3.5" />
+                          {ar ? "مقارنة" : "Compare"}
+                        </Button>
+                      ) : null}
+                      {item.version !== currentVersion ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={locked || revertMutation.isPending}
+                          onClick={() => revertMutation.mutate(item.version)}
+                          className="h-8 text-[11px] gap-1 border border-white/15 text-white/60 hover:text-white hover:bg-white/10"
+                        >
+                          {revertMutation.isPending ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <RotateCcw className="size-3.5" />
+                          )}
+                          {ar ? "استعادة" : "Revert"}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+            {diffLines.length > 0 ? (
+              <pre className="max-h-72 overflow-auto rounded-xl border border-white/10 bg-black/30 p-4 text-[10px] text-white/65 whitespace-pre-wrap">
+                {diffLines.slice(0, 240).join("\n")}
+              </pre>
+            ) : null}
+          </div>
+        </ScrollArea>
+      ) : (
       <ScrollArea className="h-[min(70vh,720px)]">
         <div className="px-4 sm:px-8 py-8 space-y-6">
           {articles.length === 0 ? (
@@ -254,6 +521,7 @@ export function BilingualContractStudio({
           )}
         </div>
       </ScrollArea>
+      )}
 
       <div className="px-6 sm:px-10 py-4 border-t border-white/10 text-[10px] text-white/40 leading-relaxed">
         {ar

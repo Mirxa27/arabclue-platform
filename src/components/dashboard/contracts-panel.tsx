@@ -9,6 +9,7 @@ import {
   Download,
   FileDown,
   Eye,
+  Loader2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,7 +72,16 @@ export function ContractsPanel() {
     [data?.proposals]
   );
 
-  const active = contracts.find((c) => c.id === openId) ?? null;
+  const activeListItem = contracts.find((c) => c.id === openId) ?? null;
+  const { data: activeData, isFetching: isActiveFetching } = useQuery({
+    queryKey: ["proposal", openId],
+    enabled: Boolean(openId),
+    queryFn: () => {
+      if (!openId) throw new Error("Missing contract id");
+      return apiJson<{ proposal: ApiProposal }>(`/api/proposals/${openId}`);
+    },
+  });
+  const active = activeData?.proposal ?? activeListItem;
   const artifacts = parseArtifacts(active?.artifactsJson);
 
   return (
@@ -210,8 +220,11 @@ export function ContractsPanel() {
       <Dialog open={Boolean(openId)} onOpenChange={(o) => !o && setOpenId(null)}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0">
           <DialogHeader className="px-5 py-3 border-b border-border/60">
-            <DialogTitle>
-              {active ? active.titleAr || active.title : "Contract"}
+            <DialogTitle className="flex items-center gap-2">
+              <span>{active ? active.titleAr || active.title : "Contract"}</span>
+              {isActiveFetching ? (
+                <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+              ) : null}
             </DialogTitle>
           </DialogHeader>
           {active ? (
@@ -234,8 +247,13 @@ export function ContractsPanel() {
                   title={active.title}
                   titleAr={active.titleAr}
                   contentMd={active.contentMd || ""}
+                  proposalId={active.id}
+                  status={active.status}
+                  version={active.version}
+                  versions={active.versions ?? []}
                   research={artifacts.research}
                   articles={artifacts.articles}
+                  onSaved={() => void refetch()}
                 />
               </TabsContent>
               <TabsContent

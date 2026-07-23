@@ -58,6 +58,17 @@ export type ApiProposalArtifact = {
   downloadPath?: string;
 };
 
+export type ApiProposalVersion = {
+  id: string;
+  proposalId?: string;
+  version: number;
+  contentMd?: string;
+  changeLog?: string | null;
+  locale?: string | null;
+  createdAt: string;
+  createdBy?: string | null;
+};
+
 export type ApiProposal = {
   id: string;
   title: string;
@@ -72,6 +83,7 @@ export type ApiProposal = {
   generatedAt?: string | null;
   artifacts?: ApiProposalArtifact[];
   artifactsJson?: string | null;
+  versions?: ApiProposalVersion[];
   project?: {
     id: string;
     title: string;

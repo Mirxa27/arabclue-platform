@@ -14,6 +14,7 @@ import {
 } from "@/lib/proposal-studio";
 import { validateProposalOutput } from "@/lib/validation-gate";
 import { financialForValidationGate } from "@/lib/proposal-studio";
+import { isProposalEditLocked } from "@/lib/proposal-status";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -40,7 +41,7 @@ export async function POST(
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  if (["REVIEW", "APPROVED", "EXPORTED"].includes(proposal.status)) {
+  if (isProposalEditLocked(proposal.status)) {
     return NextResponse.json(
       {
         error: "Proposal is locked for editing in current status",
