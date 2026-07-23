@@ -404,3 +404,30 @@
   0% { transform: translate(0, 0); }
   100% { transform: translate(32px, 32px); }
 }
+
+/* Voice Mission Control — live tool theater */
+@keyframes mission-scan {
+  0% { transform: translateY(-40%); opacity: 0; }
+  20% { opacity: 0.55; }
+  80% { opacity: 0.35; }
+  100% { transform: translateY(220%); opacity: 0; }
+}
+@keyframes mission-tool-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes mission-orb-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.35); }
+  50% { box-shadow: 0 0 0 10px rgba(13, 148, 136, 0); }
+}
+@keyframes mission-progress-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.mission-orb {
+  animation: mission-orb-breathe 1.8s ease-out infinite;
+}
+.mission-progress-shimmer {
+  background-size: 200% 100%;
+  animation: mission-progress-shimmer 1.6s linear infinite;
+}

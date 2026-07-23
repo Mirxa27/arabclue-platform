@@ -17,15 +17,13 @@ import {
   PhoneOff,
   Radio,
   Send,
-  Wrench,
 } from "lucide-react";
 import type { VoiceLiveConfig } from "@/lib/agents/platform/voice-types";
 import { RealtimeAudioWorkletCapture } from "@/lib/agents/platform/realtime-audio-capture";
 import { getLiveVoiceSessionConfig } from "@/lib/agents/platform/realtime-session-config";
-
-function toolLabel(type: string): string {
-  return type.replace(/^tool-/, "").replace(/([A-Z])/g, " $1").trim();
-}
+import { extractTheaterTools } from "@/lib/agents/platform/mission-tool-parts";
+import { MissionToolTheater } from "./mission-tool-theater";
+import type { MissionFeedItem } from "./mission-execution-feed";
 
 function micErrorMessage(err: unknown, ar: boolean): string {
   if (!window.isSecureContext) {
@@ -73,10 +71,12 @@ export function LiveVoiceSession({
   config,
   missionId,
   activeProjectId,
+  externalFeed = [],
 }: {
   config: VoiceLiveConfig;
   missionId?: string | null;
   activeProjectId?: string | null;
+  externalFeed?: MissionFeedItem[];
 }) {
   const { locale } = useLocale();
   const { setView, setActiveProjectId } = useUI();
@@ -303,6 +303,34 @@ export function LiveVoiceSession({
   const connected = realtime.status === "connected";
   const connecting = realtime.status === "connecting" || starting;
 
+  const theaterTools = useMemo(() => {
+    const fromMessages = extractTheaterTools(
+      realtime.messages as Array<{
+        id: string;
+        role: string;
+        parts: Array<{
+          type: string;
+          toolCallId?: string;
+          toolName?: string;
+          state?: string;
+          input?: unknown;
+          output?: unknown;
+          errorText?: string;
+          preliminary?: boolean;
+        }>;
+      }>
+    );
+    const fromFeed = externalFeed.map((f) => ({
+      id: `feed-${f.id}`,
+      name: f.toolName,
+      state: f.status,
+      output: f.summary ? { message: f.summary } : undefined,
+      messageId: f.id,
+    }));
+    const seen = new Set(fromMessages.map((t) => t.id));
+    return [...fromMessages, ...fromFeed.filter((f) => !seen.has(f.id))];
+  }, [realtime.messages, externalFeed]);
+
   return (
     <div className="flex flex-col gap-3 flex-1 min-h-0" dir={ar ? "rtl" : "ltr"}>
       <div className="flex flex-wrap items-center gap-2">
@@ -332,7 +360,7 @@ export function LiveVoiceSession({
           </Badge>
         )}
         {realtime.isPlaying && (
-          <Badge className="gap-1">
+          <Badge className="gap-1 bg-teal-700">
             {ar ? "يتحدث…" : "Speaking…"}
           </Badge>
         )}
@@ -349,82 +377,81 @@ export function LiveVoiceSession({
         )}
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto rounded-xl border bg-gradient-to-b from-background via-muted/20 to-background p-4 space-y-3"
-      >
-        {realtime.messages.length === 0 && (
-          <p className="text-sm text-muted-foreground max-w-xl">
-            {ar
-              ? "اضغط اتصال مباشر ثم تحدّث بشكل طبيعي — الوكيل ينفّذ أدوات المنصة صوتاً لصوت."
-              : "Tap Connect live, then speak naturally — the agent runs platform tools voice-to-voice."}
-          </p>
-        )}
-        {realtime.messages.map((message) => (
-          <div
-            key={message.id}
-            className={cn(
-              "rounded-lg px-3 py-2 text-sm max-w-[92%]",
-              message.role === "user"
-                ? "ms-auto bg-primary text-primary-foreground"
-                : "me-auto bg-card border"
-            )}
-          >
-            <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
-              {message.role === "user"
-                ? ar
-                  ? "أنت"
-                  : "You"
-                : ar
-                  ? "مباشر"
-                  : "Live"}
-            </div>
-            <div className="space-y-2 whitespace-pre-wrap">
-              {message.parts.map((part, i) => {
-                if (part.type === "text") {
-                  return <p key={i}>{part.text}</p>;
-                }
-                if (part.type.startsWith("tool-")) {
-                  const tp = part as {
-                    type: string;
-                    state?: string;
-                    output?: unknown;
-                  };
-                  const running =
-                    tp.state === "input-streaming" ||
-                    tp.state === "input-available";
-                  return (
-                    <div
-                      key={i}
-                      className={cn(
-                        "rounded-md border px-2 py-1.5 text-xs font-mono flex gap-2",
-                        running && "border-amber-500/40 bg-amber-500/5",
-                        tp.state === "output-available" &&
-                          "border-emerald-500/40 bg-emerald-500/5"
-                      )}
-                    >
-                      <Wrench
-                        className={cn(
-                          "size-3.5 mt-0.5",
-                          running && "animate-spin"
-                        )}
-                      />
-                      <div>
-                        <div className="font-semibold">{toolLabel(tp.type)}</div>
-                        {tp.state === "output-available" && tp.output != null && (
-                          <pre className="mt-1 max-h-24 overflow-auto opacity-80">
-                            {JSON.stringify(tp.output).slice(0, 360)}
-                          </pre>
-                        )}
+      <div className="grid flex-1 min-h-0 gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto rounded-2xl border bg-gradient-to-b from-background via-teal-500/[0.03] to-background p-4 space-y-3"
+        >
+          {realtime.messages.length === 0 && (
+            <p className="text-sm text-muted-foreground max-w-xl">
+              {ar
+                ? "اضغط اتصال مباشر ثم تحدّث — المسرح على اليمين يعرض كل أداة وتوليد المستندات بصرياً."
+                : "Tap Connect live, then speak — the theater visualizes every tool and document forge beat-by-beat."}
+            </p>
+          )}
+          {realtime.messages.map((message) => (
+            <div
+              key={message.id}
+              className={cn(
+                "rounded-xl px-3 py-2 text-sm max-w-[94%]",
+                message.role === "user"
+                  ? "ms-auto bg-primary text-primary-foreground"
+                  : "me-auto bg-card/90 border border-border/70"
+              )}
+            >
+              <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
+                {message.role === "user"
+                  ? ar
+                    ? "أنت"
+                    : "You"
+                  : ar
+                    ? "مباشر"
+                    : "Live"}
+              </div>
+              <div className="space-y-2 whitespace-pre-wrap">
+                {message.parts.map((part, i) => {
+                  if (part.type === "text") {
+                    return <p key={i}>{part.text}</p>;
+                  }
+                  if (
+                    part.type.startsWith("tool-") ||
+                    part.type === "dynamic-tool"
+                  ) {
+                    const tp = part as {
+                      type: string;
+                      toolName?: string;
+                      state?: string;
+                    };
+                    const name =
+                      tp.type === "dynamic-tool"
+                        ? tp.toolName || "tool"
+                        : tp.type.replace(/^tool-/, "");
+                    return (
+                      <div
+                        key={i}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono"
+                      >
+                        <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
+                        {name}
+                        <span className="opacity-60">{tp.state}</span>
                       </div>
-                    </div>
-                  );
-                }
-                return null;
-              })}
+                    );
+                  }
+                  return null;
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+
+        <MissionToolTheater
+          locale={locale}
+          tools={theaterTools}
+          voiceLive
+          isCapturing={isCapturing}
+          isSpeaking={realtime.isPlaying}
+          className="overflow-y-auto"
+        />
       </div>
 
       {(error || realtime.status === "error") && (

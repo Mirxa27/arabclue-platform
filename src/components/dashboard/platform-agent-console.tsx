@@ -18,17 +18,18 @@ import {
   Volume2,
   VolumeX,
   Sparkles,
-  Wrench,
   Radio,
 } from "lucide-react";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
 import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
+import { extractTheaterTools } from "@/lib/agents/platform/mission-tool-parts";
 import { LiveVoiceSession } from "./live-voice-session";
 import { MissionAttachmentTray } from "./mission-attachment-tray";
 import {
   MissionExecutionFeed,
   type MissionFeedItem,
 } from "./mission-execution-feed";
+import { MissionToolTheater } from "./mission-tool-theater";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -61,10 +62,6 @@ function partText(message: PlatformAgentUIMessage): string {
     .map((p) => p.text)
     .join("\n")
     .trim();
-}
-
-function toolLabel(type: string): string {
-  return type.replace(/^tool-/, "").replace(/([A-Z])/g, " $1").trim();
 }
 
 export function PlatformAgentConsole() {
@@ -177,12 +174,42 @@ export function PlatformAgentConsole() {
   const busy = status === "submitted" || status === "streaming";
   const ar = locale === "ar";
 
+  const theaterTools = useMemo(() => {
+    const fromMessages = extractTheaterTools(
+      messages as Array<{
+        id: string;
+        role: string;
+        parts: Array<{
+          type: string;
+          toolCallId?: string;
+          toolName?: string;
+          state?: string;
+          input?: unknown;
+          output?: unknown;
+          errorText?: string;
+          preliminary?: boolean;
+        }>;
+      }>
+    );
+    const fromFeed = feedItems.map((f) => ({
+      id: `feed-${f.id}`,
+      name: f.toolName,
+      state: f.status,
+      output: f.summary ? { message: f.summary } : undefined,
+      messageId: f.id,
+    }));
+    const seen = new Set(fromMessages.map((t) => t.id));
+    return [...fromMessages, ...fromFeed.filter((f) => !seen.has(f.id))];
+  }, [messages, feedItems]);
+
   // Live UI follow-along from tool outputs
   useEffect(() => {
     for (const message of messages) {
       if (message.role !== "assistant") continue;
       for (const part of message.parts) {
-        if (!part.type.startsWith("tool-")) continue;
+        if (!part.type.startsWith("tool-") && part.type !== "dynamic-tool") {
+          continue;
+        }
         const toolPart = part as {
           type: string;
           toolCallId?: string;
@@ -210,26 +237,26 @@ export function PlatformAgentConsole() {
         if (out.uiAction === "setActiveProject") {
           setFollowNote("active project focused");
         }
-        setFeedItems((prev) => [
-          {
-            id: key,
-            toolName: toolPart.type.replace(/^tool-/, ""),
-            status: toolPart.state || "output-available",
-            summary: JSON.stringify(out).slice(0, 280),
-          },
-          ...prev,
-        ].slice(0, 40));
+        setFeedItems((prev) =>
+          [
+            {
+              id: key,
+              toolName: toolPart.type.replace(/^tool-/, ""),
+              status: toolPart.state || "output-available",
+              summary: JSON.stringify(out).slice(0, 280),
+            },
+            ...prev,
+          ].slice(0, 40)
+        );
       }
     }
   }, [messages, setActiveProjectId]);
 
-  // Auto-scroll
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, interim, status]);
 
-  // TTS for completed assistant messages
   useEffect(() => {
     if (!voiceOut || typeof window === "undefined" || !window.speechSynthesis) {
       return;
@@ -339,13 +366,13 @@ export function PlatformAgentConsole() {
   }, [ar, sendMessage, startListening, stopListening]);
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)] min-h-[520px]">
+    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)] min-h-[560px]">
       <PageHeader
         title={ar ? "مركز قيادة الصوت" : "Voice Mission Control"}
         subtitle={
           ar
-            ? "أسقط الملفات وتحدث — الوكيل يشغّل المنصة بالكامل ضمن صلاحياتك، مع تنفيذ حيّ للوكلاء."
-            : "Drop files and speak — the agent runs the full platform within your role, with live agent execution."
+            ? "تحدّث أو أسقط ملفاً — شاهد الأدوات ومصنع المستندات يعملان أمامك لحظة بلحظة."
+            : "Speak or drop a file — watch every tool and the document forge run live in front of you."
         }
         locale={locale}
         badge="none"
@@ -384,7 +411,6 @@ export function PlatformAgentConsole() {
           if (data.autopilot?.mode === "autopilot") {
             setFollowView("agents");
             setFollowNote(data.autopilot.message || "autopilot pipeline started");
-            setMode("classic");
           }
           setFeedItems((prev) =>
             [
@@ -409,8 +435,6 @@ export function PlatformAgentConsole() {
           });
         }}
       />
-
-      <MissionExecutionFeed locale={locale} items={feedItems} />
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -442,33 +466,6 @@ export function PlatformAgentConsole() {
             {liveConfig.provider} · {liveConfig.modelId}
           </Badge>
         )}
-      </div>
-
-      {mode === "live" && liveConfig?.enabled ? (
-        <LiveVoiceSession
-          config={liveConfig}
-          missionId={missionId}
-          activeProjectId={activeProjectId}
-        />
-      ) : (
-        <>
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="secondary" className="gap-1">
-          <Sparkles className="size-3" />
-          {ar ? "وصول كامل ضمن صلاحياتك" : "Full access within your role"}
-        </Badge>
-        {busy && (
-          <Badge className="gap-1 animate-pulse">
-            <Loader2 className="size-3 animate-spin" />
-            {ar ? "ينفّذ…" : "Executing…"}
-          </Badge>
-        )}
-        {listening && (
-          <Badge variant="destructive" className="gap-1 animate-pulse">
-            <Mic className="size-3" />
-            {ar ? "يستمع" : "Listening"}
-          </Badge>
-        )}
         {followView && (
           <Button
             type="button"
@@ -483,196 +480,207 @@ export function PlatformAgentConsole() {
         )}
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto rounded-xl border bg-gradient-to-b from-background via-muted/20 to-background p-4 space-y-4"
-        dir={ar ? "rtl" : "ltr"}
-      >
-        {messages.length === 0 && (
-          <div className="text-sm text-muted-foreground max-w-xl leading-relaxed">
-            {ar
-              ? "جرّب: «اعرض مشاريعي»، «أنشئ مشروع مناقصة لتقنية المعلومات»، «شغّل وكلاء الذكاء على المشروع»، «افتح العقود»."
-              : "Try: “List my projects”, “Create an IT tender project”, “Run the AI agents on the active project”, “Open contracts”."}
-          </div>
-        )}
-
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={cn(
-              "rounded-lg px-3 py-2 text-sm max-w-[92%]",
-              message.role === "user"
-                ? "ms-auto bg-primary text-primary-foreground"
-                : "me-auto bg-card border"
-            )}
-          >
-            <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
-              {message.role === "user"
-                ? ar
-                  ? "أنت"
-                  : "You"
-                : ar
-                  ? "الوكيل"
-                  : "Copilot"}
-            </div>
-            <div className="space-y-2 whitespace-pre-wrap">
-              {message.parts.map((part, i) => {
-                if (part.type === "text") {
-                  return <p key={i}>{part.text}</p>;
-                }
-                if (part.type.startsWith("tool-")) {
-                  const tp = part as {
-                    type: string;
-                    state?: string;
-                    input?: unknown;
-                    output?: unknown;
-                  };
-                  const running =
-                    tp.state === "input-streaming" ||
-                    tp.state === "input-available" ||
-                    tp.state === "approval-requested";
-                  const done = tp.state === "output-available";
-                  const failed = tp.state === "output-error";
-                  return (
-                    <div
-                      key={i}
-                      className={cn(
-                        "rounded-md border px-2 py-1.5 text-xs font-mono flex items-start gap-2",
-                        running && "border-amber-500/40 bg-amber-500/5",
-                        done && "border-emerald-500/40 bg-emerald-500/5",
-                        failed && "border-destructive/40 bg-destructive/5"
-                      )}
-                    >
-                      <Wrench
-                        className={cn(
-                          "size-3.5 mt-0.5 shrink-0",
-                          running && "animate-spin"
-                        )}
-                      />
-                      <div className="min-w-0">
-                        <div className="font-semibold">
-                          {toolLabel(tp.type)}
-                          <span className="ms-2 font-normal opacity-70">
-                            {running
-                              ? ar
-                                ? "جارٍ…"
-                                : "running…"
-                              : done
-                                ? ar
-                                  ? "تم"
-                                  : "done"
-                                : failed
-                                  ? ar
-                                    ? "فشل"
-                                    : "failed"
-                                  : tp.state}
-                          </span>
-                        </div>
-                        {done && tp.output != null && (
-                          <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words opacity-80">
-                            {JSON.stringify(tp.output, null, 0).slice(0, 400)}
-                          </pre>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })}
-            </div>
-          </div>
-        ))}
-
-        {interim && (
-          <div className="text-sm text-muted-foreground italic">{interim}…</div>
-        )}
-      </div>
-
-      {error && (
-        <div className="text-sm text-destructive border border-destructive/30 rounded-md px-3 py-2">
-          {error.message}
-        </div>
-      )}
-
-      <div className="flex flex-col gap-2" dir={ar ? "rtl" : "ltr"}>
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={
-            ar
-              ? "اكتب أو تحدّث… اطلب أي إجراء على المنصة"
-              : "Type or speak… ask for any platform action"
-          }
-          rows={2}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void submit();
-            }
-          }}
-          disabled={busy}
+      {mode === "live" && liveConfig?.enabled ? (
+        <LiveVoiceSession
+          config={liveConfig}
+          missionId={missionId}
+          activeProjectId={activeProjectId}
+          externalFeed={feedItems}
         />
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="lg"
-            className={cn(listening && "animate-pulse")}
-            onClick={() => (listening ? stopListening() : speakAndSend())}
-            disabled={busy && !listening}
-          >
-            {listening ? (
-              <MicOff className="size-4 me-2" />
-            ) : (
-              <Mic className="size-4 me-2" />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary" className="gap-1">
+              <Sparkles className="size-3" />
+              {ar ? "وصول كامل ضمن صلاحياتك" : "Full access within your role"}
+            </Badge>
+            {busy && (
+              <Badge className="gap-1 animate-pulse">
+                <Loader2 className="size-3 animate-spin" />
+                {ar ? "ينفّذ…" : "Executing…"}
+              </Badge>
             )}
-            {listening
-              ? ar
-                ? "إيقاف الاستماع"
-                : "Stop listening"
-              : ar
-                ? "تحدّث وأرسل"
-                : "Speak & send"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void submit()}
-            disabled={busy || !input.trim()}
-          >
-            <Send className="size-4 me-2" />
-            {ar ? "إرسال" : "Send"}
-          </Button>
-          {busy && (
-            <Button type="button" variant="outline" onClick={() => stop()}>
-              <Square className="size-4 me-2" />
-              {ar ? "إيقاف" : "Stop"}
-            </Button>
+            {listening && (
+              <Badge variant="destructive" className="gap-1 animate-pulse">
+                <Mic className="size-3" />
+                {ar ? "يستمع" : "Listening"}
+              </Badge>
+            )}
+          </div>
+
+          <div className="grid flex-1 min-h-0 gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+            <div className="flex flex-col min-h-0 gap-3">
+              <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto rounded-2xl border bg-gradient-to-b from-background via-teal-500/[0.03] to-background p-4 space-y-4"
+                dir={ar ? "rtl" : "ltr"}
+              >
+                {messages.length === 0 && (
+                  <div className="text-sm text-muted-foreground max-w-xl leading-relaxed">
+                    {ar
+                      ? "جرّب: «اعرض مشاريعي»، «أنشئ مشروع مناقصة»، «شغّل الوكلاء» — المسرح على اليمين يعرض كل أداة ومستند."
+                      : "Try: “List my projects”, “Create a tender”, “Run the agents” — the theater on the right visualizes every tool and document."}
+                  </div>
+                )}
+
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={cn(
+                      "rounded-xl px-3 py-2 text-sm max-w-[94%]",
+                      message.role === "user"
+                        ? "ms-auto bg-primary text-primary-foreground"
+                        : "me-auto bg-card/90 border border-border/70"
+                    )}
+                  >
+                    <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
+                      {message.role === "user"
+                        ? ar
+                          ? "أنت"
+                          : "You"
+                        : ar
+                          ? "الوكيل"
+                          : "Copilot"}
+                    </div>
+                    <div className="space-y-2 whitespace-pre-wrap">
+                      {message.parts.map((part, i) => {
+                        if (part.type === "text") {
+                          return <p key={i}>{part.text}</p>;
+                        }
+                        if (
+                          part.type.startsWith("tool-") ||
+                          part.type === "dynamic-tool"
+                        ) {
+                          const tp = part as {
+                            type: string;
+                            toolName?: string;
+                            state?: string;
+                          };
+                          const name =
+                            tp.type === "dynamic-tool"
+                              ? tp.toolName || "tool"
+                              : tp.type.replace(/^tool-/, "");
+                          return (
+                            <div
+                              key={i}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono"
+                            >
+                              <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
+                              {name}
+                              <span className="opacity-60">{tp.state}</span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  </div>
+                ))}
+
+                {interim && (
+                  <div className="text-sm text-muted-foreground italic">
+                    {interim}…
+                  </div>
+                )}
+              </div>
+
+              <MissionExecutionFeed locale={locale} items={feedItems.slice(0, 6)} />
+            </div>
+
+            <MissionToolTheater
+              locale={locale}
+              tools={theaterTools}
+              isCapturing={listening}
+              isSpeaking={busy && voiceOut}
+              className="overflow-y-auto"
+            />
+          </div>
+
+          {error && (
+            <div className="text-sm text-destructive border border-destructive/30 rounded-md px-3 py-2">
+              {error.message}
+            </div>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setVoiceOut((v) => {
-                if (v) window.speechSynthesis?.cancel();
-                return !v;
-              });
-            }}
-          >
-            {voiceOut ? (
-              <Volume2 className="size-4 me-2" />
-            ) : (
-              <VolumeX className="size-4 me-2" />
-            )}
-            {voiceOut
-              ? ar
-                ? "صوت الرد"
-                : "Voice replies"
-              : ar
-                ? "صامت"
-                : "Muted"}
-          </Button>
-        </div>
-      </div>
+
+          <div className="flex flex-col gap-2" dir={ar ? "rtl" : "ltr"}>
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={
+                ar
+                  ? "اكتب أو تحدّث… اطلب أي إجراء على المنصة"
+                  : "Type or speak… ask for any platform action"
+              }
+              rows={2}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+              disabled={busy}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="lg"
+                className={cn(listening && "animate-pulse")}
+                onClick={() => (listening ? stopListening() : speakAndSend())}
+                disabled={busy && !listening}
+              >
+                {listening ? (
+                  <MicOff className="size-4 me-2" />
+                ) : (
+                  <Mic className="size-4 me-2" />
+                )}
+                {listening
+                  ? ar
+                    ? "إيقاف الاستماع"
+                    : "Stop listening"
+                  : ar
+                    ? "تحدّث وأرسل"
+                    : "Speak & send"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void submit()}
+                disabled={busy || !input.trim()}
+              >
+                <Send className="size-4 me-2" />
+                {ar ? "إرسال" : "Send"}
+              </Button>
+              {busy && (
+                <Button type="button" variant="outline" onClick={() => stop()}>
+                  <Square className="size-4 me-2" />
+                  {ar ? "إيقاف" : "Stop"}
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setVoiceOut((v) => {
+                    if (v) window.speechSynthesis?.cancel();
+                    return !v;
+                  });
+                }}
+              >
+                {voiceOut ? (
+                  <Volume2 className="size-4 me-2" />
+                ) : (
+                  <VolumeX className="size-4 me-2" />
+                )}
+                {voiceOut
+                  ? ar
+                    ? "صوت الرد"
+                    : "Voice replies"
+                  : ar
+                    ? "صامت"
+                    : "Muted"}
+              </Button>
+            </div>
+          </div>
         </>
       )}
     </div>
