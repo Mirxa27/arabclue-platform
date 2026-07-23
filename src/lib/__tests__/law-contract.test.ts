@@ -77,6 +77,13 @@ Human legal review is required before signature.
 Contract drafts and regulatory comments are drafting aids, not legal advice. Authorized human legal review and approval required before signature.`;
 }
 
+function withArticle2Block(articleBlock: string) {
+  return validContractFixture().replace(
+    /### Article 2 — Scope \| المادة 2 — النطاق[\s\S]*?(?=\n### Article 3 — Term)/,
+    articleBlock.trimEnd()
+  );
+}
+
 describe("Saudi law research + bilingual contract agent", () => {
   test("registers LAW_CONTRACT agent and LAW engine", () => {
     expect(AGENTS.some((a) => a.id === "LAW_CONTRACT")).toBe(true);
@@ -182,6 +189,40 @@ describe("Saudi law research + bilingual contract agent", () => {
     expect(missingEnglish.issues.some((i) => i.code === "bilingual_asymmetry")).toBe(true);
     expect(missingArabic.blocking).toBe(true);
     expect(missingArabic.issues.some((i) => i.code === "bilingual_asymmetry")).toBe(true);
+  });
+
+  test("validation rejects article headers missing paired bilingual language blocks", () => {
+    const missingEnglishBlock = validateContractDraft(
+      withArticle2Block(`### Article 2 — Scope | المادة 2 — النطاق
+:::ar
+نص بند النطاق بالعربية.
+:::`)
+    );
+    const missingArabicBlock = validateContractDraft(
+      withArticle2Block(`### Article 2 — Scope | المادة 2 — النطاق
+:::en
+English scope clause.
+:::`)
+    );
+
+    expect(missingEnglishBlock.blocking).toBe(true);
+    expect(missingEnglishBlock.issues.some((i) => i.code === "bilingual_structure")).toBe(true);
+    expect(missingArabicBlock.blocking).toBe(true);
+    expect(missingArabicBlock.issues.some((i) => i.code === "bilingual_structure")).toBe(true);
+  });
+
+  test("validation rejects malformed bilingual markup skipped by article parsing", () => {
+    const malformed = withArticle2Block(`### Article 2 — Scope | المادة 2 — النطاق
+:::en
+English scope clause.
+:::ar
+نص بند النطاق بالعربية.
+:::`);
+    const bad = validateContractDraft(malformed);
+
+    expect(parseContractArticles(malformed).length).toBe(4);
+    expect(bad.blocking).toBe(true);
+    expect(bad.issues.some((i) => i.code === "bilingual_structure")).toBe(true);
   });
 
   test("validation rejects contracts without research and source section markers", () => {

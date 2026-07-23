@@ -39,6 +39,16 @@ export type BilingualContractDraft = {
   locale: "bilingual";
 };
 
+type ContractValidationIssue = {
+  code: string;
+  severity: "error" | "warning";
+  message: string;
+};
+
+const ARTICLE_HEADER_RE = /^###\s*Article\s+(\d+)[^\n]*$/gim;
+const BILINGUAL_ARTICLE_HEADER_RE =
+  /^###\s*Article\s+\d+\s*—\s*[^|\n]+\|\s*المادة\s+\d+\s*—\s*[^\n]+$/i;
+
 const SYSTEM_LAW_CONTRACT = `You are ArabClue Agent — Principal Saudi Contract Counsel Drafter (assistant only).
 You draft bilingual EN/AR service / supply contracts for Saudi tender engagements.
 
@@ -366,13 +376,9 @@ export async function draftLawContract(opts: {
 export function validateContractDraft(contentMd: string): {
   ok: boolean;
   blocking: boolean;
-  issues: Array<{ code: string; severity: "error" | "warning"; message: string }>;
+  issues: ContractValidationIssue[];
 } {
-  const issues: Array<{
-    code: string;
-    severity: "error" | "warning";
-    message: string;
-  }> = [];
+  const issues: ContractValidationIssue[] = [];
   if (!contentMd.trim()) {
     issues.push({
       code: "empty_contract",
@@ -412,6 +418,7 @@ export function validateContractDraft(contentMd: string): {
     });
   }
   const articles = parseContractArticles(contentMd);
+  issues.push(...validateBilingualArticleStructure(contentMd));
   const asymmetric = articles.some((a) => {
     const hasEnglish = a.bodyEn.trim().length > 0;
     const hasArabic = a.bodyAr.trim().length > 0;
@@ -433,4 +440,90 @@ export function validateContractDraft(contentMd: string): {
   }
   const blocking = issues.some((i) => i.severity === "error");
   return { ok: !blocking, blocking, issues };
+}
+
+function validateBilingualArticleStructure(contentMd: string): ContractValidationIssue[] {
+  const issues: ContractValidationIssue[] = [];
+  const headers = collectArticleHeaders(contentMd);
+  const claimsBilingualArticles =
+    /#\s*DRAFT CONTRACT\s*\|\s*مسودة عقد/i.test(contentMd) ||
+    /#\s*OPERATIVE ARTICLES\s*\|\s*البنود النافذة/i.test(contentMd) ||
+    headers.length > 0;
+
+  if (!claimsBilingualArticles) {
+    return issues;
+  }
+
+  if (headers.length === 0) {
+    issues.push({
+      code: "bilingual_structure",
+      severity: "error",
+      message: "Contract claims bilingual operative articles but no Article EN/AR blocks were found",
+    });
+    return issues;
+  }
+
+  headers.forEach((header, index) => {
+    const nextHeader = headers[index + 1];
+    const section = contentMd.slice(header.end, nextHeader?.start ?? contentMd.length);
+    const articleLabel = Number.isFinite(header.number)
+      ? `Article ${header.number}`
+      : "Contract article";
+
+    if (!BILINGUAL_ARTICLE_HEADER_RE.test(header.text.trim())) {
+      issues.push({
+        code: "bilingual_structure",
+        severity: "error",
+        message: `${articleLabel} header must include paired English and Arabic titles`,
+      });
+      return;
+    }
+
+    const enMarkers = section.match(/^:::en\s*$/gim) ?? [];
+    const arMarkers = section.match(/^:::ar\s*$/gim) ?? [];
+    if (enMarkers.length !== 1 || arMarkers.length !== 1) {
+      issues.push({
+        code: "bilingual_structure",
+        severity: "error",
+        message: `${articleLabel} must include exactly one :::en block and one :::ar block`,
+      });
+      return;
+    }
+
+    const parsed = parseContractArticles(`${header.text}${section}`);
+    if (parsed.length !== 1 || parsed[0]?.number !== header.number) {
+      issues.push({
+        code: "bilingual_structure",
+        severity: "error",
+        message: `${articleLabel} has malformed bilingual article markup`,
+      });
+    }
+  });
+
+  return issues;
+}
+
+function collectArticleHeaders(md: string): Array<{
+  number: number;
+  text: string;
+  start: number;
+  end: number;
+}> {
+  const headers: Array<{
+    number: number;
+    text: string;
+    start: number;
+    end: number;
+  }> = [];
+  let match: RegExpExecArray | null;
+  ARTICLE_HEADER_RE.lastIndex = 0;
+  while ((match = ARTICLE_HEADER_RE.exec(md)) !== null) {
+    headers.push({
+      number: Number(match[1]),
+      text: match[0],
+      start: match.index,
+      end: ARTICLE_HEADER_RE.lastIndex,
+    });
+  }
+  return headers;
 }
