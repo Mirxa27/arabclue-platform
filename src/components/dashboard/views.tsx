@@ -20,7 +20,7 @@ import { ContractsPanel } from "./contracts-panel";
 import { ProjectsList } from "./projects-list";
 import { TenderFlowBoard } from "./tender-flow-board";
 import { Loader2, ShieldCheck, FileText } from "lucide-react";
-import { ONBOARDING_STEPS } from "@/lib/onboarding";
+import { ONBOARDING_STEPS } from "@/lib/onboarding-steps";
 import { Button } from "@/components/ui/button";
 
 function PanelLoading() {
