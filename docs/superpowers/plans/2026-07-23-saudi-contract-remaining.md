@@ -27,13 +27,13 @@
 - Modify or create: `src/lib/__tests__/law-contract*.test.ts` (or existing contract validation test file)
 - Reference: `src/lib/guardrails.ts`, `src/lib/validation-gate.ts`
 
-- [ ] Add failing tests for: AI pricing language in contracts; missing EN or AR article body asymmetry; missing research/source section when expected; false certainty; missing disclaimer
-- [ ] Extend `validateContractDraft` to block pricing language (reuse guardrail detectors where possible)
-- [ ] Warn or error on bilingual asymmetry (article markers present in one language body but empty in the other)
-- [ ] Require research/sources section markers before export-ready contracts (error if absent)
-- [ ] Keep disclaimer + false-certainty checks
-- [ ] Run focused tests until green
-- [ ] Commit
+- [x] Add failing tests for: AI pricing language in contracts; missing EN or AR article body asymmetry; missing research/source section when expected; false certainty; missing disclaimer
+- [x] Extend `validateContractDraft` to block pricing language (reuse guardrail detectors where possible)
+- [x] Warn or error on bilingual asymmetry (article markers present in one language body but empty in the other)
+- [x] Require research/sources section markers before export-ready contracts (error if absent)
+- [x] Keep disclaimer + false-certainty checks
+- [x] Run focused tests until green
+- [x] Commit
 
 ### Task 2: Contract studio edit / save / version
 
@@ -43,11 +43,11 @@
 - Reuse: proposal content save/version APIs (`/api/proposals/[id]` PATCH, versions routes)
 - Test: add component-adjacent or API-level tests if existing patterns cover proposal save; otherwise unit-test any new helpers
 
-- [ ] Make contract studio editable (markdown textarea or existing editor pattern from proposal editor — keep UI focused, not a second proposal editor clone)
-- [ ] Save updates content + creates/uses `ProposalVersion` like proposals
-- [ ] Disable edits when status is IN_REVIEW / APPROVED / EXPORTED (mirror proposal lock rules)
-- [ ] Wire Save + Version history controls from contracts panel / studio
-- [ ] Commit
+- [x] Make contract studio editable (markdown textarea or existing editor pattern from proposal editor — keep UI focused, not a second proposal editor clone)
+- [x] Save updates content + creates/uses `ProposalVersion` like proposals
+- [x] Disable edits when status is IN_REVIEW / APPROVED / EXPORTED (mirror proposal lock rules)
+- [x] Wire Save + Version history controls from contracts panel / studio
+- [x] Commit
 
 ### Task 3: Contract legal review path
 
@@ -57,11 +57,11 @@
 - Reuse: existing review submit/approve APIs for proposals
 - Test: `src/lib/__tests__/*review*` or proposal-studio tests — extend for `type=CONTRACT`
 
-- [ ] Add “Submit for legal review” for CONTRACT proposals (same approval chain)
-- [ ] Reviews queue opens contract studio (not proposal editor) when `type === "CONTRACT"`
-- [ ] After final approval, contract can export PDF; gate with hardened `validateContractDraft`
-- [ ] Tests covering contract submit → approve → export-ready
-- [ ] Commit
+- [x] Add “Submit for legal review” for CONTRACT proposals (same approval chain)
+- [x] Reviews queue opens contract studio (not proposal editor) when `type === "CONTRACT"`
+- [x] After final approval, contract can export PDF; gate with hardened `validateContractDraft`
+- [x] Tests covering contract submit → approve → export-ready
+- [x] Commit
 
 ### Task 4: Local-content compliance metadata cleanup
 
@@ -71,10 +71,10 @@
 - Reference: `src/lib/procurement-rules.ts`
 - Test: add regression scan in `src/lib/__tests__/` for forbidden blanket phrases in static compliance text
 
-- [ ] Rewrite LC-1 / LC-2 titles+requirements to tender-stated mechanism language (EN + AR)
-- [ ] Remove default mandatory percentages from matrix seed/export labels
-- [ ] Add test that fails if exported/static compliance text contains blanket “mandatory 10%” or “Minimum 35% Saudization” style universals
-- [ ] Commit
+- [x] Rewrite LC-1 / LC-2 titles+requirements to tender-stated mechanism language (EN + AR)
+- [x] Remove default mandatory percentages from matrix seed/export labels
+- [x] Add test that fails if exported/static compliance text contains blanket “mandatory 10%” or “Minimum 35% Saudization” style universals
+- [x] Commit
 
 ### Task 5: Mission Control import source fidelity
 
@@ -84,11 +84,11 @@
 - Modify: connector/source types as needed
 - Test: extend mission-control / classify tests
 
-- [ ] Replace `window.prompt` Email/Drive import with an in-app modal (text paste + optional file) — clear labels for Email / Google Drive / OneDrive
-- [ ] Persist distinct sources: `email`, `google_drive`, `onedrive` (or `drive` if already used — pick one and accept both in API)
-- [ ] Accept drive sources on JSON attachment API path
-- [ ] Tests for source preservation + classification path
-- [ ] Commit
+- [x] Replace `window.prompt` Email/Drive import with an in-app modal (text paste + optional file) — clear labels for Email / Google Drive / OneDrive
+- [x] Persist distinct sources: `email`, `google_drive`, `onedrive` (or `drive` if already used — pick one and accept both in API)
+- [x] Accept drive sources on JSON attachment API path
+- [x] Tests for source preservation + classification path
+- [x] Commit
 
 ### Task 6: Autopilot project enrichment from tender facts
 
@@ -97,15 +97,15 @@
 - Modify: ingest/stage helpers if needed to surface entities
 - Test: `src/lib/__tests__/autopilot.test.ts`
 
-- [ ] When creating a project from high-confidence RFP ingest, populate available fields: title, etimadRef, category, deadline/budget/SLA hints from parsed entities
-- [ ] Fall back to filename/date title only when entities missing
-- [ ] Add autopilot test: RFP text with Etimad-like fields → enriched `TenderProject` payload
-- [ ] Commit
+- [x] When creating a project from high-confidence RFP ingest, populate available fields: title, etimadRef, category, deadline/budget/SLA hints from parsed entities
+- [x] Fall back to filename/date title only when entities missing
+- [x] Add autopilot test: RFP text with Etimad-like fields → enriched `TenderProject` payload
+- [x] Commit
 
 ### Task 7: Verify & ship
 
-- [ ] `bun test src/lib/__tests__`
-- [ ] `bunx tsc --noEmit`
-- [ ] `bun run lint`
-- [ ] Update `docs/IMPLEMENTATION_STATUS.md` with these remaining-gap closures
-- [ ] Push branch `cursor/saudi-contract-remaining-ab64`, open/update PR, deploy to `main` when green
+- [x] `bun test src/lib/__tests__`
+- [x] `bunx tsc --noEmit`
+- [x] `bun run lint`
+- [x] Update `docs/IMPLEMENTATION_STATUS.md` with these remaining-gap closures
+- [x] Push branch `cursor/saudi-contract-remaining-ab64`; PR/main deploy handled by controller
