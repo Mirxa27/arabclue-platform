@@ -161,6 +161,11 @@ export const TOOL_META: Record<
   undoLastRouting: { en: "Undo routing", ar: "تراجع عن التوجيه", kind: "mission" },
   importExternalSource: { en: "Import external", ar: "استيراد خارجي", kind: "mission" },
   stageMissionAttachment: { en: "Stage attachment", ar: "تجهيز مرفق", kind: "mission" },
+  chromeExtensionIngest: {
+    en: "Chrome extension capture",
+    ar: "التقاط امتداد كروم",
+    kind: "mission",
+  },
   researchSaudiLaw: {
     en: "Regulatory synthesis",
     ar: "تركيب تنظيمي",

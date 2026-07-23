@@ -3,6 +3,7 @@ export type MissionConnectorId =
   | "url"
   | "camera"
   | "browser"
+  | "chrome_extension"
   | "email"
   | "google_drive"
   | "onedrive";
@@ -50,8 +51,17 @@ export const MISSION_CONNECTORS: MissionConnector[] = [
     id: "browser",
     label: { ar: "لقطة متصفح", en: "Browser capture" },
     description: {
-      ar: "الصق نص الصفحة الحالية",
-      en: "Paste the current page text",
+      ar: "الصق نص الصفحة أو استخدم امتداد كروم ArabClue Voice Agent",
+      en: "Paste page text or use the ArabClue Voice Agent Chrome extension",
+    },
+    status: "ready",
+  },
+  {
+    id: "chrome_extension",
+    label: { ar: "امتداد كروم", en: "Chrome extension" },
+    description: {
+      ar: "التقاط أي تبويب عبر لوحة جانبية متلألئة",
+      en: "Capture any tab via the glitter side panel",
     },
     status: "ready",
   },

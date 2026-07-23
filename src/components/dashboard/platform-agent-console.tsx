@@ -31,6 +31,7 @@ import {
 } from "./mission-execution-feed";
 import { MissionToolTheater } from "./mission-tool-theater";
 import { MissionPerformanceStage } from "./mission-performance-fx";
+import { MissionExtensionBridge } from "./mission-extension-bridge";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -441,6 +442,51 @@ export function PlatformAgentConsole() {
               ? "تراجع عن آخر توجيه للملف"
               : "Undo the last file routing action",
           });
+        }}
+      />
+
+      <MissionExtensionBridge
+        locale={locale}
+        onExtensionEvent={(payload) => {
+          const data = payload as {
+            attachment?: {
+              id: string;
+              originalName: string;
+              docCategory: string;
+              confidence: number;
+              routeStatus: string;
+              source: string;
+            };
+            autopilot?: {
+              mode?: string;
+              projectId?: string;
+              message?: string;
+              question?: string;
+            };
+            decision?: { category?: string; confidence?: number };
+            message?: string;
+          };
+          if (data.attachment) {
+            setAttachments((prev) => [data.attachment!, ...prev].slice(0, 40));
+          }
+          if (data.autopilot?.projectId) {
+            setActiveProjectId(data.autopilot.projectId);
+          }
+          setFeedItems((prev) =>
+            [
+              {
+                id: `ext-${Date.now()}`,
+                toolName: "chromeExtensionIngest",
+                status: "SUCCEEDED",
+                summary:
+                  data.message ||
+                  data.autopilot?.message ||
+                  data.autopilot?.question ||
+                  `${data.decision?.category ?? "browser"} capture`,
+              },
+              ...prev,
+            ].slice(0, 40)
+          );
         }}
       />
 

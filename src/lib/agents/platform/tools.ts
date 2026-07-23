@@ -1470,13 +1470,30 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
 
     importExternalSource: platformTool({
       description:
-        "Import from email/Drive connectors. v1 accepts pasted content while OAuth connectors remain stubs.",
+        "Import from email/Drive connectors or acknowledge Chrome extension captures. v1 accepts pasted content while OAuth connectors remain stubs; Chrome extension uses /api/platform-agent/extension/ingest.",
       inputSchema: z.object({
-        connector: z.enum(["email", "google_drive", "onedrive"]),
+        connector: z.enum([
+          "email",
+          "google_drive",
+          "onedrive",
+          "chrome_extension",
+        ]),
         text: z.string().optional(),
         note: z.string().optional(),
       }),
       execute: async ({ connector, text, note }) => {
+        if (connector === "chrome_extension") {
+          return {
+            ok: true as const,
+            connector,
+            status: "ready",
+            note:
+              note ||
+              "Install extensions/arabclue-agent (Load unpacked). Captures land in Mission Control automatically via extension ingest.",
+            uiAction: "navigate" as const,
+            view: "copilot" as const,
+          };
+        }
         if (!text?.trim()) {
           return {
             ok: false as const,

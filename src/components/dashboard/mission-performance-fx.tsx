@@ -140,18 +140,21 @@ export function MissionPerformanceStage({
       const y = e.clientY - rect.top;
       pointerRef.current = { x, y, inside: true };
       setCursor({ x, y, visible: true });
-      if (!reducedMotion && performing && Math.random() > 0.55) {
+      if (!reducedMotion && performing && Math.random() > 0.28) {
         particlesRef.current.push({
           x,
           y,
-          vx: (Math.random() - 0.5) * 1.2,
-          vy: -0.4 - Math.random() * 1.4,
+          vx: (Math.random() - 0.5) * 1.8,
+          vy: -0.6 - Math.random() * 2.2,
           life: 1,
-          maxLife: 0.45 + Math.random() * 0.35,
-          size: 1 + Math.random() * 2.2,
-          hue: 170 + Math.random() * 35,
+          maxLife: 0.55 + Math.random() * 0.45,
+          size: 1.2 + Math.random() * 3.2,
+          hue: 165 + Math.random() * 45,
           glitter: true,
         });
+        if (Math.random() > 0.82) {
+          particlesRef.current.push(...spawnBurst(x, y, 6));
+        }
       }
     },
     [performing, reducedMotion]
@@ -193,16 +196,16 @@ export function MissionPerformanceStage({
 
       // Ambient drifting glitter field
       if (performing) {
-        if (particlesRef.current.length < 90 && Math.random() > 0.7) {
+        if (particlesRef.current.length < 140 && Math.random() > 0.45) {
           particlesRef.current.push({
             x: Math.random() * width,
             y: Math.random() * height,
-            vx: (Math.random() - 0.5) * 0.35,
-            vy: -0.15 - Math.random() * 0.45,
+            vx: (Math.random() - 0.5) * 0.55,
+            vy: -0.25 - Math.random() * 0.65,
             life: 1,
-            maxLife: 1.2 + Math.random(),
-            size: 0.8 + Math.random() * 1.8,
-            hue: 155 + Math.random() * 50,
+            maxLife: 1.4 + Math.random(),
+            size: 0.9 + Math.random() * 2.4,
+            hue: 150 + Math.random() * 55,
             glitter: true,
           });
         }
@@ -234,7 +237,7 @@ export function MissionPerformanceStage({
         }
         next.push(p);
       }
-      particlesRef.current = next.slice(-160);
+      particlesRef.current = next.slice(-220);
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);

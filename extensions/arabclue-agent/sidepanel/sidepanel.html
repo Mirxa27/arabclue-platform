@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ArabClue Voice Agent</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <div class="stage" id="stage">
+      <canvas id="fx" aria-hidden="true"></canvas>
+      <div class="cursor" id="cursor" aria-hidden="true"></div>
+
+      <header class="hero">
+        <div class="orb"></div>
+        <div>
+          <p class="eyebrow">ArabClue · Mission Control uplink</p>
+          <h1>Voice Agent Bridge</h1>
+          <p class="sub">
+            Capture any tab — selection, page text, or screenshot — and beam it
+            into the Voice AI agent with live glitter FX.
+          </p>
+        </div>
+      </header>
+
+      <section class="panel status" id="statusPanel">
+        <div class="pulse" id="pulse"></div>
+        <div>
+          <strong id="statusTitle">Ready</strong>
+          <p id="statusText">Click capture to strengthen the agent.</p>
+        </div>
+      </section>
+
+      <section class="panel preview" id="preview">
+        <div class="meta">
+          <span id="pageTitle">No page loaded</span>
+          <a id="pageUrl" href="#" target="_blank" rel="noreferrer"></a>
+        </div>
+        <pre id="snippet">Select text on a page or capture the full document…</pre>
+      </section>
+
+      <section class="actions">
+        <button class="btn primary" id="btnCapture">
+          <span class="spark"></span>
+          Capture page
+        </button>
+        <button class="btn" id="btnSelection">Send selection</button>
+        <button class="btn" id="btnShot">Screenshot → agent</button>
+        <button class="btn ghost" id="btnOpen">Open Mission Control</button>
+      </section>
+
+      <section class="panel settings">
+        <label>
+          API base
+          <input id="apiBase" type="url" placeholder="https://arabclue.com" />
+        </label>
+        <button class="btn tiny" id="btnSave">Save</button>
+      </section>
+
+      <footer>
+        <span>MV3 · Side Panel · Jul 2026</span>
+        <span id="version"></span>
+      </footer>
+    </div>
+    <script src="sidepanel.js" type="module"></script>
+  </body>
+</html>
