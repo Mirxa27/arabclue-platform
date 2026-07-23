@@ -82,7 +82,12 @@ export function TenderInsightsChart() {
           headers: { Accept: "application/json" },
         });
         if (cancelled) return;
-        if (res.status === 401 || res.status === 403) {
+        // Unauthenticated: either a 401/403, or middleware redirected us to /login.
+        if (
+          res.status === 401 ||
+          res.status === 403 ||
+          (res.redirected && /\/login/i.test(res.url))
+        ) {
           setState({ kind: "unauth" });
           return;
         }
@@ -91,6 +96,13 @@ export function TenderInsightsChart() {
             kind: "error",
             message: `HTTP ${res.status}`,
           });
+          return;
+        }
+        // Non-JSON (e.g. a login HTML page) also means unauthenticated.
+        if (
+          !(res.headers.get("content-type") || "").includes("application/json")
+        ) {
+          setState({ kind: "unauth" });
           return;
         }
         const data = (await res.json()) as ApiResponse;
