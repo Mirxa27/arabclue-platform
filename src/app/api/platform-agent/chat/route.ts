@@ -2,6 +2,7 @@ import { createAgentUIStreamResponse } from "ai";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
 import { detectPricingRequest } from "@/lib/guardrails";
+import { syncMissionTranscript } from "@/lib/agents/platform/mission-transcript";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -12,7 +13,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { messages?: unknown[]; missionId?: string; activeProjectId?: string | null };
+  let body: {
+    messages?: unknown[];
+    missionId?: string;
+    activeProjectId?: string | null;
+  };
   try {
     body = await req.json();
   } catch {
@@ -27,7 +32,9 @@ export async function POST(req: Request) {
     .find((m) => {
       if (!m || typeof m !== "object") return false;
       return (m as { role?: string }).role === "user";
-    }) as { parts?: Array<{ type?: string; text?: string }>; content?: string } | undefined;
+    }) as
+    | { parts?: Array<{ type?: string; text?: string }>; content?: string }
+    | undefined;
 
   const userText =
     lastUser?.parts
@@ -60,14 +67,47 @@ export async function POST(req: Request) {
       locale,
       activeProjectId: body.activeProjectId,
     });
+    const missionId = body.missionId || mission.id;
     const { agent } = await createPlatformAgent(session, {
-      missionId: body.missionId || mission.id,
+      missionId,
       activeProjectId: body.activeProjectId ?? mission.activeProjectId ?? null,
     });
+
+    // Persist inbound user turn immediately so crashes mid-stream still leave a trail
+    try {
+      await syncMissionTranscript({
+        missionId,
+        userId: session.user.id,
+        messages: messages as Array<{
+          id?: string;
+          role?: string;
+          parts?: unknown;
+        }>,
+      });
+    } catch (persistErr) {
+      console.error("[platform-agent/chat] pre-persist", persistErr);
+    }
+
     return createAgentUIStreamResponse({
       agent,
       uiMessages: messages,
+      originalMessages: messages as never,
       abortSignal: req.signal,
+      onEnd: async ({ messages: finalMessages }) => {
+        try {
+          await syncMissionTranscript({
+            missionId,
+            userId: session.user.id,
+            messages: finalMessages as Array<{
+              id?: string;
+              role?: string;
+              parts?: unknown;
+            }>,
+          });
+        } catch (err) {
+          console.error("[platform-agent/chat] transcript sync", err);
+        }
+      },
     });
   } catch (err) {
     console.error("[platform-agent/chat]", err);

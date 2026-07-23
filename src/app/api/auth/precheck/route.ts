@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { parseJsonBody, authPrecheckSchema } from "@/lib/validation";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const email = parsed.data.email.trim().toLowerCase();
     const password = parsed.data.password;
 
-    const rl = rateLimit({
+    const rl = await rateLimit({
       key: `precheck:${email}`,
       limit: 20,
       windowMs: 15 * 60 * 1000,

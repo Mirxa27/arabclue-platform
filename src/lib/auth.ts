@@ -5,7 +5,7 @@ import { db } from "./db";
 import { verifyPassword } from "./password";
 import { verifyMfaToken } from "./mfa";
 import { audit, AUDIT_ACTIONS } from "./audit";
-import { rateLimit } from "./rate-limit";
+import { rateLimitAsync as rateLimit } from "./rate-limit";
 import type { Role } from "./types";
 
 declare module "next-auth" {
@@ -70,7 +70,7 @@ export const authOptions: NextAuthOptions = {
         const password = credentials?.password ?? "";
         const mfaToken = credentials?.mfaToken?.trim() ?? "";
 
-        const rl = rateLimit({
+        const rl = await rateLimit({
           key: `login:${email || "unknown"}`,
           limit: 10,
           windowMs: 15 * 60 * 1000,

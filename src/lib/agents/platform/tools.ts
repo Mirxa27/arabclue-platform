@@ -1397,37 +1397,27 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
     }),
 
     searchDocumentChunks: platformTool({
-      description: "Search indexed document chunks for a project or the whole workspace.",
+      description:
+        "Semantic search over indexed document chunks (embedding hybrid RAG) for a project or the whole workspace.",
       inputSchema: z.object({
         query: z.string().min(2),
         projectId: z.string().optional(),
         limit: z.number().int().min(1).max(20).optional(),
       }),
       execute: async ({ query, projectId, limit }) => {
-        const q = query.toLowerCase();
-        const chunks = await db.documentChunk.findMany({
-          where: {
-            workspaceId: ctx.workspace.id,
-            ...(projectId ? { projectId } : {}),
-          },
-          orderBy: { createdAt: "desc" },
-          take: 200,
-          select: {
-            id: true,
-            documentId: true,
-            projectId: true,
-            chunkIndex: true,
-            content: true,
-          },
+        const { searchWorkspaceChunks } = await import("@/lib/document-chunks");
+        const result = await searchWorkspaceChunks({
+          workspaceId: ctx.workspace.id,
+          query,
+          projectId,
+          limit,
         });
-        const hits = chunks
-          .filter((c) => c.content.toLowerCase().includes(q))
-          .slice(0, limit ?? 8)
-          .map((c) => ({
-            ...c,
-            excerpt: c.content.slice(0, 400),
-          }));
-        return { ok: true as const, hits, totalScanned: chunks.length };
+        return {
+          ok: true as const,
+          hits: result.hits,
+          totalIndexed: result.totalIndexed,
+          mode: result.mode,
+        };
       },
     }),
 
@@ -1470,7 +1460,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
 
     importExternalSource: platformTool({
       description:
-        "Import from email/Drive connectors or acknowledge Chrome extension captures. v1 accepts pasted content while OAuth connectors remain stubs; Chrome extension uses /api/platform-agent/extension/ingest.",
+        "Import email / Google Drive / OneDrive content via paste (production path without requiring third-party OAuth app credentials), or guide Chrome extension capture.",
       inputSchema: z.object({
         connector: z.enum([
           "email",
@@ -1497,9 +1487,10 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         if (!text?.trim()) {
           return {
             ok: false as const,
-            error: `${connector} OAuth is not connected yet. Paste the email/file text and retry.`,
+            error: `Paste the ${connector.replace("_", " ")} content (email body or exported file text) and retry. OAuth app linking is not required.`,
             connector,
-            status: "stub",
+            status: "ready",
+            importMode: "paste",
           };
         }
         if (!ctx.canWrite) return denyWrite(ctx);
@@ -1526,6 +1517,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           attachmentId: staged.attachment.id,
           decision: staged.decision,
           autopilot: staged.autopilot,
+          status: "ready",
         };
       },
     }),

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyMfaToken } from "@/lib/mfa";
 import { requireSession } from "@/lib/auth";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
 import { z } from "zod";
 import { zodErrorResponse } from "@/lib/validation";
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const session = await requireSession({ allowMustChangePassword: true });
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const rl = rateLimit({ key: `mfa:verify:${session.user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
+    const rl = await rateLimit({ key: `mfa:verify:${session.user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
     if (!rl.ok) {
       return NextResponse.json({ error: "rate_limited_try_later" }, { status: 429 });
     }

@@ -3,13 +3,15 @@ import { AUTOPILOT_CONFIDENCE, classifyAttachment } from "@/lib/agents/platform/
 import { assertSafeExternalUrl, MISSION_CONNECTORS } from "@/lib/agents/platform/connectors";
 
 describe("mission control domain", () => {
-  test("exposes ready and stub connectors", () => {
+  test("exposes production-ready connectors only", () => {
     const ids = MISSION_CONNECTORS.map((c) => c.id);
     expect(ids).toContain("upload");
     expect(ids).toContain("url");
     expect(ids).toContain("email");
-    expect(MISSION_CONNECTORS.some((c) => c.status === "ready")).toBe(true);
-    expect(MISSION_CONNECTORS.some((c) => c.status === "stub")).toBe(true);
+    expect(ids).toContain("google_drive");
+    expect(ids).toContain("onedrive");
+    expect(MISSION_CONNECTORS.every((c) => c.status === "ready")).toBe(true);
+    expect(MISSION_CONNECTORS.some((c) => c.importMode === "paste")).toBe(true);
   });
 
   test("allows public https URLs", () => {

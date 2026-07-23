@@ -70,15 +70,28 @@ export async function ingestDocumentForWorkspace(input: IngestDocumentInput) {
     input.mimeType,
     input.originalName
   );
-  const entities = text
-    ? parseTenderText(text, input.tenderCategory || "IT")
-    : parseTenderText(
-        `Document ${input.originalName} category ${input.docCategory} — binary without extractable text layer.`,
-        input.tenderCategory || "IT"
-      );
-  const summary = text
-    ? buildIngestionSummary(entities, [input.originalName])
-    : `Stored ${input.originalName} (${input.mimeType}, ${stored.sizeBytes} bytes). No extractable text layer — metadata and category-based structure applied.`;
+  const { isImageMime } = await import("../ocr-image");
+  const imageDoc = isImageMime(input.mimeType, input.originalName);
+  const hasText = Boolean(text?.trim());
+
+  let entities;
+  let summary: string;
+  if (hasText) {
+    entities = parseTenderText(text, input.tenderCategory || "IT");
+    summary = buildIngestionSummary(entities, [input.originalName]);
+  } else if (imageDoc) {
+    entities = parseTenderText(
+      `Image attachment ${input.originalName} (${input.docCategory}). OCR found no readable text.`,
+      input.tenderCategory || "IT"
+    );
+    summary = `Stored image ${input.originalName} (${input.mimeType}, ${stored.sizeBytes} bytes). OCR completed with no extractable text — file is available for manual review.`;
+  } else {
+    entities = parseTenderText(
+      `Document ${input.originalName} category ${input.docCategory} — no extractable text layer.`,
+      input.tenderCategory || "IT"
+    );
+    summary = `Stored ${input.originalName} (${input.mimeType}, ${stored.sizeBytes} bytes). No extractable text layer — metadata and category-based structure applied.`;
+  }
   const entitiesJson = JSON.stringify(entities);
 
   await db.uploadedDocument.update({

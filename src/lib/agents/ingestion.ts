@@ -30,6 +30,17 @@ export async function extractTextFromBuffer(
     return sanitizeText(bytes.toString("utf8"));
   }
 
+  // Image OCR (camera / screenshots / scanned notes)
+  const { isImageMime, extractTextFromImage } = await import("./ocr-image");
+  if (isImageMime(mimeType, originalName)) {
+    try {
+      return await extractTextFromImage(bytes, mimeType, originalName);
+    } catch (err) {
+      console.warn("[ingestion] image OCR failed", err);
+      return "";
+    }
+  }
+
   if (lower.endsWith(".pdf") || mimeType === "application/pdf") {
     try {
       const mod = await import("pdf-parse");

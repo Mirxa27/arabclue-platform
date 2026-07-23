@@ -577,13 +577,26 @@ function OnboardingBanner() {
   const [missing, setMissing] = useState<string[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
     fetch("/api/onboarding")
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`onboarding ${r.status}`);
+        return r.json();
+      })
       .then((d) => {
+        if (cancelled) return;
         setReady(d.readyForProposals === true);
         setMissing(d.missing ?? []);
       })
-      .catch(() => setReady(true));
+      .catch(() => {
+        if (cancelled) return;
+        // Fail closed: treat unknown state as not ready so banner still prompts setup
+        setReady(false);
+        setMissing(["status_unavailable"]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (ready !== false) return null;

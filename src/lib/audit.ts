@@ -30,6 +30,27 @@ export async function audit(ctx: AuditContext): Promise<void> {
         success: ctx.success ?? true,
       },
     });
+    const severity = ctx.severity ?? "INFO";
+    if (
+      severity === "WARN" ||
+      severity === "ERROR" ||
+      severity === "CRITICAL" ||
+      ctx.action === "ARTIFACT_DOWNLOAD" ||
+      ctx.action === "PROPOSAL_GENERATE"
+    ) {
+      const { notifyWebhook } = await import("./outbound-webhook");
+      notifyWebhook({
+        event: `audit.${ctx.action}`,
+        userId: ctx.userId,
+        resource: ctx.resource,
+        resourceId: ctx.resourceId,
+        data: {
+          severity,
+          success: ctx.success ?? true,
+          ...(ctx.details ?? {}),
+        },
+      });
+    }
   } catch (err) {
     // Audit must never break the request flow
     console.error("[audit] failed to write log", err);

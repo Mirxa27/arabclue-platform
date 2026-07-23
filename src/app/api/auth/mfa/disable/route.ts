@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { verifyMfaToken } from "@/lib/mfa";
 import { audit } from "@/lib/audit";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
 import { parseJsonBody, mfaDisableSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const rl = rateLimit({
+    const rl = await rateLimit({
       key: `mfa:disable:${session.user.id}`,
       limit: 5,
       windowMs: 15 * 60 * 1000,

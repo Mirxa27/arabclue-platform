@@ -4,7 +4,7 @@
 
 import { db } from "./db";
 import { embedText } from "./llm";
-import type { RagDocument } from "./rag";
+import { retrieveRelevant, type RagDocument } from "./rag";
 
 const CHUNK_SIZE = 900;
 const CHUNK_OVERLAP = 120;
@@ -90,4 +90,85 @@ export async function loadProjectTenderCorpus(
       embedding,
     };
   });
+}
+
+/**
+ * Embedding-first hybrid search over workspace (or project) document chunks.
+ */
+export async function searchWorkspaceChunks(opts: {
+  workspaceId: string;
+  query: string;
+  projectId?: string;
+  limit?: number;
+}): Promise<{
+  hits: Array<{
+    id: string;
+    documentId: string;
+    projectId: string | null;
+    chunkIndex: number;
+    content: string;
+    excerpt: string;
+    score: number;
+    title: string;
+  }>;
+  totalIndexed: number;
+  mode: "embedding" | "lexical";
+}> {
+  const limit = opts.limit ?? 8;
+  const rows = await db.documentChunk.findMany({
+    where: {
+      workspaceId: opts.workspaceId,
+      ...(opts.projectId ? { projectId: opts.projectId } : {}),
+    },
+    include: {
+      document: { select: { originalName: true, docCategory: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 400,
+  });
+
+  const docs: RagDocument[] = rows.map((c) => {
+    let embedding: number[] | null = null;
+    if (c.embeddingJson) {
+      try {
+        embedding = JSON.parse(c.embeddingJson) as number[];
+      } catch {
+        embedding = null;
+      }
+    }
+    return {
+      id: c.id,
+      title: `${c.document.docCategory}: ${c.document.originalName}#${c.chunkIndex}`,
+      summary: c.content,
+      sector: c.document.docCategory,
+      tags: c.document.docCategory,
+      embedding,
+    };
+  });
+
+  const queryEmbedding = await embedText(opts.query);
+  const hasEmbeddings = docs.some((d) => d.embedding && d.embedding.length > 0);
+  const hits = retrieveRelevant(opts.query, docs, {
+    topK: limit,
+    queryEmbedding: hasEmbeddings ? queryEmbedding : null,
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  return {
+    totalIndexed: rows.length,
+    mode: hasEmbeddings && hits.some((h) => h.score > 0) ? "embedding" : "lexical",
+    hits: hits.map((h) => {
+      const row = byId.get(h.id)!;
+      return {
+        id: h.id,
+        documentId: row.documentId,
+        projectId: row.projectId,
+        chunkIndex: row.chunkIndex,
+        content: row.content,
+        excerpt: row.content.slice(0, 400),
+        score: h.score,
+        title: h.title,
+      };
+    }),
+  };
 }

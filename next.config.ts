@@ -4,6 +4,10 @@ import path from "path";
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
   reactStrictMode: true,
+  // Enable for self-host `bun run build:standalone` / Docker. Harmless on Vercel.
+  ...(process.env.STANDALONE === "1" || process.env.STANDALONE === "true"
+    ? { output: "standalone" as const }
+    : {}),
   turbopack: {
     root: path.resolve(__dirname),
   },
@@ -24,8 +28,18 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-XSS-Protection", value: "0" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
-          ...(process.env.VERCEL ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
+          {
+            key: "Permissions-Policy",
+            value: "camera=(self), microphone=(self), geolocation=()",
+          },
+          ...(process.env.VERCEL
+            ? [
+                {
+                  key: "Strict-Transport-Security",
+                  value: "max-age=63072000; includeSubDomains; preload",
+                },
+              ]
+            : []),
         ],
       },
     ];

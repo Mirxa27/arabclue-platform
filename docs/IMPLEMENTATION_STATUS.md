@@ -1,38 +1,41 @@
 # Implementation Status
 
-**Branch:** `cursor/production-completion-ab64`  
-**Verified:** 2026-07-22 (proposal document studio + production ops)
+**Branch:** `cursor/complete-remaining-ab64`  
+**Verified:** 2026-07-23
 
 ## Quality gates (executed)
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Unit tests | `bun test src/lib/__tests__` | **74 pass, 0 fail** |
+| Unit tests | `bun test src/lib/__tests__` | **139 pass, 0 fail** |
 | Typecheck | `bunx tsc --noEmit` | **pass** |
-| Build | `bun run build` | **pass** (studio routes: validate, versions, regenerate) |
-| Migrate | `bunx prisma migrate deploy` | **applied** `20260722170000_proposal_studio` |
+| Lint | `bun run lint` | **0 errors** (3 pre-existing warnings) |
+| Build | `bun run build` | **pass** |
 
-## Live surfaces
+## Recently completed (production)
 
 | Area | Status | Evidence |
 | --- | --- | --- |
-| Principal-engineer agents | Live | Coverage-driven 18-section packages |
-| Proposal studio skills | Live | rewrite/expand/condense/translate/redesign/section + apply |
-| Version compare/revert | Live | `/api/proposals/[id]/versions/*` |
-| Regenerate version + fork | Live | `regenerateMode` + `parentProposalId` lineage |
-| Validation panel | Live | `/api/proposals/[id]/validate` |
-| Export policy | Live | Approval required when policy exists; ZIP → `EXPORTED` |
-| Human BoQ exemption | Live | `source: human` not treated as AI-priced |
-| Agent resume | Live | Stale runs resume from `configJson` via status poll |
-| Readiness | Live | DB + secrets + LLM provider presence + MyFatoorah |
-| Reviews → studio | Live | Open studio from reviews queue |
-| Agent → studio CTA | Live | Coverage % + Open studio |
+| Mission chat persistence | Live | `syncMissionTranscript` + chat `onEnd` + UI hydrate |
+| Image OCR | Live | Tesseract.js eng+ara via `ocr-image.ts` + sharp preprocess |
+| Document chunk RAG search | Live | `searchWorkspaceChunks` embedding hybrid |
+| Email/Drive/OneDrive import | Live | Paste/file import (no stub/soon); OAuth apps not required |
+| PDF generation/viewer | Live | Playwright `htmlToPdf` + `DocumentPreviewFrame` |
+| Tender setup flow | Live | Wizard + `TenderFlowBoard` |
+| Standalone self-host | Live | `STANDALONE=1` → `output: "standalone"` |
+| Redis rate limit | Live | `rateLimitAsync` when `REDIS_URL` set |
+| Outbound webhooks | Live | `WEBHOOK_URL` on audit events |
+| Onboarding banner | Fixed | Fail-closed on API error |
+| Marketing SSO claim | Fixed | Replaced with RBAC & audit (SSO out of scope) |
+| Camera Permissions-Policy | Fixed | `camera=(self)` |
 
-## Deferred / external
+## Deferred / external only
 
 - Live MyFatoorah sandbox charge requires merchant credentials
 - External malware scanner credentials
 - Full browser E2E in CI image
-- Redis/Bull distributed queue (in-process + resume retained)
+- Google/Microsoft OAuth *app* linking (paste/upload path is production-complete without third-party app registration)
+- Etimad portal submission API (explicitly out of scope)
+- SSO/OIDC (explicitly out of scope per PRD)
 
-See `docs/GAP_ANALYSIS.md` and `docs/superpowers/specs/2026-07-22-proposal-document-studio-design.md`.
+See `docs/GAP_ANALYSIS.md` and `prd/PRD.md`.

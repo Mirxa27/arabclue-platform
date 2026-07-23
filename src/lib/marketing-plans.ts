@@ -78,14 +78,14 @@ export const MARKETING_PLANS: MarketingPlan[] = [
       "20 workspaces · audit trail",
       "RBAC · dedicated support",
       "Custom AI provider routing",
-      "SSO-ready controls",
+      "Enterprise RBAC & audit controls",
     ],
     featuresAr: [
       "عطاءات ومستندات بلا حد",
       "20 مساحة عمل · سجل تدقيق",
       "صلاحيات أدوار · دعم مخصص",
       "توجيه مخصص لمزودي الذكاء",
-      "ضوابط جاهزة لـ SSO",
+      "ضوابط RBAC وتدقيق مؤسسي",
     ],
   },
 ];

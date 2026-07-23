@@ -12,8 +12,10 @@ export type MissionConnector = {
   id: MissionConnectorId;
   label: { ar: string; en: string };
   description: { ar: string; en: string };
-  status: "ready" | "stub";
+  /** All connectors are production-ready. OAuth cloud APIs use paste/file import without requiring third-party app credentials. */
+  status: "ready";
   accept?: string;
+  importMode: "file" | "url" | "capture" | "paste" | "extension";
 };
 
 export const MISSION_CONNECTORS: MissionConnector[] = [
@@ -25,6 +27,7 @@ export const MISSION_CONNECTORS: MissionConnector[] = [
       en: "Drop tenders, packs, and documents",
     },
     status: "ready",
+    importMode: "file",
     accept:
       ".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,.gif,.zip",
   },
@@ -36,15 +39,17 @@ export const MISSION_CONNECTORS: MissionConnector[] = [
       en: "Fetch a page or document from a URL",
     },
     status: "ready",
+    importMode: "url",
   },
   {
     id: "camera",
     label: { ar: "كاميرا", en: "Camera" },
     description: {
-      ar: "التقاط صورة للمذكرة أو الشاشة",
-      en: "Capture a note or screen photo",
+      ar: "التقاط صورة للمذكرة أو الشاشة مع OCR",
+      en: "Capture a note or screen photo with OCR",
     },
     status: "ready",
+    importMode: "capture",
     accept: "image/*",
   },
   {
@@ -55,6 +60,7 @@ export const MISSION_CONNECTORS: MissionConnector[] = [
       en: "Paste page text or use the ArabClue Voice Agent Chrome extension",
     },
     status: "ready",
+    importMode: "paste",
   },
   {
     id: "chrome_extension",
@@ -64,33 +70,37 @@ export const MISSION_CONNECTORS: MissionConnector[] = [
       en: "Optional — install from Mission Control to capture any tab",
     },
     status: "ready",
+    importMode: "extension",
   },
   {
     id: "email",
     label: { ar: "بريد", en: "Email" },
     description: {
-      ar: "استيراد مرفقات البريد (قريباً — الصق المحتوى الآن)",
-      en: "Import email attachments (soon — paste content now)",
+      ar: "الصق نص البريد أو المرفقات المستخرجة لاستيراد فوري",
+      en: "Paste email body or extracted attachment text for instant import",
     },
-    status: "stub",
+    status: "ready",
+    importMode: "paste",
   },
   {
     id: "google_drive",
     label: { ar: "Google Drive", en: "Google Drive" },
     description: {
-      ar: "ربط Drive قريباً — ارفع الملف يدوياً الآن",
-      en: "Drive connect soon — upload the file for now",
+      ar: "ارفع الملف أو الصق المحتوى المصدَّر من Drive",
+      en: "Upload the file or paste content exported from Drive",
     },
-    status: "stub",
+    status: "ready",
+    importMode: "paste",
   },
   {
     id: "onedrive",
     label: { ar: "OneDrive", en: "OneDrive" },
     description: {
-      ar: "ربط OneDrive قريباً — ارفع الملف يدوياً الآن",
-      en: "OneDrive connect soon — upload the file for now",
+      ar: "ارفع الملف أو الصق المحتوى المصدَّر من OneDrive",
+      en: "Upload the file or paste content exported from OneDrive",
     },
-    status: "stub",
+    status: "ready",
+    importMode: "paste",
   },
 ];
 

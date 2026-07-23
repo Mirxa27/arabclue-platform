@@ -155,8 +155,8 @@ export const pricingPlans = [
     highlight: false,
     cta: { ar: "ابدأ بالمؤسسات", en: "Start Enterprise" },
     features: {
-      ar: ["عطاءات ومستندات بلا حد", "20 مساحة عمل", "سجل تدقيق وصلاحيات أدوار", "توجيه مخصص لمزودي الذكاء", "ضوابط جاهزة لـ SSO", "دعم مخصص"],
-      en: ["Unlimited proposals & docs", "20 workspaces", "Audit trail & RBAC", "Custom AI provider routing", "SSO-ready controls", "Dedicated support"],
+      ar: ["عطاءات ومستندات بلا حد", "20 مساحة عمل", "سجل تدقيق وصلاحيات أدوار", "توجيه مخصص لمزودي الذكاء", "ضوابط RBAC وتدقيق مؤسسي", "دعم مخصص"],
+      en: ["Unlimited proposals & docs", "20 workspaces", "Audit trail & RBAC", "Custom AI provider routing", "Enterprise RBAC & audit controls", "Dedicated support"],
     },
     limits: { projects: "Unlimited", docs: "Unlimited", workspaces: "20", support: "Dedicated" },
   },
@@ -174,6 +174,6 @@ export const pricingComparison = [
   { feature: { ar: "تصدير بعلامة", en: "Branded exports" }, starter: true, pro: true, ent: true },
   { feature: { ar: "مصفوفة امتثال", en: "Compliance matrix" }, starter: true, pro: true, ent: true },
   { feature: { ar: "سجل تدقيق", en: "Audit trail" }, starter: true, pro: true, ent: true },
-  { feature: { ar: "SSO", en: "SSO" }, starter: false, pro: false, ent: true },
+  { feature: { ar: "صلاحيات أدوار وتدقيق", en: "RBAC & audit" }, starter: true, pro: true, ent: true },
   { feature: { ar: "دعم مخصص", en: "Dedicated support" }, starter: false, pro: false, ent: true },
 ];

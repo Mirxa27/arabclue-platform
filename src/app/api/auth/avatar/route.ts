@@ -4,7 +4,7 @@ import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import { saveUpload } from "@/lib/storage";
 import { audit } from "@/lib/audit";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const rl = rateLimit({
+    const rl = await rateLimit({
       key: `avatar:${session.user.id}`,
       limit: 10,
       windowMs: 15 * 60 * 1000,

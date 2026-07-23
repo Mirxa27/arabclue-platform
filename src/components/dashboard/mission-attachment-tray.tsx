@@ -218,8 +218,8 @@ export function MissionAttachmentTray({
               onClick={() => {
                 const text = window.prompt(
                   ar
-                    ? "الصق محتوى البريد/Drive مؤقتاً"
-                    : "Paste email/Drive content for now"
+                    ? "الصق محتوى البريد أو الملف المصدَّر من Drive/OneDrive"
+                    : "Paste email body or content exported from Drive/OneDrive"
                 );
                 if (text) void submitPaste(text, "email");
               }}
@@ -259,11 +259,11 @@ export function MissionAttachmentTray({
           {connectors.map((c) => (
             <Badge
               key={c.id}
-              variant={c.status === "ready" ? "secondary" : "outline"}
+              variant="secondary"
               className="text-[10px]"
+              title={ar ? c.description.ar : c.description.en}
             >
               {ar ? c.label.ar : c.label.en}
-              {c.status === "stub" ? " · soon" : ""}
             </Badge>
           ))}
         </div>

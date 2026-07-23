@@ -119,6 +119,24 @@ export function PlatformAgentConsole() {
     };
   }, []);
 
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport<PlatformAgentUIMessage>({
+        api: "/api/platform-agent/chat",
+        body: {
+          missionId,
+          activeProjectId,
+        },
+      }),
+    [missionId, activeProjectId]
+  );
+
+  const { messages, sendMessage, status, stop, error, setMessages } =
+    useChat<PlatformAgentUIMessage>({
+      transport,
+      onError: (err) => console.error("[platform-agent]", err),
+    });
+
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/platform-agent/missions", {
@@ -148,30 +166,59 @@ export function PlatformAgentConsole() {
             })
           )
         );
+        const rows = Array.isArray(data.mission.messages)
+          ? data.mission.messages
+          : [];
+        if (rows.length > 0) {
+          const hydrated = rows
+            .map(
+              (row: {
+                id: string;
+                role: string;
+                partsJson: string;
+              }) => {
+                try {
+                  const parsed = JSON.parse(row.partsJson) as {
+                    id?: string;
+                    parts?: PlatformAgentUIMessage["parts"];
+                  };
+                  const role =
+                    row.role === "assistant" || row.role === "system"
+                      ? row.role
+                      : "user";
+                  return {
+                    id: parsed.id || row.id,
+                    role,
+                    parts:
+                      Array.isArray(parsed.parts) && parsed.parts.length > 0
+                        ? parsed.parts
+                        : [{ type: "text" as const, text: "" }],
+                  } satisfies PlatformAgentUIMessage;
+                } catch {
+                  return {
+                    id: row.id,
+                    role: (row.role === "assistant" ? "assistant" : "user") as
+                      | "assistant"
+                      | "user",
+                    parts: [
+                      {
+                        type: "text" as const,
+                        text: row.partsJson.slice(0, 4000),
+                      },
+                    ],
+                  } satisfies PlatformAgentUIMessage;
+                }
+              }
+            )
+            .filter(Boolean);
+          setMessages(hydrated);
+        }
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [activeProjectId]);
-
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport<PlatformAgentUIMessage>({
-        api: "/api/platform-agent/chat",
-        body: {
-          missionId,
-          activeProjectId,
-        },
-      }),
-    [missionId, activeProjectId]
-  );
-
-  const { messages, sendMessage, status, stop, error } =
-    useChat<PlatformAgentUIMessage>({
-      transport,
-      onError: (err) => console.error("[platform-agent]", err),
-    });
+  }, [activeProjectId, setMessages]);
 
   const busy = status === "submitted" || status === "streaming";
   const ar = locale === "ar";
