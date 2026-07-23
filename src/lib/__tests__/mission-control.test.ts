@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { AUTOPILOT_CONFIDENCE, classifyAttachment } from "@/lib/agents/platform/classify-attachment";
+import {
+  AUTOPILOT_CONFIDENCE,
+  classifyAttachment,
+  normalizeAttachmentSource,
+} from "@/lib/agents/platform/classify-attachment";
 import { assertSafeExternalUrl, MISSION_CONNECTORS } from "@/lib/agents/platform/connectors";
 
 describe("mission control domain", () => {
@@ -10,8 +14,17 @@ describe("mission control domain", () => {
     expect(ids).toContain("email");
     expect(ids).toContain("google_drive");
     expect(ids).toContain("onedrive");
+    expect(ids).not.toContain("drive");
     expect(MISSION_CONNECTORS.every((c) => c.status === "ready")).toBe(true);
     expect(MISSION_CONNECTORS.some((c) => c.importMode === "paste")).toBe(true);
+  });
+
+  test("preserves distinct import sources and accepts drive alias", () => {
+    expect(normalizeAttachmentSource("email", "upload")).toBe("email");
+    expect(normalizeAttachmentSource("google_drive", "upload")).toBe("google_drive");
+    expect(normalizeAttachmentSource("onedrive", "upload")).toBe("onedrive");
+    expect(normalizeAttachmentSource("drive", "upload")).toBe("google_drive");
+    expect(normalizeAttachmentSource("unknown", "upload")).toBe("upload");
   });
 
   test("allows public https URLs", () => {

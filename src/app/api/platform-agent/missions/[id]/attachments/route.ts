@@ -4,6 +4,7 @@ import { getTenantContext } from "@/lib/workspace-context";
 import { getOrCreateMission } from "@/lib/agents/platform/mission";
 import { stageMissionAttachment } from "@/lib/agents/platform/stage-attachment";
 import { fetchUrlAsAttachment } from "@/lib/agents/platform/connectors";
+import { normalizeAttachmentSource } from "@/lib/agents/platform/classify-attachment";
 import { QuotaExceededError } from "@/lib/quotas";
 
 export const dynamic = "force-dynamic";
@@ -38,13 +39,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (!file || !(file instanceof File)) {
         return NextResponse.json({ error: "file is required" }, { status: 400 });
       }
-      const source = String(form.get("source") || "upload") as
-        | "upload"
-        | "camera"
-        | "browser"
-        | "email"
-        | "drive"
-        | "paste";
+      const source = normalizeAttachmentSource(
+        String(form.get("source") || "upload"),
+        "upload"
+      );
       const activeProjectId = form.get("activeProjectId")
         ? String(form.get("activeProjectId"))
         : mission.activeProjectId;
@@ -69,7 +67,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       url?: string;
       text?: string;
       fileName?: string;
-      source?: "url" | "paste" | "browser";
+      source?: string;
       activeProjectId?: string | null;
       mimeType?: string;
     };
@@ -105,7 +103,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         originalName: body.fileName || "pasted-content.txt",
         mimeType: body.mimeType || "text/plain",
         bytes,
-        source: body.source || "paste",
+        source: normalizeAttachmentSource(body.source, "paste"),
         textPreview: body.text.slice(0, 4000),
         autoRoute: true,
       });

@@ -16,6 +16,7 @@ import {
   type PlatformAgentContext,
 } from "./context";
 import { buildDelegationPlan, roleCapabilities } from "./delegation";
+import { normalizeAttachmentSource } from "./classify-attachment";
 
 /** Bridge Zod 4 schemas into AI SDK tool() overload resolution. */
 function platformTool<SCHEMA extends z.ZodType, OUTPUT>(opts: {
@@ -1318,7 +1319,16 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         text: z.string().min(1).describe("Extracted or pasted file text"),
         mimeType: z.string().optional(),
         source: z
-          .enum(["upload", "paste", "browser", "email", "drive", "camera"])
+          .enum([
+            "upload",
+            "paste",
+            "browser",
+            "email",
+            "drive",
+            "google_drive",
+            "onedrive",
+            "camera",
+          ])
           .optional(),
       }),
       execute: async ({ fileName, text, mimeType, source }) => {
@@ -1335,7 +1345,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           originalName: fileName,
           mimeType: mimeType || "text/plain",
           bytes: Buffer.from(text, "utf8"),
-          source: source || "upload",
+          source: normalizeAttachmentSource(source, "upload"),
           textPreview: text.slice(0, 4000),
           autoRoute: true,
         });
@@ -1387,14 +1397,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           originalName: attachment.originalName,
           mimeType: attachment.mimeType,
           textPreview: attachment.textPreview,
-          source: attachment.source as
-            | "upload"
-            | "url"
-            | "camera"
-            | "browser"
-            | "email"
-            | "drive"
-            | "paste",
+          source: normalizeAttachmentSource(attachment.source),
         });
         if (forcePipeline && decision.category === "RFP") {
           decision.confidence = Math.max(decision.confidence, 0.9);
@@ -1487,7 +1490,9 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
       inputSchema: z.object({
         text: z.string().min(1),
         fileName: z.string().optional(),
-        source: z.enum(["paste", "browser", "email"]).optional(),
+        source: z
+          .enum(["paste", "browser", "email", "drive", "google_drive", "onedrive"])
+          .optional(),
       }),
       execute: async ({ text, fileName, source }) => {
         if (!ctx.canWrite) return denyWrite(ctx);
@@ -1503,7 +1508,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           originalName: fileName || "capture.txt",
           mimeType: "text/plain",
           bytes: Buffer.from(text, "utf8"),
-          source: source || "paste",
+          source: normalizeAttachmentSource(source, "paste"),
           textPreview: text.slice(0, 4000),
           autoRoute: true,
         });
@@ -1626,7 +1631,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           originalName: `${connector}-import.txt`,
           mimeType: "text/plain",
           bytes: Buffer.from(text, "utf8"),
-          source: connector === "email" ? "email" : "drive",
+          source: connector === "email" ? "email" : connector,
           textPreview: text.slice(0, 4000),
           autoRoute: true,
         });

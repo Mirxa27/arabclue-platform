@@ -6,8 +6,11 @@ export type AttachmentSource =
   | "camera"
   | "browser"
   | "email"
-  | "drive"
+  | "google_drive"
+  | "onedrive"
   | "paste";
+
+export type AttachmentSourceInput = AttachmentSource | "drive";
 
 export type ClassificationDecision = {
   category: DocCategory;
@@ -20,9 +23,30 @@ export type ClassificationDecision = {
 };
 
 const HIGH = 0.78;
+const ATTACHMENT_SOURCES = new Set<AttachmentSource>([
+  "upload",
+  "url",
+  "camera",
+  "browser",
+  "email",
+  "google_drive",
+  "onedrive",
+  "paste",
+]);
 
 function includesAny(haystack: string, needles: string[]): boolean {
   return needles.some((n) => haystack.includes(n));
+}
+
+export function normalizeAttachmentSource(
+  source?: string | null,
+  fallback: AttachmentSource = "paste"
+): AttachmentSource {
+  if (source === "drive") return "google_drive";
+  if (source && ATTACHMENT_SOURCES.has(source as AttachmentSource)) {
+    return source as AttachmentSource;
+  }
+  return fallback;
 }
 
 /**
@@ -33,12 +57,18 @@ export function classifyAttachment(input: {
   originalName: string;
   mimeType: string;
   textPreview?: string | null;
-  source?: AttachmentSource;
+  source?: AttachmentSourceInput;
 }): ClassificationDecision {
   const name = input.originalName.toLowerCase();
   const mime = (input.mimeType || "").toLowerCase();
   const text = (input.textPreview || "").toLowerCase();
   const blob = `${name}\n${mime}\n${text}`;
+  const source = normalizeAttachmentSource(input.source, "paste");
+  const pastedTextSource =
+    source === "paste" ||
+    source === "email" ||
+    source === "google_drive" ||
+    source === "onedrive";
   const reasons: string[] = [];
 
   const brandHit =
@@ -131,7 +161,7 @@ export function classifyAttachment(input: {
     category = "BRAND_ASSET";
     confidence = mime.startsWith("image/") ? 0.86 : 0.75;
     reasons.push("brand/image cues");
-  } else if (input.source === "paste" && text.length > 80) {
+  } else if (pastedTextSource && text.length > 80) {
     category = "OTHER";
     confidence = 0.45;
     clarifyingQuestion =

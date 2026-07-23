@@ -17,6 +17,29 @@ describe("mission attachment classifier", () => {
     expect(d.clarifyingQuestion).toBeNull();
   });
 
+  test("classifies cloud-source RFP text without collapsing source inputs", () => {
+    const shared = {
+      mimeType: "text/plain",
+      textPreview:
+        "RFP tender كراسة شروط Scope of Work SLA evaluation criteria ".repeat(12),
+    };
+    const googleDrive = classifyAttachment({
+      ...shared,
+      originalName: "google-drive-import.txt",
+      source: "google_drive",
+    });
+    const oneDrive = classifyAttachment({
+      ...shared,
+      originalName: "onedrive-import.txt",
+      source: "onedrive",
+    });
+
+    expect(googleDrive.category).toBe("RFP");
+    expect(oneDrive.category).toBe("RFP");
+    expect(googleDrive.runPipeline).toBe(true);
+    expect(oneDrive.runPipeline).toBe(true);
+  });
+
   test("routes logos to brand assets", () => {
     const d = classifyAttachment({
       originalName: "company-logo.png",
