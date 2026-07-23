@@ -4,7 +4,6 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
-import { PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +16,6 @@ import {
   Square,
   Volume2,
   VolumeX,
-  Sparkles,
   Radio,
 } from "lucide-react";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
@@ -33,6 +31,7 @@ import { MissionToolTheater } from "./mission-tool-theater";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionExtensionBridge } from "./mission-extension-bridge";
 import { MissionPulseWidget } from "./mission-pulse-widget";
+import { MissionControlShell } from "./mission-control-shell";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -376,171 +375,260 @@ export function PlatformAgentConsole() {
   }, [ar, sendMessage, startListening, stopListening]);
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)] min-h-[560px]">
-      <PageHeader
-        title={ar ? "مركز قيادة الصوت" : "Voice Mission Control"}
-        subtitle={
-          ar
-            ? "تحدّث أو أسقط ملفاً — شاهد الأدوات ومصنع المستندات يعملان أمامك لحظة بلحظة."
-            : "Speak or drop a file — watch every tool and the document forge run live in front of you."
-        }
-        locale={locale}
-        badge="none"
-      />
-
-      <MissionAttachmentTray
-        locale={locale}
-        missionId={missionId}
-        activeProjectId={activeProjectId}
-        attachments={attachments}
-        onUploaded={(payload) => {
-          const data = payload as {
-            attachment?: {
-              id: string;
-              originalName: string;
-              docCategory: string;
-              confidence: number;
-              routeStatus: string;
-              source: string;
-            };
-            autopilot?: {
-              mode?: string;
-              projectId?: string;
-              runId?: string;
-              message?: string;
-              question?: string;
-            };
-            decision?: { category?: string; confidence?: number };
-          };
-          if (data.attachment) {
-            setAttachments((prev) => [data.attachment!, ...prev].slice(0, 40));
-          }
-          if (data.autopilot?.projectId) {
-            setActiveProjectId(data.autopilot.projectId);
-          }
-          if (data.autopilot?.mode === "autopilot") {
-            setFollowView("agents");
-            setFollowNote(data.autopilot.message || "autopilot pipeline started");
-          }
-          setFeedItems((prev) =>
-            [
-              {
-                id: `upload-${Date.now()}`,
-                toolName: "stageMissionAttachment",
-                status: "SUCCEEDED",
-                summary:
-                  data.autopilot?.message ||
-                  data.autopilot?.question ||
-                  `${data.decision?.category ?? "file"} · ${Math.round((data.decision?.confidence ?? 0) * 100)}%`,
-              },
-              ...prev,
-            ].slice(0, 40)
-          );
-        }}
-        onUndo={() => {
-          void sendMessage({
-            text: ar
-              ? "تراجع عن آخر توجيه للملف"
-              : "Undo the last file routing action",
-          });
-        }}
-      />
-
-      <MissionExtensionBridge
-        locale={locale}
-        onExtensionEvent={(payload) => {
-          const data = payload as {
-            attachment?: {
-              id: string;
-              originalName: string;
-              docCategory: string;
-              confidence: number;
-              routeStatus: string;
-              source: string;
-            };
-            autopilot?: {
-              mode?: string;
-              projectId?: string;
-              message?: string;
-              question?: string;
-            };
-            decision?: { category?: string; confidence?: number };
-            message?: string;
-          };
-          if (data.attachment) {
-            setAttachments((prev) => [data.attachment!, ...prev].slice(0, 40));
-          }
-          if (data.autopilot?.projectId) {
-            setActiveProjectId(data.autopilot.projectId);
-          }
-          setFeedItems((prev) =>
-            [
-              {
-                id: `ext-${Date.now()}`,
-                toolName: "chromeExtensionIngest",
-                status: "SUCCEEDED",
-                summary:
-                  data.message ||
-                  data.autopilot?.message ||
-                  data.autopilot?.question ||
-                  `${data.decision?.category ?? "browser"} capture`,
-              },
-              ...prev,
-            ].slice(0, 40)
-          );
-        }}
-      />
-
-      <MissionPulseWidget
-        locale={locale}
-        missionId={missionId}
-        refreshKey={feedItems.length}
-      />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={mode === "live" ? "default" : "outline"}
-          className="gap-1"
-          disabled={!liveConfig?.enabled}
-          onClick={() => setMode("live")}
-        >
-          <Radio className="size-3.5" />
-          {ar ? "مباشر (Live)" : "Live voice"}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={mode === "classic" ? "default" : "outline"}
-          onClick={() => setMode("classic")}
-        >
-          {ar ? "وضع المتصفح" : "Browser mode"}
-        </Button>
-        {liveConfig && !liveConfig.enabled && (
-          <span className="text-xs text-muted-foreground max-w-xl">
-            {liveConfig.reason}
-          </span>
-        )}
-        {liveConfig?.enabled && (
-          <Badge variant="secondary" className="font-mono text-[10px]">
-            {liveConfig.provider} · {liveConfig.modelId}
-          </Badge>
-        )}
-        {followView && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1"
-            onClick={() => setView(followView)}
-          >
-            {ar ? "عرض الشاشة:" : "Watch screen:"} {followView}
-            {followNote ? ` — ${followNote}` : ""}
-          </Button>
-        )}
-      </div>
-
+    <MissionControlShell
+      locale={locale}
+      title={ar ? "مركز قيادة الصوت" : "Voice Mission Control"}
+      subtitle={
+        ar
+          ? "تحدّث — الوكيل ينقر الأدوات مثلك، والمسرح المتلألئ يعرض كل خطوة."
+          : "Speak — the agent clicks tools like you would, and the glitter theater shows every step."
+      }
+      mode={mode}
+      onModeChange={setMode}
+      liveEnabled={Boolean(liveConfig?.enabled)}
+      liveHint={
+        liveConfig && !liveConfig.enabled ? liveConfig.reason : null
+      }
+      liveModelLabel={
+        liveConfig?.enabled
+          ? `${liveConfig.provider} · ${liveConfig.modelId}`
+          : null
+      }
+      performing={performing}
+      kitMeta={{ files: attachments.length }}
+      statusBadges={
+        <>
+          {followView ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1"
+              onClick={() => setView(followView)}
+            >
+              {ar ? "عرض الشاشة:" : "Watch screen:"} {followView}
+              {followNote ? ` — ${followNote}` : ""}
+            </Button>
+          ) : null}
+          {mode !== "live" || !liveConfig?.enabled ? (
+            <>
+              {busy ? (
+                <Badge className="gap-1 animate-pulse">
+                  <Loader2 className="size-3 animate-spin" />
+                  {ar ? "ينفّذ…" : "Executing…"}
+                </Badge>
+              ) : null}
+              {listening ? (
+                <Badge variant="destructive" className="gap-1 animate-pulse">
+                  <Mic className="size-3" />
+                  {ar ? "يستمع" : "Listening"}
+                </Badge>
+              ) : null}
+            </>
+          ) : null}
+        </>
+      }
+      kit={
+        <>
+          <MissionAttachmentTray
+            locale={locale}
+            missionId={missionId}
+            activeProjectId={activeProjectId}
+            attachments={attachments}
+            onUploaded={(payload) => {
+              const data = payload as {
+                attachment?: {
+                  id: string;
+                  originalName: string;
+                  docCategory: string;
+                  confidence: number;
+                  routeStatus: string;
+                  source: string;
+                };
+                autopilot?: {
+                  mode?: string;
+                  projectId?: string;
+                  runId?: string;
+                  message?: string;
+                  question?: string;
+                };
+                decision?: { category?: string; confidence?: number };
+              };
+              if (data.attachment) {
+                setAttachments((prev) => [data.attachment!, ...prev].slice(0, 40));
+              }
+              if (data.autopilot?.projectId) {
+                setActiveProjectId(data.autopilot.projectId);
+              }
+              if (data.autopilot?.mode === "autopilot") {
+                setFollowView("agents");
+                setFollowNote(
+                  data.autopilot.message || "autopilot pipeline started"
+                );
+              }
+              setFeedItems((prev) =>
+                [
+                  {
+                    id: `upload-${Date.now()}`,
+                    toolName: "stageMissionAttachment",
+                    status: "SUCCEEDED",
+                    summary:
+                      data.autopilot?.message ||
+                      data.autopilot?.question ||
+                      `${data.decision?.category ?? "file"} · ${Math.round((data.decision?.confidence ?? 0) * 100)}%`,
+                  },
+                  ...prev,
+                ].slice(0, 40)
+              );
+            }}
+            onUndo={() => {
+              void sendMessage({
+                text: ar
+                  ? "تراجع عن آخر توجيه للملف"
+                  : "Undo the last file routing action",
+              });
+            }}
+          />
+          <MissionExtensionBridge
+            locale={locale}
+            onExtensionEvent={(payload) => {
+              const data = payload as {
+                attachment?: {
+                  id: string;
+                  originalName: string;
+                  docCategory: string;
+                  confidence: number;
+                  routeStatus: string;
+                  source: string;
+                };
+                autopilot?: {
+                  mode?: string;
+                  projectId?: string;
+                  message?: string;
+                  question?: string;
+                };
+                decision?: { category?: string; confidence?: number };
+                message?: string;
+              };
+              if (data.attachment) {
+                setAttachments((prev) => [data.attachment!, ...prev].slice(0, 40));
+              }
+              if (data.autopilot?.projectId) {
+                setActiveProjectId(data.autopilot.projectId);
+              }
+              setFeedItems((prev) =>
+                [
+                  {
+                    id: `ext-${Date.now()}`,
+                    toolName: "chromeExtensionIngest",
+                    status: "SUCCEEDED",
+                    summary:
+                      data.message ||
+                      data.autopilot?.message ||
+                      data.autopilot?.question ||
+                      `${data.decision?.category ?? "browser"} capture`,
+                  },
+                  ...prev,
+                ].slice(0, 40)
+              );
+            }}
+          />
+          <MissionPulseWidget
+            locale={locale}
+            missionId={missionId}
+            refreshKey={feedItems.length}
+          />
+        </>
+      }
+      composer={
+        mode === "live" && liveConfig?.enabled ? undefined : (
+          <div className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/80 p-3 backdrop-blur-sm">
+            {error ? (
+              <div className="text-sm text-destructive border border-destructive/30 rounded-md px-3 py-2">
+                {error.message}
+              </div>
+            ) : null}
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={
+                ar
+                  ? "اكتب أو تحدّث… اطلب أي إجراء على المنصة"
+                  : "Type or speak… ask for any platform action"
+              }
+              rows={2}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+              disabled={busy}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="lg"
+                className={cn(listening && "animate-pulse")}
+                onClick={() => (listening ? stopListening() : speakAndSend())}
+                disabled={busy && !listening}
+              >
+                {listening ? (
+                  <MicOff className="size-4 me-2" />
+                ) : (
+                  <Mic className="size-4 me-2" />
+                )}
+                {listening
+                  ? ar
+                    ? "إيقاف الاستماع"
+                    : "Stop listening"
+                  : ar
+                    ? "تحدّث وأرسل"
+                    : "Speak & send"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void submit()}
+                disabled={busy || !input.trim()}
+              >
+                <Send className="size-4 me-2" />
+                {ar ? "إرسال" : "Send"}
+              </Button>
+              {busy ? (
+                <Button type="button" variant="outline" onClick={() => stop()}>
+                  <Square className="size-4 me-2" />
+                  {ar ? "إيقاف" : "Stop"}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setVoiceOut((v) => {
+                    if (v) window.speechSynthesis?.cancel();
+                    return !v;
+                  });
+                }}
+              >
+                {voiceOut ? (
+                  <Volume2 className="size-4 me-2" />
+                ) : (
+                  <VolumeX className="size-4 me-2" />
+                )}
+                {voiceOut
+                  ? ar
+                    ? "صوت الرد"
+                    : "Voice replies"
+                  : ar
+                    ? "صامت"
+                    : "Muted"}
+              </Button>
+            </div>
+          </div>
+        )
+      }
+    >
       {mode === "live" && liveConfig?.enabled ? (
         <LiveVoiceSession
           config={liveConfig}
@@ -549,44 +637,23 @@ export function PlatformAgentConsole() {
           externalFeed={feedItems}
         />
       ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="gap-1">
-              <Sparkles className="size-3" />
-              {ar ? "وصول كامل ضمن صلاحياتك" : "Full access within your role"}
-            </Badge>
-            {busy && (
-              <Badge className="gap-1 animate-pulse">
-                <Loader2 className="size-3 animate-spin" />
-                {ar ? "ينفّذ…" : "Executing…"}
-              </Badge>
-            )}
-            {listening && (
-              <Badge variant="destructive" className="gap-1 animate-pulse">
-                <Mic className="size-3" />
-                {ar ? "يستمع" : "Listening"}
-              </Badge>
-            )}
-          </div>
-
-          <MissionPerformanceStage
-            locale={locale}
-            performing={performing}
-            tools={theaterTools}
-            className="flex-1 min-h-0"
-          >
-          <div className="grid flex-1 min-h-0 gap-4 p-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
-            <div className="flex flex-col min-h-0 gap-3">
+        <MissionPerformanceStage
+          locale={locale}
+          performing={performing}
+          tools={theaterTools}
+          className="flex-1 min-h-0"
+        >
+          <div className="grid flex-1 min-h-0 gap-3 p-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
+            <div className="flex flex-col min-h-0 gap-2">
               <div
                 ref={scrollRef}
                 className="flex-1 overflow-y-auto rounded-2xl border border-cyan-500/15 bg-gradient-to-b from-background/80 via-teal-500/[0.04] to-background/80 p-4 space-y-4 backdrop-blur-[2px]"
-                dir={ar ? "rtl" : "ltr"}
               >
                 {messages.length === 0 && (
                   <div className="text-sm text-muted-foreground max-w-xl leading-relaxed">
                     {ar
-                      ? "جرّب: «اعرض مشاريعي»، «أنشئ مشروع مناقصة»، «شغّل الوكلاء» — المسرح على اليمين يعرض كل أداة ومستند."
-                      : "Try: “List my projects”, “Create a tender”, “Run the agents” — the theater on the right visualizes every tool and document."}
+                      ? "جرّب: «اعرض مشاريعي»، «أنشئ مشروع مناقصة»، «شغّل الوكلاء» — المسرح يعرض كل نقرة أداة متلألئة."
+                      : "Try: “List my projects”, “Create a tender”, “Run the agents” — the theater shows every glittery tool click."}
                   </div>
                 )}
 
@@ -653,14 +720,17 @@ export function PlatformAgentConsole() {
                   </div>
                 ))}
 
-                {interim && (
+                {interim ? (
                   <div className="text-sm text-muted-foreground italic">
                     {interim}…
                   </div>
-                )}
+                ) : null}
               </div>
 
-              <MissionExecutionFeed locale={locale} items={feedItems.slice(0, 6)} />
+              <MissionExecutionFeed
+                locale={locale}
+                items={feedItems.slice(0, 5)}
+              />
             </div>
 
             <MissionToolTheater
@@ -671,95 +741,8 @@ export function PlatformAgentConsole() {
               className="overflow-y-auto"
             />
           </div>
-          </MissionPerformanceStage>
-
-          {error && (
-            <div className="text-sm text-destructive border border-destructive/30 rounded-md px-3 py-2">
-              {error.message}
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2" dir={ar ? "rtl" : "ltr"}>
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                ar
-                  ? "اكتب أو تحدّث… اطلب أي إجراء على المنصة"
-                  : "Type or speak… ask for any platform action"
-              }
-              rows={2}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-              disabled={busy}
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="lg"
-                className={cn(listening && "animate-pulse")}
-                onClick={() => (listening ? stopListening() : speakAndSend())}
-                disabled={busy && !listening}
-              >
-                {listening ? (
-                  <MicOff className="size-4 me-2" />
-                ) : (
-                  <Mic className="size-4 me-2" />
-                )}
-                {listening
-                  ? ar
-                    ? "إيقاف الاستماع"
-                    : "Stop listening"
-                  : ar
-                    ? "تحدّث وأرسل"
-                    : "Speak & send"}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void submit()}
-                disabled={busy || !input.trim()}
-              >
-                <Send className="size-4 me-2" />
-                {ar ? "إرسال" : "Send"}
-              </Button>
-              {busy && (
-                <Button type="button" variant="outline" onClick={() => stop()}>
-                  <Square className="size-4 me-2" />
-                  {ar ? "إيقاف" : "Stop"}
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setVoiceOut((v) => {
-                    if (v) window.speechSynthesis?.cancel();
-                    return !v;
-                  });
-                }}
-              >
-                {voiceOut ? (
-                  <Volume2 className="size-4 me-2" />
-                ) : (
-                  <VolumeX className="size-4 me-2" />
-                )}
-                {voiceOut
-                  ? ar
-                    ? "صوت الرد"
-                    : "Voice replies"
-                  : ar
-                    ? "صامت"
-                    : "Muted"}
-              </Button>
-            </div>
-          </div>
-        </>
+        </MissionPerformanceStage>
       )}
-    </div>
+    </MissionControlShell>
   );
 }

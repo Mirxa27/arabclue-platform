@@ -188,6 +188,85 @@ export function toolKind(name: string) {
   return TOOL_META[name]?.kind ?? "general";
 }
 
+/**
+ * Spoken / visual "human hand" action labels — how a person would do the same step.
+ */
+export function humanActionLabel(name: string, ar: boolean): string {
+  const kind = toolKind(name);
+  const byName: Record<string, { en: string; ar: string }> = {
+    navigateToView: {
+      en: "Clicking the sidebar…",
+      ar: "ينقر الشريط الجانبي…",
+    },
+    setActiveProject: {
+      en: "Selecting the active project…",
+      ar: "يختار المشروع النشط…",
+    },
+    listProjects: { en: "Opening Projects…", ar: "يفتح المشاريع…" },
+    getProject: { en: "Opening project details…", ar: "يفتح تفاصيل المشروع…" },
+    createProject: { en: "Filling Create Project…", ar: "يملأ إنشاء مشروع…" },
+    listDocuments: { en: "Browsing Documents…", ar: "يتصفح المستندات…" },
+    getDocumentSummary: {
+      en: "Reading the document…",
+      ar: "يقرأ المستند…",
+    },
+    startAgentPipeline: {
+      en: "Pressing Run agents…",
+      ar: "يضغط تشغيل الوكلاء…",
+    },
+    getAgentRunStatus: {
+      en: "Checking pipeline progress…",
+      ar: "يفحص تقدم الخط…",
+    },
+    getProposal: { en: "Opening the proposal editor…", ar: "يفتح محرر العرض…" },
+    getCompliance: {
+      en: "Opening Compliance matrix…",
+      ar: "يفتح مصفوفة الامتثال…",
+    },
+    researchSaudiLaw: {
+      en: "Researching Saudi regulatory sources…",
+      ar: "يبحث في المصادر التنظيمية…",
+    },
+    searchDocumentChunks: {
+      en: "Searching tender evidence…",
+      ar: "يبحث في أدلة المناقصة…",
+    },
+    getMissionPulse: {
+      en: "Reviewing mission activity…",
+      ar: "يراجع نشاط المهمة…",
+    },
+    importExternalSource: {
+      en: "Connecting an external source…",
+      ar: "يربط مصدراً خارجياً…",
+    },
+    chromeExtensionIngest: {
+      en: "Receiving browser capture…",
+      ar: "يستلم التقاط المتصفح…",
+    },
+    stageMissionAttachment: {
+      en: "Staging the dropped file…",
+      ar: "يُدرج الملف المسقط…",
+    },
+  };
+  if (byName[name]) return ar ? byName[name].ar : byName[name].en;
+  const byKind: Record<string, { en: string; ar: string }> = {
+    navigate: { en: "Moving through the UI…", ar: "يتنقل في الواجهة…" },
+    project: { en: "Working in Projects…", ar: "يعمل في المشاريع…" },
+    document: { en: "Working with documents…", ar: "يعمل على المستندات…" },
+    proposal: { en: "Editing the proposal…", ar: "يحرّر العرض…" },
+    pipeline: { en: "Driving the agent pipeline…", ar: "يقود خط الوكلاء…" },
+    compliance: { en: "Checking compliance…", ar: "يفحص الامتثال…" },
+    search: { en: "Searching evidence…", ar: "يبحث في الأدلة…" },
+    mission: { en: "Updating Mission Control…", ar: "يحدّث مركز القيادة…" },
+    review: { en: "Working the review queue…", ar: "يعمل على طابور المراجعة…" },
+    billing: { en: "Checking billing…", ar: "يفحص الفوترة…" },
+    admin: { en: "Using admin tools…", ar: "يستخدم أدوات المشرف…" },
+    general: { en: "Using a platform tool…", ar: "يستخدم أداة المنصة…" },
+  };
+  const fallback = byKind[kind] || byKind.general;
+  return ar ? fallback.ar : fallback.en;
+}
+
 const DOC_TOOLS = new Set([
   "getProposal",
   "getDocumentSummary",

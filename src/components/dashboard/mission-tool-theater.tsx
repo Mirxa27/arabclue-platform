@@ -21,6 +21,7 @@ import {
 import {
   extractDocumentPreview,
   extractRegulatoryPreview,
+  humanActionLabel,
   isComplianceishTool,
   isDocumentishTool,
   isToolDone,
@@ -381,19 +382,21 @@ function ToolTimeline({
 }) {
   const ar = locale === "ar";
   const recent = [...tools].reverse().slice(0, 18);
+  const activeId =
+    recent.find((t) => isToolRunning(t.state) || t.preliminary)?.id ?? null;
 
   if (!recent.length) {
     return (
       <p className="text-xs text-muted-foreground px-1">
         {ar
-          ? "الأدوات ستظهر هنا لحظة بلحظة أثناء حديثك مع الوكيل."
-          : "Tools appear here beat-by-beat while you speak with the agent."}
+          ? "الأدوات ستظهر هنا كأن الوكيل ينقر الواجهة مثلك — خطوة بخطوة."
+          : "Tools appear here as the agent clicks the UI like you would — step by step."}
       </p>
     );
   }
 
   return (
-    <div className="space-y-2 max-h-[min(52vh,420px)] overflow-y-auto pr-1">
+    <div className="relative space-y-2 max-h-[min(52vh,420px)] overflow-y-auto pr-1">
       {recent.map((tool, idx) => {
         const running = isToolRunning(tool.state) || !!tool.preliminary;
         const done = isToolDone(tool.state) && !tool.preliminary;
@@ -403,27 +406,38 @@ function ToolTimeline({
           failed ? { error: tool.errorText } : tool.output,
           ar
         );
+        const isActive = tool.id === activeId;
         return (
           <div
             key={tool.id}
+            data-tool-id={tool.id}
             className={cn(
-              "relative rounded-xl border px-3 py-2.5 text-xs transition-all duration-300",
+              "relative rounded-xl border px-3 py-2.5 text-xs transition-all duration-300 mission-tool-card",
               "bg-background/80 backdrop-blur-sm",
-              running &&
-                "border-amber-500/45 mission-tool-live",
+              running && "border-amber-500/45 mission-tool-live mission-tool-sparkle",
               done && "border-emerald-500/40",
               failed && "border-destructive/40",
               !running && !done && !failed && "border-border/70",
-              idx === 0 && running && "scale-[1.01]"
+              isActive && "scale-[1.015] shadow-[0_0_28px_rgba(34,211,238,0.18)]"
             )}
             style={{ animationDelay: `${Math.min(idx, 6) * 40}ms` }}
           >
+            {isActive ? (
+              <span
+                aria-hidden
+                className="mission-agent-hand pointer-events-none absolute -start-1.5 top-3 z-10"
+              >
+                <span className="mission-agent-hand-dot" />
+                <span className="mission-agent-hand-ring" />
+              </span>
+            ) : null}
             {running ? (
               <span
                 aria-hidden
                 className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl"
               >
                 <span className="absolute inset-x-0 top-0 h-px mission-energy-beam" />
+                <span className="absolute inset-0 mission-tool-glitter" />
               </span>
             ) : null}
             <div className="flex items-start gap-2.5">
@@ -451,9 +465,6 @@ function ToolTimeline({
                   <span className="font-semibold">
                     {toolDisplayName(tool.name, ar)}
                   </span>
-                  <Badge variant="outline" className="h-5 text-[10px] font-mono">
-                    {tool.name}
-                  </Badge>
                   <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
                     {running
                       ? ar
@@ -470,6 +481,16 @@ function ToolTimeline({
                           : tool.state}
                   </span>
                 </div>
+                <p
+                  className={cn(
+                    "mt-0.5 text-[11px]",
+                    running
+                      ? "text-teal-700 dark:text-teal-300 font-medium"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  {humanActionLabel(tool.name, ar)}
+                </p>
                 {tool.input != null && running ? (
                   <p className="mt-1 text-muted-foreground line-clamp-2 font-mono">
                     {typeof tool.input === "string"
@@ -542,12 +563,12 @@ export function MissionToolTheater({
             </div>
             <div>
               <p className="text-sm font-semibold">
-                {ar ? "مسرح التنفيذ الحي" : "Live execution theater"}
+                {ar ? "يد الوكيل · المسرح الحي" : "Agent hand · live theater"}
               </p>
               <p className="text-[11px] text-muted-foreground">
                 {ar
-                  ? "كل أداة تظهر بصرياً أثناء الحديث"
-                  : "Every tool renders visually while you speak"}
+                  ? "ينقر الأدوات كما تفعل أنت — مع تلألؤ أثناء التنفيذ"
+                  : "Clicks tools the way you would — glitter while each step runs"}
               </p>
             </div>
           </div>

@@ -15,7 +15,6 @@ import {
   MicOff,
   Phone,
   PhoneOff,
-  Radio,
   Send,
 } from "lucide-react";
 import type { VoiceLiveConfig } from "@/lib/agents/platform/voice-types";
@@ -343,14 +342,7 @@ export function LiveVoiceSession({
 
   return (
     <div className="flex flex-col gap-3 flex-1 min-h-0" dir={ar ? "rtl" : "ltr"}>
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="secondary" className="gap-1">
-          <Radio className="size-3" />
-          {config.provider === "google" ? "Gemini Live" : "OpenAI Realtime"}
-        </Badge>
-        <Badge variant="outline" className="font-mono text-[10px]">
-          {config.modelId}
-        </Badge>
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
         <Badge
           className={cn(
             connected && "bg-emerald-600",
@@ -393,7 +385,7 @@ export function LiveVoiceSession({
         tools={theaterTools}
         className="flex-1 min-h-0"
       >
-      <div className="grid flex-1 min-h-0 gap-4 p-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+      <div className="grid flex-1 min-h-0 gap-3 p-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
         <div
           ref={scrollRef}
           className="flex-1 overflow-y-auto rounded-2xl border border-cyan-500/15 bg-gradient-to-b from-background/80 via-teal-500/[0.04] to-background/80 p-4 space-y-3 backdrop-blur-[2px]"
@@ -401,8 +393,8 @@ export function LiveVoiceSession({
           {realtime.messages.length === 0 && (
             <p className="text-sm text-muted-foreground max-w-xl">
               {ar
-                ? "اضغط اتصال مباشر ثم تحدّث — المؤشر المتلألئ والمسرح يظهران كل أداة وتوليد المستندات بصرياً."
-                : "Tap Connect live, then speak — the glitter cursor and theater visualize every tool and document forge beat-by-beat."}
+                ? "اضغط اتصال مباشر ثم تحدّث — الوكيل ينقر الأدوات مثلك والمسرح المتلألئ يعرض كل خطوة."
+                : "Tap Connect live, then speak — the agent clicks tools like you would, and the glitter theater shows each step."}
             </p>
           )}
           {realtime.messages.map((message) => (

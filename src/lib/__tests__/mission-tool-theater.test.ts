@@ -3,6 +3,7 @@ import {
   extractDocumentPreview,
   extractRegulatoryPreview,
   extractTheaterTools,
+  humanActionLabel,
   isToolRunning,
   summarizeToolOutput,
   toolDisplayName,
@@ -101,5 +102,11 @@ describe("mission tool theater parts", () => {
     const snap = listRegistrySnapshot();
     expect(snap.instruments.length).toBeGreaterThan(0);
     expect(snap.disclaimer.length).toBeGreaterThan(10);
+  });
+
+  test("human action labels mirror click-through language", () => {
+    expect(humanActionLabel("navigateToView", false)).toContain("sidebar");
+    expect(humanActionLabel("listProjects", false)).toContain("Projects");
+    expect(humanActionLabel("startAgentPipeline", true)).toContain("الوكلاء");
   });
 });
