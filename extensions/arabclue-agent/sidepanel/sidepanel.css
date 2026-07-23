@@ -191,6 +191,21 @@ h1 {
   animation: sparkle 2.4s linear infinite;
 }
 
+.queue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(66, 43, 6, 0.55);
+}
+.queue .meta span {
+  font-size: 12px;
+  color: #fde68a;
+  font-weight: 600;
+}
+.queue .btn.tiny { margin-top: 0; flex: 0 0 auto; }
+
 .settings label {
   display: flex;
   flex-direction: column;

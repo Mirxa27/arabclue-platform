@@ -38,12 +38,14 @@ Optional: for local development, set **API base** in the side panel to your loca
 | Screenshot | `captureVisibleTab` PNG → staged as browser attachment |
 | Context menu | Right-click page/selection → send to agent |
 | Glitter FX | Custom cursor + particle field while performing |
+| Offline queue | Failed text captures are saved locally and auto-retry every minute (badge shows pending count; side panel has Retry now) |
+| Auto-update | Mission Control compares versions and offers a one-click Update flow when the platform ships a newer extension |
 
 Uplink endpoint: `POST /api/platform-agent/extension/ingest` (session cookie auth).
 
 ## Permissions (least privilege)
 
-- `sidePanel`, `activeTab`, `scripting`, `storage`, `contextMenus`
+- `sidePanel`, `activeTab`, `scripting`, `storage`, `contextMenus`, `alarms` (offline queue retry)
 - Host: `arabclue.com`
 - Optional broader hosts if you grant them for local/dev or more sites
 

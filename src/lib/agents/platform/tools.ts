@@ -1529,6 +1529,27 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         };
       },
     }),
+
+    getMissionPulse: platformTool({
+      description:
+        "Live Mission Control analytics: documents ingested by category/source, tool run success/failure, extension captures, and mission health. Use when asked 'what have we done', 'mission status', or for a session recap.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        if (!ctx.missionId) {
+          return { ok: false as const, error: "No active mission" };
+        }
+        const { loadMissionPulse, narrateMissionPulse } = await import(
+          "./mission-pulse"
+        );
+        const pulse = await loadMissionPulse(ctx.missionId, ctx.workspace.id);
+        if (!pulse) return { ok: false as const, error: "Mission not found" };
+        return {
+          ok: true as const,
+          pulse,
+          narration: narrateMissionPulse(pulse, ctx.locale),
+        };
+      },
+    }),
   };
 }
 

@@ -32,6 +32,7 @@ import {
 import { MissionToolTheater } from "./mission-tool-theater";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionExtensionBridge } from "./mission-extension-bridge";
+import { MissionPulseWidget } from "./mission-pulse-widget";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -488,6 +489,12 @@ export function PlatformAgentConsole() {
             ].slice(0, 40)
           );
         }}
+      />
+
+      <MissionPulseWidget
+        locale={locale}
+        missionId={missionId}
+        refreshKey={feedItems.length}
       />
 
       <div className="flex flex-wrap items-center gap-2">

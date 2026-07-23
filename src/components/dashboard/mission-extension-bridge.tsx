@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
+  ArrowUpCircle,
   CheckCircle2,
   Circle,
   Download,
@@ -38,6 +39,25 @@ type StepId =
   | "verify";
 
 const DISMISS_KEY = "arabclue.extension.install.dismissed";
+
+/** Returns true when `installed` is older than `latest` (loose semver). */
+export function isVersionOutdated(installed: string, latest: string): boolean {
+  const parse = (v: string) =>
+    v
+      .replace(/^v/i, "")
+      .split(".")
+      .map((n) => Number.parseInt(n, 10) || 0);
+  const a = parse(installed);
+  const b = parse(latest);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    if (ai < bi) return true;
+    if (ai > bi) return false;
+  }
+  return false;
+}
 
 function useExtensionPresence(onExtensionEvent?: (data: unknown) => void) {
   const [present, setPresent] = useState<boolean | null>(null);
@@ -129,6 +149,11 @@ export function MissionExtensionBridge({
   const [downloading, setDownloading] = useState(false);
   const [metaVersion, setMetaVersion] = useState<string>("1.0.0");
   const [checking, setChecking] = useState(false);
+  const [wizardMode, setWizardMode] = useState<"install" | "update">("install");
+
+  const updateAvailable = Boolean(
+    present && version && isVersionOutdated(version, metaVersion)
+  );
 
   useEffect(() => {
     void fetch("/api/platform-agent/extension")
@@ -151,20 +176,29 @@ export function MissionExtensionBridge({
     setStep("download");
   }, [autoPrompt, present]);
 
-  // Poll while wizard is open until linked
+  // Poll while wizard is open until linked (or, in update mode, until the
+  // reloaded extension reports the new version).
   useEffect(() => {
-    if (!open || present) return;
+    if (!open) return;
+    if (present && wizardMode !== "update") return;
     const id = window.setInterval(() => {
       ping();
     }, 2000);
     return () => window.clearInterval(id);
-  }, [open, present, ping]);
+  }, [open, present, wizardMode, ping]);
 
   useEffect(() => {
-    if (present && open) {
+    if (present && open && wizardMode === "install") {
       setStep("verify");
     }
-  }, [present, open]);
+  }, [present, open, wizardMode]);
+
+  // Update completes once the reported version catches up.
+  useEffect(() => {
+    if (open && wizardMode === "update" && present && !updateAvailable) {
+      setStep("verify");
+    }
+  }, [open, wizardMode, present, updateAvailable]);
 
   const steps = useMemo(
     () =>
@@ -199,10 +233,20 @@ export function MissionExtensionBridge({
         },
         {
           id: "load" as const,
-          title: ar ? "Load unpacked" : "Load unpacked",
-          body: ar
-            ? "اضغط Load unpacked واختر مجلد arabclue-agent."
-            : "Click Load unpacked and select the arabclue-agent folder.",
+          title:
+            wizardMode === "update"
+              ? ar
+                ? "استبدل ثم أعد التحميل"
+                : "Replace & reload"
+              : "Load unpacked",
+          body:
+            wizardMode === "update"
+              ? ar
+                ? "استبدل محتوى مجلد arabclue-agent بالجديد ثم اضغط ⟳ Reload على بطاقة الامتداد."
+                : "Replace the arabclue-agent folder contents, then click ⟳ Reload on the extension card."
+              : ar
+                ? "اضغط Load unpacked واختر مجلد arabclue-agent."
+                : "Click Load unpacked and select the arabclue-agent folder.",
         },
         {
           id: "verify" as const,
@@ -212,7 +256,7 @@ export function MissionExtensionBridge({
             : "Come back here — we detect the extension automatically.",
         },
       ] as const,
-    [ar]
+    [ar, wizardMode]
   );
 
   const stepIndex = steps.findIndex((s) => s.id === step);
@@ -299,6 +343,12 @@ export function MissionExtensionBridge({
                   v{version || metaVersion}
                 </Badge>
               )}
+              {updateAvailable && (
+                <Badge className="text-[10px] gap-1 bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/50 hover:bg-amber-500/25">
+                  <ArrowUpCircle className="size-3" />
+                  {ar ? `تحديث v${metaVersion}` : `Update v${metaVersion}`}
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {present
@@ -320,6 +370,21 @@ export function MissionExtensionBridge({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {present && updateAvailable && (
+            <Button
+              type="button"
+              size="sm"
+              className="gap-1 bg-amber-600 hover:bg-amber-600/90 text-white"
+              onClick={() => {
+                setWizardMode("update");
+                setOpen(true);
+                setStep("download");
+              }}
+            >
+              <ArrowUpCircle className="size-3.5" />
+              {ar ? "حدّث الآن" : "Update now"}
+            </Button>
+          )}
           {present ? (
             <Button
               type="button"
@@ -339,6 +404,7 @@ export function MissionExtensionBridge({
               size="sm"
               className="gap-1"
               onClick={() => {
+                setWizardMode("install");
                 setOpen(true);
                 setStep("download");
               }}
@@ -363,22 +429,36 @@ export function MissionExtensionBridge({
               <span className="flex size-8 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-500/10">
                 <Puzzle className="size-4 text-cyan-700" />
               </span>
-              {ar
-                ? "تثبيت امتداد الوكيل الصوتي"
-                : "Install Voice Agent extension"}
+              {wizardMode === "update"
+                ? ar
+                  ? `تحديث الامتداد إلى v${metaVersion}`
+                  : `Update extension to v${metaVersion}`
+                : ar
+                  ? "تثبيت امتداد الوكيل الصوتي"
+                  : "Install Voice Agent extension"}
             </DialogTitle>
             <DialogDescription>
-              {ar
-                ? "معالج من داخل ArabClue يقوّي الوكيل بالتقاط أي تبويب."
-                : "In-app wizard that strengthens the agent by capturing any browser tab."}
+              {wizardMode === "update"
+                ? ar
+                  ? "نزّل الحزمة الجديدة واستبدل المجلد ثم أعد تحميل الامتداد."
+                  : "Download the new package, replace the folder, and reload the extension."
+                : ar
+                  ? "معالج من داخل ArabClue يقوّي الوكيل بالتقاط أي تبويب."
+                  : "In-app wizard that strengthens the agent by capturing any browser tab."}
             </DialogDescription>
           </DialogHeader>
 
-          {present ? (
+          {present && (wizardMode === "install" || !updateAvailable) ? (
             <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm space-y-2">
               <div className="flex items-center gap-2 font-semibold text-emerald-800 dark:text-emerald-200">
                 <CheckCircle2 className="size-4" />
-                {ar ? "الامتداد متصل بنجاح" : "Extension linked successfully"}
+                {wizardMode === "update"
+                  ? ar
+                    ? "تم التحديث بنجاح"
+                    : "Updated successfully"
+                  : ar
+                    ? "الامتداد متصل بنجاح"
+                    : "Extension linked successfully"}
               </div>
               <p className="text-muted-foreground text-xs">
                 {ar

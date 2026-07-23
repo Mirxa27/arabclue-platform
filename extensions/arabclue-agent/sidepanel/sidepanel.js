@@ -111,6 +111,20 @@ async function loadSettings() {
   $("version").textContent = ping?.version ? `v${ping.version}` : "";
 }
 
+async function refreshQueue() {
+  const res = await send(MSG.GET_QUEUE_STATUS);
+  const panel = $("queuePanel");
+  if (!res?.ok || !res.count) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  $("queueLabel").textContent =
+    res.count === 1
+      ? "1 capture waiting offline — retries every minute"
+      : `${res.count} captures waiting offline — retries every minute`;
+}
+
 async function capture(mode = "page") {
   setStatus("Capturing…", "Reading the active tab into Mission Control.", true);
   burst(120, 80, 30);
@@ -146,16 +160,22 @@ async function capture(mode = "page") {
         ? "Log in to arabclue.com in this browser, then retry."
         : ingest?.error || "Ingest failed";
     setStatus("Uplink failed", hint, false);
+    void refreshQueue();
     return;
   }
   burst(160, 140, 40);
-  setStatus(
-    "Agent strengthened",
-    ingest.result?.autopilot?.message ||
-      ingest.result?.message ||
-      "Page context staged in Mission Control.",
-    false
-  );
+  if (ingest.result?.queued) {
+    setStatus("Saved offline", ingest.result.message, false);
+  } else {
+    setStatus(
+      "Agent strengthened",
+      ingest.result?.autopilot?.message ||
+        ingest.result?.message ||
+        "Page context staged in Mission Control.",
+      false
+    );
+  }
+  void refreshQueue();
 }
 
 async function captureShot() {
@@ -198,8 +218,29 @@ $("btnSave").addEventListener("click", async () => {
   });
   setStatus("Saved", "API base updated for this browser profile.", false);
 });
+$("btnFlush").addEventListener("click", async () => {
+  setStatus("Retrying…", "Flushing offline capture queue.", true);
+  const res = await send(MSG.FLUSH_QUEUE);
+  if (res?.flushed) {
+    burst(160, 140, 40);
+    setStatus(
+      "Queue delivered",
+      `${res.flushed} capture(s) beamed into Mission Control.`,
+      false
+    );
+  } else {
+    setStatus(
+      "Still offline",
+      res?.lastError || "Captures kept — auto-retry continues.",
+      false
+    );
+  }
+  void refreshQueue();
+});
 
 void loadSettings();
+void refreshQueue();
+setInterval(() => void refreshQueue(), 15_000);
 void send(MSG.GET_PAGE_CONTEXT).then((res) => {
   if (res?.ok) showContext(res.context);
 });
