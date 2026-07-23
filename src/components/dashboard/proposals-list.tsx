@@ -20,8 +20,17 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Panel, EmptyState, QueryState } from "@/components/patterns";
 import { ProposalEditorDialog } from "./proposal-editor";
+import { DocumentPreviewFrame } from "./document-preview-frame";
 import { apiJson } from "@/lib/api-client";
 import type { ApiProposal, ApiProposalArtifact } from "@/lib/api-types";
+import { useArtifactDownload } from "@/hooks/use-artifact-download";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type { ArtifactDownloadFormat } from "@/lib/download-artifact";
 
 function artifactIcon(type: string) {
   if (type === "PPTX" || type === "HTML") return Presentation;
@@ -52,7 +61,7 @@ function parseArtifacts(p: ApiProposal): ApiProposalArtifact[] {
   return [];
 }
 
-function artifactFormat(a: ApiProposalArtifact): string {
+function artifactFormat(a: ApiProposalArtifact): ArtifactDownloadFormat {
   if (a.type === "ZIP") return "zip";
   if (a.type === "PDF") return "pdf";
   if (a.filename.includes("Compliance")) return "xlsx-matrix";
@@ -65,7 +74,19 @@ function artifactFormat(a: ApiProposalArtifact): string {
     return "slides";
   }
   if (a.downloadPath?.includes("format=")) {
-    return a.downloadPath.split("format=")[1] ?? "zip";
+    const fmt = a.downloadPath.split("format=")[1]?.split("&")[0];
+    if (
+      fmt === "pdf" ||
+      fmt === "html" ||
+      fmt === "zip" ||
+      fmt === "manifest" ||
+      fmt === "xlsx-matrix" ||
+      fmt === "xlsx-boq" ||
+      fmt === "slides" ||
+      fmt === "pptx"
+    ) {
+      return fmt;
+    }
   }
   return "zip";
 }
@@ -74,6 +95,8 @@ export function ProposalsList() {
   const { locale } = useLocale();
   const { toast } = useToast();
   const [editId, setEditId] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const { download, busyFormat } = useArtifactDownload();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["proposals"],
@@ -168,21 +191,28 @@ export function ProposalsList() {
                         {artifacts.map((a, i) => {
                           const Icon = artifactIcon(a.type);
                           const fmt = artifactFormat(a);
+                          const busy = busyFormat === fmt;
                           return (
-                            <a
+                            <button
                               key={`${a.filename}-${i}`}
-                              href={
-                                a.downloadPath ||
-                                `/api/proposals/${p.id}/download?format=${fmt}`
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                void download({
+                                  proposalId: p.id,
+                                  format: fmt,
+                                  fallbackName: a.filename,
+                                  locale,
+                                })
                               }
-                              className="flex items-center gap-1.5 p-1.5 rounded-lg bg-muted/40 border border-border/40 hover:border-primary/40 hover:bg-primary/5 transition-colors group"
+                              className="flex items-center gap-1.5 p-1.5 rounded-lg bg-muted/40 border border-border/40 hover:border-primary/40 hover:bg-primary/5 transition-colors group text-start disabled:opacity-60"
                             >
                               <Icon className="size-3 text-muted-foreground group-hover:text-primary shrink-0" />
                               <span className="text-[10px] truncate flex-1">
                                 {a.filename}
                               </span>
                               <Download className="size-2.5 text-muted-foreground group-hover:text-primary shrink-0" />
-                            </a>
+                            </button>
                           );
                         })}
                       </div>
@@ -202,27 +232,27 @@ export function ProposalsList() {
                         size="sm"
                         variant="ghost"
                         className="h-7 text-[10px] gap-1"
-                        asChild
+                        onClick={() => setPreviewId(p.id)}
                       >
-                        <a
-                          href={`/api/proposals/${p.id}/download?format=html`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <Eye className="size-3" />
-                          {locale === "ar" ? "معاينة" : "Preview"}
-                        </a>
+                        <Eye className="size-3" />
+                        {locale === "ar" ? "معاينة" : "Preview"}
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
                         className="h-7 text-[10px] gap-1 ms-auto"
-                        asChild
+                        disabled={busyFormat === "zip"}
+                        onClick={() =>
+                          void download({
+                            proposalId: p.id,
+                            format: "zip",
+                            fallbackName: "Arabclue_Bid_Package.zip",
+                            locale,
+                          })
+                        }
                       >
-                        <a href={`/api/proposals/${p.id}/download?format=zip`}>
-                          <Download className="size-3" />
-                          ZIP
-                        </a>
+                        <Download className="size-3" />
+                        ZIP
                       </Button>
                     </div>
                   </div>
@@ -242,6 +272,30 @@ export function ProposalsList() {
           }}
         />
       )}
+
+      <Dialog
+        open={Boolean(previewId)}
+        onOpenChange={(o) => {
+          if (!o) setPreviewId(null);
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0">
+          <DialogHeader className="px-5 py-3 border-b border-border/60">
+            <DialogTitle>
+              {locale === "ar" ? "معاينة المستند" : "Document preview"}
+            </DialogTitle>
+          </DialogHeader>
+          {previewId ? (
+            <div className="p-4 overflow-auto">
+              <DocumentPreviewFrame
+                locale={locale}
+                proposalId={previewId}
+                defaultMode="html"
+              />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -18,8 +18,7 @@ import { ReviewsQueue } from "./reviews-queue";
 import { ProposalsList } from "./proposals-list";
 import { ContractsPanel } from "./contracts-panel";
 import { ProjectsList } from "./projects-list";
-import { ChartsPanel } from "./charts-panel";
-import { TenderTypeSelector } from "./tender-type-selector";
+import { TenderFlowBoard } from "./tender-flow-board";
 import { Loader2 } from "lucide-react";
 
 function PanelLoading() {
@@ -181,25 +180,17 @@ function OverviewView() {
         title={tr("nav_dashboard", locale)}
         subtitle={
           locale === "ar"
-            ? "نظرة شاملة على منصة العطاءات"
-            : "Comprehensive tender platform overview"
+            ? "مسار واضح: إعداد مناقصة → رفع الكراسة → تشغيل الوكلاء → تصدير PDF"
+            : "Clear path: set up tender → upload RFP → run agents → export PDF"
         }
         locale={locale}
       />
-      <TenderTypeSelector />
       <OnboardingBanner />
+      <TenderFlowBoard />
       <StatCards />
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 space-y-4">
-          <FileIngestion />
-          <ChartsPanel />
-          <DocumentMatrix />
-        </div>
-        <div className="space-y-4">
-          <AgentWorkflow />
-          <ComplianceMonitor />
-          <VersionHistory />
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <FileIngestion />
+        <AgentWorkflow />
       </div>
     </PageSection>
   );

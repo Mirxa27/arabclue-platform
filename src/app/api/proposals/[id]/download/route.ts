@@ -342,6 +342,17 @@ export async function GET(
     });
   } catch (err) {
     console.error("[download]", err);
+    const { PdfGenerationError } = await import("@/lib/pdf/html-to-pdf");
+    if (err instanceof PdfGenerationError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          code: err.code,
+          hint: "Install Playwright Chromium on the server (bunx playwright install chromium).",
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "download failed" },
       { status: 500 }

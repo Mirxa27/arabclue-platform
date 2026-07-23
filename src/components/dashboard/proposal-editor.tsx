@@ -17,6 +17,7 @@ import {
   RefreshCw,
   GitFork,
   Download,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,10 +38,14 @@ import {
 } from "@/components/ui/select";
 import { markdownToHtml } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
+import { DocumentPreviewFrame } from "./document-preview-frame";
+import { useArtifactDownload } from "@/hooks/use-artifact-download";
+import type { ArtifactDownloadFormat } from "@/lib/download-artifact";
 
 type StudioMode =
   | "edit"
   | "preview"
+  | "print"
   | "split"
   | "financial"
   | "versions"
@@ -76,6 +81,7 @@ export function ProposalEditorDialog({
   const { activeProjectId } = useUI();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { download, busyFormat, isBusy: downloadBusy } = useArtifactDownload();
   const [draftMd, setDraftMd] = useState<string | null>(null);
   const [draftLocale, setDraftLocale] = useState<"ar" | "en" | null>(null);
   const [mode, setMode] = useState<StudioMode>("split");
@@ -353,42 +359,29 @@ export function ProposalEditorDialog({
   });
 
   const exportMutation = useMutation({
-    mutationFn: async (format: string) => {
-      const res = await fetch(
-        `/api/proposals/${proposalId}/download?format=${format}&locale=${propLocale}`
-      );
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Export failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download =
-        format === "zip"
-          ? "Arabclue_Bid_Package.zip"
-          : format === "pdf"
-            ? "Technical_Proposal.pdf"
-            : `export.${format}`;
-      a.click();
-      URL.revokeObjectURL(url);
+    mutationFn: async (format: ArtifactDownloadFormat) => {
+      if (!proposalId) throw new Error("Missing proposal");
+      const ok = await download({
+        proposalId,
+        format,
+        locale,
+        fallbackName:
+          format === "zip"
+            ? "Arabclue_Bid_Package.zip"
+            : format === "pdf"
+              ? "Technical_Proposal.pdf"
+              : `export.${format}`,
+      });
+      if (!ok) throw new Error(locale === "ar" ? "فشل التصدير" : "Export failed");
       return format;
     },
-    onSuccess: (format) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["proposals"] });
       qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
       refetchValidation();
-      toast({
-        title:
-          locale === "ar"
-            ? `تم التصدير (${format})`
-            : `Exported (${format})`,
-      });
     },
-    onError: (err: Error) => {
+    onError: () => {
       refetchValidation();
-      toast({ title: err.message, variant: "destructive" });
     },
   });
 
@@ -396,6 +389,7 @@ export function ProposalEditorDialog({
   const status = data?.proposal?.status ?? "DRAFT";
   const showEdit = mode === "edit" || mode === "split";
   const showPreview = mode === "preview" || mode === "split";
+  const showPrint = mode === "print";
   const issues = validationData?.validation?.issues ?? [];
 
   return (
@@ -438,6 +432,11 @@ export function ProposalEditorDialog({
                     ["edit", Pencil, tr("action_edit", locale)],
                     ["split", Eye, "Split"],
                     ["preview", Eye, tr("proposal_preview", locale)],
+                    [
+                      "print",
+                      FileText,
+                      locale === "ar" ? "PDF / طباعة" : "PDF / Print",
+                    ],
                     [
                       "financial",
                       Save,
@@ -549,20 +548,28 @@ export function ProposalEditorDialog({
               <Button
                 size="sm"
                 className="h-7 text-[11px] gap-1"
-                disabled={exportMutation.isPending}
+                disabled={exportMutation.isPending || downloadBusy}
                 onClick={() => exportMutation.mutate("zip")}
               >
-                <Download className="size-3" />
+                {busyFormat === "zip" ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Download className="size-3" />
+                )}
                 ZIP
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 className="h-7 text-[11px] gap-1"
-                disabled={exportMutation.isPending}
+                disabled={exportMutation.isPending || downloadBusy}
                 onClick={() => exportMutation.mutate("pdf")}
               >
-                <FileDown className="size-3" />
+                {busyFormat === "pdf" ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <FileDown className="size-3" />
+                )}
                 PDF
               </Button>
             </div>
@@ -838,6 +845,16 @@ export function ProposalEditorDialog({
                     </span>
                   </p>
                 )}
+              </div>
+            ) : showPrint && proposalId ? (
+              <div className="flex-1 min-h-0 overflow-auto">
+                <DocumentPreviewFrame
+                  locale={propLocale}
+                  proposalId={proposalId}
+                  title={data?.proposal?.title}
+                  defaultMode="html"
+                  compact
+                />
               </div>
             ) : (
               <div

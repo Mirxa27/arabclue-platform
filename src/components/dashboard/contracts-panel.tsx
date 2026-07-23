@@ -2,7 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Scale, Loader2, FileText, Sparkles, Download, FileDown } from "lucide-react";
+import {
+  Scale,
+  FileText,
+  Sparkles,
+  Download,
+  FileDown,
+  Eye,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,12 +20,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useLocale, useUI } from "@/lib/store";
-import { tr } from "@/lib/i18n";
 import { apiJson } from "@/lib/api-client";
 import type { ApiProposal } from "@/lib/api-types";
 import { BilingualContractStudio } from "./contract-studio";
+import { DocumentPreviewFrame } from "./document-preview-frame";
+import { ListSkeleton } from "./loading-skeletons";
+import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import type { ContractArticle } from "@/lib/contract-format";
 import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 function parseArtifacts(raw: string | null | undefined): {
   research?: SaudiLawResearchBrief;
@@ -26,12 +36,13 @@ function parseArtifacts(raw: string | null | undefined): {
 } {
   if (!raw) return {};
   try {
-    const arr = JSON.parse(raw);
+    const arr = JSON.parse(raw) as unknown;
     const first = Array.isArray(arr) ? arr[0] : arr;
     if (!first || typeof first !== "object") return {};
+    const obj = first as Record<string, unknown>;
     return {
-      research: first.research,
-      articles: first.articles,
+      research: obj.research as SaudiLawResearchBrief | undefined,
+      articles: obj.articles as ContractArticle[] | undefined,
     };
   } catch {
     return {};
@@ -43,8 +54,9 @@ export function ContractsPanel() {
   const ar = locale === "ar";
   const { activeProjectId, setView } = useUI();
   const [openId, setOpenId] = useState<string | null>(null);
+  const { download, busyFormat } = useArtifactDownload();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["proposals", activeProjectId],
     queryFn: () =>
       apiJson<{ proposals: ApiProposal[] }>(
@@ -76,8 +88,8 @@ export function ContractsPanel() {
               </h3>
               <p className="text-xs text-muted-foreground mt-1 max-w-xl leading-relaxed">
                 {ar
-                  ? "وكيل القانون يبحث سجل الأطر السعودية ثم يصوغ عقداً عربي/إنجليزي متقابلاً — للمراجعة القانونية المعتمدة فقط، دون ادعاء يقين 100%."
-                  : "The Law agent researches the Saudi framework registry, then drafts a front-to-front AR/EN contract — for authorized counsel review only, never 100% legal certainty."}
+                  ? "معاينة HTML/PDF · تنزيل موثوق · مراجعة قانونية معتمدة مطلوبة — دون ادعاء يقين 100%."
+                  : "HTML/PDF preview · reliable download · authorized counsel review required — never 100% legal certainty."}
               </p>
             </div>
           </div>
@@ -93,18 +105,32 @@ export function ContractsPanel() {
       </Card>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-12 text-muted-foreground gap-2 text-sm">
-          <Loader2 className="size-4 animate-spin" />
-          {tr("loading", locale)}
-        </div>
+        <ListSkeleton rows={3} />
+      ) : isError ? (
+        <Card className="p-6 text-center space-y-2">
+          <p className="text-sm text-destructive">
+            {ar ? "تعذّر تحميل العقود" : "Could not load contracts"}
+          </p>
+          <Button size="sm" variant="outline" onClick={() => void refetch()}>
+            {ar ? "إعادة المحاولة" : "Retry"}
+          </Button>
+        </Card>
       ) : contracts.length === 0 ? (
         <Card className="p-10 text-center border-dashed">
           <FileText className="size-8 mx-auto text-muted-foreground/50" />
           <p className="mt-3 text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
             {ar
-              ? "لا مسودات عقود بعد. شغّل خط الوكلاء على مشروع نشط — المرحلة السادسة (القانون والعقود) تُنشئ المسودة بعد البحث."
-              : "No contract drafts yet. Run the agent pipeline on an active project — stage 6 (Law & Contract) drafts after research."}
+              ? "لا مسودات عقود بعد. 1) أنشئ مناقصة 2) ارفع الكراسة 3) شغّل الوكلاء — المرحلة 6 تصوغ العقد."
+              : "No contract drafts yet. 1) Set up a tender 2) Upload the RFP 3) Run agents — stage 6 drafts the contract."}
           </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setView("projects")}>
+              {ar ? "المشاريع" : "Projects"}
+            </Button>
+            <Button size="sm" onClick={() => setView("agents")}>
+              {ar ? "الوكلاء" : "Agents"}
+            </Button>
+          </div>
         </Card>
       ) : (
         <div className="grid gap-3">
@@ -137,24 +163,43 @@ export function ContractsPanel() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => setOpenId(c.id)}>
-                  {ar ? "عرض العقد" : "Open contract"}
+                <Button size="sm" variant="outline" className="gap-1" onClick={() => setOpenId(c.id)}>
+                  <Eye className="size-3.5" />
+                  {ar ? "معاينة" : "Preview"}
                 </Button>
-                <Button size="sm" variant="ghost" className="gap-1" asChild>
-                  <a
-                    href={`/api/proposals/${c.id}/download?format=html`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <Download className="size-3.5" />
-                    HTML
-                  </a>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1"
+                  disabled={busyFormat === "html"}
+                  onClick={() =>
+                    void download({
+                      proposalId: c.id,
+                      format: "html",
+                      fallbackName: "Contract.html",
+                      locale,
+                    })
+                  }
+                >
+                  <Download className="size-3.5" />
+                  HTML
                 </Button>
-                <Button size="sm" variant="ghost" className="gap-1" asChild>
-                  <a href={`/api/proposals/${c.id}/download?format=pdf`}>
-                    <FileDown className="size-3.5" />
-                    PDF
-                  </a>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1"
+                  disabled={busyFormat === "pdf"}
+                  onClick={() =>
+                    void download({
+                      proposalId: c.id,
+                      format: "pdf",
+                      fallbackName: "Contract.pdf",
+                      locale,
+                    })
+                  }
+                >
+                  <FileDown className="size-3.5" />
+                  PDF
                 </Button>
               </div>
             </Card>
@@ -163,20 +208,48 @@ export function ContractsPanel() {
       )}
 
       <Dialog open={Boolean(openId)} onOpenChange={(o) => !o && setOpenId(null)}>
-        <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden p-0 border-0 bg-transparent shadow-none">
-          <DialogHeader className="sr-only">
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0">
+          <DialogHeader className="px-5 py-3 border-b border-border/60">
             <DialogTitle>
               {active ? active.titleAr || active.title : "Contract"}
             </DialogTitle>
           </DialogHeader>
           {active ? (
-            <BilingualContractStudio
-              title={active.title}
-              titleAr={active.titleAr}
-              contentMd={active.contentMd || ""}
-              research={artifacts.research}
-              articles={artifacts.articles}
-            />
+            <Tabs defaultValue="studio" className="flex-1 min-h-0 flex flex-col">
+              <div className="px-5 pt-3">
+                <TabsList>
+                  <TabsTrigger value="studio">
+                    {ar ? "الاستوديو" : "Studio"}
+                  </TabsTrigger>
+                  <TabsTrigger value="export">
+                    {ar ? "معاينة PDF" : "PDF preview"}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent
+                value="studio"
+                className="flex-1 min-h-0 overflow-auto px-0 pb-0 mt-0 data-[state=inactive]:hidden"
+              >
+                <BilingualContractStudio
+                  title={active.title}
+                  titleAr={active.titleAr}
+                  contentMd={active.contentMd || ""}
+                  research={artifacts.research}
+                  articles={artifacts.articles}
+                />
+              </TabsContent>
+              <TabsContent
+                value="export"
+                className="flex-1 min-h-0 overflow-auto p-4 mt-0 data-[state=inactive]:hidden"
+              >
+                <DocumentPreviewFrame
+                  locale={locale}
+                  proposalId={active.id}
+                  title={active.titleAr || active.title}
+                  defaultMode="html"
+                />
+              </TabsContent>
+            </Tabs>
           ) : null}
         </DialogContent>
       </Dialog>

@@ -171,33 +171,23 @@ export async function generateProposalPDF(
   }
 
   const html = buildProposalHTML(proposal, project, brandForPdf, { forPrint: true, locale });
+  const { htmlToPdf, PdfGenerationError } = await import("./pdf/html-to-pdf");
   try {
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    return await htmlToPdf(html, {
+      format: "A4",
+      printBackground: true,
+      displayHeaderFooter: true,
+      headerTemplate: `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;">Arabclue · ${escapeHtml(project.etimadRef ?? "")}</div>`,
+      footerTemplate: `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
+      margin: { top: "16mm", bottom: "18mm", left: "12mm", right: "12mm" },
+      waitMs: 400,
     });
-    try {
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: "networkidle", timeout: 60_000 });
-      // Allow Google Fonts to load for Arabic typography
-      await page.waitForTimeout(400);
-      const pdf = await page.pdf({
-        format: "A4",
-        printBackground: true,
-        displayHeaderFooter: true,
-        headerTemplate: `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;">Arabclue · ${escapeHtml(project.etimadRef ?? "")}</div>`,
-        footerTemplate: `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
-        margin: { top: "16mm", bottom: "18mm", left: "12mm", right: "12mm" },
-      });
-      return Buffer.from(pdf);
-    } finally {
-      await browser.close();
-    }
   } catch (err) {
+    if (err instanceof PdfGenerationError) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `PDF generation failed (Playwright/Chromium unavailable): ${message}`
+    throw new PdfGenerationError(
+      `PDF generation failed (Playwright/Chromium unavailable): ${message}`,
+      { cause: err }
     );
   }
 }
