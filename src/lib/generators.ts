@@ -13,7 +13,8 @@ function resolveLocale(proposal: GeneratedProposal, override?: PdfLocale): PdfLo
   return loc === "en" ? "en" : "ar";
 }
 
-function saudizationExportLabel(
+/** Saudization label for export slides — never invents a blanket mandatory %. */
+export function saudizationExportLabel(
   saudizationPercent: number | null | undefined,
   saudizationTarget: number | null | undefined
 ): string {

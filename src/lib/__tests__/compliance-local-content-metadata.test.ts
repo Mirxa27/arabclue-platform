@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { COMPLIANCE_FRAMEWORKS } from "../constants";
+import { saudizationExportLabel } from "../generators";
 
 /** Blanket universals that must not appear in static LOCAL_CONTENT compliance metadata. */
 const FORBIDDEN_BLANKET_PHRASES: RegExp[] = [
@@ -38,5 +39,22 @@ describe("LOCAL_CONTENT compliance metadata", () => {
     expect(lc1?.requirement.toLowerCase()).not.toContain("mandatory 10");
     expect(lc2?.requirement.toLowerCase()).toContain("tender");
     expect(lc2?.requirement.toLowerCase()).not.toMatch(/minimum\s+35%/);
+  });
+
+  test("export saudization labels never invent a blanket 35% minimum", () => {
+    const labels = [
+      saudizationExportLabel(null, null),
+      saudizationExportLabel(undefined, undefined),
+      saudizationExportLabel(40, null),
+      saudizationExportLabel(null, 30),
+      saudizationExportLabel(22, 25),
+    ];
+    for (const label of labels) {
+      expect(label.toLowerCase()).not.toMatch(/minimum\s+35%/);
+      expect(label.toLowerCase()).not.toContain("mandatory");
+      expect(label).not.toMatch(/\b35%\b/);
+    }
+    expect(saudizationExportLabel(null, null)).toContain("no blanket minimum");
+    expect(saudizationExportLabel(null, 30)).toContain("Tender target 30%");
   });
 });

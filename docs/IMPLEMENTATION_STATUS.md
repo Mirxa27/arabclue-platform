@@ -1,16 +1,23 @@
 # Implementation Status
 
-**Branch:** `cursor/saudi-contract-remaining-ab64`
+**Branch:** `cursor/saudi-contract-followups-ab64`
 **Verified:** 2026-07-23
 
 ## Quality gates (executed)
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Unit tests | `bun test src/lib/__tests__` | **187 pass, 0 fail** |
+| Unit tests | `bun test src/lib/__tests__` | **193 pass, 0 fail** |
 | Typecheck | `bunx tsc --noEmit` | **pass** |
 | Lint | `bun run lint` | **0 errors** (6 existing warnings) |
 | Build (optional) | `bun run build` | **blocked by known Turbopack client trace issue**: Node-only `redis` and `z-ai-web-dev-sdk` modules are pulled into browser/SSR traces |
+
+## Follow-up hardening (post review)
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Shared submit-block helper | Closed | `isProposalSubmitBlocked` used by submit route; unit coverage for edit-lock vs submit-block (incl. REVIEWED) |
+| Export-label regression | Closed | `saudizationExportLabel` exported + scanned for blanket 35%/mandatory phrases |
 
 ## Saudi contract remaining-gap closures
 
@@ -48,5 +55,4 @@
 - Google/Microsoft OAuth *app* linking (paste/upload path is production-complete without third-party app registration)
 - Etimad portal submission API (explicitly out of scope)
 - SSO/OIDC (explicitly out of scope per PRD)
-
-See `docs/GAP_ANALYSIS.md` and `prd/PRD.md`.
+- Parallel deep research on Saudi market/contracts (requires `PARALLEL_API_KEY` / `parallel-cli login`)
