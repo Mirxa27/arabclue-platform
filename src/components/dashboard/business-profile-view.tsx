@@ -234,7 +234,7 @@ export function BusinessProfileView() {
             </div>
             <div className="flex items-start gap-4">
               {profile.brand?.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
+                 
                 <img
                   src={profile.brand.logoUrl}
                   alt=""

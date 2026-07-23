@@ -29,6 +29,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { BrandSetup } from "./brand-setup";
 import { Panel } from "@/components/patterns";
+import {
+  CERTIFICATE_TYPES,
+  assessQualificationDossier,
+} from "@/lib/qualification";
 
 type StepKey =
   | "brand"
@@ -195,7 +199,7 @@ function LegalPanel({
   const [cr, setCr] = useState(workspace?.crNumber ?? "");
   const [vat, setVat] = useState(workspace?.vatNumber ?? "");
   const [certName, setCertName] = useState("");
-  const [certType, setCertType] = useState("ISO");
+  const [certType, setCertType] = useState("GOSI");
   const [expiresAt, setExpiresAt] = useState("");
 
   const { data } = useQuery({
@@ -248,6 +252,16 @@ function LegalPanel({
     },
   });
 
+  const dossier = assessQualificationDossier({
+    workspace: { crNumber: cr, vatNumber: vat },
+    certificates: (data?.items ?? []) as Array<{
+      certType: string;
+      expiresAt?: string;
+      revokedAt?: string | null;
+      approved?: boolean;
+    }>,
+  });
+
   return (
     <div className="grid lg:grid-cols-2 gap-4">
       <Panel icon={Shield} title={locale === "ar" ? "السجل التجاري والضريبة" : "CR & VAT"}>
@@ -257,7 +271,7 @@ function LegalPanel({
             <Input value={cr} onChange={(e) => setCr(e.target.value)} />
           </div>
           <div>
-            <Label>VAT</Label>
+            <Label>{locale === "ar" ? "ضريبة زاتكا / VAT" : "ZATCA VAT"}</Label>
             <Input value={vat} onChange={(e) => setVat(e.target.value)} />
           </div>
           <Button onClick={() => saveLegal.mutate()} disabled={saveLegal.isPending}>
@@ -274,7 +288,7 @@ function LegalPanel({
               value={certType}
               onChange={(e) => setCertType(e.target.value)}
             >
-              {["ISO", "GOSI", "VAT", "ZAKAT", "LICENSE", "OTHER"].map((t) => (
+              {CERTIFICATE_TYPES.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
@@ -302,6 +316,63 @@ function LegalPanel({
               </li>
             ))}
           </ul>
+        </div>
+      </Panel>
+      <Panel
+        icon={AlertTriangle}
+        title={
+          locale === "ar"
+            ? "ملف التأهيل السعودي (إرشادي)"
+            : "Saudi qualification dossier (advisory)"
+        }
+      >
+        <div className="space-y-2 p-4 text-sm">
+          <p className="text-muted-foreground text-xs">
+            {locale === "ar"
+              ? "لا يمنع الإكمال — يساعد على جاهزية عطاء أقوى لاعتماد."
+              : "Does not block setup — helps readiness for stronger Etimad bids."}
+          </p>
+          <Badge
+            variant={dossier.strongBidReady ? "default" : "outline"}
+            className={
+              dossier.strongBidReady
+                ? "bg-emerald-600 hover:bg-emerald-600"
+                : undefined
+            }
+          >
+            {dossier.strongBidReady
+              ? locale === "ar"
+                ? "الوثائق الأساسية مكتملة"
+                : "Core docs present"
+              : locale === "ar"
+                ? "نواقص أساسية"
+                : "Core gaps remain"}
+          </Badge>
+          {dossier.gaps.length === 0 ? (
+            <p className="text-xs text-emerald-700 dark:text-emerald-300">
+              {locale === "ar"
+                ? "لا توجد فجوات ظاهرة في الملف."
+                : "No dossier gaps detected."}
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {dossier.gaps.map((g) => (
+                <li key={g.key} className="flex items-start gap-2 text-xs">
+                  <Badge variant="outline" className="shrink-0 text-[10px]">
+                    {g.reason}
+                  </Badge>
+                  <span>
+                    {locale === "ar" ? g.labelAr : g.labelEn}
+                    {g.requiredForStrongBid
+                      ? locale === "ar"
+                        ? " · أساسي"
+                        : " · core"
+                      : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </Panel>
     </div>

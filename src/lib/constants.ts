@@ -96,7 +96,8 @@ export const COMPLIANCE_FRAMEWORKS: ComplianceFramework[] = [
         controlId: "PDPL-14",
         title: "Data Residency in KSA",
         titleAr: "إقامة البيانات في المملكة",
-        requirement: "100% data residency within KSA; no cross-border transfer without NDMO approval",
+        requirement:
+          "Locate personal data in KSA where the tender/PDPL basis requires it; cross-border transfers only under SDAIA/PDPL transfer rules (not a blanket absolute)",
         level: "C1",
       },
       {

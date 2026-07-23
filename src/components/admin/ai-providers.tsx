@@ -735,7 +735,7 @@ function ProviderEditForm({
       setFetchedAt(provider.modelsFetchedAt);
     }
     void fetchModels({ preferCache: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [provider.id]);
 
   return (

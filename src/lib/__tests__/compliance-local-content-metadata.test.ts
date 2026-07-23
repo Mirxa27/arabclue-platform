@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { COMPLIANCE_FRAMEWORKS } from "../constants";
 import { saudizationExportLabel } from "../generators";
+import { marketingDict } from "../marketing-copy";
 
 /** Blanket universals that must not appear in static LOCAL_CONTENT compliance metadata. */
 const FORBIDDEN_BLANKET_PHRASES: RegExp[] = [
@@ -39,6 +40,19 @@ describe("LOCAL_CONTENT compliance metadata", () => {
     expect(lc1?.requirement.toLowerCase()).not.toContain("mandatory 10");
     expect(lc2?.requirement.toLowerCase()).toContain("tender");
     expect(lc2?.requirement.toLowerCase()).not.toMatch(/minimum\s+35%/);
+  });
+
+  test("PDPL-14 does not claim absolute 100% residency", () => {
+    const pdpl = COMPLIANCE_FRAMEWORKS.find((f) => f.id === "PDPL");
+    const c14 = pdpl?.controls.find((c) => c.controlId === "PDPL-14");
+    expect(c14?.requirement.toLowerCase()).not.toContain("100% data residency");
+    expect(c14?.requirement.toLowerCase()).toMatch(/sadaia|transfer|tender/);
+  });
+
+  test("marketing does not claim blanket ZATCA Compliant", () => {
+    const zatca = marketingDict.trust.items.find((i) => i.code === "ZATCA");
+    expect(zatca?.en.toLowerCase()).not.toContain("compliant");
+    expect(zatca?.en.toLowerCase()).toMatch(/vat|cr/);
   });
 
   test("export saudization labels never invent a blanket 35% minimum", () => {

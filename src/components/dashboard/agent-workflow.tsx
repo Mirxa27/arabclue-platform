@@ -127,29 +127,6 @@ export function AgentWorkflow() {
     },
   });
 
-  // Hydrate last run for the active project so the pipeline isn't blank.
-  useEffect(() => {
-    if (!activeProjectId || runId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/agents/status?projectId=${encodeURIComponent(activeProjectId)}`
-        );
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (!data.runId || cancelled) return;
-        applyStatusPayload(data, { hydrateOnly: true });
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId]);
-
   function applyStatusPayload(
     data: {
       runId?: string;
@@ -220,6 +197,28 @@ export function AgentWorkflow() {
       else setCompleted(false);
     }
   }
+
+  // Hydrate last run for the active project so the pipeline isn't blank.
+  useEffect(() => {
+    if (!activeProjectId || runId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/agents/status?projectId=${encodeURIComponent(activeProjectId)}`
+        );
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!data.runId || cancelled) return;
+        applyStatusPayload(data, { hydrateOnly: true });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, runId]);
 
   const runMutation = useMutation({
     mutationFn: async () => {
@@ -352,7 +351,7 @@ export function AgentWorkflow() {
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [runId, completed, locale, toast, qc]);
 
   const running = !!runId && !completed && (runStatus === "RUNNING" || runStatus === "QUEUED" || (!runStatus && !!runId && !completed));

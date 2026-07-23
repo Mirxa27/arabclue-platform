@@ -44,7 +44,7 @@ export function SettingsPanel() {
         setLocale(session.user.locale as Locale);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from session identity
+     
   }, [session?.user?.id, session?.user?.name, session?.user?.email, session?.user?.avatarUrl]);
 
   const initials =
@@ -508,7 +508,7 @@ export function SettingsPanel() {
             </div>
             {qr && (
               <div className="flex flex-col items-center gap-2 pt-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img
                   src={qr}
                   alt="MFA QR"

@@ -425,8 +425,8 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
             submissionDeadline: input.submissionDeadline
               ? new Date(input.submissionDeadline)
               : null,
-            saudizationTarget: input.saudizationTarget ?? 35,
-            localContentTarget: input.localContentTarget ?? 40,
+            saudizationTarget: input.saudizationTarget ?? null,
+            localContentTarget: input.localContentTarget ?? null,
             status: "DRAFT",
           },
         });
@@ -915,8 +915,8 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
               category: tenderType || "IT",
               budget: budget ?? null,
               currency: "SAR",
-              saudizationTarget: 35,
-              localContentTarget: 40,
+              saudizationTarget: null,
+              localContentTarget: null,
               status: "DRAFT",
             },
           });

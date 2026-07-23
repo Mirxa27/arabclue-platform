@@ -5,6 +5,7 @@ import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getSubmittedForReviewStatus } from "@/lib/contract-review";
 import { isProposalSubmitBlocked } from "@/lib/proposal-status";
+import { assessQualificationDossier } from "@/lib/qualification";
 
 export const dynamic = "force-dynamic";
 
@@ -35,14 +36,35 @@ export async function POST(
     }
 
     // Pre-submit checklist
-    const [missingReqs, nonCompliant] = await Promise.all([
+    const [missingReqs, nonCompliant, ws, certificates] = await Promise.all([
       db.tenderRequirement.count({
         where: { projectId: proposal.projectId, status: "MISSING" },
       }),
       db.complianceCheck.count({
         where: { projectId: proposal.projectId, status: "NON_COMPLIANT" },
       }),
+      db.workspace.findUnique({
+        where: { id: workspace.id },
+        select: { crNumber: true, vatNumber: true },
+      }),
+      db.certificate.findMany({
+        where: { workspaceId: workspace.id },
+        select: {
+          certType: true,
+          expiresAt: true,
+          revokedAt: true,
+          approved: true,
+        },
+      }),
     ]);
+
+    const qualification = assessQualificationDossier({
+      workspace: {
+        crNumber: ws?.crNumber,
+        vatNumber: ws?.vatNumber,
+      },
+      certificates,
+    });
 
     const checklist = {
       missingRequirements: missingReqs,
@@ -59,6 +81,12 @@ export async function POST(
           return false;
         }
       })(),
+      /** Advisory Saudi qualification dossier — does not block submit. */
+      qualification: {
+        strongBidReady: qualification.strongBidReady,
+        gaps: qualification.gaps,
+        presentKeys: qualification.presentKeys,
+      },
     };
 
     await db.proposalReview.deleteMany({ where: { proposalId: id } });

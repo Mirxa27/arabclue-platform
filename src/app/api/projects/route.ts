@@ -71,8 +71,8 @@ export async function POST(req: NextRequest) {
         submissionDeadline: body.submissionDeadline
           ? new Date(body.submissionDeadline)
           : null,
-        saudizationTarget: body.saudizationTarget ?? 35,
-        localContentTarget: body.localContentTarget ?? 40,
+        saudizationTarget: body.saudizationTarget ?? null,
+        localContentTarget: body.localContentTarget ?? null,
         status: "DRAFT",
       },
     });

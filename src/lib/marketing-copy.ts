@@ -31,7 +31,7 @@ export const marketingDict = {
       { ar: "منصة اعتماد", en: "Etimad Platform", code: "Etimad" },
       { ar: "الهيئة الوطنية للأمن السيبراني", en: "NCA ECC-1", code: "NCA" },
       { ar: "نظام حماية البيانات الشخصية", en: "PDPL Aligned", code: "PDPL" },
-      { ar: "هيئة الزكاة والضريبة والجمارك", en: "ZATCA Compliant", code: "ZATCA" },
+      { ar: "حقول السجل التجاري والضريبة (زاتكا)", en: "CR & ZATCA VAT fields", code: "ZATCA" },
       { ar: "رؤية السعودية 2030", en: "Vision 2030", code: "2030" },
     ],
   },

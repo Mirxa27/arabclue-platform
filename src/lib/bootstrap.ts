@@ -400,10 +400,19 @@ async function seedPastProjects(workspaceId: string, brandProfileId: string) {
 }
 
 export async function seedComplianceChecks(projectId: string) {
-  const existing = await db.complianceCheck.count({ where: { projectId } });
-  if (existing > 0) return;
+  const existing = await db.complianceCheck.findMany({
+    where: { projectId },
+    select: {
+      id: true,
+      controlId: true,
+      title: true,
+      titleAr: true,
+      requirement: true,
+    },
+  });
+  const byControl = new Map(existing.map((row) => [row.controlId, row]));
 
-  const checks: {
+  const toCreate: {
     projectId: string;
     framework: string;
     controlId: string;
@@ -413,19 +422,44 @@ export async function seedComplianceChecks(projectId: string) {
     status: string;
     complianceLevel: string;
   }[] = [];
+
   for (const fw of COMPLIANCE_FRAMEWORKS) {
     for (const ctrl of fw.controls) {
-      checks.push({
-        projectId,
-        framework: fw.id,
-        controlId: ctrl.controlId,
-        title: ctrl.title,
-        titleAr: ctrl.titleAr,
-        requirement: ctrl.requirement,
-        status: "PENDING",
-        complianceLevel: ctrl.level,
-      });
+      const row = byControl.get(ctrl.controlId);
+      if (!row) {
+        toCreate.push({
+          projectId,
+          framework: fw.id,
+          controlId: ctrl.controlId,
+          title: ctrl.title,
+          titleAr: ctrl.titleAr,
+          requirement: ctrl.requirement,
+          status: "PENDING",
+          complianceLevel: ctrl.level,
+        });
+        continue;
+      }
+      // Refresh static label/requirement copy when catalog text changes
+      if (
+        row.title !== ctrl.title ||
+        row.titleAr !== ctrl.titleAr ||
+        row.requirement !== ctrl.requirement
+      ) {
+        await db.complianceCheck.update({
+          where: { id: row.id },
+          data: {
+            title: ctrl.title,
+            titleAr: ctrl.titleAr,
+            requirement: ctrl.requirement,
+            framework: fw.id,
+            complianceLevel: ctrl.level,
+          },
+        });
+      }
     }
   }
-  await db.complianceCheck.createMany({ data: checks }).catch(() => {});
+
+  if (toCreate.length) {
+    await db.complianceCheck.createMany({ data: toCreate }).catch(() => {});
+  }
 }

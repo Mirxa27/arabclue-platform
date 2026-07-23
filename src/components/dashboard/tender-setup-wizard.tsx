@@ -58,8 +58,8 @@ export function TenderSetupWizard({ open, onOpenChange }: Props) {
   const [category, setCategory] = useState("IT");
   const [budget, setBudget] = useState("");
   const [deadline, setDeadline] = useState("");
-  const [saudization, setSaudization] = useState("30");
-  const [localContent, setLocalContent] = useState("40");
+  const [saudization, setSaudization] = useState("");
+  const [localContent, setLocalContent] = useState("");
 
   const tender = useMemo(() => getTenderType(category), [category]);
 
@@ -71,8 +71,8 @@ export function TenderSetupWizard({ open, onOpenChange }: Props) {
     setCategory("IT");
     setBudget("");
     setDeadline("");
-    setSaudization("30");
-    setLocalContent("40");
+    setSaudization("");
+    setLocalContent("");
   }
 
   const createMutation = useMutation({
@@ -87,8 +87,8 @@ export function TenderSetupWizard({ open, onOpenChange }: Props) {
         submissionDeadline: deadline
           ? new Date(deadline).toISOString()
           : undefined,
-        saudizationTarget: Number(saudization) || 0,
-        localContentTarget: Number(localContent) || 0,
+        saudizationTarget: saudization.trim() ? Number(saudization) : null,
+        localContentTarget: localContent.trim() ? Number(localContent) : null,
       };
       return apiJson<{ project?: { id: string } }>("/api/projects", {
         method: "POST",
@@ -268,30 +268,39 @@ export function TenderSetupWizard({ open, onOpenChange }: Props) {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="tender-saud">
-                  {ar ? "هدف السعودة %" : "Saudization %"}
+                  {ar ? "هدف السعودة % (من الكراسة)" : "Saudization % (from tender)"}
                 </Label>
                 <Input
                   id="tender-saud"
                   type="number"
                   min={0}
                   max={100}
+                  placeholder={ar ? "اتركه فارغاً إن لم يُذكر" : "Leave blank if not stated"}
                   value={saudization}
                   onChange={(e) => setSaudization(e.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="tender-local">
-                  {ar ? "المحتوى المحلي %" : "Local content %"}
+                  {ar
+                    ? "المحتوى المحلي % (من الكراسة)"
+                    : "Local content % (from tender)"}
                 </Label>
                 <Input
                   id="tender-local"
                   type="number"
                   min={0}
                   max={100}
+                  placeholder={ar ? "اتركه فارغاً إن لم يُذكر" : "Leave blank if not stated"}
                   value={localContent}
                   onChange={(e) => setLocalContent(e.target.value)}
                 />
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                {ar
+                  ? "لا نفترض نسباً إلزامية عامة — أدخل فقط ما تنص عليه المناقصة."
+                  : "No blanket mandatory percentages — enter only what the tender states."}
+              </p>
             </div>
           ) : null}
 
