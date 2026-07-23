@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
 import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
-import { extractTheaterTools } from "@/lib/agents/platform/mission-tool-parts";
+import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
 import { LiveVoiceSession } from "./live-voice-session";
 import { MissionAttachmentTray } from "./mission-attachment-tray";
 import {
@@ -30,6 +30,7 @@ import {
   type MissionFeedItem,
 } from "./mission-execution-feed";
 import { MissionToolTheater } from "./mission-tool-theater";
+import { MissionPerformanceStage } from "./mission-performance-fx";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -201,6 +202,13 @@ export function PlatformAgentConsole() {
     const seen = new Set(fromMessages.map((t) => t.id));
     return [...fromMessages, ...fromFeed.filter((f) => !seen.has(f.id))];
   }, [messages, feedItems]);
+
+  const performing =
+    busy ||
+    listening ||
+    theaterTools.some(
+      (t) => isToolRunning(t.state) || Boolean("preliminary" in t && t.preliminary)
+    );
 
   // Live UI follow-along from tool outputs
   useEffect(() => {
@@ -508,11 +516,17 @@ export function PlatformAgentConsole() {
             )}
           </div>
 
-          <div className="grid flex-1 min-h-0 gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+          <MissionPerformanceStage
+            locale={locale}
+            performing={performing}
+            tools={theaterTools}
+            className="flex-1 min-h-0"
+          >
+          <div className="grid flex-1 min-h-0 gap-4 p-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
             <div className="flex flex-col min-h-0 gap-3">
               <div
                 ref={scrollRef}
-                className="flex-1 overflow-y-auto rounded-2xl border bg-gradient-to-b from-background via-teal-500/[0.03] to-background p-4 space-y-4"
+                className="flex-1 overflow-y-auto rounded-2xl border border-cyan-500/15 bg-gradient-to-b from-background/80 via-teal-500/[0.04] to-background/80 p-4 space-y-4 backdrop-blur-[2px]"
                 dir={ar ? "rtl" : "ltr"}
               >
                 {messages.length === 0 && (
@@ -527,10 +541,13 @@ export function PlatformAgentConsole() {
                   <div
                     key={message.id}
                     className={cn(
-                      "rounded-xl px-3 py-2 text-sm max-w-[94%]",
+                      "rounded-xl px-3 py-2 text-sm max-w-[94%] transition-shadow",
                       message.role === "user"
                         ? "ms-auto bg-primary text-primary-foreground"
-                        : "me-auto bg-card/90 border border-border/70"
+                        : "me-auto bg-card/90 border border-border/70",
+                      message.role === "assistant" &&
+                        busy &&
+                        "shadow-[0_0_24px_rgba(34,211,238,0.12)]"
                     )}
                   >
                     <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
@@ -560,10 +577,16 @@ export function PlatformAgentConsole() {
                             tp.type === "dynamic-tool"
                               ? tp.toolName || "tool"
                               : tp.type.replace(/^tool-/, "");
+                          const live =
+                            tp.state === "input-streaming" ||
+                            tp.state === "input-available";
                           return (
                             <div
                               key={i}
-                              className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono"
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono",
+                                live && "mission-tool-live border-cyan-300/50"
+                              )}
                             >
                               <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
                               {name}
@@ -595,6 +618,7 @@ export function PlatformAgentConsole() {
               className="overflow-y-auto"
             />
           </div>
+          </MissionPerformanceStage>
 
           {error && (
             <div className="text-sm text-destructive border border-destructive/30 rounded-md px-3 py-2">

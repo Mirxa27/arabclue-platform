@@ -21,8 +21,9 @@ import {
 import type { VoiceLiveConfig } from "@/lib/agents/platform/voice-types";
 import { RealtimeAudioWorkletCapture } from "@/lib/agents/platform/realtime-audio-capture";
 import { getLiveVoiceSessionConfig } from "@/lib/agents/platform/realtime-session-config";
-import { extractTheaterTools } from "@/lib/agents/platform/mission-tool-parts";
+import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
 import { MissionToolTheater } from "./mission-tool-theater";
+import { MissionPerformanceStage } from "./mission-performance-fx";
 import type { MissionFeedItem } from "./mission-execution-feed";
 
 function micErrorMessage(err: unknown, ar: boolean): string {
@@ -331,6 +332,15 @@ export function LiveVoiceSession({
     return [...fromMessages, ...fromFeed.filter((f) => !seen.has(f.id))];
   }, [realtime.messages, externalFeed]);
 
+  const performing =
+    connected &&
+    (isCapturing ||
+      realtime.isPlaying ||
+      theaterTools.some(
+        (t) => isToolRunning(t.state) || Boolean("preliminary" in t && t.preliminary)
+      ) ||
+      connecting);
+
   return (
     <div className="flex flex-col gap-3 flex-1 min-h-0" dir={ar ? "rtl" : "ltr"}>
       <div className="flex flex-wrap items-center gap-2">
@@ -377,16 +387,22 @@ export function LiveVoiceSession({
         )}
       </div>
 
-      <div className="grid flex-1 min-h-0 gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+      <MissionPerformanceStage
+        locale={locale}
+        performing={performing}
+        tools={theaterTools}
+        className="flex-1 min-h-0"
+      >
+      <div className="grid flex-1 min-h-0 gap-4 p-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto rounded-2xl border bg-gradient-to-b from-background via-teal-500/[0.03] to-background p-4 space-y-3"
+          className="flex-1 overflow-y-auto rounded-2xl border border-cyan-500/15 bg-gradient-to-b from-background/80 via-teal-500/[0.04] to-background/80 p-4 space-y-3 backdrop-blur-[2px]"
         >
           {realtime.messages.length === 0 && (
             <p className="text-sm text-muted-foreground max-w-xl">
               {ar
-                ? "اضغط اتصال مباشر ثم تحدّث — المسرح على اليمين يعرض كل أداة وتوليد المستندات بصرياً."
-                : "Tap Connect live, then speak — the theater visualizes every tool and document forge beat-by-beat."}
+                ? "اضغط اتصال مباشر ثم تحدّث — المؤشر المتلألئ والمسرح يظهران كل أداة وتوليد المستندات بصرياً."
+                : "Tap Connect live, then speak — the glitter cursor and theater visualize every tool and document forge beat-by-beat."}
             </p>
           )}
           {realtime.messages.map((message) => (
@@ -396,7 +412,10 @@ export function LiveVoiceSession({
                 "rounded-xl px-3 py-2 text-sm max-w-[94%]",
                 message.role === "user"
                   ? "ms-auto bg-primary text-primary-foreground"
-                  : "me-auto bg-card/90 border border-border/70"
+                  : "me-auto bg-card/90 border border-border/70",
+                message.role === "assistant" &&
+                  performing &&
+                  "shadow-[0_0_24px_rgba(34,211,238,0.12)]"
               )}
             >
               <div className="text-[10px] uppercase tracking-wide opacity-70 mb-1">
@@ -426,10 +445,16 @@ export function LiveVoiceSession({
                       tp.type === "dynamic-tool"
                         ? tp.toolName || "tool"
                         : tp.type.replace(/^tool-/, "");
+                    const live =
+                      tp.state === "input-streaming" ||
+                      tp.state === "input-available";
                     return (
                       <div
                         key={i}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono"
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/5 px-2 py-0.5 text-[10px] font-mono",
+                          live && "mission-tool-live border-cyan-300/50"
+                        )}
                       >
                         <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
                         {name}
@@ -453,6 +478,7 @@ export function LiveVoiceSession({
           className="overflow-y-auto"
         />
       </div>
+      </MissionPerformanceStage>
 
       {(error || realtime.status === "error") && (
         <div className="text-sm text-destructive border border-destructive/30 rounded-md px-3 py-2">

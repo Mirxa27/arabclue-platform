@@ -114,7 +114,8 @@ function DocumentForge({
     <div
       className={cn(
         "relative overflow-hidden rounded-2xl border border-cyan-500/25",
-        "bg-[radial-gradient(circle_at_20%_0%,_rgba(16,185,129,0.12),_transparent_40%),radial-gradient(circle_at_90%_20%,_rgba(6,182,212,0.14),_transparent_45%),linear-gradient(165deg,rgba(15,23,42,0.04),rgba(8,47,73,0.06))]"
+        "bg-[radial-gradient(circle_at_20%_0%,_rgba(16,185,129,0.12),_transparent_40%),radial-gradient(circle_at_90%_20%,_rgba(6,182,212,0.14),_transparent_45%),linear-gradient(165deg,rgba(15,23,42,0.04),rgba(8,47,73,0.06))]",
+        running && "mission-tool-live"
       )}
     >
       <div
@@ -256,7 +257,8 @@ function RegulatoryForge({
     <div
       className={cn(
         "relative overflow-hidden rounded-2xl border border-emerald-500/25",
-        "bg-[radial-gradient(circle_at_10%_0%,_rgba(16,185,129,0.14),_transparent_42%),radial-gradient(circle_at_90%_10%,_rgba(20,184,166,0.1),_transparent_45%),linear-gradient(165deg,rgba(6,78,59,0.04),transparent)]"
+        "bg-[radial-gradient(circle_at_10%_0%,_rgba(16,185,129,0.14),_transparent_42%),radial-gradient(circle_at_90%_10%,_rgba(20,184,166,0.1),_transparent_45%),linear-gradient(165deg,rgba(6,78,59,0.04),transparent)]",
+        running && "mission-tool-live"
       )}
     >
       <div
@@ -408,7 +410,7 @@ function ToolTimeline({
               "relative rounded-xl border px-3 py-2.5 text-xs transition-all duration-300",
               "bg-background/80 backdrop-blur-sm",
               running &&
-                "border-amber-500/45 shadow-[0_0_0_1px_rgba(245,158,11,0.12)] animate-[mission-tool-in_0.35s_ease-out]",
+                "border-amber-500/45 mission-tool-live",
               done && "border-emerald-500/40",
               failed && "border-destructive/40",
               !running && !done && !failed && "border-border/70",
@@ -416,6 +418,14 @@ function ToolTimeline({
             )}
             style={{ animationDelay: `${Math.min(idx, 6) * 40}ms` }}
           >
+            {running ? (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl"
+              >
+                <span className="absolute inset-x-0 top-0 h-px mission-energy-beam" />
+              </span>
+            ) : null}
             <div className="flex items-start gap-2.5">
               <div
                 className={cn(
