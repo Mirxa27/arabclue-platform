@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "prisma generate && PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 DATABASE_URL=\"${POSTGRES_URL_NON_POOLING:-${DATABASE_URL_UNPOOLED:-$DATABASE_URL}}\" prisma migrate deploy && next build",
+  "buildCommand": "bun scripts/pack-extension.mjs && prisma generate && PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 DATABASE_URL=\"${POSTGRES_URL_NON_POOLING:-${DATABASE_URL_UNPOOLED:-$DATABASE_URL}}\" prisma migrate deploy && next build",
   "installCommand": "bun install",
   "headers": [
     {

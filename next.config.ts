@@ -7,6 +7,14 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  // Bundle the Chrome extension source with the serverless functions that
+  // read it from disk (install metadata + on-the-fly ZIP packing).
+  outputFileTracingIncludes: {
+    "/api/platform-agent/extension": ["./extensions/arabclue-agent/**/*"],
+    "/api/platform-agent/extension/download": [
+      "./extensions/arabclue-agent/**/*",
+    ],
+  },
   async headers() {
     return [
       {
