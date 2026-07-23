@@ -17,6 +17,8 @@ function isPublicPath(path: string): boolean {
   if (path.startsWith("/api/auth")) return true;
   if (path.startsWith("/_next")) return true;
   if (path.startsWith("/favicon")) return true;
+  // Demo EN|AR sample tender/contract PDFs (public/samples)
+  if (path === "/samples" || path.startsWith("/samples/")) return true;
   return false;
 }
 
