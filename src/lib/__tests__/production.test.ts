@@ -232,6 +232,13 @@ describe("AI model catalog & engines", () => {
       "https://api.openai.com/v1"
     );
     expect(normalizeOpenAiBase("")).toBe("");
+    // Z.AI / other gateways that already end with /vN must stay untouched
+    expect(normalizeOpenAiBase("https://api.z.ai/api/coding/paas/v4")).toBe(
+      "https://api.z.ai/api/coding/paas/v4"
+    );
+    expect(normalizeOpenAiBase("https://example.com/openai/v4/")).toBe(
+      "https://example.com/openai/v4"
+    );
   });
 
   test("connection templates never embed model ids", async () => {

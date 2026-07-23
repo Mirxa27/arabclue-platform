@@ -12,31 +12,37 @@
       <div class="cursor" id="cursor" aria-hidden="true"></div>
 
       <header class="hero">
-        <div class="orb"></div>
-        <div>
-          <p class="eyebrow">ArabClue · Mission Control uplink</p>
-          <h1>Voice Agent Bridge</h1>
-          <p class="sub">
-            Capture any tab — selection, page text, or screenshot — and beam it
-            into the Voice AI agent with live glitter FX.
-          </p>
+        <div class="orb" id="orb"></div>
+        <div class="hero-copy">
+          <p class="eyebrow">ArabClue · optional uplink</p>
+          <h1>Voice Agent</h1>
+          <p class="sub">Capture a tab into Mission Control. Not required for the app.</p>
         </div>
       </header>
 
       <section class="panel status" id="statusPanel">
         <div class="pulse" id="pulse"></div>
-        <div>
+        <div class="status-copy">
           <strong id="statusTitle">Ready</strong>
-          <p id="statusText">Click capture to strengthen the agent.</p>
+          <p id="statusText">Pick a capture action below.</p>
         </div>
       </section>
 
-      <section class="panel preview" id="preview">
-        <div class="meta">
-          <span id="pageTitle">No page loaded</span>
-          <a id="pageUrl" href="#" target="_blank" rel="noreferrer"></a>
+      <section class="panel target" id="preview">
+        <div class="target-top">
+          <div class="favicon" id="favicon" aria-hidden="true"></div>
+          <div class="target-meta">
+            <span class="target-title" id="pageTitle">No active tab</span>
+            <span class="target-host" id="pageHost">—</span>
+          </div>
         </div>
-        <pre id="snippet">Select text on a page or capture the full document…</pre>
+        <div class="stats" id="stats">
+          <span id="statWords">0 words</span>
+          <span id="statHeads">0 headings</span>
+          <span id="statSel">no selection</span>
+        </div>
+        <p class="excerpt" id="snippet">Open any page, then capture.</p>
+        <a id="pageUrl" class="target-url" href="#" target="_blank" rel="noreferrer" hidden></a>
       </section>
 
       <section class="actions">
@@ -45,27 +51,29 @@
           Capture page
         </button>
         <button class="btn" id="btnSelection">Send selection</button>
-        <button class="btn" id="btnShot">Screenshot → agent</button>
+        <button class="btn" id="btnShot">Screenshot</button>
         <button class="btn ghost" id="btnOpen">Open Mission Control</button>
       </section>
 
       <section class="panel queue" id="queuePanel" hidden>
         <div class="meta">
-          <span id="queueLabel">0 captures waiting offline</span>
+          <span id="queueLabel">Captures waiting offline</span>
         </div>
         <button class="btn tiny" id="btnFlush">Retry now</button>
       </section>
 
-      <section class="panel settings">
+      <details class="panel settings" id="settingsPanel">
+        <summary>Advanced · API base</summary>
         <label>
-          API base (origin only — not /app)
-          <input id="apiBase" type="url" placeholder="https://arabclue.com" />
+          Origin only (never /app)
+          <input id="apiBase" type="url" placeholder="https://arabclue.com" autocomplete="off" />
         </label>
-        <button class="btn tiny" id="btnSave">Save</button>
-      </section>
+        <button class="btn tiny" id="btnSave" type="button">Save</button>
+        <p class="hint" id="apiHint">Must be https://arabclue.com — you stay signed in there.</p>
+      </details>
 
       <footer>
-        <span>MV3 · Side Panel · Jul 2026</span>
+        <span>Optional · MV3</span>
         <span id="version"></span>
       </footer>
     </div>

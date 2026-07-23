@@ -315,12 +315,15 @@ export function defaultApiKeyEnvKey(provider: string): string {
 export function normalizeOpenAiBase(apiBase: string | null | undefined): string {
   let base = (apiBase || "").trim().replace(/\/$/, "");
   if (!base) return "";
-  if (!base.endsWith("/v1") && !base.includes("/openai/deployments")) {
-    if (!/anthropic\.com/i.test(base)) {
-      base = `${base}/v1`;
-    }
+  // Already versioned OpenAI-compatible roots (/v1, /v4, Azure deployments…).
+  // Z.AI coding paas uses …/paas/v4 — do NOT append another /v1.
+  if (/\/v\d+$/i.test(base) || /\/openai\/deployments/i.test(base)) {
+    return base;
   }
-  return base;
+  if (/anthropic\.com/i.test(base)) {
+    return base;
+  }
+  return `${base}/v1`;
 }
 
 export function requireConfiguredModelId(modelId: string | null | undefined): string {

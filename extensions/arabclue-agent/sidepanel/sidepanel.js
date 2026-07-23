@@ -41,7 +41,7 @@ function burst(x, y, n = 18) {
 function tick() {
   const { width, height } = stage.getBoundingClientRect();
   ctx.clearRect(0, 0, width, height);
-  if (performing && particles.length < 80 && Math.random() > 0.6) {
+  if (performing && particles.length < 80 && Math.random() > 0.55) {
     particles.push({
       x: Math.random() * width,
       y: Math.random() * height,
@@ -82,22 +82,63 @@ function setStatus(title, text, live = false) {
   $("statusTitle").textContent = title;
   $("statusText").textContent = text;
   $("pulse").classList.toggle("live", live);
+  $("orb").classList.toggle("live", live);
   stage.classList.toggle("performing", live);
   cursor.classList.toggle("busy", live);
   performing = live;
 }
 
+function hostOf(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "—";
+  }
+}
+
+function wordCount(text) {
+  return (text || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function cleanExcerpt(text, max = 220) {
+  const cleaned = (text || "")
+    .replace(/\s+/g, " ")
+    .replace(/(Dashboard|Voice Copilot|Projects|Documents|Proposals|Contracts|AI Agents|Settings|Admin|SAUDI PLATFORM)/gi, "")
+    .trim();
+  if (!cleaned) return "Main content ready to capture.";
+  return cleaned.length > max ? `${cleaned.slice(0, max)}…` : cleaned;
+}
+
 function showContext(context) {
   pageContext = context;
   $("pageTitle").textContent = context.title || "Untitled page";
+  $("pageHost").textContent = hostOf(context.url);
   const link = $("pageUrl");
-  link.textContent = context.url || "";
-  link.href = context.url || "#";
-  const body =
-    context.selection ||
-    context.text?.slice(0, 1200) ||
-    "(empty page text)";
-  $("snippet").textContent = body;
+  if (context.url) {
+    link.hidden = false;
+    link.textContent = context.url;
+    link.href = context.url;
+  } else {
+    link.hidden = true;
+  }
+
+  const fav = $("favicon");
+  if (context.favIconUrl) {
+    fav.style.backgroundImage = `url("${context.favIconUrl}")`;
+  } else {
+    fav.style.backgroundImage = "";
+  }
+
+  const words = wordCount(context.selection || context.text);
+  $("statWords").textContent = `${words} words`;
+  $("statHeads").textContent = `${(context.headings || []).length} headings`;
+  $("statSel").textContent = context.selection?.trim()
+    ? "selection ready"
+    : "no selection";
+
+  $("snippet").textContent = cleanExcerpt(
+    context.selection || context.metaDescription || context.text
+  );
 }
 
 async function send(type, payload = {}) {
@@ -106,10 +147,16 @@ async function send(type, payload = {}) {
 
 async function loadSettings() {
   const res = await send(MSG.GET_SETTINGS);
-  if (res?.settings) {
-    // Always show origin-only base (migrates bad /app values on read)
-    $("apiBase").value = res.settings.apiBase || "https://arabclue.com";
+  let base = res?.settings?.apiBase || "https://arabclue.com";
+  // Auto-heal the common bad value pasted from the app URL.
+  if (/\/app(\/|$|\?)/i.test(base) || /\/app$/i.test(base.replace(/\/$/, ""))) {
+    const fixed = await send(MSG.SET_SETTINGS, {
+      settings: { apiBase: "https://arabclue.com" },
+    });
+    base = fixed?.settings?.apiBase || "https://arabclue.com";
+    $("apiHint").textContent = "Auto-fixed API base away from /app";
   }
+  $("apiBase").value = base;
   const ping = await send(MSG.PING);
   $("version").textContent = ping?.version ? `v${ping.version}` : "";
 }
@@ -117,20 +164,23 @@ async function loadSettings() {
 async function refreshQueue() {
   const res = await send(MSG.GET_QUEUE_STATUS);
   const panel = $("queuePanel");
+  if (!panel) return;
   if (!res?.ok || !res.count) {
     panel.hidden = true;
+    panel.setAttribute("hidden", "");
     return;
   }
   panel.hidden = false;
+  panel.removeAttribute("hidden");
   $("queueLabel").textContent =
     res.count === 1
-      ? "1 capture waiting offline — retries every minute"
-      : `${res.count} captures waiting offline — retries every minute`;
+      ? "1 capture waiting offline"
+      : `${res.count} captures waiting offline`;
 }
 
 async function capture(mode = "page") {
-  setStatus("Capturing…", "Reading the active tab into Mission Control.", true);
-  burst(120, 80, 30);
+  setStatus("Capturing…", "Reading the active tab.", true);
+  burst(120, 80, 28);
   const ctxRes = await send(MSG.GET_PAGE_CONTEXT);
   if (!ctxRes?.ok) {
     setStatus("Capture failed", ctxRes?.error || "Could not read tab", false);
@@ -145,7 +195,7 @@ async function capture(mode = "page") {
     setStatus("Nothing to send", "No selection or extractable page text.", false);
     return;
   }
-  setStatus("Beaming…", "Uplink to ArabClue Voice Agent in progress.", true);
+  setStatus("Beaming…", "Uplink to Mission Control…", true);
   const ingest = await send(MSG.SEND_TO_AGENT, {
     payload: {
       mode,
@@ -160,35 +210,34 @@ async function capture(mode = "page") {
   if (!ingest?.ok) {
     const hint =
       ingest?.status === 401
-        ? "Log in to arabclue.com in this browser, then retry."
+        ? "Sign in at arabclue.com in this browser, then retry."
         : ingest?.error || "Ingest failed";
     setStatus("Uplink failed", hint, false);
     void refreshQueue();
     return;
   }
-  // Queued responses still return ok:true with result.queued
   if (ingest.result?.queued) {
     setStatus(
       "Saved offline",
-      `${ingest.result.message} Tip: API base must be https://arabclue.com (no /app) and you must be signed in.`,
+      `${ingest.result.message} Keep API base as https://arabclue.com (no /app).`,
       false
     );
     void refreshQueue();
     return;
   }
-  burst(160, 140, 40);
+  burst(160, 140, 42);
   setStatus(
-    "Agent strengthened",
+    "Captured",
     ingest.result?.autopilot?.message ||
       ingest.result?.message ||
-      "Page context staged in Mission Control.",
+      "Page beamed into Mission Control.",
     false
   );
   void refreshQueue();
 }
 
 async function captureShot() {
-  setStatus("Capturing screen…", "PNG screenshot → agent ingest.", true);
+  setStatus("Capturing screen…", "PNG → Mission Control.", true);
   const shot = await send(MSG.CAPTURE_SCREENSHOT);
   if (!shot?.ok || !shot.dataUrl) {
     setStatus("Screenshot failed", shot?.error || "No data", false);
@@ -196,14 +245,13 @@ async function captureShot() {
   }
   const ctxRes = await send(MSG.GET_PAGE_CONTEXT);
   const context = ctxRes?.context || {};
+  showContext(context);
   const ingest = await send(MSG.SEND_TO_AGENT, {
     payload: {
       mode: "screenshot",
       title: context.title || "Screenshot",
       url: context.url || "",
-      text: `Screenshot of ${context.title || "page"}\n${context.url || ""}\n${
-        context.selection || context.metaDescription || ""
-      }`,
+      text: `Screenshot of ${context.title || "page"}\n${context.url || ""}`,
       screenshotDataUrl: shot.dataUrl,
       headings: context.headings || [],
       source: "chrome-extension",
@@ -213,8 +261,8 @@ async function captureShot() {
     setStatus("Uplink failed", ingest?.error || "Ingest failed", false);
     return;
   }
-  burst(180, 160, 50);
-  setStatus("Screenshot beamed", "Staged for Mission Control classify/route.", false);
+  burst(180, 160, 48);
+  setStatus("Screenshot beamed", "Staged for classify / route.", false);
 }
 
 $("btnCapture").addEventListener("click", () => void capture("page"));
@@ -226,30 +274,23 @@ $("btnSave").addEventListener("click", async () => {
     settings: { apiBase: $("apiBase").value.trim() },
   });
   if (res?.settings?.apiBase) $("apiBase").value = res.settings.apiBase;
-  setStatus(
-    "Saved",
-    `API base set to ${res?.settings?.apiBase || "https://arabclue.com"} (origin only).`,
-    false
-  );
+  $("apiHint").textContent = `Saved · ${res?.settings?.apiBase || "https://arabclue.com"}`;
+  setStatus("Saved", "API origin updated.", false);
 });
 $("btnFlush").addEventListener("click", async () => {
-  setStatus("Retrying…", "Flushing offline capture queue.", true);
+  setStatus("Retrying…", "Flushing offline queue.", true);
   const res = await send(MSG.FLUSH_QUEUE);
   if (res?.flushed) {
     burst(160, 140, 40);
-    setStatus(
-      "Queue delivered",
-      `${res.flushed} capture(s) beamed into Mission Control.`,
-      false
-    );
-  } else if ((res?.remaining ?? 0) === 0 && !res?.lastError) {
-    setStatus("Queue empty", "Nothing waiting — capture a page to uplink.", false);
+    setStatus("Queue delivered", `${res.flushed} capture(s) sent.`, false);
+  } else if (res?.empty || ((res?.remaining ?? 0) === 0 && !res?.lastError)) {
+    setStatus("Queue empty", "Nothing waiting — capture a page.", false);
   } else {
     setStatus(
       "Still offline",
       res?.lastError
-        ? `${res.lastError} — check API base is https://arabclue.com (not /app) and that you are signed in.`
-        : "Captures kept — auto-retry continues.",
+        ? `${res.lastError} — API base must be https://arabclue.com (no /app).`
+        : "Will auto-retry every minute.",
       false
     );
   }

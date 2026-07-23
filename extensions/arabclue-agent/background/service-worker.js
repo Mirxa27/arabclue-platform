@@ -84,7 +84,32 @@ async function extractPageContext(tabId) {
         .slice(0, 20)
         .map((el) => el.innerText.trim())
         .filter(Boolean);
-      const text = (document.body?.innerText || "").replace(/\s+\n/g, "\n").trim();
+
+      // Prefer main content; strip chrome/nav noise for cleaner captures + UI.
+      const root =
+        document.querySelector("main") ||
+        document.querySelector('[role="main"]') ||
+        document.querySelector("article") ||
+        document.body;
+      const clone = root.cloneNode(true);
+      for (const sel of [
+        "nav",
+        "aside",
+        "footer",
+        "script",
+        "style",
+        "noscript",
+        "[role='navigation']",
+        "[role='complementary']",
+        "[data-sidebar]",
+        ".sidebar",
+      ]) {
+        clone.querySelectorAll(sel).forEach((n) => n.remove());
+      }
+      const text = (clone.innerText || "")
+        .replace(/\s+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
       return {
         selection,
         title: document.title || "",
