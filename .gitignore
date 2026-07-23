@@ -70,3 +70,4 @@ server.log
 .env.local
 prisma/template.db
 .env*
+public/downloads/*.zip

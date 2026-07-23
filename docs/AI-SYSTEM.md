@@ -34,7 +34,7 @@ Dashboard **Voice Mission Control** (`?view=copilot`) is an AI SDK agent that op
 - Drop zone + URL/camera/browser/email-Drive paste via `POST /api/platform-agent/missions/:id/attachments`.
 - Heuristic classify → route → high-confidence RFP starts the 6-agent pipeline (`maybeAutopilotAfterIngest`).
 - Tools: `ingestDroppedFile`, `classifyAndRouteAttachment`, `ingestUrl`, `captureClientArtifact`, `listMissionAttachments`, `searchDocumentChunks`, `undoLastRouting`, `importExternalSource`, `researchSaudiLaw`, `listRegulatoryRegistry`, `getCompliance` (enriched), plus existing platform tools.
-- Live UI: **execution theater**, **document forge**, **regulatory forge**, **glitter performance cursor**, and optional **Chrome Voice Agent extension** (`extensions/arabclue-agent`) for tab/selection/screenshot uplink via `POST /api/platform-agent/extension/ingest`.
+- Live UI: **execution theater**, **document forge**, **regulatory forge**, **glitter performance cursor**, and optional **Chrome Voice Agent extension** (`extensions/arabclue-agent`) with **Smart Install** in Mission Control (ZIP via `/api/platform-agent/extension/download`) and tab/selection/screenshot uplink via `POST /api/platform-agent/extension/ingest`.
 - Shared ingest: `ingestDocumentForWorkspace` used by Documents API and Mission Control.
 
 ### Guardrails

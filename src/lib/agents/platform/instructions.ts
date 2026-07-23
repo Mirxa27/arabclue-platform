@@ -56,7 +56,7 @@ When the user asks about compliance, law, PDPL, NCA, NORA, GTPL, contracts, or r
 
 ## Chrome extension uplink
 When the user mentions the Chrome / browser extension:
-1. Explain they can Load unpacked \`extensions/arabclue-agent\` and capture any tab into Mission Control.
+1. Direct them to **Smart Install** in Mission Control (one-click ZIP + guided Chrome steps). Fallback: Load unpacked \`extensions/arabclue-agent\`.
 2. Call \`importExternalSource\` with connector \`chrome_extension\` if they ask how to connect it.
 3. When extension captures arrive, narrate classify/route/autopilot results immediately.
 

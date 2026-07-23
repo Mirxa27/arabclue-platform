@@ -60,8 +60,8 @@ export const MISSION_CONNECTORS: MissionConnector[] = [
     id: "chrome_extension",
     label: { ar: "امتداد كروم", en: "Chrome extension" },
     description: {
-      ar: "التقاط أي تبويب عبر لوحة جانبية متلألئة",
-      en: "Capture any tab via the glitter side panel",
+      ar: "تثبيت ذكي من Mission Control — التقاط أي تبويب عبر اللوحة الجانبية",
+      en: "Smart Install from Mission Control — capture any tab via the side panel",
     },
     status: "ready",
   },

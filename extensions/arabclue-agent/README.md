@@ -4,7 +4,18 @@ Futuristic side-panel companion that **strengthens** the ArabClue Voice Mission 
 
 Research baseline: **Chrome Manifest V3 + Side Panel API** (Chrome 116+, sidePanel enhancements through 2025–2026).
 
-## Install (Load unpacked)
+## Install
+
+### Smart Install (recommended)
+
+While signed in to ArabClue → **Mission Control**, use **Smart Install**:
+
+1. Click **Smart install** (or accept the auto-prompt when the extension is missing)
+2. Download the ZIP from ArabClue
+3. Unzip → open `chrome://extensions` → Developer mode → **Load unpacked** → select the `arabclue-agent` folder
+4. Return to Mission Control — it detects the link automatically
+
+### Load unpacked (manual)
 
 1. Open Chrome → `chrome://extensions`
 2. Enable **Developer mode**
