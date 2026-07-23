@@ -5,7 +5,7 @@ import {
   noraPrinciplesFromTender,
 } from "../procurement-rules";
 import type { IngestionEntities } from "../types";
-import { getTenderType } from "../constants";
+import { getTenderType, TENDER_TYPES } from "../constants";
 
 /** Strip C0 control chars that break JSON round-trips in some clients */
 export function sanitizeText(text: string): string {
@@ -163,6 +163,168 @@ function parsePercent(text: string, patterns: RegExp[]): number | null {
   return null;
 }
 
+function firstLabeledValue(text: string, labelPatterns: string[]): string | null {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    for (const label of labelPatterns) {
+      const match = line.match(
+        new RegExp(`^(?:${label})\\s*[:：\\-–]\\s*(.{2,240})$`, "i")
+      );
+      if (match?.[1]) return match[1].trim();
+    }
+  }
+
+  return null;
+}
+
+function cleanFieldValue(value: string | null): string | null {
+  if (!value) return null;
+  const clean = value.replace(/\s+/g, " ").trim().replace(/[.;،]+$/, "");
+  return clean.length >= 2 ? clean.slice(0, 500) : null;
+}
+
+function parseTenderTitle(text: string): string | null {
+  return cleanFieldValue(
+    firstLabeledValue(text, [
+      "tender\\s*(?:name|title)",
+      "project\\s*(?:name|title)",
+      "competition\\s*(?:name|title)",
+      "rfp\\s*(?:name|title)",
+      "اسم\\s*(?:المنافسة|المشروع|العطاء)",
+      "عنوان\\s*(?:المنافسة|المشروع|العطاء)",
+    ])
+  );
+}
+
+function parseEtimadRef(text: string): string | null {
+  const labeled = firstLabeledValue(text, [
+    "etimad\\s*(?:ref(?:erence)?|no\\.?|number)?",
+    "tender\\s*(?:ref(?:erence)?|no\\.?|number)",
+    "competition\\s*(?:ref(?:erence)?|no\\.?|number)",
+    "رقم\\s*(?:المنافسة|المشروع|العطاء|المرجع)",
+    "مرجع\\s*اعتماد",
+  ]);
+  const source =
+    labeled ||
+    text.match(
+      /(?:etimad|اعتماد)[^\n\r]{0,40}?([A-Z0-9][A-Z0-9/_\-]{2,40})/i
+    )?.[1] ||
+    null;
+  const ref = source?.match(/[A-Z0-9][A-Z0-9/_\-]{2,40}/i)?.[0] ?? null;
+  return ref ? ref.toUpperCase() : null;
+}
+
+function inferTenderCategory(text: string, tenderCategory?: string | null): string | null {
+  const explicit = firstLabeledValue(text, [
+    "category",
+    "tender\\s*category",
+    "sector",
+    "نوع\\s*(?:المنافسة|المشروع|العطاء)",
+    "فئة\\s*(?:المنافسة|المشروع|العطاء)",
+    "القطاع",
+  ]);
+  if (explicit && /\bIT\b/i.test(explicit)) return "IT";
+  const blob = `${explicit ?? ""}\n${text}`.toLowerCase();
+  const categoryHits: Array<[string, string[]]> = [
+    ["CONSTRUCTION", ["construction", "infrastructure", "إنشاء", "البنية التحتية"]],
+    ["CONSULTING", ["consulting", "advisory", "استشار", "دراسات"]],
+    ["OPERATIONS", ["operations", "facility management", "تشغيل", "إدارة مرافق"]],
+    ["MEDICAL", ["medical", "healthcare", "health", "صحي", "طبي"]],
+    ["GENERAL", ["supplies", "general services", "توريدات", "خدمات عامة"]],
+    ["IT", ["digital", "cloud", "software", "cybersecurity", "تقنية", "رقمي", "سحابي"]],
+  ];
+
+  for (const [id, needles] of categoryHits) {
+    if (needles.some((needle) => blob.includes(needle))) return id;
+  }
+
+  const supplied = tenderCategory?.trim().toUpperCase();
+  return TENDER_TYPES.some((t) => t.id === supplied) ? supplied! : null;
+}
+
+function parseTenderBudget(text: string): { amount: number | null; currency: string | null } {
+  const budgetLine = firstLabeledValue(text, [
+    "estimated\\s*(?:budget|value)",
+    "tender\\s*(?:budget|value)",
+    "contract\\s*value",
+    "budget",
+    "قيمة\\s*(?:المنافسة|العقد|المشروع|العطاء)",
+    "الميزانية\\s*(?:التقديرية)?",
+  ]);
+  const source = budgetLine
+    ? `budget ${budgetLine}`
+    : text.match(
+        /(?:estimated\s*)?(?:budget|value|contract\s*value|tender\s*value|قيمة\s*(?:المنافسة|العقد|المشروع|العطاء)|الميزانية)[^\n\r]{0,120}/i
+      )?.[0] ?? "";
+  const amountMatch = source.match(/(\d[\d,]*(?:\.\d+)?)\s*(million|m|مليون)?/i);
+  if (!amountMatch?.[1]) return { amount: null, currency: null };
+
+  const base = Number(amountMatch[1].replace(/,/g, ""));
+  if (!Number.isFinite(base) || base < 0) return { amount: null, currency: null };
+  const multiplier = amountMatch[2] ? 1_000_000 : 1;
+  const currency = /usd|دولار/i.test(source)
+    ? "USD"
+    : /eur|euro|يورو/i.test(source)
+      ? "EUR"
+      : "SAR";
+
+  return { amount: base * multiplier, currency };
+}
+
+function normalizeDeadlineDate(value: string): string | null {
+  const iso = value.match(/\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/);
+  if (iso) {
+    const y = Number(iso[1]);
+    const m = Number(iso[2]);
+    const d = Number(iso[3]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return new Date(Date.UTC(y, m - 1, d)).toISOString();
+    }
+  }
+
+  const dmy = value.match(/\b(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b/);
+  if (dmy) {
+    const d = Number(dmy[1]);
+    const m = Number(dmy[2]);
+    const y = Number(dmy[3]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return new Date(Date.UTC(y, m - 1, d)).toISOString();
+    }
+  }
+
+  return null;
+}
+
+function parseSubmissionDeadline(text: string): string | null {
+  const labeled = firstLabeledValue(text, [
+    "submission\\s*deadline",
+    "deadline",
+    "closing\\s*date",
+    "bid\\s*closing",
+    "آخر\\s*موعد\\s*(?:للتقديم|لتقديم\\s*العروض)",
+    "موعد\\s*(?:التقديم|تسليم\\s*العروض)",
+    "تاريخ\\s*(?:الإغلاق|الاغلاق|تسليم\\s*العروض)",
+  ]);
+  const source =
+    labeled ||
+    text.match(
+      /(?:submission\s*deadline|deadline|closing\s*date|bid\s*closing|آخر\s*موعد|تاريخ\s*(?:الإغلاق|الاغلاق))[^\n\r]{0,120}/i
+    )?.[0] ||
+    "";
+  return normalizeDeadlineDate(source);
+}
+
+function parseSaudizationTarget(text: string): number | null {
+  return parsePercent(text, [
+    /(?:saudization|nitaqat)[^%\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%/i,
+    /(?:سعودة|نطاقات)[^%\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%/,
+  ]);
+}
+
 function extractMilestones(text: string): { name: string; weeks: number }[] {
   const milestones: { name: string; weeks: number }[] = [];
   const seen = new Set<string>();
@@ -205,6 +367,12 @@ export function parseTenderText(
   const tenderType = getTenderType(tenderCategory);
   const evidence: string[] = [];
   const clean = sanitizeText(text);
+  const title = parseTenderTitle(clean);
+  const etimadRef = parseEtimadRef(clean);
+  const category = inferTenderCategory(clean, tenderCategory);
+  const budget = parseTenderBudget(clean);
+  const submissionDeadline = parseSubmissionDeadline(clean);
+  const saudizationTarget = parseSaudizationTarget(clean);
 
   const techEval =
     parsePercent(clean, [
@@ -297,6 +465,17 @@ export function parseTenderText(
 
   return {
     scope,
+    project: {
+      title,
+      titleAr: title && /[\u0600-\u06FF]/.test(title) ? title : null,
+      etimadRef,
+      category,
+      budget: budget.amount,
+      currency: budget.currency,
+      submissionDeadline,
+      saudizationTarget,
+      localContentTarget: localContent.preferencePercent,
+    },
     evaluation: {
       technical: Math.min(100, Math.max(0, techEval)),
       financial: Math.min(100, Math.max(0, finEval)),

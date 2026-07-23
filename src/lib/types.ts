@@ -40,6 +40,17 @@ export type AgentId =
 export interface IngestionEntities {
   scope: string;
   evaluation: { technical: number; financial: number };
+  project?: {
+    title?: string | null;
+    titleAr?: string | null;
+    etimadRef?: string | null;
+    category?: string | null;
+    budget?: number | null;
+    currency?: string | null;
+    submissionDeadline?: string | null;
+    saudizationTarget?: number | null;
+    localContentTarget?: number | null;
+  };
   /** Tender-stated penalty values only — never rewritten to statutory defaults */
   sla: {
     perWeek: number;

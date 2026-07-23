@@ -7,7 +7,7 @@ import { runAgentPipeline } from "@/lib/agents/orchestrator";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
 import { ApiError } from "@/lib/api-controller";
-import type { AgentState } from "@/lib/types";
+import type { AgentState, IngestionEntities } from "@/lib/types";
 import type { ClassificationDecision } from "./classify-attachment";
 import { AUTOPILOT_CONFIDENCE } from "./classify-attachment";
 
@@ -28,6 +28,102 @@ export type AutopilotResult =
       projectId: string | null;
       message: string;
     };
+
+export type AutopilotProjectCreateData = {
+  workspaceId: string;
+  createdById: string;
+  etimadRef: string | null;
+  title: string;
+  titleAr: string | null;
+  category: string;
+  budget: number | null;
+  currency: string;
+  submissionDeadline: Date | null;
+  saudizationTarget?: number;
+  localContentTarget?: number;
+  status: "DRAFT";
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function finiteNonnegativeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
+function percentage(value: unknown): number | null {
+  const n = finiteNonnegativeNumber(value);
+  return n != null && n <= 100 ? n : null;
+}
+
+function dateOrNull(value: unknown): Date | null {
+  const raw = nonEmptyString(value);
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseIngestionEntitiesJson(json: string | null | undefined): IngestionEntities | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return isRecord(parsed) ? (parsed as unknown as IngestionEntities) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadDocumentEntities(documentId: string): Promise<IngestionEntities | null> {
+  const document = await db.uploadedDocument.findUnique({
+    where: { id: documentId },
+    select: { extractedEntities: true },
+  });
+  return parseIngestionEntitiesJson(document?.extractedEntities);
+}
+
+export function buildAutopilotProjectCreateData(opts: {
+  workspaceId: string;
+  userId: string;
+  decision: Pick<ClassificationDecision, "suggestedTitle">;
+  entities?: IngestionEntities | null;
+  now?: Date;
+}): AutopilotProjectCreateData {
+  const project = isRecord(opts.entities?.project) ? opts.entities.project : null;
+  const title =
+    nonEmptyString(project?.title) ||
+    opts.decision.suggestedTitle ||
+    `Tender ${(opts.now ?? new Date()).toISOString().slice(0, 10)}`;
+  const titleAr = nonEmptyString(project?.titleAr) || title;
+  const budget = finiteNonnegativeNumber(project?.budget);
+  const submissionDeadline = dateOrNull(project?.submissionDeadline);
+  const saudizationTarget = percentage(project?.saudizationTarget);
+  const localContentTarget = percentage(project?.localContentTarget);
+
+  const data: AutopilotProjectCreateData = {
+    workspaceId: opts.workspaceId,
+    createdById: opts.userId,
+    etimadRef: nonEmptyString(project?.etimadRef),
+    title,
+    titleAr,
+    category: nonEmptyString(project?.category) || "IT",
+    budget,
+    currency: nonEmptyString(project?.currency) || "SAR",
+    submissionDeadline,
+    status: "DRAFT",
+  };
+
+  if (saudizationTarget != null) data.saudizationTarget = saudizationTarget;
+  if (localContentTarget != null) data.localContentTarget = localContentTarget;
+
+  return data;
+}
 
 export async function maybeAutopilotAfterIngest(opts: {
   workspaceId: string;
@@ -77,18 +173,14 @@ export async function maybeAutopilotAfterIngest(opts: {
         throw e;
       }
 
-      const title =
-        opts.decision.suggestedTitle ||
-        `Tender ${new Date().toISOString().slice(0, 10)}`;
+      const entities = await loadDocumentEntities(opts.documentId);
       const project = await db.tenderProject.create({
-        data: {
+        data: buildAutopilotProjectCreateData({
           workspaceId: opts.workspaceId,
-          createdById: opts.userId,
-          title,
-          titleAr: title,
-          category: "IT",
-          status: "DRAFT",
-        },
+          userId: opts.userId,
+          decision: opts.decision,
+          entities,
+        }),
       });
       projectId = project.id;
     }
