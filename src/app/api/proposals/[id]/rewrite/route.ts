@@ -15,6 +15,7 @@ import {
 import { validateProposalOutput } from "@/lib/validation-gate";
 import { financialForValidationGate } from "@/lib/proposal-studio";
 import { isProposalEditLocked } from "@/lib/proposal-status";
+import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -132,8 +133,28 @@ Return Markdown only.`,
     });
 
     const nextVersion = proposal.version + 1;
-    const blocking = validation.blocking;
-    proposalOut = await db.$transaction(async (tx) => {
+    const mutation = await db.$transaction(async (tx) => {
+      const write = await tx.generatedProposal.updateMany({
+        where: {
+          id,
+          workspaceId: workspace.id,
+          status: proposal.status,
+          version: proposal.version,
+          updatedAt: proposal.updatedAt,
+        },
+        data: {
+          contentMd,
+          version: nextVersion,
+          locale,
+          status: "DRAFT",
+          submittedAt: null,
+          approvedAt: null,
+          artifactsJson: null,
+          ...STRUCTURED_SNAPSHOT_INVALIDATION,
+        },
+      });
+      if (write.count !== 1) return null;
+      await tx.proposalReview.deleteMany({ where: { proposalId: id } });
       await tx.proposalVersion.create({
         data: {
           proposalId: id,
@@ -144,16 +165,18 @@ Return Markdown only.`,
           createdBy: session.user.id,
         },
       });
-      return tx.generatedProposal.update({
-        where: { id },
-        data: {
-          contentMd,
-          version: nextVersion,
-          locale,
-          status: blocking ? "DRAFT" : "REVIEWED",
-        },
-      });
+      return tx.generatedProposal.findUniqueOrThrow({ where: { id } });
     });
+    if (!mutation) {
+      return NextResponse.json(
+        {
+          error: "Proposal changed concurrently; reload before applying rewrite",
+          code: "proposal_concurrent_update",
+        },
+        { status: 409 }
+      );
+    }
+    proposalOut = mutation;
 
     await audit({
       userId: session.user.id,

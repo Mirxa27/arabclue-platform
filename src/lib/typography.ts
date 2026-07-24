@@ -11,6 +11,10 @@
  */
 
 import type { BrandProfile } from "@prisma/client";
+import {
+  DOCUMENT_BRAND_FONT_FAMILIES,
+  normalizeBrandForDocument,
+} from "./brand-policy";
 
 export type Locale = "ar" | "en";
 
@@ -78,8 +82,14 @@ export function getFontStack(locale: Locale, customFont?: string | null): string
   };
 
   if (customFont && customFont.trim()) {
-    const sanitized = customFont.replace(/'/g, "");
-    return `'${sanitized}', ${baseFonts[locale]}`;
+    const candidate = customFont.trim();
+    if (
+      DOCUMENT_BRAND_FONT_FAMILIES.includes(
+        candidate as (typeof DOCUMENT_BRAND_FONT_FAMILIES)[number]
+      )
+    ) {
+      return `'${candidate}', ${baseFonts[locale]}`;
+    }
   }
 
   return baseFonts[locale];
@@ -96,7 +106,10 @@ export function getFontStackFromBrand(
   brand: BrandProfile | null,
   locale: Locale
 ): string {
-  return getFontStack(locale, brand?.fontFamily);
+  return getFontStack(
+    locale,
+    normalizeBrandForDocument(brand)?.fontFamily
+  );
 }
 
 // ============================================================================

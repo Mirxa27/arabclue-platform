@@ -107,7 +107,7 @@ export function validateProposalOutput(opts: {
 
   // Blanket 10% preference without tender statement
   if (
-    /\b10\s*%\b/.test(md) &&
+    /\b10\s*%/.test(md) &&
     /local\s*content|محتوى\s*محلي|sme/i.test(md) &&
     opts.financial?.localContentPreferenceApplied == null &&
     opts.entities?.localContentPreferencePercent == null

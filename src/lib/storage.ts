@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto";
-import { mkdir, writeFile, readFile, access } from "fs/promises";
+import { mkdir, writeFile, readFile, access, lstat } from "fs/promises";
 import path from "path";
 import { get, head, put } from "@vercel/blob";
 
@@ -161,9 +161,57 @@ export function resolveWorkspaceStoragePath(
   return resolved;
 }
 
-async function streamToBuffer(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
-  const ab = await new Response(stream).arrayBuffer();
-  return Buffer.from(ab);
+type ReadStoredFileOptions = {
+  readonly maxBytes?: number;
+};
+
+function normalizedMaxBytes(maxBytes: number | undefined): number {
+  if (maxBytes === undefined) return Number.POSITIVE_INFINITY;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new RangeError("maxBytes must be a positive safe integer");
+  }
+  return maxBytes;
+}
+
+async function streamToBuffer(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes?: number
+): Promise<Buffer> {
+  const byteLimit = normalizedMaxBytes(maxBytes);
+  const reader = stream.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > byteLimit) {
+        await reader.cancel("Stored file exceeds the read limit");
+        throw new Error("Stored file exceeds the read limit");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, total);
+}
+
+async function readLocalFile(
+  absolutePath: string,
+  options: ReadStoredFileOptions = {}
+): Promise<Buffer> {
+  const maxBytes = normalizedMaxBytes(options.maxBytes);
+  const fileInfo = await lstat(absolutePath);
+  if (!fileInfo.isFile() || fileInfo.size > maxBytes) {
+    throw new Error("Stored file is missing or exceeds the read limit");
+  }
+  const bytes = await readFile(absolutePath);
+  if (bytes.length > maxBytes) {
+    throw new Error("Stored file exceeds the read limit");
+  }
+  return bytes;
 }
 
 export async function readStoredFile(storagePath: string): Promise<Buffer> {
@@ -179,8 +227,7 @@ export async function readStoredFile(storagePath: string): Promise<Buffer> {
     return streamToBuffer(result.stream);
   }
   const abs = resolveStoragePath(canonical);
-  await access(abs);
-  return readFile(abs);
+  return readLocalFile(abs);
 }
 
 export async function fileExists(storagePath: string): Promise<boolean> {
@@ -200,7 +247,8 @@ export async function fileExists(storagePath: string): Promise<boolean> {
 /** Read a file through the workspace-specific containment boundary. */
 export async function readWorkspaceStoredFile(
   storagePath: string,
-  workspaceId: string
+  workspaceId: string,
+  options: ReadStoredFileOptions = {}
 ): Promise<Buffer> {
   const canonical = assertWorkspaceStoragePath(storagePath, workspaceId);
   if (isBlobStorage()) {
@@ -211,12 +259,11 @@ export async function readWorkspaceStoredFile(
     if (!result || result.statusCode !== 200 || !result.stream) {
       throw new Error("File not found");
     }
-    return streamToBuffer(result.stream);
+    return streamToBuffer(result.stream, options.maxBytes);
   }
 
   const absolutePath = resolveWorkspaceStoragePath(canonical, workspaceId);
-  await access(absolutePath);
-  return readFile(absolutePath);
+  return readLocalFile(absolutePath, options);
 }
 
 export async function workspaceFileExists(

@@ -35,6 +35,20 @@ import {
   documentExportGate,
   type DocumentExportPermit,
 } from "@/lib/document-export-guard";
+import {
+  ProposalLayoutExportError,
+  exportProposalLayout,
+} from "@/lib/proposal-layout-export";
+import {
+  selectProposalDownloadEngine,
+  claimedStructuredKnowledgeIds,
+  requiresStructuredSnapshotForAuthoritativeExport,
+  validateStructuredProposalOutput,
+  validateStructuredSnapshotEvidence,
+  validatePersistedProposalSnapshot,
+  type CanonicalProposalSnapshot,
+} from "@/lib/proposal-snapshot-persistence";
+import { loadApprovedStructuredEvidenceBindings } from "@/lib/proposal-snapshot-evidence";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -112,8 +126,97 @@ export async function GET(
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  if (
+    proposal.structuredSnapshot === null &&
+    requiresStructuredSnapshotForAuthoritativeExport({
+      proposalType: proposal.type,
+      proposalStatus: proposal.status,
+    })
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Approved and exported proposals require an immutable validated structured snapshot. Legacy mutable generators are preview-only.",
+        code: "STRUCTURED_SNAPSHOT_REQUIRED",
+      },
+      { status: 409, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  const exportEngine = selectProposalDownloadEngine(
+    proposal.structuredSnapshot !== null,
+    format
+  );
+  if (exportEngine.kind === "STRUCTURED_FORMAT_UNSUPPORTED") {
+    return NextResponse.json(
+      {
+        error:
+          "This proposal has an authoritative structured snapshot. Use html, pdf, or pptx; legacy-only formats are disabled to prevent stale output.",
+        code: "STRUCTURED_EXPORT_FORMAT_UNSUPPORTED",
+      },
+      { status: 409, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  let structuredSnapshot: CanonicalProposalSnapshot | null = null;
+  let structuredApprovedEvidenceIds: readonly string[] = [];
+  if (exportEngine.kind === "STRUCTURED") {
+    const validation = validatePersistedProposalSnapshot(
+      proposal.structuredSnapshot,
+      {
+        proposalId: proposal.id,
+        hash: proposal.structuredSnapshotHash,
+        revision: proposal.structuredSnapshotRevision,
+        presetKey: proposal.structuredSnapshotPreset,
+      }
+    );
+    if (!validation.ok) {
+      return NextResponse.json(
+        {
+          error: "Persisted structured proposal snapshot is invalid.",
+          code: validation.code,
+          diagnostics: validation.diagnostics,
+        },
+        { status: 409, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    structuredSnapshot = validation.value;
+    const structuredApprovedEvidence =
+      await loadApprovedStructuredEvidenceBindings(
+      workspace.id,
+      claimedStructuredKnowledgeIds(structuredSnapshot.snapshot)
+    );
+    const evidenceDiagnostics = validateStructuredSnapshotEvidence(
+      structuredSnapshot.snapshot,
+      structuredApprovedEvidence
+    );
+    if (evidenceDiagnostics.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Persisted structured proposal evidence is no longer approved.",
+          code: "STRUCTURED_EVIDENCE_NOT_APPROVED",
+          diagnostics: evidenceDiagnostics,
+        },
+        { status: 409, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    structuredApprovedEvidenceIds = structuredApprovedEvidence.map(
+      (binding) => binding.id
+    );
+  }
 
   const isContract = proposal.type === "CONTRACT";
+  if (isContract && structuredSnapshot !== null) {
+    return NextResponse.json(
+      {
+        error:
+          "A contract record cannot be exported through the Phase 4 proposal snapshot engine.",
+        code: "STRUCTURED_SNAPSHOT_TYPE_MISMATCH",
+      },
+      { status: 409, headers: { "Cache-Control": "no-store" } }
+    );
+  }
   if (isContract) {
     // Contracts support bilingual legal HTML/PDF, ZIP package, and manifest
     if (!["html", "pdf", "manifest", "zip"].includes(format)) {
@@ -154,7 +257,29 @@ export async function GET(
   }
 
   let gateReport;
-  if (isContract) {
+  if (structuredSnapshot !== null) {
+    const entities = await loadProjectIngestionEntities(proposal.projectId);
+    gateReport = validateStructuredProposalOutput(
+      structuredSnapshot.snapshot,
+      {
+        entities,
+        complianceRows: checksForGate.map((c) => ({
+          frameworkId: c.framework,
+          controlId: c.controlId,
+          title: c.title,
+          status: (c.status === "GAP" ? "PARTIAL" : c.status) as
+            | "COMPLIANT"
+            | "PARTIAL"
+            | "NON_COMPLIANT"
+            | "PENDING",
+          evidence: c.evidence ?? "",
+          remediation: c.remediation,
+        })),
+        restrictions: restrictions.map((restriction) => restriction.text),
+        approvedEvidenceIds: structuredApprovedEvidenceIds,
+      }
+    );
+  } else if (isContract) {
     gateReport = getContractValidationReport({
       contentMd: proposal.contentMd,
     });
@@ -280,19 +405,27 @@ export async function GET(
   }
 
   let exportPermit: DocumentExportPermit | null = null;
-  if (format === "pdf" || format === "zip") {
-    const sourceCharacters = JSON.stringify({
-      contentMd: proposal.contentMd,
-      artifactsJson: proposal.artifactsJson,
-      financialFormsJson: proposal.financialFormsJson,
-      checks: checksForGate,
-      boqItems,
-    }).length;
+  if (format === "pdf" || format === "zip" || format === "pptx") {
+    const sourceCharacters =
+      structuredSnapshot === null
+        ? JSON.stringify({
+            contentMd: proposal.contentMd,
+            artifactsJson: proposal.artifactsJson,
+            financialFormsJson: proposal.financialFormsJson,
+            checks: checksForGate,
+            boqItems,
+          }).length
+        : structuredSnapshot.canonicalJson.length;
     const admission = await documentExportGate.acquire({
       userId: session.user.id,
       workspaceId: workspace.id,
       sourceCharacters,
-      kind: format === "zip" ? "proposal-package" : "proposal-pdf",
+      kind:
+        structuredSnapshot === null
+          ? format === "zip"
+            ? "proposal-package"
+            : `proposal-${format}`
+          : `structured-proposal-${format}`,
     });
     if (!admission.ok) {
       return NextResponse.json(
@@ -316,7 +449,18 @@ export async function GET(
 
     switch (format) {
       case "pdf":
-        if (isContract) {
+        if (structuredSnapshot !== null) {
+          const artifact = await exportProposalLayout(
+            structuredSnapshot.snapshot,
+            {
+              channel: "PDF",
+              presetKey: structuredSnapshot.presetKey,
+            }
+          );
+          buffer = artifact.buffer;
+          contentType = artifact.mediaType;
+          filename = "Structured_Proposal_Bilingual.pdf";
+        } else if (isContract) {
           const { generateBilingualContractPDF } = await import(
             "@/lib/contract-export"
           );
@@ -344,7 +488,22 @@ export async function GET(
         }
         break;
       case "html":
-        if (isContract) {
+        if (structuredSnapshot !== null) {
+          const artifact = await exportProposalLayout(
+            structuredSnapshot.snapshot,
+            {
+              channel: "HTML",
+              presetKey: structuredSnapshot.presetKey,
+              render: {
+                target: "screen",
+                includeDocumentShell: true,
+              },
+            }
+          );
+          buffer = artifact.buffer;
+          contentType = artifact.mediaType;
+          filename = "Structured_Proposal_Bilingual.html";
+        } else if (isContract) {
           const { generateBilingualContractHTML } = await import(
             "@/lib/contract-export"
           );
@@ -411,17 +570,30 @@ export async function GET(
         filename = "Technical_Proposal_Slides.html";
         break;
       case "pptx":
-        buffer = await generateProposalPPTX(
-          proposal,
-          proposal.project,
-          brand,
-          slidesMetrics,
-          companyLetterhead,
-          exportLocale
-        );
-        contentType =
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-        filename = "Technical_Proposal_Slides.pptx";
+        if (structuredSnapshot !== null) {
+          const artifact = await exportProposalLayout(
+            structuredSnapshot.snapshot,
+            {
+              channel: "PPTX",
+              presetKey: structuredSnapshot.presetKey,
+            }
+          );
+          buffer = artifact.buffer;
+          contentType = artifact.mediaType;
+          filename = "Structured_Proposal_Bilingual.pptx";
+        } else {
+          buffer = await generateProposalPPTX(
+            proposal,
+            proposal.project,
+            brand,
+            slidesMetrics,
+            companyLetterhead,
+            exportLocale
+          );
+          contentType =
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+          filename = "Technical_Proposal_Slides.pptx";
+        }
         break;
       case "manifest": {
         const { buildExportManifest, manifestToJson } = await import(
@@ -554,7 +726,18 @@ export async function GET(
       action: AUDIT_ACTIONS.ARTIFACT_DOWNLOAD,
       resource: "GeneratedProposal",
       resourceId: id,
-      details: { format },
+      details: {
+        format,
+        exportEngine:
+          structuredSnapshot === null ? "legacy-markdown" : "structured-v1",
+        ...(structuredSnapshot === null
+          ? {}
+          : {
+              snapshotHash: structuredSnapshot.hash,
+              snapshotRevision: structuredSnapshot.revision,
+              presetKey: structuredSnapshot.presetKey,
+            }),
+      },
     });
 
     if (policyResult.markExported && proposal.status !== "EXPORTED") {
@@ -570,10 +753,37 @@ export async function GET(
         "Content-Disposition": `attachment; filename="${filename}"`,
         "Content-Length": String(buffer.length),
         "Cache-Control": "no-store",
+        "X-Arabclue-Proposal-Engine":
+          structuredSnapshot === null ? "legacy-markdown" : "structured-v1",
+        "X-Proposal-Structured":
+          structuredSnapshot === null ? "false" : "true",
+        "X-Proposal-Authoritative":
+          structuredSnapshot === null ? "false" : "true",
+        ...(structuredSnapshot === null
+          ? { "X-Proposal-Lifecycle": "NON_AUTHORITATIVE_PREVIEW" }
+          : {
+              "X-Proposal-Snapshot-Hash": structuredSnapshot.hash,
+              "X-Proposal-Snapshot-Revision": String(
+                structuredSnapshot.revision
+              ),
+              "X-Proposal-Layout-Preset": structuredSnapshot.presetKey,
+              "X-Proposal-Lifecycle": "DRAFT",
+            }),
       },
     });
   } catch (err) {
     console.error("[download]", err);
+    if (err instanceof ProposalLayoutExportError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          code: "STRUCTURED_EXPORT_BLOCKED",
+          channel: err.channel,
+          diagnostics: err.diagnostics,
+        },
+        { status: 422, headers: { "Cache-Control": "no-store" } }
+      );
+    }
     const { PdfGenerationError } = await import("@/lib/pdf/html-to-pdf");
     if (err instanceof PdfGenerationError) {
       return NextResponse.json(

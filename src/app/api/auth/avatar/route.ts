@@ -5,6 +5,7 @@ import { getTenantContext } from "@/lib/workspace-context";
 import { saveUpload } from "@/lib/storage";
 import { audit } from "@/lib/audit";
 import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
+import { validateAndNormalizeLogoImage } from "@/lib/brand-logo";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,6 @@ const ALLOWED = new Set([
   "image/png",
   "image/jpeg",
   "image/webp",
-  "image/gif",
 ]);
 
 /** POST multipart — upload profile avatar (workspace-scoped file) */
@@ -40,20 +40,37 @@ export async function POST(req: NextRequest) {
     }
     if (!ALLOWED.has(file.type)) {
       return NextResponse.json(
-        { error: "Only PNG, JPEG, WebP, or GIF images allowed" },
+        { error: "Only PNG, JPEG, or WebP images allowed" },
         { status: 400 }
       );
     }
-    if (file.size > MAX_BYTES) {
+    if (file.size < 1 || file.size > MAX_BYTES) {
       return NextResponse.json({ error: "Avatar must be under 2MB" }, { status: 400 });
     }
 
     const { workspace } = await getTenantContext(session.user.id);
-    const bytes = Buffer.from(await file.arrayBuffer());
+    let image: Awaited<ReturnType<typeof validateAndNormalizeLogoImage>>;
+    try {
+      image = await validateAndNormalizeLogoImage(
+        Buffer.from(await file.arrayBuffer()),
+        file.name
+      );
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid or undecodable avatar image" },
+        { status: 400 }
+      );
+    }
+    if (image.mimeType !== file.type || image.bytes.length > MAX_BYTES) {
+      return NextResponse.json(
+        { error: "Avatar MIME type or normalized size is invalid" },
+        { status: 400 }
+      );
+    }
     const stored = await saveUpload({
       workspaceId: workspace.id,
       originalName: `avatar-${session.user.id}-${file.name || "photo.png"}`,
-      bytes,
+      bytes: image.bytes,
     });
 
     const avatarUrl = `/api/files?path=${encodeURIComponent(stored.storagePath)}`;
@@ -83,7 +100,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[auth/avatar]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
+      { error: "Unable to update avatar" },
       { status: 500 }
     );
   }

@@ -222,8 +222,7 @@ export const LAYOUT_SYNC_ERROR_CODES = [
   "CONFLICTING_BREAK_POLICY",
 ] as const;
 
-export type LayoutSyncErrorCode =
-  (typeof LAYOUT_SYNC_ERROR_CODES)[number];
+export type LayoutSyncErrorCode = (typeof LAYOUT_SYNC_ERROR_CODES)[number];
 
 /** Domain error returned for malformed measurements or fragment sequences. */
 export class LayoutSyncError extends Error {
@@ -232,7 +231,7 @@ export class LayoutSyncError extends Error {
   public constructor(
     public readonly code: LayoutSyncErrorCode,
     message: string,
-    public readonly rowIndex: number | null = null
+    public readonly rowIndex: number | null = null,
   ) {
     super(message);
   }
@@ -307,7 +306,7 @@ export function createAlignmentKey(value: string): AlignmentKey {
   ) {
     throw new LayoutSyncError(
       "INVALID_ALIGNMENT_KEY",
-      "Alignment keys must be non-empty, whitespace-free, and contain no control characters."
+      "Alignment keys must be non-empty, whitespace-free, and contain no control characters.",
     );
   }
 
@@ -322,32 +321,27 @@ export function createAlignmentKey(value: string): AlignmentKey {
  */
 export function synchronizeLayout(
   rows: readonly PairedRowInput[],
-  options: LayoutSyncOptions
+  options: LayoutSyncOptions,
 ): LayoutSyncResult {
   const resolved = resolveOptions(options);
   validateRows(rows);
 
   const synchronizedRows = rows.map((row, sourceIndex) =>
-    synchronizeRow(row, sourceIndex, resolved)
+    synchronizeRow(row, sourceIndex, resolved),
   );
-  const warnings: LayoutSyncWarning[] = collectImbalanceWarnings(
-    synchronizedRows
-  );
-  const provisionalPages = paginateRows(
-    synchronizedRows,
-    resolved,
-    warnings
-  );
+  const warnings: LayoutSyncWarning[] =
+    collectImbalanceWarnings(synchronizedRows);
+  const provisionalPages = paginateRows(synchronizedRows, resolved, warnings);
   const assignedRows = assignRows(provisionalPages);
   const continuationBreakCount = countContinuationBreaks(assignedRows);
   const paginatedRows = addContinuationMetadata(
     assignedRows,
-    resolved.continuationLabels
+    resolved.continuationLabels,
   );
   const pages = finalizePages(
     provisionalPages,
     paginatedRows,
-    resolved.pageContentHeight
+    resolved.pageContentHeight,
   );
 
   return {
@@ -359,7 +353,7 @@ export function synchronizeLayout(
       pageCount: pages.length,
       overflowRowCount: synchronizedRows.reduce(
         (count, row) => count + (row.overflow.kind === "none" ? 0 : 1),
-        0
+        0,
       ),
       continuationBreakCount,
     },
@@ -370,7 +364,7 @@ function resolveOptions(options: LayoutSyncOptions): ResolvedLayoutSyncOptions {
   if (options === null || typeof options !== "object") {
     throw new LayoutSyncError(
       "INVALID_OPTIONS",
-      "Layout synchronization options are required."
+      "Layout synchronization options are required.",
     );
   }
 
@@ -402,26 +396,14 @@ function resolveOptions(options: LayoutSyncOptions): ResolvedLayoutSyncOptions {
   ) {
     throw new LayoutSyncError(
       "INVALID_OPTIONS",
-      "Page height must be positive; spacing, gaps, and tolerance must be finite and non-negative."
+      "Page height must be positive; spacing, gaps, and tolerance must be finite and non-negative.",
     );
   }
 
-  validateContinuationLabel(
-    resolved.continuationLabels.before.en,
-    "before.en"
-  );
-  validateContinuationLabel(
-    resolved.continuationLabels.before.ar,
-    "before.ar"
-  );
-  validateContinuationLabel(
-    resolved.continuationLabels.after.en,
-    "after.en"
-  );
-  validateContinuationLabel(
-    resolved.continuationLabels.after.ar,
-    "after.ar"
-  );
+  validateContinuationLabel(resolved.continuationLabels.before.en, "before.en");
+  validateContinuationLabel(resolved.continuationLabels.before.ar, "before.ar");
+  validateContinuationLabel(resolved.continuationLabels.after.en, "after.en");
+  validateContinuationLabel(resolved.continuationLabels.after.ar, "after.ar");
 
   return resolved;
 }
@@ -434,7 +416,7 @@ function validateContinuationLabel(value: string, path: string): void {
   ) {
     throw new LayoutSyncError(
       "INVALID_OPTIONS",
-      `Continuation label ${path} must be non-empty and contain no control characters.`
+      `Continuation label ${path} must be non-empty and contain no control characters.`,
     );
   }
 }
@@ -443,7 +425,7 @@ function validateRows(rows: readonly PairedRowInput[]): void {
   if (!Array.isArray(rows)) {
     throw new LayoutSyncError(
       "INVALID_FRAGMENT",
-      "Paired rows must be provided as an array."
+      "Paired rows must be provided as an array.",
     );
   }
 
@@ -458,7 +440,7 @@ function validateRows(rows: readonly PairedRowInput[]): void {
       throw new LayoutSyncError(
         "INVALID_FRAGMENT",
         `Row ${index} must be an object.`,
-        index
+        index,
       );
     }
 
@@ -468,14 +450,11 @@ function validateRows(rows: readonly PairedRowInput[]): void {
     validateMeasurement(row.ar, "AR", index);
 
     if (activeKey !== row.alignmentKey) {
-      if (
-        activeKey !== null &&
-        expectedFragmentIndex !== activeFragmentCount
-      ) {
+      if (activeKey !== null && expectedFragmentIndex !== activeFragmentCount) {
         throw new LayoutSyncError(
           "INCOMPLETE_FRAGMENT_GROUP",
           `Alignment key "${activeKey}" ended after ${expectedFragmentIndex} of ${activeFragmentCount} fragments.`,
-          index - 1
+          index - 1,
         );
       }
 
@@ -486,14 +465,14 @@ function validateRows(rows: readonly PairedRowInput[]): void {
         throw new LayoutSyncError(
           "NON_CONTIGUOUS_ALIGNMENT_KEY",
           `Alignment key "${row.alignmentKey}" reappears after its group was closed.`,
-          index
+          index,
         );
       }
       if (row.fragmentIndex !== 0) {
         throw new LayoutSyncError(
           "INVALID_FRAGMENT_SEQUENCE",
           `Alignment key "${row.alignmentKey}" must begin with fragment 0.`,
-          index
+          index,
         );
       }
 
@@ -504,7 +483,7 @@ function validateRows(rows: readonly PairedRowInput[]): void {
       throw new LayoutSyncError(
         "INCONSISTENT_FRAGMENT_COUNT",
         `Alignment key "${row.alignmentKey}" changed fragmentCount within its group.`,
-        index
+        index,
       );
     }
 
@@ -512,7 +491,7 @@ function validateRows(rows: readonly PairedRowInput[]): void {
       throw new LayoutSyncError(
         "INVALID_FRAGMENT_SEQUENCE",
         `Alignment key "${row.alignmentKey}" expected fragment ${expectedFragmentIndex}, received ${row.fragmentIndex}.`,
-        index
+        index,
       );
     }
     expectedFragmentIndex += 1;
@@ -522,26 +501,23 @@ function validateRows(rows: readonly PairedRowInput[]): void {
       throw new LayoutSyncError(
         "CONFLICTING_BREAK_POLICY",
         `Row ${index} cannot be kept with a following row that forces a page break.`,
-        index
+        index,
       );
     }
   }
 
-  if (
-    activeKey !== null &&
-    expectedFragmentIndex !== activeFragmentCount
-  ) {
+  if (activeKey !== null && expectedFragmentIndex !== activeFragmentCount) {
     throw new LayoutSyncError(
       "INCOMPLETE_FRAGMENT_GROUP",
       `Alignment key "${activeKey}" ended after ${expectedFragmentIndex} of ${activeFragmentCount} fragments.`,
-      rows.length - 1
+      rows.length - 1,
     );
   }
 }
 
 function validateAlignmentKeyAtRow(
   value: AlignmentKey,
-  rowIndex: number
+  rowIndex: number,
 ): void {
   try {
     createAlignmentKey(value);
@@ -553,10 +529,7 @@ function validateAlignmentKeyAtRow(
   }
 }
 
-function validateFragmentMetadata(
-  row: PairedRowInput,
-  rowIndex: number
-): void {
+function validateFragmentMetadata(row: PairedRowInput, rowIndex: number): void {
   if (
     !Number.isSafeInteger(row.fragmentIndex) ||
     row.fragmentIndex < 0 ||
@@ -564,14 +537,13 @@ function validateFragmentMetadata(
     row.fragmentCount <= 0 ||
     row.fragmentIndex >= row.fragmentCount ||
     !PAIRED_FRAGMENT_KINDS.has(row.kind) ||
-    (row.keepWithNext !== undefined &&
-      typeof row.keepWithNext !== "boolean") ||
+    (row.keepWithNext !== undefined && typeof row.keepWithNext !== "boolean") ||
     (row.breakBefore !== undefined && typeof row.breakBefore !== "boolean")
   ) {
     throw new LayoutSyncError(
       "INVALID_FRAGMENT",
       `Row ${rowIndex} has invalid fragment metadata.`,
-      rowIndex
+      rowIndex,
     );
   }
 }
@@ -579,7 +551,7 @@ function validateFragmentMetadata(
 function validateMeasurement(
   measurement: ColumnMeasurement,
   language: BilingualLanguage,
-  rowIndex: number
+  rowIndex: number,
 ): void {
   const adjustableGaps = measurement?.adjustableGaps ?? 0;
   if (
@@ -593,7 +565,7 @@ function validateMeasurement(
     throw new LayoutSyncError(
       "INVALID_MEASUREMENT",
       `Row ${rowIndex} has an invalid ${language} measurement.`,
-      rowIndex
+      rowIndex,
     );
   }
 }
@@ -601,7 +573,7 @@ function validateMeasurement(
 function synchronizeRow(
   row: PairedRowInput,
   sourceIndex: number,
-  options: ResolvedLayoutSyncOptions
+  options: ResolvedLayoutSyncOptions,
 ): SynchronizedPairedRow {
   const enHeight = row.en.contentHeight;
   const arHeight = row.ar.contentHeight;
@@ -613,12 +585,12 @@ function synchronizeRow(
   const en = synchronizeColumn(
     row.en,
     enIsShorter ? heightDifference : 0,
-    options
+    options,
   );
   const ar = synchronizeColumn(
     row.ar,
     arIsShorter ? heightDifference : 0,
-    options
+    options,
   );
   const shorterLanguage: BilingualLanguage | null = enIsShorter
     ? "EN"
@@ -632,8 +604,7 @@ function synchronizeRow(
       : 0;
   const excessHeight = Math.max(0, rowHeight - options.pageContentHeight);
   const hasColumnOverflow =
-    shorterLanguage !== null &&
-    residualHeight > options.balanceTolerance;
+    shorterLanguage !== null && residualHeight > options.balanceTolerance;
   const hasPageOverflow = excessHeight > 0;
 
   return {
@@ -652,7 +623,7 @@ function synchronizeRow(
       hasColumnOverflow,
       excessHeight,
       shorterLanguage,
-      residualHeight
+      residualHeight,
     ),
   };
 }
@@ -660,7 +631,7 @@ function synchronizeRow(
 function synchronizeColumn(
   measurement: ColumnMeasurement,
   heightDifference: number,
-  options: ResolvedLayoutSyncOptions
+  options: ResolvedLayoutSyncOptions,
 ): SynchronizedColumn {
   const adjustableGaps = measurement.adjustableGaps ?? 0;
   const perGapCapacity = adjustableGaps * options.maxSpacingPerGap;
@@ -670,7 +641,7 @@ function synchronizeColumn(
       : Math.min(
           heightDifference,
           perGapCapacity,
-          options.maxDynamicSpacingPerRow
+          options.maxDynamicSpacingPerRow,
         );
   const trailingSpace = normalizeZero(heightDifference - addedSpacing);
 
@@ -678,8 +649,7 @@ function synchronizeColumn(
     contentHeight: measurement.contentHeight,
     adjustableGaps,
     addedSpacing,
-    spacingPerGap:
-      adjustableGaps === 0 ? 0 : addedSpacing / adjustableGaps,
+    spacingPerGap: adjustableGaps === 0 ? 0 : addedSpacing / adjustableGaps,
     trailingSpace,
   };
 }
@@ -689,7 +659,7 @@ function classifyOverflow(
   hasColumnOverflow: boolean,
   excessHeight: number,
   shorterLanguage: BilingualLanguage | null,
-  residualHeight: number
+  residualHeight: number,
 ): OverflowClassification {
   if (hasPageOverflow && hasColumnOverflow && shorterLanguage !== null) {
     return {
@@ -716,7 +686,7 @@ function classifyOverflow(
 }
 
 function collectImbalanceWarnings(
-  rows: readonly SynchronizedPairedRow[]
+  rows: readonly SynchronizedPairedRow[],
 ): LayoutSyncWarning[] {
   const warnings: LayoutSyncWarning[] = [];
   for (const row of rows) {
@@ -739,7 +709,7 @@ function collectImbalanceWarnings(
 function paginateRows(
   rows: readonly SynchronizedPairedRow[],
   options: ResolvedLayoutSyncOptions,
-  warnings: LayoutSyncWarning[]
+  warnings: LayoutSyncWarning[],
 ): ProvisionalPage[] {
   const pages: ProvisionalPage[] = [];
   let currentRows: ProvisionalRow[] = [];
@@ -781,8 +751,7 @@ function paginateRows(
 
     const next = rows[index + 1];
     if (row.keepWithNext && next !== undefined) {
-      const requiredHeight =
-        row.rowHeight + options.rowGap + next.rowHeight;
+      const requiredHeight = row.rowHeight + options.rowGap + next.rowHeight;
       if (requiredHeight > options.pageContentHeight) {
         warnings.push({
           code: "KEEP_WITH_NEXT_UNSATISFIABLE",
@@ -828,9 +797,7 @@ function paginateRows(
   return pages;
 }
 
-function assignRows(
-  pages: readonly ProvisionalPage[]
-): AssignedRow[] {
+function assignRows(pages: readonly ProvisionalPage[]): AssignedRow[] {
   const assigned: AssignedRow[] = [];
   for (const page of pages) {
     for (const provisional of page.rows) {
@@ -862,7 +829,7 @@ function countContinuationBreaks(rows: readonly AssignedRow[]): number {
 
 function addContinuationMetadata(
   rows: readonly AssignedRow[],
-  labels: ContinuationLabels
+  labels: ContinuationLabels,
 ): PaginatedPairedRow[] {
   return rows.map((assigned, index) => {
     const previous = rows[index - 1];
@@ -885,14 +852,10 @@ function addContinuationMetadata(
         continuedFromPreviousPage,
         continuesOnNextPage,
         previousPageNumber: continuedFromPreviousPage
-          ? previous?.pageNumber ?? null
+          ? (previous?.pageNumber ?? null)
           : null,
-        nextPageNumber: continuesOnNextPage
-          ? next?.pageNumber ?? null
-          : null,
-        beforeLabel: continuedFromPreviousPage
-          ? { ...labels.before }
-          : null,
+        nextPageNumber: continuesOnNextPage ? (next?.pageNumber ?? null) : null,
+        beforeLabel: continuedFromPreviousPage ? { ...labels.before } : null,
         afterLabel: continuesOnNextPage ? { ...labels.after } : null,
       },
     };
@@ -902,29 +865,20 @@ function addContinuationMetadata(
 function finalizePages(
   provisionalPages: readonly ProvisionalPage[],
   rows: readonly PaginatedPairedRow[],
-  pageContentHeight: number
+  pageContentHeight: number,
 ): SynchronizedPage[] {
   const pages: SynchronizedPage[] = [];
   let rowCursor = 0;
 
   for (const provisional of provisionalPages) {
-    const pageRows = rows.slice(
-      rowCursor,
-      rowCursor + provisional.rows.length
-    );
+    const pageRows = rows.slice(rowCursor, rowCursor + provisional.rows.length);
     rowCursor += provisional.rows.length;
     pages.push({
       pageNumber: provisional.pageNumber,
       rows: pageRows,
       usedHeight: provisional.usedHeight,
-      remainingHeight: Math.max(
-        0,
-        pageContentHeight - provisional.usedHeight
-      ),
-      overflowHeight: Math.max(
-        0,
-        provisional.usedHeight - pageContentHeight
-      ),
+      remainingHeight: Math.max(0, pageContentHeight - provisional.usedHeight),
+      overflowHeight: Math.max(0, provisional.usedHeight - pageContentHeight),
     });
   }
 
@@ -1001,6 +955,11 @@ export interface AppliedBilingualLayout {
   readonly warningCount: number;
 }
 
+export interface BilingualLayoutApplication {
+  readonly result: LayoutSyncResult;
+  readonly pageContentHeight: number;
+}
+
 /**
  * Minimal structural contract implemented by Playwright's Page. The generic
  * keeps this module free of a runtime Playwright dependency.
@@ -1008,7 +967,7 @@ export interface AppliedBilingualLayout {
 export interface BilingualLayoutEvaluationPage {
   evaluate<Result, Argument>(
     pageFunction: (argument: Argument) => Result | Promise<Result>,
-    argument: Argument
+    argument: Argument,
   ): Promise<Result>;
 }
 
@@ -1023,10 +982,11 @@ interface BrowserMeasurementOptions {
  * page via `page.evaluate`; document-authored scripts remain disabled.
  */
 export function measureBilingualLayoutInPage(
-  options: BrowserMeasurementOptions
+  options: BrowserMeasurementOptions,
+  targetDocument: Document = document,
 ): BrowserLayoutMeasurement {
-  const root = document.querySelector<HTMLElement>(
-    "[data-bilingual-document]"
+  const root = targetDocument.querySelector<HTMLElement>(
+    "[data-bilingual-document]",
   );
   if (!root) {
     throw new Error("Bilingual layout root was not found.");
@@ -1039,11 +999,23 @@ export function measureBilingualLayoutInPage(
   }
   root.style.inlineSize = `${String(options.pageContentWidth)}px`;
   root.style.maxInlineSize = `${String(options.pageContentWidth)}px`;
+  root.style.padding = "0";
+  root.setAttribute("data-bilingual-sync-measuring", "true");
+  root
+    .querySelectorAll<HTMLElement>("[data-bilingual-sync-page]")
+    .forEach((page) => {
+      const parent = page.parentNode;
+      if (!parent) return;
+      Array.from(page.children).forEach((child) => {
+        parent.insertBefore(child, page);
+      });
+      page.remove();
+    });
   // Force layout after constraining the root to the exact PDF content width.
   root.getBoundingClientRect();
 
   const pairs = Array.from(
-    root.querySelectorAll<HTMLElement>("[data-bilingual-pair]")
+    root.querySelectorAll<HTMLElement>("[data-bilingual-pair]"),
   );
   if (pairs.length === 0) {
     throw new Error("Bilingual layout contains no paired rows.");
@@ -1051,8 +1023,8 @@ export function measureBilingualLayoutInPage(
   if (pairs.length > options.maxRows) {
     throw new Error(
       `Bilingual layout exceeds the trusted renderer limit of ${String(
-        options.maxRows
-      )} rows.`
+        options.maxRows,
+      )} rows.`,
     );
   }
 
@@ -1060,16 +1032,22 @@ export function measureBilingualLayoutInPage(
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   };
+  const isHtmlElement = (value: Element): value is HTMLElement => {
+    const constructor = targetDocument.defaultView?.HTMLElement;
+    return constructor
+      ? value instanceof constructor
+      : "style" in value && "dataset" in value;
+  };
   const approvedGapElements = (cell: HTMLElement): HTMLElement[] => {
     const targets = new Set<HTMLElement>();
     Array.from(cell.children)
       .slice(1)
       .forEach((element) => {
-        if (element instanceof HTMLElement) targets.add(element);
+        if (isHtmlElement(element)) targets.add(element);
       });
     cell
       .querySelectorAll<HTMLElement>(
-        ":scope > ul > li:not(:first-child), :scope > ol > li:not(:first-child)"
+        ":scope > ul > li:not(:first-child), :scope > ol > li:not(:first-child)",
       )
       .forEach((element) => targets.add(element));
     return [...targets];
@@ -1080,7 +1058,7 @@ export function measureBilingualLayoutInPage(
       finiteCssNumber(cellStyle.paddingBlockStart) +
       finiteCssNumber(cellStyle.paddingBlockEnd);
     const children = Array.from(cell.children).filter(
-      (element): element is HTMLElement => element instanceof HTMLElement
+      (element): element is HTMLElement => element instanceof HTMLElement,
     );
     const childHeight = children.reduce((total, child) => {
       const style = getComputedStyle(child);
@@ -1091,7 +1069,7 @@ export function measureBilingualLayoutInPage(
         finiteCssNumber(style.marginBlockEnd)
       );
     }, 0);
-    const range = document.createRange();
+    const range = targetDocument.createRange();
     range.selectNodeContents(cell);
     const rangeHeight = range.getBoundingClientRect().height;
     range.detach();
@@ -1099,7 +1077,7 @@ export function measureBilingualLayoutInPage(
   };
   const readPositiveInteger = (
     element: HTMLElement,
-    attribute: string
+    attribute: string,
   ): number => {
     const parsed = Number.parseInt(element.getAttribute(attribute) ?? "", 10);
     if (!Number.isInteger(parsed) || parsed < 0) {
@@ -1132,6 +1110,13 @@ export function measureBilingualLayoutInPage(
       element.removeAttribute("data-bilingual-sync-gap");
     });
   pairs.forEach((pair) => {
+    pair
+      .querySelectorAll<HTMLElement>("[data-bilingual-continuation-marker]")
+      .forEach((marker) => marker.remove());
+    pair.style.removeProperty("position");
+    pair.style.removeProperty("inset-block-start");
+    pair.style.removeProperty("block-size");
+    pair.style.removeProperty("margin-block-end");
     pair.style.removeProperty("min-block-size");
     pair.style.removeProperty("break-before");
     pair.removeAttribute("data-sync-page");
@@ -1142,40 +1127,32 @@ export function measureBilingualLayoutInPage(
 
   const measuredRows = pairs.map((pair): BrowserMeasuredPairedRow => {
     const enCell = pair.querySelector<HTMLElement>(
-      ':scope > [data-language="en"]'
+      ':scope > [data-language="en"]',
     );
     const arCell = pair.querySelector<HTMLElement>(
-      ':scope > [data-language="ar"]'
+      ':scope > [data-language="ar"]',
     );
     if (!enCell || !arCell) {
       throw new Error(
-        "Every bilingual pair must contain one English and one Arabic cell."
+        "Every bilingual pair must contain one English and one Arabic cell.",
       );
     }
     const alignmentKey = pair.getAttribute("data-alignment-key");
     if (!alignmentKey) {
       throw new Error("A bilingual pair is missing its alignment key.");
     }
-    const fragmentIndex = readPositiveInteger(
-      pair,
-      "data-fragment-index"
-    );
-    const fragmentCount = readPositiveInteger(
-      pair,
-      "data-fragment-count"
-    );
+    const fragmentIndex = readPositiveInteger(pair, "data-fragment-index");
+    const fragmentCount = readPositiveInteger(pair, "data-fragment-count");
     if (fragmentCount < 1 || fragmentIndex >= fragmentCount) {
       throw new Error("Bilingual fragment sequence metadata is invalid.");
     }
-    const section = pair.closest<HTMLElement>(".bilingual-section");
-    const firstSectionPair =
-      section?.querySelector<HTMLElement>("[data-bilingual-pair]") ?? null;
     const enContentHeight = measureIntrinsicHeight(enCell);
     const arContentHeight = measureIntrinsicHeight(arCell);
+    const pairHeight = pair.getBoundingClientRect().height;
+    const isSerial = pair.classList.contains("bilingual-pair--serial");
     const pairChromeHeight = Math.max(
       0,
-      pair.getBoundingClientRect().height -
-        Math.max(enContentHeight, arContentHeight)
+      pairHeight - Math.max(enContentHeight, arContentHeight),
     );
 
     return {
@@ -1183,30 +1160,30 @@ export function measureBilingualLayoutInPage(
       fragmentIndex,
       fragmentCount,
       kind: normalizeKind(pair.getAttribute("data-fragment-kind")),
-      en: {
-        contentHeight: enContentHeight + pairChromeHeight,
-        adjustableGaps: approvedGapElements(enCell).length,
-      },
-      ar: {
-        contentHeight: arContentHeight + pairChromeHeight,
-        adjustableGaps: approvedGapElements(arCell).length,
-      },
+      en: isSerial
+        ? { contentHeight: pairHeight, adjustableGaps: 0 }
+        : {
+            contentHeight: enContentHeight + pairChromeHeight,
+            adjustableGaps: approvedGapElements(enCell).length,
+          },
+      ar: isSerial
+        ? { contentHeight: pairHeight, adjustableGaps: 0 }
+        : {
+            contentHeight: arContentHeight + pairChromeHeight,
+            adjustableGaps: approvedGapElements(arCell).length,
+          },
       keepWithNext:
         pair.getAttribute("data-fragment-keep-with-next") === "true",
-      breakBefore:
-        section?.classList.contains("bilingual-section--new-page") === true &&
-        firstSectionPair === pair,
+      breakBefore: pair.getAttribute("data-fragment-break-before") === "true",
     };
   });
 
   const rowGap = pairs.reduce(
     (maximum, pair) =>
-      Math.max(
-        maximum,
-        finiteCssNumber(getComputedStyle(pair).marginBlockEnd)
-      ),
-    0
+      Math.max(maximum, finiteCssNumber(getComputedStyle(pair).marginBlockEnd)),
+    0,
   );
+  root.removeAttribute("data-bilingual-sync-measuring");
   return { rows: measuredRows, rowGap };
 }
 
@@ -1215,31 +1192,52 @@ export function measureBilingualLayoutInPage(
  * produced by `synchronizeLayout` are accepted by the orchestrator below.
  */
 export function applyBilingualLayoutInPage(
-  result: LayoutSyncResult
+  input: BilingualLayoutApplication | LayoutSyncResult,
+  targetDocument: Document = document,
 ): AppliedBilingualLayout {
-  const root = document.querySelector<HTMLElement>(
-    "[data-bilingual-document]"
+  const result = "result" in input ? input.result : input;
+  const inferredPage =
+    result.pages.find((page) => page.remainingHeight > 0) ?? result.pages[0];
+  const pageContentHeight =
+    "result" in input
+      ? input.pageContentHeight
+      : (inferredPage?.usedHeight ?? 0) + (inferredPage?.remainingHeight ?? 0);
+  const root = targetDocument.querySelector<HTMLElement>(
+    "[data-bilingual-document]",
   );
   if (!root) {
     throw new Error("Bilingual layout root was not found.");
   }
   const pairs = Array.from(
-    root.querySelectorAll<HTMLElement>("[data-bilingual-pair]")
+    root.querySelectorAll<HTMLElement>("[data-bilingual-pair]"),
   );
   if (pairs.length !== result.rows.length) {
     throw new Error("Measured bilingual rows changed before synchronization.");
   }
+  if (
+    !Number.isFinite(pageContentHeight) ||
+    pageContentHeight <= 0 ||
+    pageContentHeight > 100_000
+  ) {
+    throw new Error("Bilingual synchronized page height is invalid.");
+  }
+  const isHtmlElement = (value: Element): value is HTMLElement => {
+    const constructor = targetDocument.defaultView?.HTMLElement;
+    return constructor
+      ? value instanceof constructor
+      : "style" in value && "dataset" in value;
+  };
 
   const approvedGapElements = (cell: HTMLElement): HTMLElement[] => {
     const targets = new Set<HTMLElement>();
     Array.from(cell.children)
       .slice(1)
       .forEach((element) => {
-        if (element instanceof HTMLElement) targets.add(element);
+        if (isHtmlElement(element)) targets.add(element);
       });
     cell
       .querySelectorAll<HTMLElement>(
-        ":scope > ul > li:not(:first-child), :scope > ol > li:not(:first-child)"
+        ":scope > ul > li:not(:first-child), :scope > ol > li:not(:first-child)",
       )
       .forEach((element) => targets.add(element));
     return [...targets];
@@ -1247,37 +1245,54 @@ export function applyBilingualLayoutInPage(
   const applyColumn = (
     pair: HTMLElement,
     language: "en" | "ar",
-    column: SynchronizedColumn
+    column: SynchronizedColumn,
   ): void => {
     const cell = pair.querySelector<HTMLElement>(
-      `:scope > [data-language="${language}"]`
+      `:scope > [data-language="${language}"]`,
     );
     if (!cell) {
       throw new Error(`Missing ${language.toUpperCase()} synchronized cell.`);
     }
     cell.style.minBlockSize = `${String(column.contentHeight + column.addedSpacing + column.trailingSpace)}px`;
-    cell.setAttribute(
-      "data-sync-added-spacing",
-      String(column.addedSpacing)
-    );
-    cell.setAttribute(
-      "data-sync-trailing-space",
-      String(column.trailingSpace)
-    );
+    cell.setAttribute("data-sync-added-spacing", String(column.addedSpacing));
+    cell.setAttribute("data-sync-trailing-space", String(column.trailingSpace));
+    if (pair.classList.contains("bilingual-pair--serial")) {
+      cell.style.removeProperty("min-block-size");
+      return;
+    }
     const gaps = approvedGapElements(cell);
     if (gaps.length !== column.adjustableGaps) {
       throw new Error(
-        `The ${language.toUpperCase()} adjustable-gap count changed before synchronization.`
+        `The ${language.toUpperCase()} adjustable-gap count changed before synchronization.`,
       );
     }
     gaps.forEach((element) => {
       element.setAttribute("data-bilingual-sync-gap", "true");
       if (column.spacingPerGap > 0) {
-        element.style.paddingBlockStart = `${String(
-          column.spacingPerGap
-        )}px`;
+        element.style.paddingBlockStart = `${String(column.spacingPerGap)}px`;
       }
     });
+  };
+  const addContinuationMarker = (
+    pair: HTMLElement,
+    language: "en" | "ar",
+    position: "before" | "after",
+    label: string,
+  ): void => {
+    const cell = pair.querySelector<HTMLElement>(
+      `:scope > [data-language="${language}"]`,
+    );
+    if (!cell) {
+      throw new Error(`Missing ${language.toUpperCase()} continuation cell.`);
+    }
+    const marker = targetDocument.createElement("span");
+    marker.className = `bilingual-continuation-marker bilingual-continuation-marker--${position}`;
+    marker.setAttribute("data-bilingual-continuation-marker", position);
+    marker.setAttribute("role", "note");
+    marker.lang = language;
+    marker.dir = language === "ar" ? "rtl" : "ltr";
+    marker.textContent = label;
+    cell.append(marker);
   };
 
   result.rows.forEach((row, index) => {
@@ -1285,10 +1300,12 @@ export function applyBilingualLayoutInPage(
     if (!pair || row.sourceIndex !== index) {
       throw new Error("Bilingual synchronization source order changed.");
     }
-    const previous = result.rows[index - 1];
+    pair.style.position = "absolute";
+    pair.style.insetBlockStart = `${String(row.offsetTop)}px`;
+    pair.style.blockSize = `${String(row.rowHeight)}px`;
+    pair.style.marginBlockEnd = "0";
     pair.style.minBlockSize = `${String(row.rowHeight)}px`;
-    pair.style.breakBefore =
-      previous && previous.pageNumber !== row.pageNumber ? "page" : "";
+    pair.style.breakBefore = "";
     pair.setAttribute("data-sync-page", String(row.pageNumber));
     pair.setAttribute("data-sync-index-on-page", String(row.indexOnPage));
     pair.setAttribute("data-sync-offset-top", String(row.offsetTop));
@@ -1296,42 +1313,98 @@ export function applyBilingualLayoutInPage(
     pair.setAttribute("data-sync-overflow", row.overflow.kind);
     pair.setAttribute(
       "data-sync-continued-from-previous",
-      String(row.continuation.continuedFromPreviousPage)
+      String(row.continuation.continuedFromPreviousPage),
     );
     pair.setAttribute(
       "data-sync-continues-on-next",
-      String(row.continuation.continuesOnNextPage)
+      String(row.continuation.continuesOnNextPage),
     );
     if (row.continuation.beforeLabel) {
       pair.setAttribute(
         "data-sync-before-label-en",
-        row.continuation.beforeLabel.en
+        row.continuation.beforeLabel.en,
       );
       pair.setAttribute(
         "data-sync-before-label-ar",
-        row.continuation.beforeLabel.ar
+        row.continuation.beforeLabel.ar,
       );
     }
     if (row.continuation.afterLabel) {
       pair.setAttribute(
         "data-sync-after-label-en",
-        row.continuation.afterLabel.en
+        row.continuation.afterLabel.en,
       );
       pair.setAttribute(
         "data-sync-after-label-ar",
-        row.continuation.afterLabel.ar
+        row.continuation.afterLabel.ar,
       );
     }
     applyColumn(pair, "en", row.en);
     applyColumn(pair, "ar", row.ar);
+    if (row.continuation.beforeLabel) {
+      addContinuationMarker(
+        pair,
+        "en",
+        "before",
+        row.continuation.beforeLabel.en,
+      );
+      addContinuationMarker(
+        pair,
+        "ar",
+        "before",
+        row.continuation.beforeLabel.ar,
+      );
+    }
+    if (row.continuation.afterLabel) {
+      addContinuationMarker(
+        pair,
+        "en",
+        "after",
+        row.continuation.afterLabel.en,
+      );
+      addContinuationMarker(
+        pair,
+        "ar",
+        "after",
+        row.continuation.afterLabel.ar,
+      );
+    }
   });
+
+  const pageCount = result.metrics.pageCount;
+  const pageElements = new Map<number, HTMLElement>();
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    const page = targetDocument.createElement("div");
+    page.className = "bilingual-synchronized-page";
+    page.setAttribute("data-bilingual-sync-page", String(pageNumber));
+    page.style.position = "relative";
+    page.style.inlineSize = "100%";
+    page.style.blockSize = `${String(pageContentHeight)}px`;
+    page.style.breakInside = "avoid";
+    page.style.pageBreakInside = "avoid";
+    page.style.breakAfter = pageNumber < pageCount ? "page" : "auto";
+    page.style.pageBreakAfter = pageNumber < pageCount ? "always" : "auto";
+    pageElements.set(pageNumber, page);
+  }
+  result.rows.forEach((row) => {
+    const pair = pairs[row.sourceIndex];
+    const page = pageElements.get(row.pageNumber);
+    if (!pair || !page) {
+      throw new Error("Bilingual synchronized page assembly failed.");
+    }
+    page.append(pair);
+  });
+  pageElements.forEach((page) => root.append(page));
 
   root.setAttribute("data-bilingual-layout-state", "ready");
   root.setAttribute("data-bilingual-layout-ready", "true");
-  root.setAttribute("data-bilingual-layout-pages", String(result.metrics.pageCount));
+  root.setAttribute(
+    "data-bilingual-layout-pages",
+    String(result.metrics.pageCount),
+  );
   root.setAttribute(
     "data-bilingual-layout-warnings",
-    String(result.warnings.length)
+    String(result.warnings.length),
   );
   return {
     rowCount: result.metrics.inputRowCount,
@@ -1341,10 +1414,8 @@ export function applyBilingualLayoutInPage(
 }
 
 function resolveRendererSyncOptions(
-  options: BilingualRendererSyncOptions
-): Required<
-  Omit<BilingualRendererSyncOptions, "continuationLabels">
-> & {
+  options: BilingualRendererSyncOptions,
+): Required<Omit<BilingualRendererSyncOptions, "continuationLabels">> & {
   readonly continuationLabels?: ContinuationLabels;
 } {
   const resolved = {
@@ -1375,7 +1446,7 @@ function resolveRendererSyncOptions(
   ) {
     throw new LayoutSyncError(
       "INVALID_OPTIONS",
-      "Trusted renderer pageContentWidth must be finite and between 0 and 10000 CSS pixels."
+      "Trusted renderer pageContentWidth must be finite and between 0 and 10000 CSS pixels.",
     );
   }
   if (
@@ -1386,8 +1457,8 @@ function resolveRendererSyncOptions(
     throw new LayoutSyncError(
       "INVALID_OPTIONS",
       `Trusted renderer maxRows must be between 1 and ${String(
-        DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.maxRows
-      )}.`
+        DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.maxRows,
+      )}.`,
     );
   }
   return resolved;
@@ -1395,7 +1466,7 @@ function resolveRendererSyncOptions(
 
 function synchronizeBrowserMeasurement(
   measurement: BrowserLayoutMeasurement,
-  options: ReturnType<typeof resolveRendererSyncOptions>
+  options: ReturnType<typeof resolveRendererSyncOptions>,
 ): LayoutSyncResult {
   if (
     !measurement ||
@@ -1404,14 +1475,14 @@ function synchronizeBrowserMeasurement(
   ) {
     throw new LayoutSyncError(
       "INVALID_FRAGMENT",
-      "Trusted renderer returned an invalid bilingual row measurement."
+      "Trusted renderer returned an invalid bilingual row measurement.",
     );
   }
   const rows: PairedRowInput[] = measurement.rows.map((row) => ({
     ...row,
     alignmentKey: createAlignmentKey(row.alignmentKey),
   }));
-  return synchronizeLayout(rows, {
+  const result = synchronizeLayout(rows, {
     pageContentHeight: options.pageContentHeight,
     rowGap: measurement.rowGap,
     maxSpacingPerGap: options.maxSpacingPerGap,
@@ -1421,6 +1492,21 @@ function synchronizeBrowserMeasurement(
       ? { continuationLabels: options.continuationLabels }
       : {}),
   });
+  const oversized = result.rows.find(
+    (row) =>
+      row.overflow.kind === "page-overflow" ||
+      row.overflow.kind === "page-and-column-overflow",
+  );
+  if (oversized) {
+    throw new LayoutSyncError(
+      "INVALID_FRAGMENT",
+      `Bilingual fragment ${oversized.alignmentKey}:${String(
+        oversized.fragmentIndex,
+      )} is taller than the printable page and cannot be rendered safely.`,
+      oversized.sourceIndex,
+    );
+  }
+  return result;
 }
 
 /**
@@ -1428,21 +1514,33 @@ function synchronizeBrowserMeasurement(
  * engine. Client previews may call this after their fonts and images settle.
  */
 export function synchronizeCurrentBilingualDocument(
-  options: BilingualRendererSyncOptions = {}
+  options: BilingualRendererSyncOptions = {},
+  targetDocument?: Document,
 ): LayoutSyncResult {
-  if (typeof document === "undefined") {
+  const activeDocument =
+    targetDocument ?? (typeof document === "undefined" ? undefined : document);
+  if (!activeDocument) {
     throw new LayoutSyncError(
       "INVALID_OPTIONS",
-      "Bilingual DOM synchronization requires a browser document."
+      "Bilingual DOM synchronization requires a browser document.",
     );
   }
   const resolved = resolveRendererSyncOptions(options);
-  const measurement = measureBilingualLayoutInPage({
-    maxRows: resolved.maxRows,
-    pageContentWidth: resolved.pageContentWidth,
-  });
+  const measurement = measureBilingualLayoutInPage(
+    {
+      maxRows: resolved.maxRows,
+      pageContentWidth: resolved.pageContentWidth,
+    },
+    activeDocument,
+  );
   const result = synchronizeBrowserMeasurement(measurement, resolved);
-  applyBilingualLayoutInPage(result);
+  applyBilingualLayoutInPage(
+    {
+      result,
+      pageContentHeight: resolved.pageContentHeight,
+    },
+    activeDocument,
+  );
   return result;
 }
 
@@ -1453,7 +1551,7 @@ export function synchronizeCurrentBilingualDocument(
  */
 export async function synchronizeBilingualLayoutPage(
   page: BilingualLayoutEvaluationPage,
-  options: BilingualRendererSyncOptions = {}
+  options: BilingualRendererSyncOptions = {},
 ): Promise<LayoutSyncResult> {
   const resolved = resolveRendererSyncOptions(options);
   const measurement = await page.evaluate(measureBilingualLayoutInPage, {
@@ -1461,6 +1559,9 @@ export async function synchronizeBilingualLayoutPage(
     pageContentWidth: resolved.pageContentWidth,
   });
   const result = synchronizeBrowserMeasurement(measurement, resolved);
-  await page.evaluate(applyBilingualLayoutInPage, result);
+  await page.evaluate(applyBilingualLayoutInPage, {
+    result,
+    pageContentHeight: resolved.pageContentHeight,
+  });
   return result;
 }

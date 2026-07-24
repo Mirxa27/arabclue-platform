@@ -10,6 +10,10 @@ import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
 import { ApiError } from "@/lib/api-controller";
+import {
+  decideProposalReview,
+  ProposalReviewDecisionError,
+} from "@/lib/proposal-review-service";
 import type { AgentState } from "@/lib/types";
 import {
   DASHBOARD_VIEWS,
@@ -1080,62 +1084,36 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         comment: z.string().optional(),
       }),
       execute: async ({ reviewId, status, comment }) => {
-        const review = await db.proposalReview.findUnique({
-          where: { id: reviewId },
-          include: { proposal: true },
-        });
-        if (
-          !review ||
-          !assertWorkspaceMatch(review.proposal.workspaceId, ctx.workspace.id)
-        ) {
-          return { ok: false as const, error: "not found" };
-        }
-        if (review.reviewerId !== ctx.userId) {
-          return {
-            ok: false as const,
-            error: "Only the assigned reviewer may decide this step",
-          };
-        }
-        if (review.status !== "PENDING") {
-          return { ok: false as const, error: "Review already decided" };
-        }
-        const prior = await db.proposalReview.findMany({
-          where: {
-            proposalId: review.proposalId,
-            stepIndex: { lt: review.stepIndex },
-          },
-        });
-        if (prior.some((p) => p.status !== "APPROVED")) {
-          return {
-            ok: false as const,
-            error: "Previous approval steps are not complete",
-          };
-        }
-        const updated = await db.proposalReview.update({
-          where: { id: reviewId },
-          data: {
-            status,
-            comment: comment ?? null,
-            decidedAt: new Date(),
-          },
-        });
-        if (status === "REJECTED") {
-          await db.generatedProposal.update({
-            where: { id: review.proposalId },
-            data: { status: "REJECTED" },
+        try {
+          const result = await decideProposalReview({
+            reviewId,
+            reviewerId: ctx.userId,
+            workspaceId: ctx.workspace.id,
+            decision: status,
+            comment,
           });
-        } else {
-          const remaining = await db.proposalReview.count({
-            where: { proposalId: review.proposalId, status: "PENDING" },
+          await audit({
+            userId: ctx.userId,
+            action: AUDIT_ACTIONS.PROPOSAL_EDIT,
+            resource: "ProposalReview",
+            resourceId: reviewId,
+            details: {
+              decision: status,
+              source: "platform-agent",
+              proposalStatus: result.proposalStatus,
+            },
           });
-          if (remaining === 0) {
-            await db.generatedProposal.update({
-              where: { id: review.proposalId },
-              data: { status: "APPROVED", approvedAt: new Date() },
-            });
+          return { ok: true as const, ...result };
+        } catch (error) {
+          if (error instanceof ProposalReviewDecisionError) {
+            return {
+              ok: false as const,
+              error: error.message,
+              code: error.code,
+            };
           }
+          throw error;
         }
-        return { ok: true as const, review: updated };
       },
     }),
 

@@ -31,6 +31,10 @@ ALTER TABLE "ContractTemplateVersion"
 
 CREATE INDEX "ContractTemplateVersion_templateId_lifecycle_legalReviewStatus_idx"
   ON "ContractTemplateVersion"("templateId", "lifecycle", "legalReviewStatus");
+CREATE UNIQUE INDEX "ContractTemplateVersion_templateId_version_key"
+  ON "ContractTemplateVersion"("templateId", "version");
+CREATE UNIQUE INDEX "ContractTemplateVersion_id_templateId_key"
+  ON "ContractTemplateVersion"("id", "templateId");
 
 ALTER TABLE "StandardClause"
   ADD COLUMN "version" INTEGER NOT NULL DEFAULT 1,
@@ -58,3 +62,70 @@ ALTER TABLE "GeneratedContract"
 
 CREATE INDEX "GeneratedContract_workspaceId_legalReviewStatus_isExecutable_idx"
   ON "GeneratedContract"("workspaceId", "legalReviewStatus", "isExecutable");
+
+ALTER TABLE "GeneratedContract"
+  ADD CONSTRAINT "GeneratedContract_templateVersionId_templateId_fkey"
+  FOREIGN KEY ("templateVersionId", "templateId")
+  REFERENCES "ContractTemplateVersion"("id", "templateId")
+  ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "ContractTemplate" ADD CONSTRAINT "ContractTemplate_review_state_check"
+  CHECK (
+    "lifecycle" IN ('DRAFT', 'PUBLISHED', 'RETIRED')
+    AND "legalReviewStatus" IN ('UNREVIEWED', 'IN_REVIEW', 'APPROVED', 'REJECTED')
+    AND (
+      "lifecycle" <> 'PUBLISHED'
+      OR (
+        "legalReviewStatus" = 'APPROVED'
+        AND "canonicalHash" IS NOT NULL
+        AND "provenanceJson" IS NOT NULL
+        AND "approvedBy" IS NOT NULL
+        AND "approvedAt" IS NOT NULL
+      )
+    )
+  ) NOT VALID;
+
+ALTER TABLE "ContractTemplateVersion" ADD CONSTRAINT "ContractTemplateVersion_review_state_check"
+  CHECK (
+    "lifecycle" IN ('DRAFT', 'PUBLISHED', 'RETIRED')
+    AND "legalReviewStatus" IN ('UNREVIEWED', 'IN_REVIEW', 'APPROVED', 'REJECTED')
+    AND (
+      "lifecycle" <> 'PUBLISHED'
+      OR (
+        "legalReviewStatus" = 'APPROVED'
+        AND "canonicalHash" IS NOT NULL
+        AND "provenanceJson" IS NOT NULL
+      )
+    )
+  ) NOT VALID;
+
+ALTER TABLE "StandardClause" ADD CONSTRAINT "StandardClause_review_state_check"
+  CHECK (
+    "lifecycle" IN ('DRAFT', 'PUBLISHED', 'RETIRED')
+    AND "legalReviewStatus" IN ('UNREVIEWED', 'IN_REVIEW', 'APPROVED', 'REJECTED')
+    AND "translationStatus" IN ('DRAFT', 'REVIEWED', 'APPROVED', 'REJECTED')
+    AND (
+      "isActive" = false
+      OR (
+        "lifecycle" = 'PUBLISHED'
+        AND "legalReviewStatus" = 'APPROVED'
+        AND "translationStatus" = 'APPROVED'
+        AND "canonicalHash" IS NOT NULL
+        AND "provenanceJson" IS NOT NULL
+      )
+    )
+  ) NOT VALID;
+
+ALTER TABLE "GeneratedContract" ADD CONSTRAINT "GeneratedContract_execution_state_check"
+  CHECK (
+    "legalReviewStatus" IN ('UNREVIEWED', 'IN_REVIEW', 'APPROVED', 'REJECTED')
+    AND (
+      "isExecutable" = false
+      OR (
+        "legalReviewStatus" = 'APPROVED'
+        AND "counselReviewRequired" = false
+        AND "templateVersionId" IS NOT NULL
+        AND "canonicalHash" IS NOT NULL
+      )
+    )
+  ) NOT VALID;

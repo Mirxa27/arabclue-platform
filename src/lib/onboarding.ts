@@ -10,6 +10,18 @@ export async function computeOnboardingSteps(workspaceId: string): Promise<{
   readyForProposals: boolean;
   missing: OnboardingStepKey[];
 }> {
+  const reviewedWhere = {
+    workspaceId,
+    approved: true,
+    reviewStatus: "APPROVED" as const,
+    revokedAt: null,
+    evidenceRef: { not: null },
+    provenanceJson: { not: null },
+    reviewedById: { not: null },
+    approvedAt: { not: null },
+    contentHash: { not: null },
+  };
+  const now = new Date();
   const [
     workspace,
     brand,
@@ -26,11 +38,18 @@ export async function computeOnboardingSteps(workspaceId: string): Promise<{
   ] = await Promise.all([
     db.workspace.findUnique({ where: { id: workspaceId } }),
     db.brandProfile.findFirst({ where: { workspaceId } }),
-    db.certificate.count({ where: { workspaceId } }),
-    db.pastProject.count({ where: { workspaceId } }),
+    db.certificate.count({
+      where: {
+        ...reviewedWhere,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+    }),
+    db.pastProject.count({ where: reviewedWhere }),
     db.staffMember.count({ where: { workspaceId, active: true } }),
-    db.methodologyAsset.count({ where: { workspaceId } }),
-    db.contentLibraryItem.count({ where: { workspaceId } }),
+    db.methodologyAsset.count({ where: reviewedWhere }),
+    db.contentLibraryItem.count({
+      where: { ...reviewedWhere, restricted: false },
+    }),
     db.partnership.count({ where: { workspaceId } }),
     db.targetSector.count({ where: { workspaceId } }),
     db.bidHistoryNote.count({ where: { workspaceId } }),
@@ -50,7 +69,7 @@ export async function computeOnboardingSteps(workspaceId: string): Promise<{
       (brand.logoUrl || brand.tagline || brand.taglineAr || brand.primaryColor)
     ),
     legal: !!(workspace?.crNumber || workspace?.vatNumber || certCount > 0),
-    trackRecord: pastCount > 0 || staffCount > 0,
+    trackRecord: pastCount > 0,
     humanCapital: staffCount > 0,
     methodologies: methodCount > 0,
     contentLibrary: libraryCount > 0,

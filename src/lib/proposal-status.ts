@@ -1,6 +1,7 @@
 export const PROPOSAL_EDIT_LOCKED_STATUSES = [
   "IN_REVIEW",
   "REVIEW",
+  "REVIEWED",
   "APPROVED",
   "EXPORTED",
 ] as const;
@@ -26,4 +27,3 @@ export function isProposalSubmitBlocked(
 ): boolean {
   return Boolean(status && SUBMIT_BLOCKED_SET.has(status));
 }
-

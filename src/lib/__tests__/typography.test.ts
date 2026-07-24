@@ -55,9 +55,9 @@ describe("Typography Utilities", () => {
     });
 
     test("should prepend custom font to stack", () => {
-      const stack = getFontStack("ar", "Custom Font");
-      
-      expect(stack).toContain("Custom Font");
+      const stack = getFontStack("ar", "Cairo");
+
+      expect(stack).toContain("Cairo");
       expect(stack).toContain("IBM Plex Sans Arabic");
     });
   });

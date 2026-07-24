@@ -28,5 +28,13 @@ describe("public hosting and compliance claims", () => {
     expect(landing).not.toMatch(
       /\b(?:3x faster|38h|Reviewer NPS|Exported 4 days early|Matrix in 2 min)\b/i
     );
+    expect(landing).not.toContain("4.9/5");
+    expect(landing).not.toContain("Co-designed with real teams");
+    expect(landing).not.toContain("co-designed with bid teams");
+    expect(landing).not.toContain("Bid teams in Riyadh & Jeddah");
+    expect(landing).not.toContain("drafts compliant technical proposals");
+    expect(landing).not.toContain("Compliant & built for KSA");
+    expect(landing).toContain("Illustrative readiness example");
+    expect(landing).toContain("compliance-aware technical proposals");
   });
 });

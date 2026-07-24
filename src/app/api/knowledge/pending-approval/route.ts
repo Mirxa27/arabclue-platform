@@ -3,6 +3,19 @@ import { withTenant, jsonOk } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
+const pendingReviewWhere = {
+  OR: [
+    { approved: false },
+    { reviewStatus: { not: "APPROVED" as const } },
+    { revokedAt: { not: null } },
+    { evidenceRef: null },
+    { provenanceJson: null },
+    { reviewedById: null },
+    { approvedAt: null },
+    { contentHash: null },
+  ],
+};
+
 /**
  * GET /api/knowledge/pending-approval
  * Lists knowledge items awaiting approval for workspace reviewers/owners.
@@ -14,7 +27,7 @@ export async function GET() {
         db.certificate.findMany({
           where: {
             workspaceId: workspace.id,
-            OR: [{ approved: false }, { revokedAt: { not: null } }],
+            ...pendingReviewWhere,
           },
           orderBy: { updatedAt: "desc" },
           take: 50,
@@ -22,18 +35,18 @@ export async function GET() {
         db.pastProject.findMany({
           where: {
             workspaceId: workspace.id,
-            OR: [{ approved: false }, { revokedAt: { not: null } }],
+            ...pendingReviewWhere,
           },
           orderBy: { updatedAt: "desc" },
           take: 50,
         }),
         db.contentLibraryItem.findMany({
-          where: { workspaceId: workspace.id, approved: false },
+          where: { workspaceId: workspace.id, ...pendingReviewWhere },
           orderBy: { updatedAt: "desc" },
           take: 50,
         }),
         db.methodologyAsset.findMany({
-          where: { workspaceId: workspace.id, approved: false },
+          where: { workspaceId: workspace.id, ...pendingReviewWhere },
           orderBy: { updatedAt: "desc" },
           take: 50,
         }),

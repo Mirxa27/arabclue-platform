@@ -111,9 +111,7 @@ export interface PreparedDocumentTable {
   readonly estimatedWidthUnits: number;
   readonly recommendedOrientation: "portrait" | "landscape";
   readonly orientationReasons: readonly (
-    | "column-count"
-    | "estimated-width"
-    | "long-bilingual-header"
+    "column-count" | "estimated-width" | "long-bilingual-header"
   )[];
 }
 
@@ -173,6 +171,11 @@ export interface RenderDocumentChartOptions {
   readonly direction?: DocumentDirection;
   readonly width?: number;
   readonly height?: number;
+  /**
+   * Deterministic render-instance namespace. Supply this whenever the same
+   * chart definition can appear more than once in one HTML document.
+   */
+  readonly instanceKey?: string;
 }
 
 export interface RenderedDocumentChart {
@@ -183,7 +186,8 @@ export interface RenderedDocumentChart {
   readonly locale: DocumentVisualizationLocale;
   readonly direction: DocumentDirection;
   readonly visualCategoryOrder: readonly string[];
-  readonly axisOrder: "categorical-ltr" | "categorical-rtl" | "chronological-ltr";
+  readonly axisOrder:
+    "categorical-ltr" | "categorical-rtl" | "chronological-ltr";
 }
 
 export const DOCUMENT_VISUALIZATION_LIMITS = Object.freeze({
@@ -199,9 +203,7 @@ export const DOCUMENT_VISUALIZATION_LIMITS = Object.freeze({
   maxAbsoluteValue: 1_000_000_000_000,
 });
 
-export type DocumentVisualizationErrorCode =
-  | "INVALID_INPUT"
-  | "LIMIT_EXCEEDED";
+export type DocumentVisualizationErrorCode = "INVALID_INPUT" | "LIMIT_EXCEEDED";
 
 export class DocumentVisualizationError extends Error {
   readonly code: DocumentVisualizationErrorCode;
@@ -210,7 +212,7 @@ export class DocumentVisualizationError extends Error {
   constructor(
     code: DocumentVisualizationErrorCode,
     path: string,
-    message: string
+    message: string,
   ) {
     super(`${path}: ${message}`);
     this.name = "DocumentVisualizationError";
@@ -297,7 +299,7 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 
 function requireRecord(
   value: unknown,
-  path: string
+  path: string,
 ): Readonly<Record<string, unknown>> {
   if (!isRecord(value)) invalid(path, "must be a structured object");
   return value;
@@ -312,7 +314,7 @@ function normalizeId(value: unknown, path: string): string {
   if (typeof value !== "string" || !SAFE_ID.test(value)) {
     invalid(
       path,
-      "must start with a letter and contain only letters, numbers, '_' or '-'"
+      "must start with a letter and contain only letters, numbers, '_' or '-'",
     );
   }
   return value;
@@ -335,13 +337,16 @@ function normalizeLabelText(value: unknown, path: string): string {
   if (normalized.length > DOCUMENT_VISUALIZATION_LIMITS.maxLabelLength) {
     limit(
       path,
-      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxLabelLength} characters`
+      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxLabelLength} characters`,
     );
   }
   return normalized;
 }
 
-function assertLocale(value: unknown, path: string): DocumentVisualizationLocale {
+function assertLocale(
+  value: unknown,
+  path: string,
+): DocumentVisualizationLocale {
   if (value !== "ar" && value !== "en") {
     invalid(path, "must be 'ar' or 'en'");
   }
@@ -359,7 +364,7 @@ function normalizeBoundedInteger(
   value: unknown,
   path: string,
   minimum: number,
-  maximum: number
+  maximum: number,
 ): number {
   if (
     typeof value !== "number" ||
@@ -372,11 +377,29 @@ function normalizeBoundedInteger(
   return value;
 }
 
+function normalizeChartInstanceKey(value: unknown): string | null {
+  if (value === undefined) return null;
+  if (
+    typeof value !== "string" ||
+    value.length < 1 ||
+    value.length > 128 ||
+    findUnsafeBidiControls(value).length > 0
+  ) {
+    invalid(
+      "options.instanceKey",
+      "must be a non-empty string of at most 128 safe characters",
+    );
+  }
+  return `i-${Array.from(value)
+    .map((character) => character.codePointAt(0)?.toString(16) ?? "0")
+    .join("-")}`;
+}
+
 function normalizePositiveNumber(
   value: unknown,
   path: string,
   minimum: number,
-  maximum: number
+  maximum: number,
 ): number {
   if (
     typeof value !== "number" ||
@@ -392,7 +415,7 @@ function normalizePositiveNumber(
 function normalizeNumberFormat(
   value: unknown,
   path: string,
-  fallback: DocumentNumberFormat = { style: "number" }
+  fallback: DocumentNumberFormat = { style: "number" },
 ): DocumentNumberFormat {
   if (value === undefined) return fallback;
   const record = requireRecord(value, path);
@@ -413,7 +436,7 @@ function normalizeNumberFormat(
           record.minimumFractionDigits,
           `${path}.minimumFractionDigits`,
           0,
-          6
+          6,
         );
   const maximumFractionDigits =
     record.maximumFractionDigits === undefined
@@ -422,7 +445,7 @@ function normalizeNumberFormat(
           record.maximumFractionDigits,
           `${path}.maximumFractionDigits`,
           0,
-          6
+          6,
         );
   if (
     minimumFractionDigits !== undefined &&
@@ -431,7 +454,7 @@ function normalizeNumberFormat(
   ) {
     invalid(
       path,
-      "minimumFractionDigits must not exceed maximumFractionDigits"
+      "minimumFractionDigits must not exceed maximumFractionDigits",
     );
   }
   if (
@@ -442,12 +465,8 @@ function normalizeNumberFormat(
   }
 
   const common = {
-    ...(minimumFractionDigits === undefined
-      ? {}
-      : { minimumFractionDigits }),
-    ...(maximumFractionDigits === undefined
-      ? {}
-      : { maximumFractionDigits }),
+    ...(minimumFractionDigits === undefined ? {} : { minimumFractionDigits }),
+    ...(maximumFractionDigits === undefined ? {} : { maximumFractionDigits }),
     ...(record.useGrouping === undefined
       ? {}
       : { useGrouping: record.useGrouping }),
@@ -485,12 +504,10 @@ function normalizeFiniteValue(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     invalid(path, "must be a finite number");
   }
-  if (
-    Math.abs(value) > DOCUMENT_VISUALIZATION_LIMITS.maxAbsoluteValue
-  ) {
+  if (Math.abs(value) > DOCUMENT_VISUALIZATION_LIMITS.maxAbsoluteValue) {
     limit(
       path,
-      `absolute value must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxAbsoluteValue}`
+      `absolute value must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxAbsoluteValue}`,
     );
   }
   return value;
@@ -506,7 +523,7 @@ function getLocaleCode(locale: DocumentVisualizationLocale): string {
 export function formatDocumentNumber(
   value: number,
   locale: DocumentVisualizationLocale,
-  format: DocumentNumberFormat = { style: "number" }
+  format: DocumentNumberFormat = { style: "number" },
 ): string {
   normalizeFiniteValue(value, "value");
   const checkedLocale = assertLocale(locale, "locale");
@@ -541,15 +558,12 @@ export function formatDocumentNumber(
 
   return new Intl.NumberFormat(getLocaleCode(checkedLocale), options)
     .format(value)
-    .replace(
-      /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u206f]/gu,
-      ""
-    );
+    .replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u206f]/gu, "");
 }
 
 function normalizeTableColumn(
   value: unknown,
-  index: number
+  index: number,
 ): NormalizedTableColumn {
   const path = `table.columns[${index}]`;
   const record = requireRecord(value, path);
@@ -567,7 +581,7 @@ function normalizeTableColumn(
           record.widthWeight,
           `${path}.widthWeight`,
           0.5,
-          6
+          6,
         );
 
   if (kind === "text") {
@@ -602,7 +616,7 @@ function normalizeTableColumn(
 function normalizeCell(
   value: unknown,
   column: NormalizedTableColumn,
-  path: string
+  path: string,
 ): DocumentCellValue {
   if (value === null) return null;
   switch (column.kind) {
@@ -611,13 +625,13 @@ function normalizeCell(
       if (findUnsafeBidiControls(value).length > 0) {
         invalid(
           path,
-          "must not contain Unicode bidirectional control characters"
+          "must not contain Unicode bidirectional control characters",
         );
       }
       if (value.length > DOCUMENT_VISUALIZATION_LIMITS.maxLabelLength) {
         limit(
           path,
-          `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxLabelLength} characters`
+          `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxLabelLength} characters`,
         );
       }
       return value;
@@ -636,7 +650,7 @@ function normalizeCell(
 function formatTableCell(
   value: DocumentCellValue,
   column: NormalizedTableColumn,
-  locale: DocumentVisualizationLocale
+  locale: DocumentVisualizationLocale,
 ): string {
   if (value === null) return EMPTY_CELL;
   switch (column.kind) {
@@ -646,7 +660,7 @@ function formatTableCell(
       return formatDocumentNumber(
         value as number,
         locale,
-        column.format ?? { style: "number" }
+        column.format ?? { style: "number" },
       );
     case "boolean":
       return value
@@ -658,13 +672,13 @@ function formatTableCell(
 }
 
 function deriveOrientation(
-  columns: readonly NormalizedTableColumn[]
+  columns: readonly NormalizedTableColumn[],
 ): Pick<
   PreparedDocumentTable,
   "estimatedWidthUnits" | "recommendedOrientation" | "orientationReasons"
 > {
   const estimatedWidthUnits = round(
-    columns.reduce((total, column) => total + column.widthWeight, 0)
+    columns.reduce((total, column) => total + column.widthWeight, 0),
   );
   const reasons: Array<
     "column-count" | "estimated-width" | "long-bilingual-header"
@@ -675,7 +689,7 @@ function deriveOrientation(
   }
   const headerLength = columns.reduce(
     (total, column) => total + column.label.ar.length + column.label.en.length,
-    0
+    0,
   );
   if (headerLength > LONG_HEADER_TOTAL) reasons.push("long-bilingual-header");
   return Object.freeze({
@@ -693,7 +707,7 @@ function deriveOrientation(
  */
 export function prepareDocumentTable(
   input: DocumentTableDefinition,
-  options: PrepareDocumentTableOptions = {}
+  options: PrepareDocumentTableOptions = {},
 ): PreparedDocumentTable {
   const table = requireRecord(input, "table");
   const id = normalizeId(table.id, "table.id");
@@ -711,24 +725,22 @@ export function prepareDocumentTable(
           options.rowsPerPage,
           "options.rowsPerPage",
           1,
-          DOCUMENT_VISUALIZATION_LIMITS.maxRowsPerPage
+          DOCUMENT_VISUALIZATION_LIMITS.maxRowsPerPage,
         );
 
   const columnValues = requireArray(table.columns, "table.columns");
   if (columnValues.length === 0) invalid("table.columns", "must not be empty");
-  if (
-    columnValues.length > DOCUMENT_VISUALIZATION_LIMITS.maxTableColumns
-  ) {
+  if (columnValues.length > DOCUMENT_VISUALIZATION_LIMITS.maxTableColumns) {
     limit(
       "table.columns",
-      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxTableColumns} columns`
+      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxTableColumns} columns`,
     );
   }
   const columns = columnValues.map(normalizeTableColumn);
   assertUnique(
     columns.map((column) => column.id),
     "table.columns",
-    "column id"
+    "column id",
   );
   const columnIds = new Set(columns.map((column) => column.id));
 
@@ -736,7 +748,7 @@ export function prepareDocumentTable(
   if (rowValues.length > DOCUMENT_VISUALIZATION_LIMITS.maxTableRows) {
     limit(
       "table.rows",
-      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxTableRows} rows`
+      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxTableRows} rows`,
     );
   }
 
@@ -763,7 +775,7 @@ export function prepareDocumentTable(
       const rawValue = normalizeCell(
         cells[column.id],
         column,
-        `${path}.cells.${column.id}`
+        `${path}.cells.${column.id}`,
       );
       return Object.freeze({
         columnId: column.id,
@@ -776,19 +788,18 @@ export function prepareDocumentTable(
   assertUnique(
     preparedRows.map((row) => row.id),
     "table.rows",
-    "row id"
+    "row id",
   );
 
   const headers = Object.freeze(
-    columns.map(
-      (column): PreparedTableHeader =>
-        Object.freeze({
-          id: column.id,
-          label: column.label,
-          displayLabel: column.label[locale],
-          kind: column.kind,
-        })
-    )
+    columns.map((column): PreparedTableHeader =>
+      Object.freeze({
+        id: column.id,
+        label: column.label,
+        displayLabel: column.label[locale],
+        kind: column.kind,
+      }),
+    ),
   );
   const pageCount = Math.max(1, Math.ceil(preparedRows.length / rowsPerPage));
   const pages = Object.freeze(
@@ -800,7 +811,7 @@ export function prepareDocumentTable(
         headers,
         rows: Object.freeze(preparedRows.slice(start, start + rowsPerPage)),
       });
-    })
+    }),
   );
   const orientation = deriveOrientation(columns);
 
@@ -822,13 +833,13 @@ export function prepareDocumentTable(
  */
 export function renderDocumentTable(
   input: DocumentTableDefinition,
-  options: PrepareDocumentTableOptions = {}
+  options: PrepareDocumentTableOptions = {},
 ): RenderedDocumentTable {
   const prepared = prepareDocumentTable(input, options);
   const caption = bilingualInline(prepared.title);
   const summary = prepared.summary
     ? `<p class="document-table-summary">${bilingualInline(
-        prepared.summary
+        prepared.summary,
       )}</p>`
     : "";
   const pages = prepared.pages
@@ -837,14 +848,14 @@ export function renderDocumentTable(
         .map(
           (header) =>
             `<th scope="col" data-column-id="${escapeAttribute(
-              header.id
-            )}">${bilingualInline(header.label)}</th>`
+              header.id,
+            )}">${bilingualInline(header.label)}</th>`,
         )
         .join("");
       const rowsHtml =
         page.rows.length === 0
           ? `<tr><td colspan="${page.headers.length}" class="document-table-empty">${escapeText(
-              prepared.locale === "ar" ? "لا توجد بيانات" : "No data"
+              prepared.locale === "ar" ? "لا توجد بيانات" : "No data",
             )}</td></tr>`
           : page.rows
               .map(
@@ -859,16 +870,16 @@ export function renderDocumentTable(
                           ? ` data-value-kind="number"`
                           : "";
                       return `<${tag}${scope}${numeric} data-column-id="${escapeAttribute(
-                        cell.columnId
+                        cell.columnId,
                       )}"><bdi dir="auto">${escapeText(
-                        cell.formattedValue
+                        cell.formattedValue,
                       )}</bdi></${tag}>`;
                     })
-                    .join("")}</tr>`
+                    .join("")}</tr>`,
               )
               .join("");
       return `<section class="document-table-page" data-table-id="${escapeAttribute(
-        prepared.id
+        prepared.id,
       )}" data-page="${page.pageNumber}" data-page-count="${
         page.pageCount
       }" data-recommended-orientation="${
@@ -886,15 +897,15 @@ export function renderDocumentTable(
   return Object.freeze({
     prepared,
     html: `<div class="document-table" data-table-id="${escapeAttribute(
-      prepared.id
+      prepared.id,
     )}" lang="${prepared.locale}" dir="${prepared.direction}" style="--document-table-border:${escapeAttribute(
-      designTokens.colors.secondary[200]
+      designTokens.colors.secondary[200],
     )};--document-table-heading:${escapeAttribute(
-      designTokens.colors.secondary[900]
+      designTokens.colors.secondary[900],
     )};--document-table-font:${escapeAttribute(
       prepared.locale === "ar"
         ? designTokens.typography.fontFamilies.arabic
-        : designTokens.typography.fontFamilies.english
+        : designTokens.typography.fontFamilies.english,
     )};">${summary}${pages}</div>`,
   });
 }
@@ -902,30 +913,20 @@ export function renderDocumentTable(
 function normalizeChart(input: DocumentChartDefinition): NormalizedChart {
   const chart = requireRecord(input, "chart");
   const id = normalizeId(chart.id, "chart.id");
-  if (
-    chart.type !== "bar" &&
-    chart.type !== "line" &&
-    chart.type !== "pie"
-  ) {
+  if (chart.type !== "bar" && chart.type !== "line" && chart.type !== "pie") {
     invalid("chart.type", "must be bar, line, or pie");
   }
   const type = chart.type;
   const title = normalizeLabel(chart.title, "chart.title");
   const summary = normalizeLabel(chart.summary, "chart.summary");
   const categoryAxis = chart.categoryAxis ?? "categorical";
-  if (
-    categoryAxis !== "categorical" &&
-    categoryAxis !== "chronological"
-  ) {
-    invalid(
-      "chart.categoryAxis",
-      "must be categorical or chronological"
-    );
+  if (categoryAxis !== "categorical" && categoryAxis !== "chronological") {
+    invalid("chart.categoryAxis", "must be categorical or chronological");
   }
   if (type === "pie" && categoryAxis === "chronological") {
     invalid(
       "chart.categoryAxis",
-      "pie charts do not support chronological axes"
+      "pie charts do not support chronological axes",
     );
   }
 
@@ -934,22 +935,20 @@ function normalizeChart(input: DocumentChartDefinition): NormalizedChart {
     invalid("chart.categories", "must not be empty");
   }
   if (
-    categoryValues.length >
-    DOCUMENT_VISUALIZATION_LIMITS.maxChartCategories
+    categoryValues.length > DOCUMENT_VISUALIZATION_LIMITS.maxChartCategories
   ) {
     limit(
       "chart.categories",
-      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxChartCategories} categories`
+      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxChartCategories} categories`,
     );
   }
   if (
     type === "pie" &&
-    categoryValues.length >
-      DOCUMENT_VISUALIZATION_LIMITS.maxPieCategories
+    categoryValues.length > DOCUMENT_VISUALIZATION_LIMITS.maxPieCategories
   ) {
     limit(
       "chart.categories",
-      `pie charts must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxPieCategories} categories`
+      `pie charts must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxPieCategories} categories`,
     );
   }
   const categories = categoryValues.map(
@@ -964,7 +963,7 @@ function normalizeChart(input: DocumentChartDefinition): NormalizedChart {
           : {
               chronology: normalizeFiniteValue(
                 record.chronology,
-                `${path}.chronology`
+                `${path}.chronology`,
               ),
             }),
       });
@@ -972,35 +971,30 @@ function normalizeChart(input: DocumentChartDefinition): NormalizedChart {
         categoryAxis === "chronological" &&
         normalized.chronology === undefined
       ) {
-        invalid(
-          `${path}.chronology`,
-          "is required for a chronological axis"
-        );
+        invalid(`${path}.chronology`, "is required for a chronological axis");
       }
       return normalized;
-    }
+    },
   );
   assertUnique(
     categories.map((category) => category.id),
     "chart.categories",
-    "category id"
+    "category id",
   );
   if (categoryAxis === "chronological") {
     assertUnique(
       categories.map((category) => String(category.chronology)),
       "chart.categories",
-      "chronology value"
+      "chronology value",
     );
   }
 
   const seriesValues = requireArray(chart.series, "chart.series");
   if (seriesValues.length === 0) invalid("chart.series", "must not be empty");
-  if (
-    seriesValues.length > DOCUMENT_VISUALIZATION_LIMITS.maxChartSeries
-  ) {
+  if (seriesValues.length > DOCUMENT_VISUALIZATION_LIMITS.maxChartSeries) {
     limit(
       "chart.series",
-      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxChartSeries} series`
+      `must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxChartSeries} series`,
     );
   }
   if (type === "pie" && seriesValues.length !== 1) {
@@ -1012,7 +1006,7 @@ function normalizeChart(input: DocumentChartDefinition): NormalizedChart {
   ) {
     limit(
       "chart.series",
-      `chart must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxChartDataPoints} data points`
+      `chart must not exceed ${DOCUMENT_VISUALIZATION_LIMITS.maxChartDataPoints} data points`,
     );
   }
 
@@ -1024,13 +1018,13 @@ function normalizeChart(input: DocumentChartDefinition): NormalizedChart {
       if (values.length !== categories.length) {
         invalid(
           `${path}.values`,
-          `must contain exactly ${categories.length} values`
+          `must contain exactly ${categories.length} values`,
         );
       }
       const normalizedValues = Object.freeze(
         values.map((item, valueIndex) =>
-          normalizeFiniteValue(item, `${path}.values[${valueIndex}]`)
-        )
+          normalizeFiniteValue(item, `${path}.values[${valueIndex}]`),
+        ),
       );
       if (type === "pie" && normalizedValues.some((item) => item < 0)) {
         invalid(`${path}.values`, "pie values must not be negative");
@@ -1050,18 +1044,18 @@ function normalizeChart(input: DocumentChartDefinition): NormalizedChart {
         color,
         pattern,
       });
-    }
+    },
   );
   assertUnique(
     series.map((item) => item.id),
     "chart.series",
-    "series id"
+    "series id",
   );
   if (type !== "pie") {
     assertUnique(
       series.map((item) => item.pattern),
       "chart.series",
-      "series pattern"
+      "series pattern",
     );
   }
   if (
@@ -1069,11 +1063,14 @@ function normalizeChart(input: DocumentChartDefinition): NormalizedChart {
     series[0] &&
     series[0].values.every((value) => value === 0)
   ) {
-    invalid("chart.series[0].values", "must include at least one positive value");
+    invalid(
+      "chart.series[0].values",
+      "must include at least one positive value",
+    );
   }
   const valueFormat = normalizeNumberFormat(
     chart.valueFormat,
-    "chart.valueFormat"
+    "chart.valueFormat",
   );
 
   return Object.freeze({
@@ -1107,7 +1104,7 @@ function normalizePattern(value: unknown, path: string): ChartPatternKey {
 
 function chartCategoryOrder(
   chart: NormalizedChart,
-  direction: DocumentDirection
+  direction: DocumentDirection,
 ): readonly number[] {
   const indexes = chart.categories.map((_, index) => index);
   if (chart.categoryAxis === "chronological") {
@@ -1116,7 +1113,7 @@ function chartCategoryOrder(
         const leftValue = chart.categories[left]?.chronology ?? 0;
         const rightValue = chart.categories[right]?.chronology ?? 0;
         return leftValue - rightValue;
-      })
+      }),
     );
   }
   return Object.freeze(direction === "rtl" ? indexes.reverse() : indexes);
@@ -1124,7 +1121,7 @@ function chartCategoryOrder(
 
 function chartAxisOrder(
   chart: NormalizedChart,
-  direction: DocumentDirection
+  direction: DocumentDirection,
 ): RenderedDocumentChart["axisOrder"] {
   if (chart.categoryAxis === "chronological") return "chronological-ltr";
   return direction === "rtl" ? "categorical-rtl" : "categorical-ltr";
@@ -1157,7 +1154,7 @@ function makeGeometry(width: number, height: number): ChartGeometry {
 function renderPatternDefinition(
   id: string,
   key: ChartPatternKey,
-  color: string
+  color: string,
 ): string {
   const background = escapeAttribute(color);
   const ink = escapeAttribute(designTokens.colors.secondary[900]);
@@ -1192,7 +1189,7 @@ function renderPatternDefinition(
       return assertNever(key);
   }
   return `<pattern id="${escapeAttribute(
-    id
+    id,
   )}" width="10" height="10" patternUnits="userSpaceOnUse">${common}${mark}</pattern>`;
 }
 
@@ -1207,8 +1204,8 @@ function renderChartDefinitions(chart: NormalizedChart): string {
           CHART_PATTERN_KEYS[index] ?? "solid",
           index === 0
             ? series.color
-            : DEFAULT_CHART_COLORS[index] ?? series.color
-        )
+            : (DEFAULT_CHART_COLORS[index] ?? series.color),
+        ),
       )
       .join("");
   }
@@ -1217,8 +1214,8 @@ function renderChartDefinitions(chart: NormalizedChart): string {
       renderPatternDefinition(
         `${chart.id}-series-${series.id}`,
         series.pattern,
-        series.color
-      )
+        series.color,
+      ),
     )
     .join("");
 }
@@ -1229,7 +1226,9 @@ interface NumericDomain {
   readonly span: number;
 }
 
-function numericDomain(series: readonly NormalizedChartSeries[]): NumericDomain {
+function numericDomain(
+  series: readonly NormalizedChartSeries[],
+): NumericDomain {
   const values = series.flatMap((item) => [...item.values]);
   const rawMinimum = Math.min(0, ...values);
   const rawMaximum = Math.max(0, ...values);
@@ -1250,11 +1249,11 @@ function numericDomain(series: readonly NormalizedChartSeries[]): NumericDomain 
 function valueY(
   value: number,
   domain: NumericDomain,
-  geometry: ChartGeometry
+  geometry: ChartGeometry,
 ): number {
   return round(
     geometry.plotTop +
-      ((domain.maximum - value) / domain.span) * geometry.plotHeight
+      ((domain.maximum - value) / domain.span) * geometry.plotHeight,
   );
 }
 
@@ -1262,7 +1261,7 @@ function renderAxes(
   chart: NormalizedChart,
   geometry: ChartGeometry,
   domain: NumericDomain,
-  locale: DocumentVisualizationLocale
+  locale: DocumentVisualizationLocale,
 ): string {
   const gridColor = designTokens.colors.secondary[200];
   const textColor = designTokens.colors.secondary[700];
@@ -1275,7 +1274,7 @@ function renderAxes(
     }" y2="${y}" stroke="${gridColor}" stroke-width="1"/><text x="${
       geometry.plotLeft - 10
     }" y="${y + 4}" text-anchor="end" font-size="11" fill="${textColor}" direction="ltr">${escapeText(
-      formatDocumentNumber(value, locale, chart.valueFormat)
+      formatDocumentNumber(value, locale, chart.valueFormat),
     )}</text></g>`;
   }).join("");
   const baseline = valueY(0, domain, geometry);
@@ -1292,7 +1291,7 @@ function renderCategoryLabel(
   x: number,
   geometry: ChartGeometry,
   locale: DocumentVisualizationLocale,
-  direction: DocumentDirection
+  direction: DocumentDirection,
 ): string {
   const category = chart.categories[categoryIndex];
   if (!category) return "";
@@ -1301,7 +1300,7 @@ function renderCategoryLabel(
   }" text-anchor="middle" font-size="11" fill="${
     designTokens.colors.secondary[800]
   }" lang="${locale}" direction="${direction}">${escapeText(
-    category.label[locale]
+    category.label[locale],
   )}</text>`;
 }
 
@@ -1310,7 +1309,7 @@ function renderBarPlot(
   order: readonly number[],
   geometry: ChartGeometry,
   locale: DocumentVisualizationLocale,
-  direction: DocumentDirection
+  direction: DocumentDirection,
 ): string {
   const domain = numericDomain(chart.series);
   const axes = renderAxes(chart, geometry, domain, locale);
@@ -1337,20 +1336,20 @@ function renderBarPlot(
       const aria = `${series.label[locale]}, ${category.label[locale]}: ${formatDocumentNumber(
         value,
         locale,
-        chart.valueFormat
+        chart.valueFormat,
       )}`;
       marks.push(
         `<g role="img" aria-label="${escapeAttribute(
-          aria
+          aria,
         )}"><title>${escapeText(aria)}</title><rect x="${round(
-          x + 1
+          x + 1,
         )}" y="${round(y)}" width="${round(
-          Math.max(1, barWidth - 2)
+          Math.max(1, barWidth - 2),
         )}" height="${round(height)}" fill="url(#${escapeAttribute(
-          `${chart.id}-series-${series.id}`
+          `${chart.id}-series-${series.id}`,
         )})" stroke="${escapeAttribute(
-          designTokens.colors.secondary[900]
-        )}" stroke-width=".5"/></g>`
+          designTokens.colors.secondary[900],
+        )}" stroke-width=".5"/></g>`,
       );
     });
     labels.push(
@@ -1360,8 +1359,8 @@ function renderBarPlot(
         geometry.plotLeft + visualIndex * categoryBand + categoryBand / 2,
         geometry,
         locale,
-        direction
-      )
+        direction,
+      ),
     );
   });
 
@@ -1372,7 +1371,7 @@ function markerShape(
   x: number,
   y: number,
   index: number,
-  color: string
+  color: string,
 ): string {
   const safeColor = escapeAttribute(color);
   switch (index % 4) {
@@ -1380,17 +1379,17 @@ function markerShape(
       return `<circle cx="${x}" cy="${y}" r="4" fill="#FFFFFF" stroke="${safeColor}" stroke-width="2"/>`;
     case 1:
       return `<rect x="${round(x - 4)}" y="${round(
-        y - 4
+        y - 4,
       )}" width="8" height="8" fill="#FFFFFF" stroke="${safeColor}" stroke-width="2"/>`;
     case 2:
       return `<path d="M${x} ${round(y - 5)}L${round(
-        x + 5
+        x + 5,
       )} ${y}L${x} ${round(y + 5)}L${round(
-        x - 5
+        x - 5,
       )} ${y}Z" fill="#FFFFFF" stroke="${safeColor}" stroke-width="2"/>`;
     default:
       return `<path d="M${x} ${round(y - 5)}L${round(
-        x + 5
+        x + 5,
       )} ${round(y + 4)}H${round(x - 5)}Z" fill="#FFFFFF" stroke="${safeColor}" stroke-width="2"/>`;
   }
 }
@@ -1400,12 +1399,11 @@ function renderLinePlot(
   order: readonly number[],
   geometry: ChartGeometry,
   locale: DocumentVisualizationLocale,
-  direction: DocumentDirection
+  direction: DocumentDirection,
 ): string {
   const domain = numericDomain(chart.series);
   const axes = renderAxes(chart, geometry, domain, locale);
-  const step =
-    order.length === 1 ? 0 : geometry.plotWidth / (order.length - 1);
+  const step = order.length === 1 ? 0 : geometry.plotWidth / (order.length - 1);
   const labels = order
     .map((categoryIndex, visualIndex) =>
       renderCategoryLabel(
@@ -1415,8 +1413,8 @@ function renderLinePlot(
           (order.length === 1 ? geometry.plotWidth / 2 : visualIndex * step),
         geometry,
         locale,
-        direction
-      )
+        direction,
+      ),
     )
     .join("");
   const lines = chart.series
@@ -1425,9 +1423,7 @@ function renderLinePlot(
       const points = order.map((categoryIndex, visualIndex) => {
         const x = round(
           geometry.plotLeft +
-            (order.length === 1
-              ? geometry.plotWidth / 2
-              : visualIndex * step)
+            (order.length === 1 ? geometry.plotWidth / 2 : visualIndex * step),
         );
         const value = series.values[categoryIndex] ?? 0;
         return {
@@ -1437,31 +1433,29 @@ function renderLinePlot(
           categoryIndex,
         };
       });
-      const pointList = points.map((point) => `${point.x},${point.y}`).join(" ");
+      const pointList = points
+        .map((point) => `${point.x},${point.y}`)
+        .join(" ");
       const marks = points
         .map((point) => {
           const category = chart.categories[point.categoryIndex];
           if (!category) return "";
           const aria = `${series.label[locale]}, ${
             category.label[locale]
-          }: ${formatDocumentNumber(
-            point.value,
-            locale,
-            chart.valueFormat
-          )}`;
+          }: ${formatDocumentNumber(point.value, locale, chart.valueFormat)}`;
           return `<g role="img" aria-label="${escapeAttribute(
-            aria
+            aria,
           )}"><title>${escapeText(aria)}</title>${markerShape(
             point.x,
             point.y,
             styleIndex,
-            series.color
+            series.color,
           )}</g>`;
         })
         .join("");
       const dash = LINE_DASH_PATTERNS[styleIndex] ?? "";
       return `<polyline aria-hidden="true" points="${pointList}" fill="none" stroke="${escapeAttribute(
-        series.color
+        series.color,
       )}" stroke-width="3"${
         dash ? ` stroke-dasharray="${dash}"` : ""
       }/>${marks}`;
@@ -1474,7 +1468,7 @@ function polarPoint(
   centerX: number,
   centerY: number,
   radius: number,
-  angle: number
+  angle: number,
 ): { readonly x: number; readonly y: number } {
   const radians = ((angle - 90) * Math.PI) / 180;
   return Object.freeze({
@@ -1488,7 +1482,7 @@ function piePath(
   centerY: number,
   radius: number,
   startAngle: number,
-  endAngle: number
+  endAngle: number,
 ): string {
   const start = polarPoint(centerX, centerY, radius, endAngle);
   const end = polarPoint(centerX, centerY, radius, startAngle);
@@ -1500,7 +1494,7 @@ function renderPiePlot(
   chart: NormalizedChart,
   order: readonly number[],
   geometry: ChartGeometry,
-  locale: DocumentVisualizationLocale
+  locale: DocumentVisualizationLocale,
 ): string {
   const series = chart.series[0];
   if (!series) return "";
@@ -1508,7 +1502,7 @@ function renderPiePlot(
   const centerX = round(geometry.plotLeft + geometry.plotWidth * 0.38);
   const centerY = round(geometry.plotTop + geometry.plotHeight / 2);
   const radius = round(
-    Math.max(45, Math.min(geometry.plotHeight, geometry.plotWidth * 0.58) / 2)
+    Math.max(45, Math.min(geometry.plotHeight, geometry.plotWidth * 0.58) / 2),
   );
   let angle = 0;
   return order
@@ -1520,7 +1514,7 @@ function renderPiePlot(
       const aria = `${category.label[locale]}: ${formatDocumentNumber(
         value,
         locale,
-        chart.valueFormat
+        chart.valueFormat,
       )}`;
       let shape: string;
       if (sweep >= 359.999) {
@@ -1531,14 +1525,14 @@ function renderPiePlot(
           centerY,
           radius,
           angle,
-          angle + sweep
+          angle + sweep,
         )}"`;
       }
       angle += sweep;
       return `<g role="img" aria-label="${escapeAttribute(
-        aria
+        aria,
       )}"><title>${escapeText(aria)}</title>${shape} fill="url(#${escapeAttribute(
-        `${chart.id}-category-${category.id}`
+        `${chart.id}-category-${category.id}`,
       )})" stroke="#FFFFFF" stroke-width="2"/></g>`;
     })
     .join("");
@@ -1548,7 +1542,7 @@ function renderLegend(
   chart: NormalizedChart,
   geometry: ChartGeometry,
   locale: DocumentVisualizationLocale,
-  direction: DocumentDirection
+  direction: DocumentDirection,
 ): string {
   const items: Array<{
     readonly id: string;
@@ -1576,10 +1570,11 @@ function renderLegend(
     chart.type === "pie"
       ? geometry.plotLeft + geometry.plotWidth * 0.72
       : geometry.plotLeft;
-  const startY = chart.type === "pie" ? geometry.plotTop + 8 : geometry.height - 42;
+  const startY =
+    chart.type === "pie" ? geometry.plotTop + 8 : geometry.height - 42;
   const rowHeight = 22;
   return `<g role="list" aria-label="${escapeAttribute(
-    locale === "ar" ? "مفتاح الرسم البياني" : "Chart legend"
+    locale === "ar" ? "مفتاح الرسم البياني" : "Chart legend",
   )}" lang="${locale}" direction="${direction}">${items
     .map((item, index) => {
       const x =
@@ -1593,34 +1588,30 @@ function renderLegend(
       const swatch =
         chart.type === "line"
           ? `<g aria-hidden="true"><line x1="${round(x)}" y1="${round(
-              y - 5
+              y - 5,
             )}" x2="${round(x + 14)}" y2="${round(
-              y - 5
-            )}" stroke="${escapeAttribute(
-              item.color
-            )}" stroke-width="3"${
+              y - 5,
+            )}" stroke="${escapeAttribute(item.color)}" stroke-width="3"${
               LINE_DASH_PATTERNS[item.styleIndex]
-                ? ` stroke-dasharray="${
-                    LINE_DASH_PATTERNS[item.styleIndex]
-                  }"`
+                ? ` stroke-dasharray="${LINE_DASH_PATTERNS[item.styleIndex]}"`
                 : ""
             }/>${markerShape(
               round(x + 7),
               round(y - 5),
               item.styleIndex,
-              item.color
+              item.color,
             )}</g>`
           : `<rect aria-hidden="true" x="${round(x)}" y="${round(
-              y - 11
+              y - 11,
             )}" width="14" height="14" fill="url(#${escapeAttribute(
-              item.id
+              item.id,
             )})" stroke="${
               designTokens.colors.secondary[900]
             }" stroke-width=".5"/>`;
       return `<g role="listitem" aria-label="${escapeAttribute(
-        item.label
+        item.label,
       )}">${swatch}<text x="${round(
-        x + 20
+        x + 20,
       )}" y="${round(y)}" font-size="11" fill="${
         designTokens.colors.secondary[900]
       }">${escapeText(item.label)}</text></g>`;
@@ -1632,13 +1623,10 @@ function renderChartDataTable(
   chart: NormalizedChart,
   locale: DocumentVisualizationLocale,
   direction: DocumentDirection,
-  visualOrder: readonly number[]
+  visualOrder: readonly number[],
 ): string {
   const headers = chart.series
-    .map(
-      (series) =>
-        `<th scope="col">${bilingualInline(series.label)}</th>`
-    )
+    .map((series) => `<th scope="col">${bilingualInline(series.label)}</th>`)
     .join("");
   const rowOrder =
     chart.categoryAxis === "chronological"
@@ -1648,30 +1636,28 @@ function renderChartDataTable(
     .map((categoryIndex) => {
       const category = chart.categories[categoryIndex];
       if (!category) return "";
-      return (
-        `<tr><th scope="row">${bilingualInline(
-          category.label
-        )}</th>${chart.series
-          .map(
-            (series) =>
-              `<td><bdi dir="auto">${escapeText(
-                formatDocumentNumber(
-                  series.values[categoryIndex] ?? 0,
-                  locale,
-                  chart.valueFormat
-                )
-              )}</bdi></td>`
-          )
-          .join("")}</tr>`
-      );
+      return `<tr><th scope="row">${bilingualInline(
+        category.label,
+      )}</th>${chart.series
+        .map(
+          (series) =>
+            `<td><bdi dir="auto">${escapeText(
+              formatDocumentNumber(
+                series.values[categoryIndex] ?? 0,
+                locale,
+                chart.valueFormat,
+              ),
+            )}</bdi></td>`,
+        )
+        .join("")}</tr>`;
     })
     .join("");
   return `<table class="document-chart-data" data-chart-id="${escapeAttribute(
-    chart.id
+    chart.id,
   )}" lang="${locale}" dir="${direction}">
 <caption>${bilingualInline(chart.title)}</caption>
 <thead><tr><th scope="col">${escapeText(
-    locale === "ar" ? "الفئة" : "Category"
+    locale === "ar" ? "الفئة" : "Category",
   )}</th>${headers}</tr></thead>
 <tbody>${rows}</tbody>
 </table>`;
@@ -1683,14 +1669,22 @@ function renderChartDataTable(
  */
 export function renderDocumentChart(
   input: DocumentChartDefinition,
-  options: RenderDocumentChartOptions = {}
+  options: RenderDocumentChartOptions = {},
 ): RenderedDocumentChart {
   const chart = normalizeChart(input);
   const locale = assertLocale(options.locale ?? "en", "options.locale");
   const direction = assertDirection(
     options.direction ?? (locale === "ar" ? "rtl" : "ltr"),
-    "options.direction"
+    "options.direction",
   );
+  const instanceKey = normalizeChartInstanceKey(options.instanceKey);
+  const renderedChart: NormalizedChart =
+    instanceKey === null
+      ? chart
+      : Object.freeze({
+          ...chart,
+          id: `${chart.id}-${locale}-${instanceKey}`,
+        });
   const width =
     options.width === undefined
       ? 800
@@ -1700,36 +1694,36 @@ export function renderDocumentChart(
       ? 480
       : normalizeBoundedInteger(options.height, "options.height", 280, 1_200);
   const geometry = makeGeometry(width, height);
-  const order = chartCategoryOrder(chart, direction);
-  const axisOrder = chartAxisOrder(chart, direction);
-  const titleId = `${chart.id}-title`;
-  const descriptionId = `${chart.id}-description`;
+  const order = chartCategoryOrder(renderedChart, direction);
+  const axisOrder = chartAxisOrder(renderedChart, direction);
+  const titleId = `${renderedChart.id}-title`;
+  const descriptionId = `${renderedChart.id}-description`;
   const bilingualTitle = bilingualPlainText(chart.title);
   const altText = `${bilingualPlainText(chart.title)} — ${bilingualPlainText(
-    chart.summary
+    chart.summary,
   )}`;
-  const definitions = renderChartDefinitions(chart);
+  const definitions = renderChartDefinitions(renderedChart);
   let plot: string;
   switch (chart.type) {
     case "bar":
-      plot = renderBarPlot(chart, order, geometry, locale, direction);
+      plot = renderBarPlot(renderedChart, order, geometry, locale, direction);
       break;
     case "line":
-      plot = renderLinePlot(chart, order, geometry, locale, direction);
+      plot = renderLinePlot(renderedChart, order, geometry, locale, direction);
       break;
     case "pie":
-      plot = renderPiePlot(chart, order, geometry, locale);
+      plot = renderPiePlot(renderedChart, order, geometry, locale);
       break;
     default:
       plot = assertNever(chart.type);
   }
-  const legend = renderLegend(chart, geometry, locale, direction);
+  const legend = renderLegend(renderedChart, geometry, locale, direction);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-labelledby="${escapeAttribute(
-    `${titleId} ${descriptionId}`
+    `${titleId} ${descriptionId}`,
   )}" lang="${locale}" dir="${direction}" font-family="${escapeAttribute(
     locale === "ar"
       ? designTokens.typography.fontFamilies.arabic
-      : designTokens.typography.fontFamilies.english
+      : designTokens.typography.fontFamilies.english,
   )}" data-chart-type="${
     chart.type
   }" data-axis-order="${axisOrder}" focusable="false">
@@ -1740,20 +1734,19 @@ export function renderDocumentChart(
 <text aria-hidden="true" x="${width / 2}" y="34" text-anchor="middle" font-size="18" font-weight="${
     designTokens.typography.fontWeights.bold
   }" fill="${designTokens.colors.secondary[900]}" lang="${locale}" direction="${direction}">${escapeText(
-    chart.title[locale]
+    chart.title[locale],
   )}</text>
 ${plot}
 ${legend}
 </svg>`;
-  const dataTableHtml = renderChartDataTable(
-    chart,
-    locale,
-    direction,
-    order
-  );
+  const dataTableHtml = renderChartDataTable(chart, locale, direction, order);
   const html = `<figure class="document-chart" data-chart-id="${escapeAttribute(
-    chart.id
-  )}" lang="${locale}" dir="${direction}">
+    chart.id,
+  )}"${
+    instanceKey === null
+      ? ""
+      : ` data-chart-instance="${escapeAttribute(instanceKey)}"`
+  } lang="${locale}" dir="${direction}">
 ${svg}
 <figcaption>${bilingualInline(chart.summary)}</figcaption>
 <div class="document-chart-data-fallback">${dataTableHtml}</div>
@@ -1767,7 +1760,7 @@ ${svg}
     locale,
     direction,
     visualCategoryOrder: Object.freeze(
-      order.map((index) => chart.categories[index]?.id ?? "")
+      order.map((index) => chart.categories[index]?.id ?? ""),
     ),
     axisOrder,
   });
@@ -1779,16 +1772,16 @@ function bilingualPlainText(label: BilingualLabel): string {
 
 function bilingualInline(label: BilingualLabel): string {
   return `<span lang="ar" dir="rtl">${escapeText(
-    label.ar
+    label.ar,
   )}</span><span aria-hidden="true"> / </span><span lang="en" dir="ltr">${escapeText(
-    label.en
+    label.en,
   )}</span>`;
 }
 
 function assertUnique(
   values: readonly string[],
   path: string,
-  noun: string
+  noun: string,
 ): void {
   const seen = new Set<string>();
   for (const value of values) {
@@ -1805,9 +1798,7 @@ function escapeText(value: string): string {
 }
 
 function escapeAttribute(value: string): string {
-  return escapeText(value)
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return escapeText(value).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function round(value: number): number {
@@ -1819,6 +1810,6 @@ function assertNever(value: never): never {
   throw new DocumentVisualizationError(
     "INVALID_INPUT",
     "internal",
-    `unsupported variant ${String(value)}`
+    `unsupported variant ${String(value)}`,
   );
 }

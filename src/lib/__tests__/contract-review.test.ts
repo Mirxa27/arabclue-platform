@@ -73,7 +73,7 @@ describe("contract legal review lifecycle", () => {
       decision: "APPROVED",
       pendingReviewsAfterDecision: 1,
     });
-    expect(intermediateStatus).toBe("REVIEWED");
+    expect(intermediateStatus).toBe("REVIEW");
 
     const finalStatus = getReviewDecisionProposalStatus({
       decision: "APPROVED",

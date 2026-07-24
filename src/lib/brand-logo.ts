@@ -206,7 +206,9 @@ export async function inlineBrandLogoForPdf<T extends BrandWithLogo>(
 
   try {
     const { readWorkspaceStoredFile } = await import("./storage");
-    const bytes = await readWorkspaceStoredFile(storagePath, workspaceId);
+    const bytes = await readWorkspaceStoredFile(storagePath, workspaceId, {
+      maxBytes: MAX_LOGO_BYTES,
+    });
     const validated = await validateAndNormalizeLogoImage(bytes, storagePath);
     return {
       brand: {

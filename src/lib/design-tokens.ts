@@ -17,6 +17,10 @@
  */
 
 import type { BrandProfile } from "@prisma/client";
+import {
+  normalizeBrandForDocument,
+  normalizeDocumentBrandFont,
+} from "./brand-policy";
 
 // ============================================================================
 // Type Definitions
@@ -476,29 +480,31 @@ export function applyBrandOverrides(
   if (!brand) return tokens;
 
   const overridden: DesignTokens = JSON.parse(JSON.stringify(tokens));
+  const normalized = normalizeBrandForDocument(brand);
+  if (!normalized) return tokens;
 
   // Override primary color if brand provides one
-  if (brand.primaryColor) {
-    overridden.colors.primary[600] = brand.primaryColor;
+  if (brand.primaryColor && normalized.primaryColor) {
+    overridden.colors.primary[600] = normalized.primaryColor;
     // Optionally generate lighter/darker variants (simplified approach)
-    overridden.colors.primary[500] = brand.primaryColor;
+    overridden.colors.primary[500] = normalized.primaryColor;
   }
 
   // Override secondary color
-  if (brand.secondaryColor) {
-    overridden.colors.secondary[900] = brand.secondaryColor;
-    overridden.colors.secondary[800] = brand.secondaryColor;
+  if (brand.secondaryColor && normalized.secondaryColor) {
+    overridden.colors.secondary[900] = normalized.secondaryColor;
+    overridden.colors.secondary[800] = normalized.secondaryColor;
   }
 
   // Override accent color
-  if (brand.accentColor) {
-    overridden.colors.accent[600] = brand.accentColor;
-    overridden.colors.accent[500] = brand.accentColor;
+  if (brand.accentColor && normalized.accentColor) {
+    overridden.colors.accent[600] = normalized.accentColor;
+    overridden.colors.accent[500] = normalized.accentColor;
   }
 
   // Override font family
-  if (brand.fontFamily) {
-    const customFont = `'${brand.fontFamily}', ${tokens.typography.fontFamilies.arabic}`;
+  if (brand.fontFamily && normalized.fontFamily) {
+    const customFont = `'${normalizeDocumentBrandFont(normalized.fontFamily)}', ${tokens.typography.fontFamilies.arabic}`;
     overridden.typography.fontFamilies.arabic = customFont;
     overridden.typography.fontFamilies.english = customFont;
   }
@@ -525,20 +531,22 @@ export function generateBrandCSSOverrides(brand: BrandProfile | null): string {
   if (!brand) return "";
 
   const overrides: string[] = [];
+  const normalized = normalizeBrandForDocument(brand);
+  if (!normalized) return "";
 
-  if (brand.primaryColor) {
-    overrides.push(`--color-primary-500: ${brand.primaryColor}`);
-    overrides.push(`--color-primary-600: ${brand.primaryColor}`);
+  if (brand.primaryColor && normalized.primaryColor) {
+    overrides.push(`--color-primary-500: ${normalized.primaryColor}`);
+    overrides.push(`--color-primary-600: ${normalized.primaryColor}`);
   }
 
-  if (brand.secondaryColor) {
-    overrides.push(`--color-secondary-800: ${brand.secondaryColor}`);
-    overrides.push(`--color-secondary-900: ${brand.secondaryColor}`);
+  if (brand.secondaryColor && normalized.secondaryColor) {
+    overrides.push(`--color-secondary-800: ${normalized.secondaryColor}`);
+    overrides.push(`--color-secondary-900: ${normalized.secondaryColor}`);
   }
 
-  if (brand.accentColor) {
-    overrides.push(`--color-accent-500: ${brand.accentColor}`);
-    overrides.push(`--color-accent-600: ${brand.accentColor}`);
+  if (brand.accentColor && normalized.accentColor) {
+    overrides.push(`--color-accent-500: ${normalized.accentColor}`);
+    overrides.push(`--color-accent-600: ${normalized.accentColor}`);
   }
 
   return overrides.join("; ");

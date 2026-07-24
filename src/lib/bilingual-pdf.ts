@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import {
+  DEFAULT_BILINGUAL_CONFIG,
   parseBilingualDocument,
   renderBilingualHTML,
   type BilingualDocumentSpec,
@@ -26,7 +27,9 @@ import {
 } from "./bilingual-typography";
 import {
   htmlToPdf,
+  htmlToPdfOptionsSchema,
   isPdfBuffer,
+  resolvePdfContentDimensions,
   type HtmlToPdfOptions,
 } from "./pdf/html-to-pdf";
 import { BILINGUAL_LAYOUT_READY_SELECTOR } from "./layout-sync";
@@ -75,32 +78,27 @@ const FONT_ASSETS = {
     {
       family: "Noto Sans",
       weight: 300,
-      moduleId:
-        "@fontsource/noto-sans/files/noto-sans-latin-300-normal.woff2",
+      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-300-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 400,
-      moduleId:
-        "@fontsource/noto-sans/files/noto-sans-latin-400-normal.woff2",
+      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-400-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 500,
-      moduleId:
-        "@fontsource/noto-sans/files/noto-sans-latin-500-normal.woff2",
+      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-500-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 600,
-      moduleId:
-        "@fontsource/noto-sans/files/noto-sans-latin-600-normal.woff2",
+      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-600-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 700,
-      moduleId:
-        "@fontsource/noto-sans/files/noto-sans-latin-700-normal.woff2",
+      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-700-normal.woff2",
     },
   ],
   "ibm-plex-sans": [
@@ -137,20 +135,17 @@ const FONT_ASSETS = {
     {
       family: "IBM Plex Sans",
       weight: 300,
-      moduleId:
-        "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Light.woff2",
+      moduleId: "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Light.woff2",
     },
     {
       family: "IBM Plex Sans",
       weight: 400,
-      moduleId:
-        "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Regular.woff2",
+      moduleId: "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Regular.woff2",
     },
     {
       family: "IBM Plex Sans",
       weight: 500,
-      moduleId:
-        "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Medium.woff2",
+      moduleId: "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Medium.woff2",
     },
     {
       family: "IBM Plex Sans",
@@ -161,11 +156,12 @@ const FONT_ASSETS = {
     {
       family: "IBM Plex Sans",
       weight: 700,
-      moduleId:
-        "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Bold.woff2",
+      moduleId: "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Bold.woff2",
     },
   ],
-} as const satisfies Readonly<Record<BilingualFontPairId, readonly FontAsset[]>>;
+} as const satisfies Readonly<
+  Record<BilingualFontPairId, readonly FontAsset[]>
+>;
 
 export const BILINGUAL_FONT_LICENSES = Object.freeze({
   "noto-sans": {
@@ -217,14 +213,14 @@ async function loadFontFace(asset: FontAsset): Promise<string> {
  * The promise is cached because a 50-page render should read each font once.
  */
 export function getEmbeddedBilingualFontCss(
-  fontPair: BilingualFontPairId = DEFAULT_BILINGUAL_FONT_PAIR_ID
+  fontPair: BilingualFontPairId = DEFAULT_BILINGUAL_FONT_PAIR_ID,
 ): Promise<string> {
   const cached = embeddedFontCssCache.get(fontPair);
   if (cached) return cached;
 
   resolveFontPair(fontPair);
   const pending = Promise.all(FONT_ASSETS[fontPair].map(loadFontFace)).then(
-    (faces) => faces.join("\n\n")
+    (faces) => faces.join("\n\n"),
   );
   embeddedFontCssCache.set(fontPair, pending);
   return pending;
@@ -270,7 +266,7 @@ function injectStyle(html: string, css: string): string {
     ]);
   }
   return `${html.slice(0, markerIndex)}<style data-bilingual-fonts>${css}</style>\n${html.slice(
-    markerIndex
+    markerIndex,
   )}`;
 }
 
@@ -285,6 +281,7 @@ export type BilingualPdfQualityCode =
   | "UNRESOLVED_PUBLIC_IMAGE"
   | "INVALID_IMAGE_ASSET"
   | "IMAGE_PIXEL_LIMIT_EXCEEDED"
+  | "IMAGE_RESOLUTION_INSUFFICIENT"
   | "PDF_SIGNATURE_INVALID";
 
 export interface BilingualPdfQualityIssue {
@@ -308,7 +305,7 @@ export class BilingualPdfQualityError extends Error {
     super(
       `Bilingual PDF quality validation failed: ${issues
         .map((issue) => issue.message)
-        .join("; ")}`
+        .join("; ")}`,
     );
     this.name = "BilingualPdfQualityError";
     this.issues = issues;
@@ -324,11 +321,11 @@ export function inspectBilingualHtml(html: string): BilingualHtmlQualityReport {
   const pairCount = matchCount(html, /\bdata-bilingual-pair(?:\s|>)/g);
   const englishCellCount = matchCount(
     html,
-    /<(?:div|span)\b[^>]*\bdata-language="en"/g
+    /<(?:div|span)\b[^>]*\bdata-language="en"/g,
   );
   const arabicCellCount = matchCount(
     html,
-    /<(?:div|span)\b[^>]*\bdata-language="ar"/g
+    /<(?:div|span)\b[^>]*\bdata-language="ar"/g,
   );
   const embeddedFontFaceCount = matchCount(html, /@font-face\s*\{/g);
 
@@ -358,7 +355,8 @@ export function inspectBilingualHtml(html: string): BilingualHtmlQualityReport {
   ) {
     issues.push({
       code: "UNPAIRED_LANGUAGE_CELLS",
-      message: "Every semantic pair must contain one English and one Arabic cell.",
+      message:
+        "Every semantic pair must contain one English and one Arabic cell.",
     });
   }
   if (matchCount(html, /<h1(?:\s|>)/g) !== 1) {
@@ -370,7 +368,8 @@ export function inspectBilingualHtml(html: string): BilingualHtmlQualityReport {
   if (/fonts\.(?:googleapis|gstatic)\.com/i.test(html)) {
     issues.push({
       code: "REMOTE_FONT_REQUEST",
-      message: "Remote font requests are not allowed in deterministic PDF output.",
+      message:
+        "Remote font requests are not allowed in deterministic PDF output.",
     });
   }
   if (findUnsafeBidiControls(html).length > 0) {
@@ -408,11 +407,10 @@ export interface BilingualRenderArtifact {
  */
 export async function renderBilingualArtifact(
   input: unknown,
-  options: BilingualRenderOptions = {}
+  options: BilingualRenderOptions = {},
 ): Promise<BilingualRenderArtifact> {
   const document = parseBilingualDocument(input);
-  const fontPair =
-    options.fontPair ?? DEFAULT_BILINGUAL_FONT_PAIR_ID;
+  const fontPair = options.fontPair ?? DEFAULT_BILINGUAL_FONT_PAIR_ID;
   const fontCss = await getEmbeddedBilingualFontCss(fontPair);
   const baseHtml = renderBilingualHTML(document, {
     target: options.target ?? "screen",
@@ -420,7 +418,7 @@ export async function renderBilingualArtifact(
   });
   const html = injectStyle(
     baseHtml,
-    `${fontCss}\n\n${fontOverrideCss(fontPair)}`
+    `${fontCss}\n\n${fontOverrideCss(fontPair)}`,
   );
   const quality = inspectBilingualHtml(html);
   if (!quality.valid) {
@@ -473,8 +471,9 @@ function imageQualityError(
   code:
     | "UNRESOLVED_PUBLIC_IMAGE"
     | "INVALID_IMAGE_ASSET"
-    | "IMAGE_PIXEL_LIMIT_EXCEEDED",
-  message: string
+    | "IMAGE_PIXEL_LIMIT_EXCEEDED"
+    | "IMAGE_RESOLUTION_INSUFFICIENT",
+  message: string,
 ): BilingualPdfQualityError {
   return new BilingualPdfQualityError([{ code, message }]);
 }
@@ -486,13 +485,33 @@ function imageQualityError(
  */
 export async function prepareBilingualPdfDocument(
   input: unknown,
-  options: Pick<GenerateBilingualPdfOptions, "resolvePublicImage"> = {}
+  options: Pick<GenerateBilingualPdfOptions, "resolvePublicImage"> & {
+    readonly pageContentWidthCssPixels?: number;
+  } = {},
 ): Promise<BilingualDocumentSpec> {
   const document = parseBilingualDocument(input);
   let totalPixels = 0;
+  const pageContentWidth =
+    options.pageContentWidthCssPixels ?? ((210 - 14 - 14) * 96) / 25.4;
+  if (
+    !Number.isFinite(pageContentWidth) ||
+    pageContentWidth < 96 ||
+    pageContentWidth > 10_000
+  ) {
+    throw new RangeError("Bilingual PDF content width is invalid.");
+  }
+  const layoutMode = document.layout?.mode ?? DEFAULT_BILINGUAL_CONFIG.mode;
+  const columnRatio =
+    document.layout?.columnRatio ?? DEFAULT_BILINGUAL_CONFIG.columnRatio;
+  const widestColumnFraction =
+    layoutMode === "parallel" ? Math.max(...columnRatio) / 100 : 1;
+  const columnGap = layoutMode === "parallel" ? 24 : 0;
+  const maximumColumnWidth =
+    (pageContentWidth - columnGap) * widestColumnFraction;
+  const maximumImageWidth = Math.max(1, maximumColumnWidth - 32);
 
   const normalizeImage = async (
-    block: PairedImageBlock
+    block: PairedImageBlock,
   ): Promise<PairedImageBlock> => {
     let bytes: Buffer;
     let sourceName: string;
@@ -501,7 +520,7 @@ export async function prepareBilingualPdfDocument(
       if (!options.resolvePublicImage) {
         throw imageQualityError(
           "UNRESOLVED_PUBLIC_IMAGE",
-          `Public image "${block.id}" requires a trusted PDF asset resolver.`
+          `Public image "${block.id}" requires a trusted PDF asset resolver.`,
         );
       }
       try {
@@ -509,34 +528,30 @@ export async function prepareBilingualPdfDocument(
       } catch {
         throw imageQualityError(
           "INVALID_IMAGE_ASSET",
-          `Public image "${block.id}" could not be resolved.`
+          `Public image "${block.id}" could not be resolved.`,
         );
       }
-      sourceName = new URL(
-        block.source.path,
-        "https://arabclue.invalid"
-      ).pathname;
+      sourceName = new URL(block.source.path, "https://arabclue.invalid")
+        .pathname;
     } else {
       const match = block.source.uri.match(PDF_DATA_IMAGE_PATTERN);
       if (!match || match[2].length % 4 !== 0) {
         throw imageQualityError(
           "INVALID_IMAGE_ASSET",
-          `Embedded image "${block.id}" has invalid base64 data.`
+          `Embedded image "${block.id}" has invalid base64 data.`,
         );
       }
       bytes = Buffer.from(match[2], "base64");
       sourceName = `embedded${imageExtension(`image/${match[1]}`)}`;
     }
 
-    let validated: Awaited<
-      ReturnType<typeof validateAndNormalizeLogoImage>
-    >;
+    let validated: Awaited<ReturnType<typeof validateAndNormalizeLogoImage>>;
     try {
       validated = await validateAndNormalizeLogoImage(bytes, sourceName);
     } catch {
       throw imageQualityError(
         "INVALID_IMAGE_ASSET",
-        `Image "${block.id}" failed MIME, magic-byte, dimension, or decode validation.`
+        `Image "${block.id}" failed MIME, magic-byte, dimension, or decode validation.`,
       );
     }
 
@@ -545,8 +560,29 @@ export async function prepareBilingualPdfDocument(
       throw imageQualityError(
         "IMAGE_PIXEL_LIMIT_EXCEEDED",
         `PDF images exceed the ${String(
-          MAX_TOTAL_IMAGE_PIXELS
-        )}-pixel aggregate limit.`
+          MAX_TOTAL_IMAGE_PIXELS,
+        )}-pixel aggregate limit.`,
+      );
+    }
+    const styledWidth = maximumImageWidth * ((block.widthPercent ?? 100) / 100);
+    const renderedWidthCssPixels =
+      block.widthPercent === undefined
+        ? Math.min(validated.width, styledWidth)
+        : styledWidth;
+    const effectiveDpi =
+      (validated.width * 96) / Math.max(1, renderedWidthCssPixels);
+    if (effectiveDpi + 0.01 < BILINGUAL_PRINT_PROFILE.targetRasterDpi) {
+      throw imageQualityError(
+        "IMAGE_RESOLUTION_INSUFFICIENT",
+        `Image "${block.id}" provides ${String(
+          validated.width,
+        )} horizontal pixels for a ${(renderedWidthCssPixels / 96).toFixed(
+          2,
+        )}-inch rendered width (${effectiveDpi.toFixed(
+          1,
+        )} DPI); at least ${String(
+          BILINGUAL_PRINT_PROFILE.targetRasterDpi,
+        )} DPI is required.`,
       );
     }
 
@@ -555,7 +591,7 @@ export async function prepareBilingualPdfDocument(
       source: {
         kind: "data",
         uri: `data:${validated.mimeType};base64,${validated.bytes.toString(
-          "base64"
+          "base64",
         )}`,
       },
     };
@@ -565,9 +601,7 @@ export async function prepareBilingualPdfDocument(
   for (const section of document.sections) {
     const blocks: PairedBlock[] = [];
     for (const block of section.blocks) {
-      blocks.push(
-        block.type === "image" ? await normalizeImage(block) : block
-      );
+      blocks.push(block.type === "image" ? await normalizeImage(block) : block);
     }
     sections.push({ ...section, blocks });
   }
@@ -580,16 +614,9 @@ export async function prepareBilingualPdfDocument(
  */
 export async function generateBilingualPdf(
   input: unknown,
-  options: GenerateBilingualPdfOptions = {}
+  options: GenerateBilingualPdfOptions = {},
 ): Promise<BilingualPdfArtifact> {
-  const document = await prepareBilingualPdfDocument(input, {
-    resolvePublicImage: options.resolvePublicImage,
-  });
-  const artifact = await renderBilingualArtifact(document, {
-    target: "print",
-    fontPair: options.fontPair,
-  });
-  const pdf = await htmlToPdf(artifact.html, {
+  const pdfOptions: HtmlToPdfOptions = {
     format: "A4",
     printBackground: true,
     displayHeaderFooter: true,
@@ -606,7 +633,18 @@ export async function generateBilingualPdf(
     ...options.pdf,
     synchronizeBilingualLayout: true,
     readySelector: BILINGUAL_LAYOUT_READY_SELECTOR,
+  };
+  const parsedPdfOptions = htmlToPdfOptionsSchema.parse(pdfOptions);
+  const pdfDimensions = resolvePdfContentDimensions(parsedPdfOptions);
+  const document = await prepareBilingualPdfDocument(input, {
+    resolvePublicImage: options.resolvePublicImage,
+    pageContentWidthCssPixels: pdfDimensions.width,
   });
+  const artifact = await renderBilingualArtifact(document, {
+    target: "print",
+    fontPair: options.fontPair,
+  });
+  const pdf = await htmlToPdf(artifact.html, pdfOptions);
   if (!isPdfBuffer(pdf)) {
     throw new BilingualPdfQualityError([
       {

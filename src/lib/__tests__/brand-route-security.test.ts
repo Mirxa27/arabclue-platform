@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   brandPatchSchema,
+  pastProjectCreateSchema,
   pastProjectUpdateSchema,
   validateBrandPatchForWorkspace,
 } from "../../app/api/brand/route";
@@ -82,17 +83,22 @@ describe("brand PATCH schema", () => {
 });
 
 describe("past-project claim update schema", () => {
-  test("allows withdrawal, revocation and bounded content edits", () => {
+  test("allows evidence approval, reasoned revocation and bounded edits", () => {
     expect(
       pastProjectUpdateSchema.safeParse({
         id: "project-1",
         approved: false,
+        reason: "The source document was withdrawn",
       }).success
     ).toBe(true);
     expect(
       pastProjectUpdateSchema.safeParse({
         id: "project-1",
-        revokedAt: "2026-07-24T12:30:00.000Z",
+        approved: true,
+        provenance: {
+          sourceKind: "UPLOADED_DOCUMENT",
+          sourceId: "document-1",
+        },
       }).success
     ).toBe(true);
     expect(
@@ -103,11 +109,19 @@ describe("past-project claim update schema", () => {
     ).toBe(true);
   });
 
-  test("rejects approval restoration, un-revocation and unknown fields", () => {
+  test("rejects unbound approvals, unexplained revocation and unknown fields", () => {
     const invalid = [
       { id: "project-1", approved: true },
       { id: "project-1", revokedAt: null },
-      { id: "project-1", revokedAt: "not-a-date" },
+      { id: "project-1", approved: false },
+      {
+        id: "project-1",
+        approved: true,
+        provenance: {
+          sourceKind: "OFFICIAL_REGISTRY",
+          sourceId: "unresolved",
+        },
+      },
       { id: "project-1", workspaceId: "workspace-2" },
       { id: "project-1" },
     ];
@@ -115,5 +129,22 @@ describe("past-project claim update schema", () => {
     for (const value of invalid) {
       expect(pastProjectUpdateSchema.safeParse(value).success).toBe(false);
     }
+  });
+
+  test("validates bounded past-project creation", () => {
+    expect(
+      pastProjectCreateSchema.safeParse({
+        title: "Reviewed delivery",
+        summary: "A factual project summary awaiting evidence review.",
+        outcome: "COMPLETED",
+      }).success
+    ).toBe(true);
+    expect(
+      pastProjectCreateSchema.safeParse({
+        title: "x",
+        summary: "y",
+        approved: true,
+      }).success
+    ).toBe(false);
   });
 });

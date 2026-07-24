@@ -153,6 +153,9 @@ export type ApiPastProject = {
   summary?: string | null;
   summaryAr?: string | null;
   tags?: string | null;
+  approved?: boolean;
+  reviewStatus?: "UNREVIEWED" | "APPROVED" | "REVOKED";
+  revokedAt?: string | null;
 };
 
 export type ApiAIProvider = {

@@ -73,6 +73,12 @@ export const DEFAULT_CAPABILITY_STATEMENT_POLICY: CapabilityStatementExportPolic
 
 export interface CapabilityStatementOptions {
   readonly includeLogo?: boolean;
+  /**
+   * Staff and partnership records currently have no evidence-review fields.
+   * They are omitted by default and may only be included in an explicitly
+   * labelled draft.
+   */
+  readonly includeUnreviewedWorkspaceEntries?: boolean;
   readonly exportPolicy?: Partial<CapabilityStatementExportPolicy>;
 }
 
@@ -107,6 +113,13 @@ export type CapabilityStatementDiagnostic =
   | (CapabilityDiagnosticBase & {
       readonly code: "PROFILE_NOT_READY";
       readonly missingRequirementCount: number;
+    })
+  | (CapabilityDiagnosticBase & {
+      readonly code:
+        | "UNREVIEWED_SOURCE_OMITTED"
+        | "UNREVIEWED_SOURCE_INCLUDED"
+        | "SELF_DECLARED_PREFERENCE_INCLUDED";
+      readonly sourceKind: "staff" | "partnerships" | "target-sectors";
     });
 
 interface CapabilityStatementResultBase {
@@ -181,8 +194,8 @@ const COPY = {
   field: { en: "Field", ar: "الحقل" },
   value: { en: "Value", ar: "القيمة" },
   verifiedStatistics: {
-    en: "Verified profile statistics",
-    ar: "إحصاءات الملف الموثقة",
+    en: "Evidence-reviewed profile statistics",
+    ar: "إحصاءات الملف المراجعة بالأدلة",
   },
   metric: { en: "Metric", ar: "المؤشر" },
   count: { en: "Count", ar: "العدد" },
@@ -197,13 +210,33 @@ const COPY = {
   sector: { en: "Sector", ar: "القطاع" },
   outcome: { en: "Outcome", ar: "النتيجة" },
   summary: { en: "Summary", ar: "الملخص" },
-  team: { en: "Team and human capital", ar: "الفريق ورأس المال البشري" },
+  team: { en: "Evidence-reviewed team", ar: "الفريق المراجع بالأدلة" },
+  unreviewedTeam: {
+    en: "User-entered team (not evidence reviewed)",
+    ar: "فريق أدخله المستخدم (غير مراجع بالأدلة)",
+  },
   name: { en: "Name", ar: "الاسم" },
   role: { en: "Role", ar: "الدور" },
   certificate: { en: "Certificate", ar: "الشهادة" },
   issuer: { en: "Issuer", ar: "الجهة المصدرة" },
   partner: { en: "Partner", ar: "الشريك" },
   partnershipType: { en: "Partnership type", ar: "نوع الشراكة" },
+  reviewedPartnerships: {
+    en: "Evidence-reviewed partnerships",
+    ar: "الشراكات المراجعة بالأدلة",
+  },
+  unreviewedPartnerships: {
+    en: "User-entered partnerships (not evidence reviewed)",
+    ar: "شراكات أدخلها المستخدم (غير مراجعة بالأدلة)",
+  },
+  declaredTargetSectors: {
+    en: "User-declared target-sector preferences",
+    ar: "تفضيلات القطاعات المستهدفة المعلنة من المستخدم",
+  },
+  unreviewedSourceOmitted: {
+    en: "Workspace entries were omitted because this record type does not yet have an evidence-review model.",
+    ar: "حُذفت إدخالات مساحة العمل لأن هذا النوع من السجلات لا يملك حتى الآن نموذج مراجعة بالأدلة.",
+  },
   methodology: { en: "Methodology", ar: "المنهجية" },
   readinessEvidence: {
     en: "Readiness and evidence notes",
@@ -230,8 +263,8 @@ const COPY = {
   },
   missingEvidence: { en: "Missing evidence", ar: "الأدلة الناقصة" },
   noMissingEvidence: {
-    en: "No missing evidence was reported in the supplied snapshot.",
-    ar: "لم تُسجّل أدلة ناقصة في اللقطة الموردة.",
+    en: "No additional onboarding gaps were reported. Self-declared or unreviewed entries remain labelled and are never treated as verified.",
+    ar: "لم تُسجّل فجوات تهيئة إضافية. تبقى الإدخالات المعلنة ذاتياً أو غير المراجعة موسومة ولا تُعامل أبداً على أنها موثقة.",
   },
   noSourceRecords: {
     en: "No source records are available for this section.",
@@ -361,6 +394,45 @@ function recordProfileNotReady(
       en: "The supplied profile is not marked ready for proposals.",
       ar: "الملف المورد غير مصنف على أنه جاهز لتقديم العروض.",
     },
+  });
+}
+
+function recordUnreviewedWorkspaceSource(
+  context: AdapterContext,
+  input: {
+    readonly path: CapabilitySourcePath;
+    readonly sourceKind: "staff" | "partnerships" | "target-sectors";
+    readonly handling: "omitted" | "included" | "preference";
+  }
+): void {
+  const code =
+    input.handling === "omitted"
+      ? "UNREVIEWED_SOURCE_OMITTED"
+      : input.handling === "included"
+        ? "UNREVIEWED_SOURCE_INCLUDED"
+        : "SELF_DECLARED_PREFERENCE_INCLUDED";
+  const message =
+    input.handling === "omitted"
+      ? {
+          en: "User-entered records were omitted because they have no evidence-review model.",
+          ar: "حُذفت السجلات التي أدخلها المستخدم لعدم وجود نموذج مراجعة بالأدلة لها.",
+        }
+      : input.handling === "included"
+        ? {
+            en: "User-entered records are included only as unreviewed draft content.",
+            ar: "أُدرجت السجلات التي أدخلها المستخدم كمحتوى مسودة غير مراجع فقط.",
+          }
+        : {
+            en: "Target sectors are user-declared preferences, not verified delivery history.",
+            ar: "القطاعات المستهدفة تفضيلات معلنة من المستخدم وليست سجلاً موثقاً للتنفيذ.",
+          };
+  context.diagnostics.push({
+    code,
+    severity: "warning",
+    blocking: false,
+    path: input.path,
+    sourceKind: input.sourceKind,
+    message,
   });
 }
 
@@ -662,6 +734,36 @@ export function buildCapabilityStatement(
 ): CapabilityStatementBuildResult {
   const policy = resolvePolicy(options.exportPolicy);
   const context: AdapterContext = { diagnostics: [], policy };
+  const includeUnreviewedWorkspaceEntries =
+    options.includeUnreviewedWorkspaceEntries === true;
+  const staffSource = includeUnreviewedWorkspaceEntries
+    ? profile.highlights.staff
+    : [];
+  const partnershipSource = includeUnreviewedWorkspaceEntries
+    ? profile.highlights.partnerships
+    : [];
+
+  if (profile.highlights.staff.length > 0) {
+    recordUnreviewedWorkspaceSource(context, {
+      path: sourcePath("highlights.staff"),
+      sourceKind: "staff",
+      handling: includeUnreviewedWorkspaceEntries ? "included" : "omitted",
+    });
+  }
+  if (profile.highlights.partnerships.length > 0) {
+    recordUnreviewedWorkspaceSource(context, {
+      path: sourcePath("highlights.partnerships"),
+      sourceKind: "partnerships",
+      handling: includeUnreviewedWorkspaceEntries ? "included" : "omitted",
+    });
+  }
+  if (profile.highlights.sectors.length > 0) {
+    recordUnreviewedWorkspaceSource(context, {
+      path: sourcePath("highlights.sectors"),
+      sourceKind: "target-sectors",
+      handling: "preference",
+    });
+  }
 
   if (!profile.readiness.readyForProposals) {
     recordProfileNotReady(context, profile.readiness.missing.length);
@@ -850,10 +952,7 @@ export function buildCapabilityStatement(
       key: "pastProjects",
       label: COPY.pastProjects,
     },
-    { key: "staff", label: COPY.teamMembers },
     { key: "certificates", label: COPY.certificates },
-    { key: "partnerships", label: COPY.partnerships },
-    { key: "sectors", label: COPY.targetSectors },
     { key: "methodologies", label: COPY.methodologies },
   ] as const satisfies readonly {
     readonly key: keyof BusinessProfileSnapshot["stats"];
@@ -981,7 +1080,7 @@ export function buildCapabilityStatement(
           ),
         ];
 
-  const teamRows: BilingualTableRow[] = profile.highlights.staff.map(
+  const teamRows: BilingualTableRow[] = staffSource.map(
     (member, index) => {
       const root = `highlights.staff[${index}]`;
       return {
@@ -1033,14 +1132,22 @@ export function buildCapabilityStatement(
             rows: teamRows,
           },
         ]
-      : [
+      : profile.highlights.staff.length > 0
+        ? [
+            {
+              type: "paragraph",
+              id: "team-unreviewed-omitted",
+              content: staticLocalized(COPY.unreviewedSourceOmitted),
+            },
+          ]
+        : [
           emptyCollectionBlock(
             context,
             "team-empty",
             sourcePath("highlights.staff"),
             COPY.teamMembers
           ),
-        ];
+          ];
 
   const certificateRows: BilingualTableRow[] =
     profile.highlights.certificates.map((certificate, index) => {
@@ -1103,7 +1210,7 @@ export function buildCapabilityStatement(
         ];
 
   const partnershipRows: BilingualTableRow[] =
-    profile.highlights.partnerships.map((partnership, index) => {
+    partnershipSource.map((partnership, index) => {
       const root = `highlights.partnerships[${index}]`;
       return {
         id: `partnership-${paddedIndex(index)}`,
@@ -1153,14 +1260,22 @@ export function buildCapabilityStatement(
             rows: partnershipRows,
           },
         ]
-      : [
+      : profile.highlights.partnerships.length > 0
+        ? [
+            {
+              type: "paragraph",
+              id: "partnerships-unreviewed-omitted",
+              content: staticLocalized(COPY.unreviewedSourceOmitted),
+            },
+          ]
+        : [
           emptyCollectionBlock(
             context,
             "partnerships-empty",
             sourcePath("highlights.partnerships"),
             COPY.partnerships
           ),
-        ];
+          ];
 
   const sectorItems = profile.highlights.sectors.map((sector, index) => {
     const root = `highlights.sectors[${index}]`;
@@ -1400,7 +1515,9 @@ export function buildCapabilityStatement(
     {
       id: "team",
       alignmentKey: "capability.team",
-      title: staticLocalized(COPY.team),
+      title: staticLocalized(
+        includeUnreviewedWorkspaceEntries ? COPY.unreviewedTeam : COPY.team
+      ),
       blocks: teamBlocks,
     },
     {
@@ -1412,13 +1529,17 @@ export function buildCapabilityStatement(
     {
       id: "partnerships",
       alignmentKey: "capability.partnerships",
-      title: staticLocalized(COPY.partnerships),
+      title: staticLocalized(
+        includeUnreviewedWorkspaceEntries
+          ? COPY.unreviewedPartnerships
+          : COPY.reviewedPartnerships
+      ),
       blocks: partnershipBlocks,
     },
     {
       id: "target-sectors",
       alignmentKey: "capability.target-sectors",
-      title: staticLocalized(COPY.targetSectors),
+      title: staticLocalized(COPY.declaredTargetSectors),
       blocks: sectorBlocks,
     },
     {

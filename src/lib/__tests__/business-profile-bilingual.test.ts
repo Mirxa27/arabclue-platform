@@ -12,6 +12,11 @@ import {
 } from "../business-profile";
 import { CapabilityStatementExportBlockedError } from "../capability-statement";
 import { validateBilingualDocument } from "../bilingual-layout";
+import {
+  certificateKnowledgeContent,
+  hashKnowledgeContent,
+  methodologyKnowledgeContent,
+} from "../knowledge-approval";
 
 function profileFixture(): BusinessProfileSnapshot {
   return {
@@ -104,6 +109,10 @@ describe("business-profile bilingual export library", () => {
     expect(html).toContain('data-bilingual-layout-state="pending"');
     expect(html).toContain("Export Company");
     expect(html).toContain("شركة التصدير");
+    expect(html).toContain("User-entered team (not evidence reviewed)");
+    expect(html).toContain(
+      "User-declared target-sector preferences"
+    );
     expect(html).not.toContain("<script");
   });
 
@@ -136,6 +145,12 @@ describe("business-profile bilingual export library", () => {
     expect(arabic).toContain("شركة التصدير");
     expect(english).toContain(
       "Operational profile from ArabClue · Not legal advice"
+    );
+    expect(english).toContain(
+      "User-entered team · not evidence reviewed"
+    );
+    expect(english).toContain(
+      "User-declared target-sector preferences"
     );
     expect(arabic).toContain(
       "ملف عيّنة تشغيلي من أراب كلاو · ليس استشارة قانونية"
@@ -227,24 +242,48 @@ describe("business-profile bilingual export library", () => {
 
   test("excludes unapproved, revoked and expired credential evidence", () => {
     const asOf = new Date("2026-07-24T12:00:00.000Z");
+    const certificateContent = {
+      certType: "ISO",
+      name: "ISO 9001",
+      number: null,
+      issuer: "ISO",
+      issuedAt: null,
+      expiresAt: null,
+      filePath: null,
+      notes: null,
+    };
+    const approvedCertificate = {
+      ...certificateContent,
+      id: "certificate-1",
+      workspaceId: "workspace-1",
+      alertDays: 30,
+      approved: true,
+      reviewStatus: "APPROVED",
+      evidenceRef: "uploaded-document:doc-1:v1:sha256:abc",
+      provenanceJson: "{}",
+      reviewedById: "reviewer-1",
+      approvedAt: asOf,
+      revokedAt: null,
+      contentHash: hashKnowledgeContent(
+        certificateKnowledgeContent(certificateContent)
+      ),
+      createdAt: asOf,
+      updatedAt: asOf,
+    } as Parameters<typeof isCertificateEligibleForBusinessProfile>[0];
     expect(
-      isCertificateEligibleForBusinessProfile(
-        { approved: true, revokedAt: null, expiresAt: null },
-        asOf
-      )
+      isCertificateEligibleForBusinessProfile(approvedCertificate, asOf)
     ).toBe(true);
     expect(
       isCertificateEligibleForBusinessProfile(
-        { approved: false, revokedAt: null, expiresAt: null },
+        { ...approvedCertificate, approved: false },
         asOf
       )
     ).toBe(false);
     expect(
       isCertificateEligibleForBusinessProfile(
         {
-          approved: true,
+          ...approvedCertificate,
           revokedAt: new Date("2026-07-01T00:00:00.000Z"),
-          expiresAt: null,
         },
         asOf
       )
@@ -252,18 +291,43 @@ describe("business-profile bilingual export library", () => {
     expect(
       isCertificateEligibleForBusinessProfile(
         {
-          approved: true,
-          revokedAt: null,
+          ...approvedCertificate,
           expiresAt: new Date("2026-07-23T23:59:59.000Z"),
         },
         asOf
       )
     ).toBe(false);
-    expect(isMethodologyEligibleForBusinessProfile({ approved: true })).toBe(
-      true
-    );
-    expect(isMethodologyEligibleForBusinessProfile({ approved: false })).toBe(
-      false
-    );
+    const methodologyContent = {
+      category: "QC",
+      title: "Reviewed quality method",
+      titleAr: null,
+      bodyMd: "Reviewed method body",
+    };
+    const approvedMethodology = {
+      ...methodologyContent,
+      id: "methodology-1",
+      workspaceId: "workspace-1",
+      approved: true,
+      reviewStatus: "APPROVED",
+      evidenceRef: "uploaded-document:doc-1:v1:sha256:abc",
+      provenanceJson: "{}",
+      reviewedById: "reviewer-1",
+      approvedAt: asOf,
+      revokedAt: null,
+      contentHash: hashKnowledgeContent(
+        methodologyKnowledgeContent(methodologyContent)
+      ),
+      createdAt: asOf,
+      updatedAt: asOf,
+    } as Parameters<typeof isMethodologyEligibleForBusinessProfile>[0];
+    expect(
+      isMethodologyEligibleForBusinessProfile(approvedMethodology)
+    ).toBe(true);
+    expect(
+      isMethodologyEligibleForBusinessProfile({
+        ...approvedMethodology,
+        reviewStatus: "UNREVIEWED",
+      })
+    ).toBe(false);
   });
 });

@@ -15,6 +15,13 @@ export const PHASE_TWO_PUBLIC_SOURCES = Object.freeze([
   "src/components/documents/bilingual/BilingualFooter.tsx",
   "src/components/documents/bilingual/index.ts",
   "src/components/documents/bilingual/types.ts",
+  "src/lib/document-templates/contract-templates.ts",
+  "src/lib/document-templates/contract-template-renderer.ts",
+  "src/lib/proposal-layouts.ts",
+  "src/lib/proposal-layout-export.ts",
+  "src/lib/document-visualizations.ts",
+  "src/lib/capability-statement.ts",
+  "src/lib/business-profile.ts",
 ] as const);
 
 export const DOCUMENT_QUALITY_TEST_FILES = Object.freeze([
@@ -25,6 +32,15 @@ export const DOCUMENT_QUALITY_TEST_FILES = Object.freeze([
   "src/lib/__tests__/bilingual-pdf.test.ts",
   "src/lib/__tests__/pdf-generation.test.ts",
   "src/lib/__tests__/document-quality-gate.test.ts",
+  "src/lib/__tests__/contract-templates.test.ts",
+  "src/lib/__tests__/contract-template-renderer.test.ts",
+  "src/lib/__tests__/contract-template-catalog-route.test.ts",
+  "src/lib/__tests__/contract-template-preview-route.test.ts",
+  "src/lib/__tests__/proposal-layouts.test.ts",
+  "src/lib/__tests__/proposal-layout-export.test.ts",
+  "src/lib/__tests__/document-visualizations.test.ts",
+  "src/lib/__tests__/capability-statement.test.ts",
+  "src/lib/__tests__/business-profile-bilingual.test.ts",
 ] as const);
 
 export const DOCUMENT_BROWSER_TEST_FILE =

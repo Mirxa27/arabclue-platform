@@ -13,6 +13,7 @@
 import type { BrandProfile } from "@prisma/client";
 import { designTokens } from "./design-tokens";
 import { getFontStack, getTextDirection, type Locale } from "./typography";
+import { normalizeBrandForDocument } from "./brand-policy";
 
 // ============================================================================
 // Type Definitions
@@ -243,8 +244,10 @@ export function generatePrintCSS(
 export function generateDocumentHeader(options: DocumentHeaderOptions): string {
   const { title, titleAr, logo, locale, brand } = options;
   const dir = getTextDirection(locale);
-  const primaryColor = brand?.primaryColor || designTokens.colors.primary[600];
-  const fontStack = getFontStack(locale, brand?.fontFamily);
+  const normalizedBrand = normalizeBrandForDocument(brand ?? null);
+  const primaryColor =
+    normalizedBrand?.primaryColor || designTokens.colors.primary[600];
+  const fontStack = getFontStack(locale, normalizedBrand?.fontFamily);
   
   const displayTitle = locale === "ar" && titleAr ? titleAr : title;
   
@@ -306,8 +309,10 @@ export function generateDocumentHeader(options: DocumentHeaderOptions): string {
 export function generateDocumentFooter(options: DocumentFooterOptions): string {
   const { pageNumber, totalPages, confidential, locale, companyName, brand } = options;
   const dir = getTextDirection(locale);
-  const secondaryColor = brand?.secondaryColor || designTokens.colors.secondary[600];
-  const fontStack = getFontStack(locale, brand?.fontFamily);
+  const normalizedBrand = normalizeBrandForDocument(brand ?? null);
+  const secondaryColor =
+    normalizedBrand?.secondaryColor || designTokens.colors.secondary[600];
+  const fontStack = getFontStack(locale, normalizedBrand?.fontFamily);
   
   const confidentialLabel = locale === "ar" ? "سري" : "Confidential";
   const pageLabel = locale === "ar" ? "صفحة" : "Page";

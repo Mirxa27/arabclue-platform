@@ -166,6 +166,7 @@ export function safeBrandLogoUrlForDocument(
   const match = logoUrl.match(NORMALIZED_DATA_LOGO_PATTERN);
   if (!match) return null;
   const encoded = match[1];
+  if (encoded.length % 4 !== 0) return null;
   const estimatedBytes =
     Math.floor((encoded.length * 3) / 4) -
     (encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0);

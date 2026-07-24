@@ -6,6 +6,19 @@ import {
   isQualityRequirementText,
   isQualityScopeText,
 } from "./text-quality";
+import {
+  certificateKnowledgeContent,
+  hashKnowledgeContent,
+  libraryKnowledgeContent,
+  methodologyKnowledgeContent,
+  pastProjectKnowledgeContent,
+} from "./knowledge-approval";
+import {
+  isCertificateValid,
+  isLibraryItemEligible,
+  isMethodologyEligible,
+  isPastProjectEligible,
+} from "./knowledge-eligibility";
 
 type LinkCandidate = {
   type: LinkedResourceType;
@@ -49,29 +62,73 @@ export async function persistTenderRequirements(
 
   if (extracted.length === 0) return 0;
 
-  const [certs, staff, past, library, methods] = await Promise.all([
-    db.certificate.findMany({ where: { workspaceId } }),
-    db.staffMember.findMany({ where: { workspaceId, active: true } }),
-    db.pastProject.findMany({ where: { workspaceId } }),
-    db.contentLibraryItem.findMany({ where: { workspaceId, restricted: false } }),
-    db.methodologyAsset.findMany({ where: { workspaceId, approved: true } }),
+  const reviewedWhere = {
+    approved: true,
+    reviewStatus: "APPROVED" as const,
+    revokedAt: null,
+    evidenceRef: { not: null },
+    provenanceJson: { not: null },
+    reviewedById: { not: null },
+    approvedAt: { not: null },
+    contentHash: { not: null },
+  };
+  const now = new Date();
+  const [certificateRows, pastRows, libraryRows, methodologyRows] =
+    await Promise.all([
+    db.certificate.findMany({
+      where: {
+        workspaceId,
+        ...reviewedWhere,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+    }),
+    db.pastProject.findMany({ where: { workspaceId, ...reviewedWhere } }),
+    db.contentLibraryItem.findMany({
+      where: { workspaceId, ...reviewedWhere, restricted: false },
+    }),
+    db.methodologyAsset.findMany({
+      where: { workspaceId, ...reviewedWhere },
+    }),
   ]);
+  const certs = certificateRows.filter((certificate) =>
+    isCertificateValid({
+      ...certificate,
+      now,
+      expectedContentHash: hashKnowledgeContent(
+        certificateKnowledgeContent(certificate)
+      ),
+    }).eligible
+  );
+  const past = pastRows.filter((project) =>
+    isPastProjectEligible({
+      ...project,
+      expectedContentHash: hashKnowledgeContent(
+        pastProjectKnowledgeContent(project)
+      ),
+    }).eligible
+  );
+  const library = libraryRows.filter((item) =>
+    isLibraryItemEligible({
+      ...item,
+      expectedContentHash: hashKnowledgeContent(
+        libraryKnowledgeContent(item)
+      ),
+    }).eligible
+  );
+  const methods = methodologyRows.filter((methodology) =>
+    isMethodologyEligible({
+      ...methodology,
+      expectedContentHash: hashKnowledgeContent(
+        methodologyKnowledgeContent(methodology)
+      ),
+    }).eligible
+  );
 
   const candidates: LinkCandidate[] = [
     ...certs.map((c) => ({
       type: "CERTIFICATE" as const,
       id: c.id,
       keywords: [c.name, c.certType, c.number ?? ""].filter(Boolean),
-    })),
-    ...staff.map((s) => ({
-      type: "STAFF" as const,
-      id: s.id,
-      keywords: [
-        s.name,
-        s.roleTitle,
-        s.certifications ?? "",
-        ...(safeJsonArray(s.requirementTags) ?? []),
-      ].filter(Boolean),
     })),
     ...past.map((p) => ({
       type: "PAST_PROJECT" as const,

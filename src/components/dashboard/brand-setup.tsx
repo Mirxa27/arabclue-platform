@@ -22,6 +22,13 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { VISION_2030_PILLARS } from "@/lib/constants";
 import type { ApiPastProject } from "@/lib/api-types";
+import { KnowledgeReviewControls } from "./knowledge-review-controls";
+import {
+  DEFAULT_DOCUMENT_BRAND_COLORS,
+  normalizeDocumentBrandColor,
+  normalizeDocumentBrandFont,
+  safeBrandLogoUrlForDocument,
+} from "@/lib/brand-policy";
 
 const SECTORS = ["GOV", "HEALTH", "FINANCE", "ENERGY", "TELECOM", "OTHER"];
 
@@ -88,6 +95,8 @@ export function BrandSetup() {
 
   const brand = data?.brandProfile as BrandData | undefined;
   const pastProjects = data?.pastProjects ?? [];
+  const workspaceId =
+    typeof data?.workspaceId === "string" ? data.workspaceId : "";
 
   useEffect(() => {
     setDraft((current) => {
@@ -121,8 +130,20 @@ export function BrandSetup() {
 
   return (
     <div className="grid lg:grid-cols-3 gap-4">
-      {brandDraft && <BrandForm brand={brandDraft} onBrandChange={updateDraft} />}
-      {brandDraft && <LetterheadPreview brand={brandDraft} locale={locale} />}
+      {brandDraft && (
+        <BrandForm
+          brand={brandDraft}
+          workspaceId={workspaceId}
+          onBrandChange={updateDraft}
+        />
+      )}
+      {brandDraft && (
+        <LetterheadPreview
+          brand={brandDraft}
+          locale={locale}
+          workspaceId={workspaceId}
+        />
+      )}
       <div className="lg:col-span-3">
         <PastProjectsPanel pastProjects={pastProjects} />
       </div>
@@ -132,15 +153,29 @@ export function BrandSetup() {
 
 function BrandForm({
   brand,
+  workspaceId,
   onBrandChange,
 }: {
   brand: BrandDraft;
+  workspaceId: string;
   onBrandChange: (updater: (current: BrandDraft) => BrandDraft) => void;
 }) {
   const { locale } = useLocale();
   const qc = useQueryClient();
   const { toast } = useToast();
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const primaryColor = normalizeDocumentBrandColor(
+    brand.primaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+  );
+  const accentColor = normalizeDocumentBrandColor(
+    brand.accentColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
+  );
+  const safeLogoUrl = safeBrandLogoUrlForDocument(
+    brand.logoUrl,
+    workspaceId
+  );
 
   const saveBrand = useMutation({
     mutationFn: async (payload: BrandDraft) => {
@@ -196,9 +231,9 @@ function BrandForm({
             className="mt-1.5 rounded-lg border-2 border-dashed border-border p-4 text-center cursor-pointer hover:border-primary/40 transition-colors"
             onClick={() => logoInputRef.current?.click()}
           >
-            {brand.logoUrl ? (
+            {safeLogoUrl ? (
               <img
-                src={brand.logoUrl}
+                src={safeLogoUrl}
                 alt="logo"
                 className="mx-auto size-12 rounded-lg object-contain mb-2 bg-muted"
               />
@@ -206,7 +241,7 @@ function BrandForm({
               <div
                 className="mx-auto size-12 rounded-lg flex items-center justify-center mb-2"
                 style={{
-                  background: `linear-gradient(135deg, ${brand.primaryColor}, ${brand.accentColor})`,
+                  background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
                 }}
               >
                 <Building2 className="size-5 text-white" />
@@ -326,11 +361,30 @@ function BrandForm({
 function LetterheadPreview({
   brand,
   locale,
+  workspaceId,
 }: {
   brand: BrandDraft;
   locale: "ar" | "en";
+  workspaceId: string;
 }) {
   const ar = locale === "ar";
+  const primaryColor = normalizeDocumentBrandColor(
+    brand.primaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+  );
+  const secondaryColor = normalizeDocumentBrandColor(
+    brand.secondaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.secondaryColor
+  );
+  const accentColor = normalizeDocumentBrandColor(
+    brand.accentColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
+  );
+  const fontFamily = normalizeDocumentBrandFont(brand.fontFamily);
+  const safeLogoUrl = safeBrandLogoUrlForDocument(
+    brand.logoUrl,
+    workspaceId
+  );
   const name = ar
     ? brand.taglineAr || brand.tagline || "أراب كلاو"
     : brand.tagline || "ArabClue";
@@ -350,14 +404,14 @@ function LetterheadPreview({
         <div
           className="rounded-lg p-3 text-white flex items-center gap-3"
           style={{
-            background: `linear-gradient(90deg, ${brand.primaryColor}, ${brand.secondaryColor})`,
-            borderBottom: `3px solid ${brand.accentColor}`,
-            fontFamily: brand.fontFamily || DEFAULT_FONT_FAMILY,
+            background: `linear-gradient(90deg, ${primaryColor}, ${secondaryColor})`,
+            borderBottom: `3px solid ${accentColor}`,
+            fontFamily,
           }}
         >
-          {brand.logoUrl ? (
+          {safeLogoUrl ? (
             <img
-              src={brand.logoUrl}
+              src={safeLogoUrl}
               alt=""
               className="h-8 max-w-[100px] object-contain rounded bg-white/15 p-1"
             />
@@ -373,11 +427,11 @@ function LetterheadPreview({
         </div>
         <div
           className="rounded-md border p-3 text-xs space-y-2"
-          style={{ fontFamily: brand.fontFamily || DEFAULT_FONT_FAMILY }}
+          style={{ fontFamily }}
         >
           <p
             className="font-semibold"
-            style={{ color: brand.primaryColor }}
+            style={{ color: primaryColor }}
           >
             {ar ? "عنوان القسم" : "Section heading"}
           </p>
@@ -389,7 +443,7 @@ function LetterheadPreview({
           <div
             className="h-1 rounded-full"
             style={{
-              background: `linear-gradient(90deg, ${brand.accentColor}, transparent)`,
+              background: `linear-gradient(90deg, ${accentColor}, transparent)`,
             }}
           />
         </div>
@@ -440,7 +494,9 @@ function PastProjectsPanel({ pastProjects }: { pastProjects: ApiPastProject[] })
             <div>
               <h3 className="text-sm font-semibold">{tr("brand_past_projects", locale)}</h3>
               <p className="text-[11px] text-muted-foreground">
-                {locale === "ar" ? "تُستخدم لاسترجاع RAG في صياغة العطاءات" : "Vectorized for RAG-based proposal drafting"}
+                {locale === "ar"
+                  ? "لا تُستخدم في الصياغة إلا بعد ربطها بمستند دليل ومراجعتها"
+                  : "Excluded from drafting until linked to an evidence document and reviewed"}
               </p>
             </div>
           </div>
@@ -481,6 +537,13 @@ function PastProjectsPanel({ pastProjects }: { pastProjects: ApiPastProject[] })
                 ))}
               </div>
             )}
+            <KnowledgeReviewControls
+              endpoint="/api/brand"
+              method="PUT"
+              resourceId={p.id}
+              reviewStatus={p.reviewStatus ?? "UNREVIEWED"}
+              queryKeys={["brand", "onboarding", "knowledge-pending"]}
+            />
           </div>
         ))}
       </div>

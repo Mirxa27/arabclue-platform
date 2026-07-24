@@ -12,16 +12,16 @@ still require content review and visual QA.
 
 ## Module map
 
-| Layer | File | Responsibility |
-| --- | --- | --- |
-| Structured document model | `src/lib/bilingual-layout.tsx` | Validates and renders a safe, immutable bilingual AST |
-| Structured charts | `src/lib/document-visualizations.ts` | Supplies the validated `DocumentChartDefinition` consumed by chart blocks |
-| Typography and bidi safety | `src/lib/bilingual-typography.ts` | Detects direction, removes unsafe controls, isolates mixed runs, and selects allow-listed font pairs |
-| Measured row synchronization | `src/lib/layout-sync.ts` | Balances measured paired fragments and coordinates page placement |
-| Canonical HTML/PDF adapter | `src/lib/bilingual-pdf.ts` | Embeds local fonts, performs structural quality checks, hashes HTML, and invokes Chromium PDF generation |
-| React presentation library | `src/components/documents/bilingual/` | Provides section, header, table, list, and footer components for trusted application UI |
-| Shared React styles | `src/app/bilingual-layout.css` | Defines logical-property, responsive, and print styles for the React components |
-| Contract adapter | `src/lib/contract-export-bilingual.ts` | Compiles supported contract Markdown into the validated AST |
+| Layer                        | File                                   | Responsibility                                                                                           |
+| ---------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Structured document model    | `src/lib/bilingual-layout.tsx`         | Validates and renders a safe, immutable bilingual AST                                                    |
+| Structured charts            | `src/lib/document-visualizations.ts`   | Supplies the validated `DocumentChartDefinition` consumed by chart blocks                                |
+| Typography and bidi safety   | `src/lib/bilingual-typography.ts`      | Detects direction, removes unsafe controls, isolates mixed runs, and selects allow-listed font pairs     |
+| Measured row synchronization | `src/lib/layout-sync.ts`               | Balances measured paired fragments and coordinates page placement                                        |
+| Canonical HTML/PDF adapter   | `src/lib/bilingual-pdf.ts`             | Embeds local fonts, performs structural quality checks, hashes HTML, and invokes Chromium PDF generation |
+| React presentation library   | `src/components/documents/bilingual/`  | Provides section, header, table, list, and footer components for trusted application UI                  |
+| Shared React styles          | `src/app/bilingual-layout.css`         | Defines logical-property, responsive, and print styles for the React components                          |
+| Contract adapter             | `src/lib/contract-export-bilingual.ts` | Compiles supported contract Markdown into the validated AST                                              |
 
 The application already imports `src/app/bilingual-layout.css` through
 `src/app/globals.css`. A standalone React consumer must import the design-token
@@ -59,10 +59,12 @@ renderBilingualHTML     renderBilingualArtifact
 `layout-sync.ts` contains both the pure synchronization algorithm and its
 trusted renderer bridge. Generated HTML starts with a pending marker. Client
 previews call `synchronizeCurrentBilingualDocument` after fonts and images
-settle. PDF generation disables document-authored JavaScript and network
-requests, measures through trusted `page.evaluate`, calls `synchronizeLayout`
-in Node, applies the resulting spacing and pagination instructions, and only
-then changes the exact readiness marker to true.
+settle. The production `DocumentPreviewFrame` does this from the trusted parent
+bundle against its same-origin sandboxed iframe; generated document HTML never
+executes authored script. PDF generation disables document-authored JavaScript
+and network requests, measures through trusted `page.evaluate`, calls
+`synchronizeLayout` in Node, applies fixed-height physical page containers and
+numeric row offsets, and only then changes the exact readiness marker to true.
 
 The React component library is also separate. It accepts `ReactNode` values for
 trusted application composition and does not automatically run the AST
@@ -107,11 +109,14 @@ The validator currently enforces:
 - unique section alignment keys;
 - both English and Arabic content for every localized inline field;
 - at most 500 sections, 5,000 blocks, and 500,000 text characters;
-- at most eight nested list levels;
+- at most 16 inline-node levels, 50,000 inline nodes, and eight nested list
+  levels;
+- bounded atomic list subtrees, table column counts, table captions, headers,
+  and cells so an unsplittable row cannot exceed a physical page;
 - safe links: HTTPS, `mailto:`, `tel:`, fragments, or safe
   application-relative paths;
 - safe images: application-relative public paths, or base64 PNG/JPEG/WebP data
-  URIs up to 8 MiB;
+  URIs up to 8 MiB each and 24 MiB decoded bytes in aggregate;
 - table cells that match the declared column IDs;
 - structured chart definitions that pass both English/LTR and Arabic/RTL
   rendering validation;
@@ -148,10 +153,13 @@ React escapes plain string children, but the component library accepts
 
 ### PDF boundary
 
-The PDF adapter does not request remote fonts. It loads pinned local packages
-and embeds WOFF2 data URLs. It checks document structure and the returned PDF
-signature, but these checks are not a substitute for visual review, PDF/A
-validation, accessibility tagging inspection, or legal approval.
+The PDF adapter does not request remote fonts or images. It loads pinned local
+font packages, embeds WOFF2 data URLs, requires a trusted resolver for public
+image paths, decoder-validates and normalizes raster bytes, caps aggregate
+pixels, and rejects images below 300 effective DPI at their configured rendered
+width. It also rejects any measured row taller than the printable page. These
+checks are not a substitute for visual review, PDF/A validation, accessibility
+tagging inspection, or legal approval.
 
 ## Quick start
 
@@ -209,31 +217,31 @@ const html = renderBilingualHTML(document, {
 
 #### Core model
 
-| Export | Purpose |
-| --- | --- |
-| `Localized<T>` | Immutable `{ en: T; ar: T }` pair |
-| `BilingualLayoutMode` | `"parallel"`, `"serial-ar-first"`, or `"serial-en-first"` |
-| `BilingualMode` | Compatibility alias for `BilingualLayoutMode` |
-| `BilingualViewerMode` | `"both"` or declarative `"tabs"` |
-| `TextDirectionOverride` | `"auto"`, `"ltr"`, or `"rtl"` for headings and paragraphs |
-| `DirectionalVisualBehavior` | `"never"` or `"mirror-in-rtl"` |
-| `BilingualDocumentSpec` | Root document with `id`, localized title, sections, and optional layout overrides |
-| `PairedSection` | Stable semantic section with `id`, `alignmentKey`, optional title, and paired blocks |
-| `PairedBlock` | Union of heading, paragraph, list, table, image, and chart blocks |
+| Export                      | Purpose                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| `Localized<T>`              | Immutable `{ en: T; ar: T }` pair                                                    |
+| `BilingualLayoutMode`       | `"parallel"`, `"serial-ar-first"`, or `"serial-en-first"`                            |
+| `BilingualMode`             | Compatibility alias for `BilingualLayoutMode`                                        |
+| `BilingualViewerMode`       | `"both"` or declarative `"tabs"`                                                     |
+| `TextDirectionOverride`     | `"auto"`, `"ltr"`, or `"rtl"` for headings and paragraphs                            |
+| `DirectionalVisualBehavior` | `"never"` or `"mirror-in-rtl"`                                                       |
+| `BilingualDocumentSpec`     | Root document with `id`, localized title, sections, and optional layout overrides    |
+| `PairedSection`             | Stable semantic section with `id`, `alignmentKey`, optional title, and paired blocks |
+| `PairedBlock`               | Union of heading, paragraph, list, table, image, and chart blocks                    |
 
 Inline nodes are a discriminated union:
 
-| Type | Fields and behavior |
-| --- | --- |
-| `TextInlineNode` | `{ type: "text"; text }`; escaped as plain text |
-| `ValueInlineNode` | `{ type: "value"; value: BidiValue; valueKind? }`; rendered inside `<bdi>` |
-| `StrongInlineNode` | Nested inline children rendered as `<strong>` |
-| `EmphasisInlineNode` | Nested inline children rendered as `<em>` |
-| `CodeInlineNode` | Escaped text rendered as `<code>` |
-| `LinkInlineNode` | Safe `href` plus nested children |
-| `LineBreakInlineNode` | Renders `<br />` |
-| `BilingualInlineNode` | Union of all inline node types |
-| `BilingualValueKind` | Semantic class: identifier, number, currency, date, URL, email, or technical term |
+| Type                  | Fields and behavior                                                               |
+| --------------------- | --------------------------------------------------------------------------------- |
+| `TextInlineNode`      | `{ type: "text"; text }`; escaped as plain text                                   |
+| `ValueInlineNode`     | `{ type: "value"; value: BidiValue; valueKind? }`; rendered inside `<bdi>`        |
+| `StrongInlineNode`    | Nested inline children rendered as `<strong>`                                     |
+| `EmphasisInlineNode`  | Nested inline children rendered as `<em>`                                         |
+| `CodeInlineNode`      | Escaped text rendered as `<code>`                                                 |
+| `LinkInlineNode`      | Safe `href` plus nested children                                                  |
+| `LineBreakInlineNode` | Renders `<br />`                                                                  |
+| `BilingualInlineNode` | Union of all inline node types                                                    |
+| `BilingualValueKind`  | Semantic class: identifier, number, currency, date, URL, email, or technical term |
 
 Block-specific exports are:
 
@@ -250,48 +258,58 @@ Block-specific exports are:
 - `PairedChartBlock`: a stable block ID plus a structured
   `DocumentChartDefinition` from `document-visualizations.ts`. The renderer
   produces a localized accessible SVG and data-table fallback in each language
-  cell; raw SVG is not accepted.
+  cell; raw SVG is not accepted. Locale plus block ID are passed as the
+  deterministic chart `instanceKey`, so SVG title, description, pattern IDs,
+  ARIA references, and `url(#...)` references remain unique in one document.
 
 Configuration exports:
 
-| Export | Notes |
-| --- | --- |
-| `BilingualViewerConfig` | Viewer mode and default language |
-| `BilingualLayoutConfig` | Fully resolved layout configuration |
-| `BilingualLayoutOverrides` | Partial per-document or constructor overrides |
-| `RenderBilingualDocumentOptions` | `target` (`screen`/`print`) and `includeDocumentShell` |
-| `DEFAULT_BILINGUAL_CONFIG` | Parallel 50/50, 768 px breakpoint, Arabic-first mobile order, both languages visible |
-| `createColumnRatio(englishPercent)` | Returns frozen `[English, Arabic]`; validates the 30–70% constraint |
+| Export                              | Notes                                                                                |
+| ----------------------------------- | ------------------------------------------------------------------------------------ |
+| `BilingualViewerConfig`             | Viewer mode and default language                                                     |
+| `BilingualLayoutConfig`             | Fully resolved layout configuration                                                  |
+| `BilingualLayoutOverrides`          | Partial per-document or constructor overrides                                        |
+| `RenderBilingualDocumentOptions`    | `target` (`screen`/`print`) and `includeDocumentShell`                               |
+| `DEFAULT_BILINGUAL_CONFIG`          | Parallel 50/50, 768 px breakpoint, Arabic-first mobile order, both languages visible |
+| `createColumnRatio(englishPercent)` | Returns frozen `[English, Arabic]`; validates the 30–70% constraint                  |
 
 Validation exports:
 
-| Export | Behavior |
-| --- | --- |
-| `BilingualValidationIssueCode` | Stable issue-code union |
-| `BilingualValidationIssue` | Code, severity, JSON-like path, and message |
-| `BilingualValidationResult` | `{ valid, issues }` |
-| `validateBilingualDocument(input)` | Non-throwing validation report |
-| `parseBilingualDocument(input)` | Throws on errors and deeply freezes valid input |
-| `BilingualLayoutValidationError` | Error with an `issues` collection |
-| `BILINGUAL_LAYOUT_LIMITS` | Section/block/text, inline depth/node, and per-image/aggregate image-byte limits |
+| Export                             | Behavior                                                       |
+| ---------------------------------- | -------------------------------------------------------------- |
+| `BilingualValidationIssueCode`     | Stable issue-code union                                        |
+| `BilingualValidationIssue`         | Code, severity, JSON-like path, and message                    |
+| `BilingualValidationResult`        | `{ valid, issues }`                                            |
+| `validateBilingualDocument(input)` | Non-throwing validation report                                 |
+| `parseBilingualDocument(input)`    | Throws on errors and deeply freezes valid input                |
+| `BilingualLayoutValidationError`   | Error with an `issues` collection                              |
+| `BILINGUAL_LAYOUT_LIMITS`          | Document, inline, image, list-subtree, and atomic table limits |
 
 Rendering exports:
 
-| Export | Behavior |
-| --- | --- |
-| `escapeBilingualHtml(value)` | Escapes text for HTML contexts |
-| `renderSafeInline(nodes)` | Renders the inline AST; still use the document validator before calling it on external data |
-| `generateBilingualCSS(config?)` | Deterministic responsive/print CSS using Phase 1 design tokens |
-| `BilingualLayoutEngine` | Stateful configuration wrapper with `validate` and `render` methods |
-| `renderBilingualHTML(document, options?)` | Convenience validation and render entry point |
+| Export                                    | Behavior                                                                                    |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `escapeBilingualHtml(value)`              | Escapes text for HTML contexts                                                              |
+| `renderSafeInline(nodes)`                 | Renders the inline AST; still use the document validator before calling it on external data |
+| `generateBilingualCSS(config?)`           | Deterministic responsive/print CSS using Phase 1 design tokens                              |
+| `BilingualLayoutEngine`                   | Stateful configuration wrapper with `validate` and `render` methods                         |
+| `renderBilingualHTML(document, options?)` | Convenience validation and render entry point                                               |
 
 `BilingualLayoutEngine.render` emits
 `data-bilingual-layout-state="pending"` and
-`data-bilingual-layout-ready="false"`. Screen tab mode emits declarative
-buttons and data attributes; the host application is responsible for tab
-interaction and must call the trusted synchronization bridge after assets
-settle. Print target always includes both languages. Rendered pairs expose
-fragment index/count and keep-with-next metadata for measured synchronization.
+`data-bilingual-layout-ready="false"`. A standalone screen artifact never emits
+dead buttons: tab preference is represented as inert host-controller metadata
+and both languages remain visible. `DocumentPreviewFrame` replaces that
+metadata with keyboard-operable pressed-state buttons, measures both languages
+in parallel, and re-synchronizes after a language switch. Print target always
+includes both languages. Rendered pairs expose fragment index/count and
+keep-with-next metadata for measured synchronization.
+
+Raw HTML opened outside the trusted application viewer remains safe semantic
+HTML, but it is intentionally not self-paginating and its lifecycle marker
+stays pending. Route standalone HTML through a trusted host that calls
+`synchronizeCurrentBilingualDocument`; do not add inline script to the
+generated artifact.
 
 ### `src/lib/layout-sync.ts`
 
@@ -300,35 +318,39 @@ measurement and application at the boundary. All heights must use the same
 unit, and `pageContentHeight` must already exclude page margins, headers, and
 footers.
 
-| Export | Purpose |
-| --- | --- |
-| `AlignmentKey` | Branded semantic key |
-| `createAlignmentKey(value)` | Rejects empty, trimmed/whitespace-containing, control-containing keys |
-| `BilingualLanguage` | `"EN"` or `"AR"` |
-| `PairedFragmentKind` | Heading, paragraph, list item, table header/row, callout, caption, signature, image, or other |
-| `ColumnMeasurement` | `contentHeight` and optional renderer-approved `adjustableGaps` |
-| `PairedRowInput` | One atomic compiler-created fragment |
-| `LayoutSyncOptions` | Page height, row gap, bounded spacing, tolerance, and continuation labels |
-| `synchronizeLayout(rows, options)` | Returns synchronized rows, pages, warnings, and metrics |
-| `LayoutSyncResult` | `pages`, flattened `rows`, `warnings`, and `metrics` |
-| `SynchronizedColumn` | Added spacing per gap and residual trailing space |
-| `OverflowClassification` | None, column imbalance, page overflow, or both |
-| `SynchronizedPairedRow` | Shared row height and synchronized columns |
-| `PaginatedPairedRow` | Row plus page, offset, and continuation metadata |
-| `SynchronizedPage` | Used, remaining, and overflow height |
-| `LocalizedContinuationLabel`, `ContinuationLabels`, and `ContinuationMetadata` | Localized continuation markers |
-| `LayoutSyncWarning` | Residual imbalance, oversized fragment, or unsatisfied keep-with-next |
-| `LayoutSyncMetrics` | Input rows, pages, overflow rows, and continuation breaks |
-| `LAYOUT_SYNC_ERROR_CODES` / `LayoutSyncErrorCode` | Stable malformed-input codes |
-| `LayoutSyncError` | Domain error with code and optional row index |
-| `BILINGUAL_LAYOUT_PENDING_SELECTOR` / `BILINGUAL_LAYOUT_READY_SELECTOR` | Exact lifecycle selectors |
-| `measureBilingualLayoutInPage` / `applyBilingualLayoutInPage` | Self-contained trusted renderer callables |
-| `synchronizeCurrentBilingualDocument(options?)` | Measures and synchronizes an already-loaded client preview |
-| `synchronizeBilingualLayoutPage(page, options?)` | Trusted Playwright bridge used by PDF generation |
+| Export                                                                         | Purpose                                                                                       |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `AlignmentKey`                                                                 | Branded semantic key                                                                          |
+| `createAlignmentKey(value)`                                                    | Rejects empty, trimmed/whitespace-containing, control-containing keys                         |
+| `BilingualLanguage`                                                            | `"EN"` or `"AR"`                                                                              |
+| `PairedFragmentKind`                                                           | Heading, paragraph, list item, table header/row, callout, caption, signature, image, or other |
+| `ColumnMeasurement`                                                            | `contentHeight` and optional renderer-approved `adjustableGaps`                               |
+| `PairedRowInput`                                                               | One atomic compiler-created fragment                                                          |
+| `LayoutSyncOptions`                                                            | Page height, row gap, bounded spacing, tolerance, and continuation labels                     |
+| `synchronizeLayout(rows, options)`                                             | Returns synchronized rows, pages, warnings, and metrics                                       |
+| `LayoutSyncResult`                                                             | `pages`, flattened `rows`, `warnings`, and `metrics`                                          |
+| `SynchronizedColumn`                                                           | Added spacing per gap and residual trailing space                                             |
+| `OverflowClassification`                                                       | None, column imbalance, page overflow, or both                                                |
+| `SynchronizedPairedRow`                                                        | Shared row height and synchronized columns                                                    |
+| `PaginatedPairedRow`                                                           | Row plus page, offset, and continuation metadata                                              |
+| `SynchronizedPage`                                                             | Used, remaining, and overflow height                                                          |
+| `LocalizedContinuationLabel`, `ContinuationLabels`, and `ContinuationMetadata` | Localized continuation markers                                                                |
+| `LayoutSyncWarning`                                                            | Residual imbalance, oversized fragment, or unsatisfied keep-with-next                         |
+| `LayoutSyncMetrics`                                                            | Input rows, pages, overflow rows, and continuation breaks                                     |
+| `LAYOUT_SYNC_ERROR_CODES` / `LayoutSyncErrorCode`                              | Stable malformed-input codes                                                                  |
+| `LayoutSyncError`                                                              | Domain error with code and optional row index                                                 |
+| `BILINGUAL_LAYOUT_PENDING_SELECTOR` / `BILINGUAL_LAYOUT_READY_SELECTOR`        | Exact lifecycle selectors                                                                     |
+| `measureBilingualLayoutInPage` / `applyBilingualLayoutInPage`                  | Self-contained trusted renderer callables                                                     |
+| `synchronizeCurrentBilingualDocument(options?, document?)`                     | Measures the current page or a same-origin iframe document                                    |
+| `synchronizeBilingualLayoutPage(page, options?)`                               | Trusted Playwright bridge used by PDF generation                                              |
 
 Dynamic spacing is distributed only across `adjustableGaps`; text line spacing
-is not altered. Each fragment remains atomic. Split long content at paragraphs,
-list items, or table rows before measurement.
+is not altered. Paragraphs are segmented at Unicode grapheme-safe semantic
+boundaries, while lists and tables emit one bounded atomic top-level item or
+row per fragment. The renderer bridge fails closed if any measured fragment
+still exceeds the page body. Page-crossing same-key fragments receive real
+localized `role="note"` continuation markers in the existing cell padding;
+labels are not metadata-only.
 
 ```ts
 import {
@@ -374,26 +396,26 @@ for (const warning of synchronized.warnings) {
 
 #### Direction, sanitization, and digit APIs
 
-| Export | Behavior |
-| --- | --- |
-| `BilingualLocale` / `DocumentLanguage` | Aliases for `"ar" \| "en"` |
-| `StrongDirection` | Arabic, Latin, mixed, or neutral |
-| `HtmlDirection` | RTL or LTR |
-| `analyzeStrongDirection(text)` | Counts strong Arabic and Latin letters |
-| `detectStrongDirection(text)` | Returns only the classification |
-| `UNSAFE_BIDI_CONTROLS` | Metadata for rejected Unicode controls |
-| `sanitizeBidiControls(text)` | Removes controls and returns safe text plus findings |
-| `findUnsafeBidiControls(text)` | Returns findings only |
-| `sanitizeBidiText(text)` | Compatibility name returning the structured result |
-| `removeUnsafeBidiControls(text)` | Returns sanitized text only |
-| `DIGIT_POLICIES` / `DigitPolicy` | Preserve, locale, western, or Arabic-Indic |
-| `DEFAULT_DIGIT_POLICY_BY_LOCALE` | Arabic-Indic for Arabic, western for English when policy is `locale` |
-| `resolveDigitPolicy(policy, locale)` | Resolves the `locale` policy |
-| `applyDigitPolicy(text, policy?, locale?)` | Converts supported digit forms explicitly |
-| `createSafeTextRuns(text, options?)` | Produces sanitized, direction-resolved text runs |
-| `renderSafeBdiHtml(text, options?)` | Adds escaped `<bdi>` markup plus diagnostics |
-| `renderBdiHtml(text, options?)` | Returns only the safe HTML |
-| `createBidiValue(text, languageOrOptions?)` | Produces the complete `BidiValue` used by the AST |
+| Export                                      | Behavior                                                             |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| `BilingualLocale` / `DocumentLanguage`      | Aliases for `"ar" \| "en"`                                           |
+| `StrongDirection`                           | Arabic, Latin, mixed, or neutral                                     |
+| `HtmlDirection`                             | RTL or LTR                                                           |
+| `analyzeStrongDirection(text)`              | Counts strong Arabic and Latin letters                               |
+| `detectStrongDirection(text)`               | Returns only the classification                                      |
+| `UNSAFE_BIDI_CONTROLS`                      | Metadata for rejected Unicode controls                               |
+| `sanitizeBidiControls(text)`                | Removes controls and returns safe text plus findings                 |
+| `findUnsafeBidiControls(text)`              | Returns findings only                                                |
+| `sanitizeBidiText(text)`                    | Compatibility name returning the structured result                   |
+| `removeUnsafeBidiControls(text)`            | Returns sanitized text only                                          |
+| `DIGIT_POLICIES` / `DigitPolicy`            | Preserve, locale, western, or Arabic-Indic                           |
+| `DEFAULT_DIGIT_POLICY_BY_LOCALE`            | Arabic-Indic for Arabic, western for English when policy is `locale` |
+| `resolveDigitPolicy(policy, locale)`        | Resolves the `locale` policy                                         |
+| `applyDigitPolicy(text, policy?, locale?)`  | Converts supported digit forms explicitly                            |
+| `createSafeTextRuns(text, options?)`        | Produces sanitized, direction-resolved text runs                     |
+| `renderSafeBdiHtml(text, options?)`         | Adds escaped `<bdi>` markup plus diagnostics                         |
+| `renderBdiHtml(text, options?)`             | Returns only the safe HTML                                           |
+| `createBidiValue(text, languageOrOptions?)` | Produces the complete `BidiValue` used by the AST                    |
 
 `StrongDirectionAnalysis`, `UnsafeBidiControlDefinition`,
 `RemovedBidiControl`, `BidiSanitizationResult`, `NumeralSystem`,
@@ -404,20 +426,20 @@ enclosing direction still follows the selected base locale.
 
 #### Font and flow APIs
 
-| Export | Behavior |
-| --- | --- |
-| `SupportedFontWeight` | 300, 400, 500, 600, or 700 |
-| `BilingualFontFace` / `BilingualFontPair` | Allow-listed family metadata |
-| `BILINGUAL_FONT_PAIRS` / `DOCUMENT_FONT_PAIRS` | Noto Sans and IBM Plex Sans pair definitions |
-| `BilingualFontPairId` | `"noto-sans" \| "ibm-plex-sans"` |
-| `DEFAULT_BILINGUAL_FONT_PAIR_ID` | `"ibm-plex-sans"` |
-| `BROWSER_SHAPING_RESPONSIBILITY` | Explicit shaping-responsibility statement |
-| `getBilingualFontPair` / `resolveFontPair` | Resolve allow-listed pair metadata |
-| `getFontPairStack(pair, locale)` | Safe CSS font-family stack |
-| `TextContentKind` | Prose or technical |
-| `TEXT_FLOW_POLICIES` / `getTextFlowPolicy` | Locale-specific hyphenation and overflow policy |
-| `getTypographyStyle(locale, options?)` | Framework-neutral style object |
-| `generateBilingualTypographyCss(options?)` | Deterministic HTML/print typography CSS |
+| Export                                         | Behavior                                        |
+| ---------------------------------------------- | ----------------------------------------------- |
+| `SupportedFontWeight`                          | 300, 400, 500, 600, or 700                      |
+| `BilingualFontFace` / `BilingualFontPair`      | Allow-listed family metadata                    |
+| `BILINGUAL_FONT_PAIRS` / `DOCUMENT_FONT_PAIRS` | Noto Sans and IBM Plex Sans pair definitions    |
+| `BilingualFontPairId`                          | `"noto-sans" \| "ibm-plex-sans"`                |
+| `DEFAULT_BILINGUAL_FONT_PAIR_ID`               | `"ibm-plex-sans"`                               |
+| `BROWSER_SHAPING_RESPONSIBILITY`               | Explicit shaping-responsibility statement       |
+| `getBilingualFontPair` / `resolveFontPair`     | Resolve allow-listed pair metadata              |
+| `getFontPairStack(pair, locale)`               | Safe CSS font-family stack                      |
+| `TextContentKind`                              | Prose or technical                              |
+| `TEXT_FLOW_POLICIES` / `getTextFlowPolicy`     | Locale-specific hyphenation and overflow policy |
+| `getTypographyStyle(locale, options?)`         | Framework-neutral style object                  |
+| `generateBilingualTypographyCss(options?)`     | Deterministic HTML/print typography CSS         |
 
 `normalizedLineHeight` must be finite and between 1 and 3. Arabic uses no
 hyphenation and keeps tracking at `normal`; technical content uses
@@ -428,28 +450,31 @@ types.
 
 ### `src/lib/bilingual-pdf.ts`
 
-| Export | Behavior |
-| --- | --- |
-| `BILINGUAL_FONT_LICENSES` | Package, OFL license name, and upstream metadata |
-| `BILINGUAL_PRINT_PROFILE` | A4, sRGB, vector-text, and 300-DPI raster target metadata |
-| `BILINGUAL_PERFORMANCE_TARGETS` | 50-page HTML, PDF, and heap budgets used by benchmarks |
-| `getEmbeddedBilingualFontCss(pair?)` | Reads local WOFF2 assets, emits data-URL `@font-face` CSS, and caches its promise |
-| `BilingualPdfQualityCode` / `BilingualPdfQualityIssue` | Structural quality issue model |
-| `BilingualHtmlQualityReport` | Pair/language/font counts and issues |
-| `BilingualPdfQualityError` | Error carrying quality issues |
-| `inspectBilingualHtml(html)` | Checks readiness marker, paired cells, one `h1`, remote fonts, and unsafe bidi controls |
-| `BilingualRenderOptions` | Screen/print target and font pair |
-| `BilingualRenderArtifact` | Frozen document, canonical HTML, SHA-256, pair, and quality report |
-| `renderBilingualArtifact(input, options?)` | Validates, renders, embeds fonts, inspects, and hashes HTML |
-| `GenerateBilingualPdfOptions` | Render options plus shared `HtmlToPdfOptions` |
-| `BilingualPdfArtifact` | Render artifact plus a PDF `Buffer` |
-| `generateBilingualPdf(input, options?)` | Generates canonical print HTML and a Chromium PDF |
+| Export                                                 | Behavior                                                                                |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `BILINGUAL_FONT_LICENSES`                              | Package, OFL license name, and upstream metadata                                        |
+| `BILINGUAL_PRINT_PROFILE`                              | A4, sRGB, vector-text, and 300-DPI raster target metadata                               |
+| `BILINGUAL_PERFORMANCE_TARGETS`                        | 50-page HTML, PDF, and heap budgets used by benchmarks                                  |
+| `getEmbeddedBilingualFontCss(pair?)`                   | Reads local WOFF2 assets, emits data-URL `@font-face` CSS, and caches its promise       |
+| `BilingualPdfQualityCode` / `BilingualPdfQualityIssue` | Structural quality issue model                                                          |
+| `BilingualHtmlQualityReport`                           | Pair/language/font counts and issues                                                    |
+| `BilingualPdfQualityError`                             | Error carrying quality issues                                                           |
+| `inspectBilingualHtml(html)`                           | Checks readiness marker, paired cells, one `h1`, remote fonts, and unsafe bidi controls |
+| `BilingualRenderOptions`                               | Screen/print target and font pair                                                       |
+| `BilingualRenderArtifact`                              | Frozen document, canonical HTML, SHA-256, pair, and quality report                      |
+| `renderBilingualArtifact(input, options?)`             | Validates, renders, embeds fonts, inspects, and hashes HTML                             |
+| `prepareBilingualPdfDocument(input, options?)`         | Resolves, decodes, normalizes, DPI-checks, and embeds every raster image                |
+| `GenerateBilingualPdfOptions`                          | Render options plus shared `HtmlToPdfOptions`                                           |
+| `BilingualPdfArtifact`                                 | Render artifact plus a PDF `Buffer`                                                     |
+| `generateBilingualPdf(input, options?)`                | Generates canonical print HTML and a Chromium PDF                                       |
 
 `generateBilingualPdf` defaults to A4, print backgrounds, bilingual footer,
 14 mm inline margins, no fixed wait, and the exact
 `[data-bilingual-document][data-bilingual-layout-ready="true"]` readiness
 selector. The shared PDF utility fails closed if fonts or images do not settle
-within the bounded timeout.
+within the bounded timeout. Page width and height passed to synchronization are
+derived from the resolved PDF format and all four margins, including custom
+Letter, Legal, A3, A5, Tabloid, and Ledger configurations.
 
 This module uses Node.js filesystem, crypto, module resolution, and `Buffer`.
 Run it in a Node runtime, not a browser component or Edge runtime.
@@ -472,17 +497,17 @@ import {
 
 `BilingualSectionProps`:
 
-| Prop | Type | Notes |
-| --- | --- | --- |
-| `alignmentKey` | `string` | Required semantic pairing key |
-| `english` / `arabic` | `ReactNode` | Required trusted content |
-| `title` | `LocalizedNode?` | Optional paired heading |
-| `headingLevel` | `1`–`6` | Defaults to 2 |
-| `layout` | `BilingualLayoutMode?` | Defaults to parallel |
-| `columnRatio` | `[number, number]?` | Positive CSS `fr` weights; invalid values fall back to 1/1 |
-| `continuation` | `BilingualContinuation?` | Fragment and total-fragment metadata |
-| `className` | `string?` | Trusted styling hook |
-| `keepWithNext` | `boolean?` | Adds print avoidance class |
+| Prop                 | Type                     | Notes                                                      |
+| -------------------- | ------------------------ | ---------------------------------------------------------- |
+| `alignmentKey`       | `string`                 | Required semantic pairing key                              |
+| `english` / `arabic` | `ReactNode`              | Required trusted content                                   |
+| `title`              | `LocalizedNode?`         | Optional paired heading                                    |
+| `headingLevel`       | `1`–`6`                  | Defaults to 2                                              |
+| `layout`             | `BilingualLayoutMode?`   | Defaults to parallel                                       |
+| `columnRatio`        | `[number, number]?`      | Positive CSS `fr` weights; invalid values fall back to 1/1 |
+| `continuation`       | `BilingualContinuation?` | Fragment and total-fragment metadata                       |
+| `className`          | `string?`                | Trusted styling hook                                       |
+| `keepWithNext`       | `boolean?`               | Adds print avoidance class                                 |
 
 This ratio is a React layout weight, not the AST percentage ratio. It does not
 enforce the AST engine's 30%–70% and total-100 rules.
@@ -544,7 +569,7 @@ import {
 function isolatedValue(
   value: string,
   language: DocumentLanguage,
-  valueKind: BilingualValueKind
+  valueKind: BilingualValueKind,
 ): BilingualInlineNode {
   return {
     type: "value",
@@ -647,11 +672,10 @@ const serviceLevels: PairedTableBlock = {
 };
 ```
 
-For very long tables, create compiler fragments at row boundaries and use
-`layout-sync`. The AST `repeatHeader` flag defaults to true in rendered markup,
-while `repeatHeader: false` emits `data-repeat-header="false"` and changes the
-`thead` print display to `table-row-group`. Actual page-break behavior still
-depends on the print engine and row sizes.
+The AST renderer emits one bounded row per synchronization fragment. The
+`repeatHeader` flag defaults to true, so each continuation table includes its
+header. With `repeatHeader: false`, only the first fragment contains `<thead>`
+and its print display is `table-row-group`.
 
 ### Images
 
@@ -786,7 +810,12 @@ const compiled = buildContractBilingualDocument(options);
 const html = buildEnhancedBilingualContractHTML(options);
 const pdf = await generateEnhancedBilingualContractPDF(options);
 
-console.log(compiled.sourceFormat, compiled.diagnostics, html.length, pdf.length);
+console.log(
+  compiled.sourceFormat,
+  compiled.diagnostics,
+  html.length,
+  pdf.length,
+);
 ```
 
 `side-by-side` maps to parallel, `stacked` and `legacy` map to Arabic-first
@@ -809,18 +838,27 @@ Parity is based on a shared source and renderer:
 
 This architecture reduces divergence; it does not guarantee pixel identity.
 Screen viewport width, print media queries, page margins, headers/footers,
-browser versions, and printer rasterization can change geometry. Compare the
-screen artifact in print emulation with the generated PDF and run the
-Playwright visual suite for release candidates.
+browser versions, and printer rasterization can change geometry. The
+Playwright visual gate renders a synchronized representative fixture in print
+emulation and compares it with the committed normalized baseline at
+`src/lib/__tests__/visual-baselines/bilingual-layout.chromium.png`.
+
+The comparison uses a fixed 50% resize and 0.5-sigma blur so macOS/Linux glyph
+anti-aliasing noise does not masquerade as a layout regression. A normalized
+pixel is changed when its RGB root-mean-square delta exceeds 24; the test fails
+when more than 0.5% of pixels change. Geometry assertions still independently
+enforce paired heights, physical ordering, direction, overflow, and heading
+semantics. On failure, inspect `coverage/bilingual-visual/actual.normalized.png`
+and `coverage/bilingual-visual/diff.normalized.png`.
 
 ### Local fonts and licenses
 
 The current pinned packages are:
 
-| Pair | Packages | Repository version | License |
-| --- | --- | --- | --- |
-| Noto Sans | `@fontsource/noto-sans`, `@fontsource/noto-sans-arabic` | 5.3.0 | OFL-1.1 |
-| IBM Plex Sans | `@ibm/plex-sans`, `@ibm/plex-sans-arabic` | 1.1.0 | OFL-1.1 |
+| Pair          | Packages                                                | Repository version | License |
+| ------------- | ------------------------------------------------------- | ------------------ | ------- |
+| Noto Sans     | `@fontsource/noto-sans`, `@fontsource/noto-sans-arabic` | 5.3.0              | OFL-1.1 |
+| IBM Plex Sans | `@ibm/plex-sans`, `@ibm/plex-sans-arabic`               | 1.1.0              | OFL-1.1 |
 
 Local license texts are installed at:
 
@@ -835,19 +873,22 @@ actual license text for the intended distribution. This documentation is not a
 legal opinion.
 
 Each pair embeds Arabic and Latin faces at weights 300, 400, 500, 600, and 700.
-The print profile's 300-DPI value is a raster target. Text remains vector text;
-the adapter does not increase the native resolution of supplied images.
+The print profile's 300-DPI value is an enforced raster minimum. Text remains
+vector text; the adapter never invents pixels or silently upsamples a
+low-resolution asset. Required horizontal pixels are calculated from the
+resolved paper width, margins, bilingual column ratio, cell padding, and the
+image block's `widthPercent`.
 
 ## Performance and 50-page guidance
 
 `BILINGUAL_PERFORMANCE_TARGETS` defines benchmark budgets, not universal
 guarantees:
 
-| Budget | Target |
-| --- | ---: |
-| 50-page canonical HTML render | under 2,000 ms |
-| 50-page Chromium PDF render | under 30,000 ms |
-| 50-page heap delta | under 128 MiB |
+| Budget                        |          Target |
+| ----------------------------- | --------------: |
+| 50-page canonical HTML render |  under 2,000 ms |
+| 50-page Chromium PDF render   | under 30,000 ms |
+| 50-page heap delta            |   under 128 MiB |
 
 The HTML and heap test runs in the regular performance suite. The real PDF
 benchmark is opt-in and depends on local Chromium and the host machine. Re-run
@@ -856,19 +897,19 @@ laptop result as production evidence.
 
 For large documents:
 
-1. Segment long clauses at semantic paragraph, list-item, and table-row
-   boundaries before measurement.
+1. Let the AST renderer segment prose at grapheme-safe boundaries; keep list
+   subtrees and table cells within the exported atomic limits.
 2. Keep each `alignmentKey` group contiguous and number fragments from zero to
    `fragmentCount - 1`.
 3. Measure after the selected fonts load. Use one unit for both columns and
    `pageContentHeight`.
 4. Reserve margins, headers, and footers before passing page body height to
    `synchronizeLayout`.
-5. Inspect every `LayoutSyncWarning`; do not hide residual imbalance or
-   oversized-fragment warnings.
+5. Inspect every `LayoutSyncWarning`; the renderer bridge blocks physical page
+   overflow rather than emitting overlapping output.
 6. Avoid large repeated base64 images. Data images are capped at 8 MiB each and
    24 MiB decoded bytes in aggregate; PDF rendering also fails closed when an
-   image cannot be decoded before layout.
+   image cannot be decoded or does not provide 300 effective DPI.
 7. Reuse a font pair within a process so the embedded-font promise cache avoids
    repeated disk reads.
 8. Use explicit page starts only when required. Fifty forced page breaks are a
@@ -929,40 +970,41 @@ identically.
 
 ### RTL/LTR and mixed values
 
-| Symptom | Likely cause | Action |
-| --- | --- | --- |
-| Tender ID or email appears reordered | Plain mixed text was placed directly in an RTL run | Build a `BidiValue` and use a `value` inline node |
-| Invisible characters change display order | Authored text contains bidi controls | Inspect `sanitizeBidiControls` findings; store the sanitized text and audit the source |
-| Digits unexpectedly change form | `locale` or explicit digit conversion was selected | Use `digitPolicy: "preserve"` for IDs, URLs, dates, and legal references |
-| Arabic paragraph is LTR | Incorrect language or forced direction | Keep Arabic in `content.ar`; use `direction: "rtl"` only for a justified override |
-| Logo or chart is backwards | `mirror-in-rtl` was applied indiscriminately | Set `visualBehavior: "never"` |
-| English/Arabic mobile order is wrong | Layout/mobile order configuration mismatch | Check `mobileOrder` and serial layout mode |
+| Symptom                                   | Likely cause                                       | Action                                                                                 |
+| ----------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Tender ID or email appears reordered      | Plain mixed text was placed directly in an RTL run | Build a `BidiValue` and use a `value` inline node                                      |
+| Invisible characters change display order | Authored text contains bidi controls               | Inspect `sanitizeBidiControls` findings; store the sanitized text and audit the source |
+| Digits unexpectedly change form           | `locale` or explicit digit conversion was selected | Use `digitPolicy: "preserve"` for IDs, URLs, dates, and legal references               |
+| Arabic paragraph is LTR                   | Incorrect language or forced direction             | Keep Arabic in `content.ar`; use `direction: "rtl"` only for a justified override      |
+| Logo or chart is backwards                | `mirror-in-rtl` was applied indiscriminately       | Set `visualBehavior: "never"`                                                          |
+| English/Arabic mobile order is wrong      | Layout/mobile order configuration mismatch         | Check `mobileOrder` and serial layout mode                                             |
 
 ### Pagination and synchronization
 
-| Symptom | Likely cause | Action |
-| --- | --- | --- |
-| One legal clause splits unpredictably | Fragment is too large or not segmented | Split at safe semantic boundaries before synchronization |
-| `OVERSIZED_FRAGMENT` | A row exceeds `pageContentHeight` | Reduce the fragment or deliberately allocate a larger page body |
-| `KEEP_WITH_NEXT_UNSATISFIABLE` | The pair cannot fit on one empty page | Remove the hint or split the content |
-| Residual blank space remains | Adjustable-gap capacity was exhausted | Review `trailingSpace`, increase approved gaps carefully, or accept/report the imbalance |
-| Continuation label is missing | Same-key fragments did not cross a page contiguously | Keep an alignment-key group contiguous and validate fragment indexes |
-| Table header does not repeat | Print engine or table structure prevents repetition | Confirm a real `<thead>`, `repeatHeader`, and that rows are not wrapped in incompatible containers |
+| Symptom                                 | Likely cause                                                    | Action                                                                                             |
+| --------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| One legal clause splits unpredictably   | Content bypassed AST segmentation or atomic limits              | Route it through `parseBilingualDocument` and the trusted bridge                                   |
+| Renderer rejects a fragment as too tall | A chart, image, or other atomic row exceeds `pageContentHeight` | Reduce its rendered size or deliberately select a larger page body                                 |
+| `KEEP_WITH_NEXT_UNSATISFIABLE`          | The pair cannot fit on one empty page                           | Remove the hint or split the content                                                               |
+| Residual blank space remains            | Adjustable-gap capacity was exhausted                           | Review `trailingSpace`, increase approved gaps carefully, or accept/report the imbalance           |
+| Continuation label is missing           | Same-key fragments did not cross a page contiguously            | Keep an alignment-key group contiguous and validate fragment indexes                               |
+| Table header does not repeat            | Print engine or table structure prevents repetition             | Confirm a real `<thead>`, `repeatHeader`, and that rows are not wrapped in incompatible containers |
 
 `overflowRowCount` includes any non-`none` overflow classification, including
 residual column imbalance; it is not limited to physical page overflow.
 
 ### Fonts and PDF
 
-| Symptom | Likely cause | Action |
-| --- | --- | --- |
-| Chromium executable is missing | Local browser was not installed | Run `bun run setup:pdf` |
-| Font module cannot resolve | Dependencies or lockfile install is incomplete | Run `bun install`; verify the pinned font packages and local license files |
-| Remote-font quality error | HTML includes Google Fonts URLs | Remove remote font imports and use `getEmbeddedBilingualFontCss` |
-| Arabic falls back or shapes poorly | Wrong pair/weight, fonts not loaded, or unsupported glyph | Use an allow-listed pair/weight and await `document.fonts.ready`; inspect the actual text |
-| PDF readiness times out | Marker selector was overridden/missing or measured layout never settled | Keep the exact `[data-bilingual-document][data-bilingual-layout-ready="true"]` selector, inspect the pending state, and review bounded timeout settings |
-| Structural quality error | Missing pair/language cell, readiness marker, or exactly one `h1` | Inspect `quality.issues` and fix the canonical renderer input |
-| Valid signature but bad layout | Signature checks only `%PDF-` | Run visual QA; inspect fonts, overflow, and page geometry |
+| Symptom                            | Likely cause                                                            | Action                                                                                                                                                  |
+| ---------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chromium executable is missing     | Local browser was not installed                                         | Run `bun run setup:pdf`                                                                                                                                 |
+| Font module cannot resolve         | Dependencies or lockfile install is incomplete                          | Run `bun install`; verify the pinned font packages and local license files                                                                              |
+| Remote-font quality error          | HTML includes Google Fonts URLs                                         | Remove remote font imports and use `getEmbeddedBilingualFontCss`                                                                                        |
+| Arabic falls back or shapes poorly | Wrong pair/weight, fonts not loaded, or unsupported glyph               | Use an allow-listed pair/weight and await `document.fonts.ready`; inspect the actual text                                                               |
+| PDF readiness times out            | Marker selector was overridden/missing or measured layout never settled | Keep the exact `[data-bilingual-document][data-bilingual-layout-ready="true"]` selector, inspect the pending state, and review bounded timeout settings |
+| Structural quality error           | Missing pair/language cell, readiness marker, or exactly one `h1`       | Inspect `quality.issues` and fix the canonical renderer input                                                                                           |
+| Valid signature but bad layout     | Signature checks only `%PDF-`                                           | Run visual QA; inspect fonts, overflow, and page geometry                                                                                               |
+| `IMAGE_RESOLUTION_INSUFFICIENT`    | Native pixels provide less than 300 DPI at configured print width       | Supply a larger source raster or intentionally reduce `widthPercent`                                                                                    |
 
 ### Overflow
 
@@ -974,7 +1016,8 @@ residual column imbalance; it is not limited to physical page overflow.
   layout makes content unreadable.
 - The React table scrolls horizontally on screen but switches overflow to
   visible for print; a too-wide print table still requires template work.
-- Constrain images with `widthPercent` and verify their intrinsic dimensions.
+- Constrain images with `widthPercent`; PDF preflight verifies the resulting
+  effective DPI against intrinsic dimensions.
 
 ## Migration guide
 
@@ -1038,6 +1081,17 @@ Run real Chromium visual/PDF checks:
 bun run test:bilingual:visual
 ```
 
+After an intentional rendering change, update the committed baseline with the
+dedicated local-only command:
+
+```bash
+bun run update:bilingual:visual-baseline
+git diff -- src/lib/__tests__/visual-baselines/bilingual-layout.chromium.png
+```
+
+The command refuses to update in CI. Review the image and the originating CSS
+or renderer change before committing a new baseline.
+
 Run the 50-page benchmark, including the opt-in PDF measurement:
 
 ```bash
@@ -1079,8 +1133,9 @@ focused command. Browser/PDF tests are skipped unless their scripts set
 `PLAYWRIGHT_CHROMIUM=1`.
 
 For release QA, retain the HTML hash, browser/Chromium version, font pair,
-quality report, PDF checksum, test fixture identity, and screenshots. Review
-actual Arabic and English content with qualified humans.
+quality report, PDF checksum, test fixture identity, committed visual baseline,
+and any failure diff artifacts. Review actual Arabic and English content with
+qualified humans.
 
 ## Known non-goals
 
@@ -1089,10 +1144,9 @@ Phase 2 does not provide:
 - machine translation or translation-quality review;
 - legal advice, legal approval, or procurement compliance approval;
 - arbitrary authored HTML in the validated AST;
-- automatic DOM measurement or automatic splitting inside a fragment;
 - ratio-based scroll synchronization;
 - JavaScript Arabic shaping;
-- a complete tab-view state controller;
+- self-executing pagination or tab controls in a raw standalone HTML file;
 - guaranteed pixel identity across screen, browsers, Chromium versions, and
   printers;
 - automatic raster-image upsampling, CMYK conversion, PDF/A conformance, or

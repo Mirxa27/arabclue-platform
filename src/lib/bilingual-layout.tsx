@@ -32,9 +32,7 @@ export type Localized<T> = Readonly<{
 }>;
 
 export type BilingualLayoutMode =
-  | "parallel"
-  | "serial-ar-first"
-  | "serial-en-first";
+  "parallel" | "serial-ar-first" | "serial-en-first";
 
 /** Safe compatibility name for code that only needs the layout-mode type. */
 export type BilingualMode = BilingualLayoutMode;
@@ -297,6 +295,11 @@ export const BILINGUAL_LAYOUT_LIMITS = Object.freeze({
   maxInlineNodes: 50_000,
   maxDataImageBytes: 8 * 1024 * 1024,
   maxTotalDataImageBytes: 24 * 1024 * 1024,
+  maxAtomicListSubtreeItems: 24,
+  maxAtomicListSubtreeGraphemes: 900,
+  maxTableColumns: 12,
+  maxAtomicTableRowGraphemes: 1_000,
+  maxAtomicTableCaptionGraphemes: 360,
 });
 
 const LIMITS = BILINGUAL_LAYOUT_LIMITS;
@@ -338,7 +341,7 @@ function addIssue(
   code: BilingualValidationIssueCode,
   path: string,
   message: string,
-  severity: "error" | "warning" = "error"
+  severity: "error" | "warning" = "error",
 ): void {
   issues.push({ code, severity, path, message });
 }
@@ -347,14 +350,14 @@ function validateStableId(
   value: unknown,
   path: string,
   issues: BilingualValidationIssue[],
-  ids: Set<string>
+  ids: Set<string>,
 ): value is string {
   if (typeof value !== "string" || !STABLE_ID_PATTERN.test(value)) {
     addIssue(
       issues,
       "INVALID_ID",
       path,
-      "IDs must be 1-128 ASCII letters, numbers, dots, colons, underscores, or hyphens."
+      "IDs must be 1-128 ASCII letters, numbers, dots, colons, underscores, or hyphens.",
     );
     return false;
   }
@@ -373,10 +376,15 @@ function validateText(
   path: string,
   issues: BilingualValidationIssue[],
   stats: ValidationStats,
-  allowEmpty = false
+  allowEmpty = false,
 ): value is string {
   if (typeof value !== "string" || (!allowEmpty && value.trim().length === 0)) {
-    addIssue(issues, "EMPTY_TRANSLATION", path, "Translated text cannot be empty.");
+    addIssue(
+      issues,
+      "EMPTY_TRANSLATION",
+      path,
+      "Translated text cannot be empty.",
+    );
     return false;
   }
 
@@ -387,7 +395,7 @@ function validateText(
       issues,
       "UNSAFE_BIDI_CONTROL",
       path,
-      "Text contains Unicode direction-control characters. Use a structured bidi value instead."
+      "Text contains Unicode direction-control characters. Use a structured bidi value instead.",
     );
   }
 
@@ -412,10 +420,15 @@ function validateBidiValue(
   value: unknown,
   path: string,
   issues: BilingualValidationIssue[],
-  stats: ValidationStats
+  stats: ValidationStats,
 ): value is BidiValue {
   if (!isRecord(value)) {
-    addIssue(issues, "INVALID_INLINE_NODE", path, "Bidi value must be an object.");
+    addIssue(
+      issues,
+      "INVALID_INLINE_NODE",
+      path,
+      "Bidi value must be an object.",
+    );
     return false;
   }
 
@@ -428,7 +441,7 @@ function validateBidiValue(
       issues,
       "INVALID_INLINE_NODE",
       `${path}.kind`,
-      "Bidi value kind must be arabic, latin, mixed, or neutral."
+      "Bidi value kind must be arabic, latin, mixed, or neutral.",
     );
   }
   const validDirection =
@@ -438,15 +451,18 @@ function validateBidiValue(
       issues,
       "INVALID_INLINE_NODE",
       `${path}.dir`,
-      "Bidi value direction must be ltr or rtl."
+      "Bidi value direction must be ltr or rtl.",
     );
   }
-  if (Array.isArray(value.removedControls) && value.removedControls.length > 0) {
+  if (
+    Array.isArray(value.removedControls) &&
+    value.removedControls.length > 0
+  ) {
     addIssue(
       issues,
       "UNSAFE_BIDI_CONTROL",
       `${path}.removedControls`,
-      "The source value contained Unicode direction-control characters."
+      "The source value contained Unicode direction-control characters.",
     );
   }
   return validText && validKind && validDirection;
@@ -457,14 +473,14 @@ function validateInlineNodes(
   path: string,
   issues: BilingualValidationIssue[],
   stats: ValidationStats,
-  depth = 1
+  depth = 1,
 ): value is readonly BilingualInlineNode[] {
   if (!Array.isArray(value) || value.length === 0) {
     addIssue(
       issues,
       "MISSING_CONTENT",
       path,
-      "Inline content must contain at least one node."
+      "Inline content must contain at least one node.",
     );
     return false;
   }
@@ -474,7 +490,7 @@ function validateInlineNodes(
       issues,
       "DOCUMENT_LIMIT_EXCEEDED",
       path,
-      `Inline-node nesting cannot exceed ${LIMITS.maxInlineDepth} levels.`
+      `Inline-node nesting cannot exceed ${LIMITS.maxInlineDepth} levels.`,
     );
     return false;
   }
@@ -485,7 +501,7 @@ function validateInlineNodes(
       issues,
       "DOCUMENT_LIMIT_EXCEEDED",
       path,
-      `Documents cannot exceed ${LIMITS.maxInlineNodes} inline nodes.`
+      `Documents cannot exceed ${LIMITS.maxInlineNodes} inline nodes.`,
     );
     return false;
   }
@@ -509,14 +525,14 @@ function validateInlineNodes(
           node.valueKind !== undefined &&
           (typeof node.valueKind !== "string" ||
             !SAFE_SEMANTIC_VALUE_KINDS.has(
-              node.valueKind as BilingualValueKind
+              node.valueKind as BilingualValueKind,
             ))
         ) {
           addIssue(
             issues,
             "INVALID_INLINE_NODE",
             `${nodePath}.valueKind`,
-            "Unsupported semantic value kind."
+            "Unsupported semantic value kind.",
           );
         }
         break;
@@ -527,7 +543,7 @@ function validateInlineNodes(
           `${nodePath}.children`,
           issues,
           stats,
-          depth + 1
+          depth + 1,
         );
         break;
       case "link":
@@ -536,7 +552,7 @@ function validateInlineNodes(
             issues,
             "INVALID_LINK",
             `${nodePath}.href`,
-            "Links must be HTTPS, mailto, tel, a fragment, or a safe application-relative path."
+            "Links must be HTTPS, mailto, tel, a fragment, or a safe application-relative path.",
           );
         }
         validateInlineNodes(
@@ -544,7 +560,7 @@ function validateInlineNodes(
           `${nodePath}.children`,
           issues,
           stats,
-          depth + 1
+          depth + 1,
         );
         break;
       case "line-break":
@@ -554,7 +570,7 @@ function validateInlineNodes(
           issues,
           "INVALID_INLINE_NODE",
           `${nodePath}.type`,
-          `Unsupported inline node type "${node.type}".`
+          `Unsupported inline node type "${node.type}".`,
         );
     }
   }
@@ -566,14 +582,14 @@ function validateLocalizedInline(
   value: unknown,
   path: string,
   issues: BilingualValidationIssue[],
-  stats: ValidationStats
+  stats: ValidationStats,
 ): value is Localized<readonly BilingualInlineNode[]> {
   if (!isRecord(value)) {
     addIssue(
       issues,
       "MISSING_CONTENT",
       path,
-      "Localized content must provide English and Arabic values."
+      "Localized content must provide English and Arabic values.",
     );
     return false;
   }
@@ -589,10 +605,15 @@ function validateListItems(
   issues: BilingualValidationIssue[],
   stats: ValidationStats,
   ids: Set<string>,
-  depth: number
+  depth: number,
 ): value is readonly BilingualListItem[] {
   if (!Array.isArray(value) || value.length === 0) {
-    addIssue(issues, "INVALID_LIST", path, "A list must contain at least one item.");
+    addIssue(
+      issues,
+      "INVALID_LIST",
+      path,
+      "A list must contain at least one item.",
+    );
     return false;
   }
 
@@ -601,7 +622,7 @@ function validateListItems(
       issues,
       "DOCUMENT_LIMIT_EXCEEDED",
       path,
-      `List nesting cannot exceed ${LIMITS.maxListDepth} levels.`
+      `List nesting cannot exceed ${LIMITS.maxListDepth} levels.`,
     );
     return false;
   }
@@ -614,16 +635,45 @@ function validateListItems(
       continue;
     }
     validateStableId(item.id, `${itemPath}.id`, issues, ids);
-    validateLocalizedInline(item.content, `${itemPath}.content`, issues, stats);
+    const validContent = validateLocalizedInline(
+      item.content,
+      `${itemPath}.content`,
+      issues,
+      stats,
+    );
+    let validChildren = true;
     if (item.children !== undefined) {
-      validateListItems(
+      validChildren = validateListItems(
         item.children,
         `${itemPath}.children`,
         issues,
         stats,
         ids,
-        depth + 1
+        depth + 1,
       );
+    }
+    if (validContent && validChildren) {
+      const typedItem = item as unknown as BilingualListItem;
+      const subtreeItems = countListSubtreeItems(typedItem);
+      if (subtreeItems > LIMITS.maxAtomicListSubtreeItems) {
+        addIssue(
+          issues,
+          "DOCUMENT_LIMIT_EXCEEDED",
+          itemPath,
+          `A list-item subtree cannot exceed ${LIMITS.maxAtomicListSubtreeItems} items because it must remain atomic during pagination.`,
+        );
+      }
+      for (const language of ["en", "ar"] as const) {
+        const graphemes = countListSubtreeGraphemes(typedItem, language);
+        if (graphemes > LIMITS.maxAtomicListSubtreeGraphemes) {
+          addIssue(
+            issues,
+            "DOCUMENT_LIMIT_EXCEEDED",
+            `${itemPath}.content.${language}`,
+            `A list-item subtree cannot exceed ${LIMITS.maxAtomicListSubtreeGraphemes} graphemes per language because it must fit on one page.`,
+          );
+        }
+      }
     }
   }
 
@@ -634,7 +684,7 @@ function validateSafeImageSource(
   value: unknown,
   path: string,
   issues: BilingualValidationIssue[],
-  stats: ValidationStats
+  stats: ValidationStats,
 ): value is SafeImageSource {
   if (!isRecord(value) || typeof value.kind !== "string") {
     addIssue(issues, "INVALID_IMAGE", path, "Image source must be structured.");
@@ -653,7 +703,7 @@ function validateSafeImageSource(
         issues,
         "INVALID_IMAGE",
         `${path}.path`,
-        "Public images must use a safe application-relative path."
+        "Public images must use a safe application-relative path.",
       );
       return false;
     }
@@ -662,7 +712,12 @@ function validateSafeImageSource(
 
   if (value.kind === "data") {
     if (typeof value.uri !== "string") {
-      addIssue(issues, "INVALID_IMAGE", `${path}.uri`, "Image data URI is required.");
+      addIssue(
+        issues,
+        "INVALID_IMAGE",
+        `${path}.uri`,
+        "Image data URI is required.",
+      );
       return false;
     }
     const match = value.uri.match(SAFE_DATA_IMAGE_PATTERN);
@@ -671,7 +726,7 @@ function validateSafeImageSource(
         issues,
         "INVALID_IMAGE",
         `${path}.uri`,
-        "Only base64 PNG, JPEG, and WebP data images are accepted."
+        "Only base64 PNG, JPEG, and WebP data images are accepted.",
       );
       return false;
     }
@@ -683,7 +738,7 @@ function validateSafeImageSource(
         : 0;
     const decodedBytes = Math.max(
       0,
-      Math.floor((encoded.length * 3) / 4) - paddingBytes
+      Math.floor((encoded.length * 3) / 4) - paddingBytes,
     );
     stats.dataImageBytes += decodedBytes;
     if (decodedBytes > LIMITS.maxDataImageBytes) {
@@ -691,14 +746,19 @@ function validateSafeImageSource(
         issues,
         "DOCUMENT_LIMIT_EXCEEDED",
         `${path}.uri`,
-        `Embedded images cannot exceed ${LIMITS.maxDataImageBytes} bytes.`
+        `Embedded images cannot exceed ${LIMITS.maxDataImageBytes} bytes.`,
       );
       return false;
     }
     return true;
   }
 
-  addIssue(issues, "INVALID_IMAGE", `${path}.kind`, "Unsupported image source.");
+  addIssue(
+    issues,
+    "INVALID_IMAGE",
+    `${path}.kind`,
+    "Unsupported image source.",
+  );
   return false;
 }
 
@@ -714,7 +774,7 @@ function validateBlock(
   path: string,
   issues: BilingualValidationIssue[],
   stats: ValidationStats,
-  ids: Set<string>
+  ids: Set<string>,
 ): value is PairedBlock {
   if (!isRecord(value) || typeof value.type !== "string") {
     addIssue(issues, "INVALID_BLOCK", path, "Invalid paired block.");
@@ -734,7 +794,7 @@ function validateBlock(
           issues,
           "INVALID_BLOCK",
           `${path}.level`,
-          "Heading level must be between 2 and 6."
+          "Heading level must be between 2 and 6.",
         );
       }
       validateLocalizedInline(value.content, `${path}.content`, issues, stats);
@@ -751,7 +811,7 @@ function validateBlock(
           issues,
           "INVALID_LIST",
           `${path}.ordered`,
-          "List ordered must be a boolean."
+          "List ordered must be a boolean.",
         );
       }
       if (
@@ -764,7 +824,7 @@ function validateBlock(
           issues,
           "INVALID_LIST",
           `${path}.start`,
-          "Ordered-list start must be a positive integer."
+          "Ordered-list start must be a positive integer.",
         );
       }
       validateListItems(value.items, `${path}.items`, issues, stats, ids, 1);
@@ -783,7 +843,7 @@ function validateBlock(
         issues,
         "INVALID_BLOCK",
         `${path}.type`,
-        `Unsupported paired block type "${value.type}".`
+        `Unsupported paired block type "${value.type}".`,
       );
       return false;
   }
@@ -792,14 +852,14 @@ function validateBlock(
 function validateChart(
   chartBlock: Readonly<Record<string, unknown>>,
   path: string,
-  issues: BilingualValidationIssue[]
+  issues: BilingualValidationIssue[],
 ): void {
   if (!isRecord(chartBlock.chart)) {
     addIssue(
       issues,
       "INVALID_CHART",
       `${path}.chart`,
-      "A chart must be a structured document-chart definition."
+      "A chart must be a structured document-chart definition.",
     );
     return;
   }
@@ -807,18 +867,18 @@ function validateChart(
   try {
     renderDocumentChart(
       chartBlock.chart as unknown as DocumentChartDefinition,
-      { locale: "en", direction: "ltr" }
+      { locale: "en", direction: "ltr" },
     );
     renderDocumentChart(
       chartBlock.chart as unknown as DocumentChartDefinition,
-      { locale: "ar", direction: "rtl" }
+      { locale: "ar", direction: "rtl" },
     );
   } catch (error) {
     addIssue(
       issues,
       "INVALID_CHART",
       `${path}.chart`,
-      error instanceof Error ? error.message : "Invalid document chart."
+      error instanceof Error ? error.message : "Invalid document chart.",
     );
   }
 }
@@ -826,7 +886,7 @@ function validateChart(
 function validateDirectionOverride(
   value: unknown,
   path: string,
-  issues: BilingualValidationIssue[]
+  issues: BilingualValidationIssue[],
 ): void {
   if (
     value !== undefined &&
@@ -838,7 +898,7 @@ function validateDirectionOverride(
       issues,
       "INVALID_BLOCK",
       path,
-      "Direction must be auto, ltr, or rtl."
+      "Direction must be auto, ltr, or rtl.",
     );
   }
 }
@@ -848,19 +908,32 @@ function validateTable(
   path: string,
   issues: BilingualValidationIssue[],
   stats: ValidationStats,
-  ids: Set<string>
+  ids: Set<string>,
 ): void {
   if (!Array.isArray(table.columns) || table.columns.length === 0) {
     addIssue(
       issues,
       "INVALID_TABLE",
       `${path}.columns`,
-      "A table must contain at least one column."
+      "A table must contain at least one column.",
     );
     return;
   }
+  if (table.columns.length > LIMITS.maxTableColumns) {
+    addIssue(
+      issues,
+      "DOCUMENT_LIMIT_EXCEEDED",
+      `${path}.columns`,
+      `Tables cannot exceed ${LIMITS.maxTableColumns} columns.`,
+    );
+  }
 
   const columnIds = new Set<string>();
+  const columnWidths = new Map<string, number | undefined>();
+  const validColumnHeaders: Array<{
+    id: string;
+    header: Localized<readonly BilingualInlineNode[]>;
+  }> = [];
   let widthTotal = 0;
   table.columns.forEach((column, columnIndex) => {
     const columnPath = `${path}.columns[${columnIndex}]`;
@@ -873,19 +946,43 @@ function validateTable(
         issues,
         "INVALID_ID",
         `${columnPath}.id`,
-        "Table column ID is invalid."
+        "Table column ID is invalid.",
       );
     } else if (columnIds.has(column.id)) {
       addIssue(
         issues,
         "INVALID_TABLE",
         `${columnPath}.id`,
-        `Duplicate table column "${column.id}".`
+        `Duplicate table column "${column.id}".`,
       );
     } else {
       columnIds.add(column.id);
+      columnWidths.set(
+        column.id,
+        typeof column.widthPercent === "number" &&
+          Number.isFinite(column.widthPercent) &&
+          column.widthPercent > 0
+          ? column.widthPercent
+          : undefined,
+      );
     }
-    validateLocalizedInline(column.header, `${columnPath}.header`, issues, stats);
+    const header = column.header;
+    const validHeader = validateLocalizedInline(
+      header,
+      `${columnPath}.header`,
+      issues,
+      stats,
+    );
+    if (
+      validHeader &&
+      typeof column.id === "string" &&
+      STABLE_ID_PATTERN.test(column.id)
+    ) {
+      validColumnHeaders.push({
+        id: column.id,
+        header,
+      });
+    }
     if (
       column.align !== undefined &&
       !["start", "center", "end", "numeric"].includes(String(column.align))
@@ -894,7 +991,7 @@ function validateTable(
         issues,
         "INVALID_TABLE",
         `${columnPath}.align`,
-        "Unsupported table alignment."
+        "Unsupported table alignment.",
       );
     }
     if (column.widthPercent !== undefined) {
@@ -908,7 +1005,7 @@ function validateTable(
           issues,
           "INVALID_TABLE",
           `${columnPath}.widthPercent`,
-          "Column width must be between 0 and 100."
+          "Column width must be between 0 and 100.",
         );
       } else {
         widthTotal += column.widthPercent;
@@ -921,12 +1018,63 @@ function validateTable(
       issues,
       "INVALID_TABLE",
       `${path}.columns`,
-      "Explicit table column widths cannot total more than 100%."
+      "Explicit table column widths cannot total more than 100%.",
     );
   }
 
+  const definedWidthTotal = [...columnWidths.values()].reduce<number>(
+    (total, width) => total + (width ?? 0),
+    0,
+  );
+  const undefinedWidthCount = [...columnWidths.values()].filter(
+    (width) => width === undefined,
+  ).length;
+  const fallbackWidth =
+    undefinedWidthCount > 0
+      ? Math.max(0, 100 - definedWidthTotal) / undefinedWidthCount
+      : 0;
+  const resolvedColumnShares = new Map(
+    [...columnWidths].map(([id, width]) => [id, width ?? fallbackWidth]),
+  );
+  for (const { id, header } of validColumnHeaders) {
+    const headerBudget = Math.max(
+      32,
+      Math.floor(
+        (LIMITS.maxAtomicTableRowGraphemes *
+          (resolvedColumnShares.get(id) ?? 0)) /
+          100,
+      ),
+    );
+    for (const language of ["en", "ar"] as const) {
+      if (countInlineGraphemes(header[language]) > headerBudget) {
+        addIssue(
+          issues,
+          "DOCUMENT_LIMIT_EXCEEDED",
+          `${path}.columns.${id}.header.${language}`,
+          `This table header cannot exceed ${headerBudget} graphemes at its column width.`,
+        );
+      }
+    }
+  }
+
   if (table.caption !== undefined) {
-    validateLocalizedInline(table.caption, `${path}.caption`, issues, stats);
+    if (
+      validateLocalizedInline(table.caption, `${path}.caption`, issues, stats)
+    ) {
+      for (const language of ["en", "ar"] as const) {
+        if (
+          countInlineGraphemes(table.caption[language]) >
+          LIMITS.maxAtomicTableCaptionGraphemes
+        ) {
+          addIssue(
+            issues,
+            "DOCUMENT_LIMIT_EXCEEDED",
+            `${path}.caption.${language}`,
+            `A table caption cannot exceed ${LIMITS.maxAtomicTableCaptionGraphemes} graphemes.`,
+          );
+        }
+      }
+    }
   }
 
   if (!Array.isArray(table.rows) || table.rows.length === 0) {
@@ -934,7 +1082,7 @@ function validateTable(
       issues,
       "INVALID_TABLE",
       `${path}.rows`,
-      "A table must contain at least one row."
+      "A table must contain at least one row.",
     );
     return;
   }
@@ -951,19 +1099,21 @@ function validateTable(
         issues,
         "INVALID_TABLE",
         `${rowPath}.cells`,
-        "Table row cells must be keyed by column ID."
+        "Table row cells must be keyed by column ID.",
       );
       return;
     }
     const cellIds = Object.keys(row.cells);
-    const missing = [...columnIds].filter((columnId) => !cellIds.includes(columnId));
+    const missing = [...columnIds].filter(
+      (columnId) => !cellIds.includes(columnId),
+    );
     const extra = cellIds.filter((cellId) => !columnIds.has(cellId));
     if (missing.length > 0 || extra.length > 0) {
       addIssue(
         issues,
         "INVALID_TABLE",
         `${rowPath}.cells`,
-        `Table cells do not match columns (missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"}).`
+        `Table cells do not match columns (missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"}).`,
       );
     }
     for (const [cellId, cell] of Object.entries(row.cells)) {
@@ -972,16 +1122,34 @@ function validateTable(
           issues,
           "INVALID_TABLE",
           `${rowPath}.cells.${cellId}`,
-          "Invalid table cell."
+          "Invalid table cell.",
         );
         continue;
       }
-      validateLocalizedInline(
-        cell.content,
+      const content = cell.content;
+      const validContent = validateLocalizedInline(
+        content,
         `${rowPath}.cells.${cellId}.content`,
         issues,
-        stats
+        stats,
       );
+      if (validContent) {
+        const columnShare = resolvedColumnShares.get(cellId) ?? 0;
+        const cellBudget = Math.max(
+          32,
+          Math.floor((LIMITS.maxAtomicTableRowGraphemes * columnShare) / 100),
+        );
+        for (const language of ["en", "ar"] as const) {
+          if (countInlineGraphemes(content[language]) > cellBudget) {
+            addIssue(
+              issues,
+              "DOCUMENT_LIMIT_EXCEEDED",
+              `${rowPath}.cells.${cellId}.content.${language}`,
+              `This table cell cannot exceed ${cellBudget} graphemes at its column width because rows must remain atomic during pagination.`,
+            );
+          }
+        }
+      }
     }
   });
 }
@@ -990,7 +1158,7 @@ function validateImage(
   image: Readonly<Record<string, unknown>>,
   path: string,
   issues: BilingualValidationIssue[],
-  stats: ValidationStats
+  stats: ValidationStats,
 ): void {
   validateSafeImageSource(image.source, `${path}.source`, issues, stats);
   const decorative = image.decorative === true;
@@ -999,7 +1167,7 @@ function validateImage(
       issues,
       "INVALID_IMAGE",
       `${path}.alt`,
-      "Localized image alt text is required."
+      "Localized image alt text is required.",
     );
   } else {
     validateText(image.alt.en, `${path}.alt.en`, issues, stats, decorative);
@@ -1017,7 +1185,7 @@ function validateImage(
       issues,
       "INVALID_IMAGE",
       `${path}.visualBehavior`,
-      "Visual behavior must be never or mirror-in-rtl."
+      "Visual behavior must be never or mirror-in-rtl.",
     );
   }
   if (
@@ -1031,7 +1199,7 @@ function validateImage(
       issues,
       "INVALID_IMAGE",
       `${path}.widthPercent`,
-      "Image width must be between 0 and 100."
+      "Image width must be between 0 and 100.",
     );
   }
 }
@@ -1039,11 +1207,16 @@ function validateImage(
 function validateConfig(
   value: unknown,
   path: string,
-  issues: BilingualValidationIssue[]
+  issues: BilingualValidationIssue[],
 ): void {
   if (value === undefined) return;
   if (!isRecord(value)) {
-    addIssue(issues, "INVALID_CONFIG", path, "Layout configuration is invalid.");
+    addIssue(
+      issues,
+      "INVALID_CONFIG",
+      path,
+      "Layout configuration is invalid.",
+    );
     return;
   }
 
@@ -1053,7 +1226,12 @@ function validateConfig(
     value.mode !== "serial-ar-first" &&
     value.mode !== "serial-en-first"
   ) {
-    addIssue(issues, "INVALID_CONFIG", `${path}.mode`, "Unsupported layout mode.");
+    addIssue(
+      issues,
+      "INVALID_CONFIG",
+      `${path}.mode`,
+      "Unsupported layout mode.",
+    );
   }
   if (value.columnRatio !== undefined) {
     validateColumnRatio(value.columnRatio, `${path}.columnRatio`, issues);
@@ -1069,7 +1247,7 @@ function validateConfig(
       issues,
       "INVALID_CONFIG",
       `${path}.mobileBreakpointPx`,
-      "Mobile breakpoint must be an integer from 320 to 2560."
+      "Mobile breakpoint must be an integer from 320 to 2560.",
     );
   }
   if (
@@ -1081,7 +1259,7 @@ function validateConfig(
       issues,
       "INVALID_CONFIG",
       `${path}.mobileOrder`,
-      "Mobile order must be ar-first or en-first."
+      "Mobile order must be ar-first or en-first.",
     );
   }
   if (value.viewer !== undefined) {
@@ -1090,7 +1268,7 @@ function validateConfig(
         issues,
         "INVALID_CONFIG",
         `${path}.viewer`,
-        "Viewer configuration is invalid."
+        "Viewer configuration is invalid.",
       );
     } else {
       if (
@@ -1102,7 +1280,7 @@ function validateConfig(
           issues,
           "INVALID_CONFIG",
           `${path}.viewer.mode`,
-          "Viewer mode must be both or tabs."
+          "Viewer mode must be both or tabs.",
         );
       }
       if (
@@ -1114,7 +1292,7 @@ function validateConfig(
           issues,
           "INVALID_CONFIG",
           `${path}.viewer.defaultLanguage`,
-          "Default viewer language must be ar or en."
+          "Default viewer language must be ar or en.",
         );
       }
     }
@@ -1124,7 +1302,7 @@ function validateConfig(
 function validateColumnRatio(
   value: unknown,
   path: string,
-  issues: BilingualValidationIssue[]
+  issues: BilingualValidationIssue[],
 ): value is readonly [number, number] {
   if (
     !Array.isArray(value) ||
@@ -1138,7 +1316,7 @@ function validateColumnRatio(
       issues,
       "INVALID_RATIO",
       path,
-      "Column ratio must be [English percentage, Arabic percentage]."
+      "Column ratio must be [English percentage, Arabic percentage].",
     );
     return false;
   }
@@ -1149,19 +1327,24 @@ function validateColumnRatio(
       issues,
       "INVALID_RATIO",
       path,
-      "Each bilingual column must occupy between 30% and 70%."
+      "Each bilingual column must occupy between 30% and 70%.",
     );
     return false;
   }
   if (Math.abs(en + ar - 100) > 0.001) {
-    addIssue(issues, "INVALID_RATIO", path, "Column percentages must total 100.");
+    addIssue(
+      issues,
+      "INVALID_RATIO",
+      path,
+      "Column percentages must total 100.",
+    );
     return false;
   }
   return true;
 }
 
 export function validateBilingualDocument(
-  document: unknown
+  document: unknown,
 ): BilingualValidationResult {
   const issues: BilingualValidationIssue[] = [];
   const ids = new Set<string>();
@@ -1196,7 +1379,7 @@ export function validateBilingualDocument(
       issues,
       "MISSING_CONTENT",
       "$.sections",
-      "Document sections must be an array."
+      "Document sections must be an array.",
     );
   } else {
     if (document.sections.length > LIMITS.maxSections) {
@@ -1204,14 +1387,19 @@ export function validateBilingualDocument(
         issues,
         "DOCUMENT_LIMIT_EXCEEDED",
         "$.sections",
-        `Documents cannot exceed ${LIMITS.maxSections} sections.`
+        `Documents cannot exceed ${LIMITS.maxSections} sections.`,
       );
     }
 
     document.sections.forEach((section, sectionIndex) => {
       const sectionPath = `$.sections[${sectionIndex}]`;
       if (!isRecord(section)) {
-        addIssue(issues, "INVALID_BLOCK", sectionPath, "Invalid paired section.");
+        addIssue(
+          issues,
+          "INVALID_BLOCK",
+          sectionPath,
+          "Invalid paired section.",
+        );
         return;
       }
       validateStableId(section.id, `${sectionPath}.id`, issues, ids);
@@ -1223,28 +1411,33 @@ export function validateBilingualDocument(
           issues,
           "INVALID_ID",
           `${sectionPath}.alignmentKey`,
-          "Alignment key must use the stable ID format."
+          "Alignment key must use the stable ID format.",
         );
       } else if (alignmentKeys.has(section.alignmentKey)) {
         addIssue(
           issues,
           "DUPLICATE_ALIGNMENT_KEY",
           `${sectionPath}.alignmentKey`,
-          `Duplicate alignment key "${section.alignmentKey}".`
+          `Duplicate alignment key "${section.alignmentKey}".`,
         );
       } else {
         alignmentKeys.add(section.alignmentKey);
       }
 
       if (section.title !== undefined) {
-        validateLocalizedInline(section.title, `${sectionPath}.title`, issues, stats);
+        validateLocalizedInline(
+          section.title,
+          `${sectionPath}.title`,
+          issues,
+          stats,
+        );
       }
       if (!Array.isArray(section.blocks) || section.blocks.length === 0) {
         addIssue(
           issues,
           "MISSING_CONTENT",
           `${sectionPath}.blocks`,
-          "A paired section must contain at least one block."
+          "A paired section must contain at least one block.",
         );
       } else {
         section.blocks.forEach((block, blockIndex) => {
@@ -1253,7 +1446,7 @@ export function validateBilingualDocument(
             `${sectionPath}.blocks[${blockIndex}]`,
             issues,
             stats,
-            ids
+            ids,
           );
         });
       }
@@ -1265,7 +1458,7 @@ export function validateBilingualDocument(
       issues,
       "DOCUMENT_LIMIT_EXCEEDED",
       "$.sections",
-      `Documents cannot exceed ${LIMITS.maxBlocks} blocks.`
+      `Documents cannot exceed ${LIMITS.maxBlocks} blocks.`,
     );
   }
   if (stats.textCharacters > LIMITS.maxTextCharacters) {
@@ -1273,7 +1466,7 @@ export function validateBilingualDocument(
       issues,
       "DOCUMENT_LIMIT_EXCEEDED",
       "$",
-      `Documents cannot exceed ${LIMITS.maxTextCharacters} text characters.`
+      `Documents cannot exceed ${LIMITS.maxTextCharacters} text characters.`,
     );
   }
   if (stats.dataImageBytes > LIMITS.maxTotalDataImageBytes) {
@@ -1281,7 +1474,7 @@ export function validateBilingualDocument(
       issues,
       "DOCUMENT_LIMIT_EXCEEDED",
       "$",
-      `Embedded images cannot exceed ${LIMITS.maxTotalDataImageBytes} decoded bytes in total.`
+      `Embedded images cannot exceed ${LIMITS.maxTotalDataImageBytes} decoded bytes in total.`,
     );
   }
 
@@ -1298,7 +1491,7 @@ export class BilingualLayoutValidationError extends Error {
     super(
       `Bilingual layout validation failed: ${issues
         .map((issue) => `${issue.path}: ${issue.message}`)
-        .join("; ")}`
+        .join("; ")}`,
     );
     this.name = "BilingualLayoutValidationError";
     this.issues = issues;
@@ -1306,7 +1499,7 @@ export class BilingualLayoutValidationError extends Error {
 }
 
 export function parseBilingualDocument(
-  document: unknown
+  document: unknown,
 ): BilingualDocumentSpec {
   const result = validateBilingualDocument(document);
   if (!result.valid) {
@@ -1316,7 +1509,7 @@ export function parseBilingualDocument(
 }
 
 export function createColumnRatio(
-  englishPercent: number
+  englishPercent: number,
 ): readonly [number, number] {
   const ratio = [englishPercent, 100 - englishPercent] as const;
   const issues: BilingualValidationIssue[] = [];
@@ -1331,7 +1524,9 @@ function deepFreeze<T>(value: T): T {
     return value;
   }
   Object.freeze(value);
-  for (const child of Object.values(value as Readonly<Record<string, unknown>>)) {
+  for (const child of Object.values(
+    value as Readonly<Record<string, unknown>>,
+  )) {
     deepFreeze(child);
   }
   return value;
@@ -1376,10 +1571,84 @@ function inlineText(nodes: readonly BilingualInlineNode[]): string {
     .join("");
 }
 
+const graphemeSegmenter =
+  typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
+const COMBINING_GRAPHEME_PART =
+  /^(?:\p{Mark}|\uFE0E|\uFE0F|\u200D|[\u{1F3FB}-\u{1F3FF}])$/u;
+const REGIONAL_INDICATOR = /^[\u{1F1E6}-\u{1F1FF}]$/u;
+
+/**
+ * Split at Unicode grapheme boundaries. `Intl.Segmenter` is available in all
+ * supported runtimes; the fallback still preserves surrogate pairs, combining
+ * marks, emoji modifiers, ZWJ sequences, and flag pairs.
+ */
+function segmentGraphemes(value: string): readonly string[] {
+  if (graphemeSegmenter) {
+    return Array.from(
+      graphemeSegmenter.segment(value),
+      ({ segment }) => segment,
+    );
+  }
+
+  const result: string[] = [];
+  let regionalIndicatorCount = 0;
+  for (const codePoint of Array.from(value)) {
+    const previous = result[result.length - 1];
+    const joinsPrevious =
+      previous !== undefined &&
+      (COMBINING_GRAPHEME_PART.test(codePoint) ||
+        previous.endsWith("\u200D") ||
+        (REGIONAL_INDICATOR.test(codePoint) &&
+          regionalIndicatorCount % 2 === 1));
+    if (joinsPrevious) {
+      result[result.length - 1] = previous + codePoint;
+    } else {
+      result.push(codePoint);
+    }
+    regionalIndicatorCount = REGIONAL_INDICATOR.test(codePoint)
+      ? regionalIndicatorCount + 1
+      : 0;
+  }
+  return result;
+}
+
+function countGraphemes(value: string): number {
+  return segmentGraphemes(value).length;
+}
+
+function countInlineGraphemes(nodes: readonly BilingualInlineNode[]): number {
+  return countGraphemes(inlineText(nodes));
+}
+
+function countListSubtreeItems(item: BilingualListItem): number {
+  return (
+    1 +
+    (item.children ?? []).reduce(
+      (total, child) => total + countListSubtreeItems(child),
+      0,
+    )
+  );
+}
+
+function countListSubtreeGraphemes(
+  item: BilingualListItem,
+  language: DocumentLanguage,
+): number {
+  return (
+    countInlineGraphemes(item.content[language]) +
+    (item.children ?? []).reduce(
+      (total, child) => total + countListSubtreeGraphemes(child, language),
+      0,
+    )
+  );
+}
+
 function resolvedDirection(
   nodes: readonly BilingualInlineNode[],
   language: DocumentLanguage,
-  override: TextDirectionOverride = "auto"
+  override: TextDirectionOverride = "auto",
 ): "ltr" | "rtl" {
   if (override === "ltr" || override === "rtl") return override;
   const detected: StrongDirection = detectStrongDirection(inlineText(nodes));
@@ -1389,7 +1658,7 @@ function resolvedDirection(
 }
 
 export function renderSafeInline(
-  nodes: readonly BilingualInlineNode[]
+  nodes: readonly BilingualInlineNode[],
 ): string {
   return nodes
     .map((node) => {
@@ -1401,9 +1670,9 @@ export function renderSafeInline(
             ? ` bilingual-value--${escapeBilingualHtml(node.valueKind)}`
             : "";
           return `<bdi class="bilingual-value bilingual-value--${escapeBilingualHtml(
-            node.value.kind
+            node.value.kind,
           )}${semanticClass}" dir="${escapeBilingualHtml(
-            node.value.dir
+            node.value.dir,
           )}">${escapeBilingualHtml(node.value.text)}</bdi>`;
         }
         case "strong":
@@ -1424,7 +1693,7 @@ export function renderSafeInline(
             ]);
           }
           return `<a href="${escapeBilingualHtml(
-            node.href
+            node.href,
           )}">${renderSafeInline(node.children)}</a>`;
         case "line-break":
           return "<br />";
@@ -1443,7 +1712,7 @@ function renderListItems(
   items: readonly BilingualListItem[],
   language: DocumentLanguage,
   ordered: boolean,
-  start?: number
+  start?: number,
 ): string {
   const tag = ordered ? "ol" : "ul";
   const startAttribute =
@@ -1457,45 +1726,46 @@ function renderListItems(
           ? renderListItems(item.children, language, ordered)
           : "";
       return `<li data-list-item-id="${escapeBilingualHtml(
-        item.id
+        item.id,
       )}" dir="${direction}">${renderSafeInline(content)}${children}</li>`;
     })
     .join("");
   return `<${tag}${startAttribute}>${renderedItems}</${tag}>`;
 }
 
-function tableAlignmentClass(
-  align: BilingualTableColumn["align"]
-): string {
+function tableAlignmentClass(align: BilingualTableColumn["align"]): string {
   return `bilingual-table-cell--${align ?? "start"}`;
 }
 
 function renderTable(
   table: PairedTableBlock,
-  language: DocumentLanguage
+  language: DocumentLanguage,
+  includeHeader = true,
 ): string {
   const caption = table.caption
     ? `<caption>${renderSafeInline(table.caption[language])}</caption>`
     : "";
   const columnGroup = table.columns.some(
-    (column) => column.widthPercent !== undefined
+    (column) => column.widthPercent !== undefined,
   )
     ? `<colgroup>${table.columns
         .map((column) =>
           column.widthPercent === undefined
             ? "<col />"
-            : `<col style="width:${String(column.widthPercent)}%" />`
+            : `<col style="width:${String(column.widthPercent)}%" />`,
         )
         .join("")}</colgroup>`
     : "";
-  const head = `<thead><tr>${table.columns
-    .map(
-      (column) =>
-        `<th scope="col" class="${tableAlignmentClass(
-          column.align
-        )}">${renderSafeInline(column.header[language])}</th>`
-    )
-    .join("")}</tr></thead>`;
+  const head = includeHeader
+    ? `<thead><tr>${table.columns
+        .map(
+          (column) =>
+            `<th scope="col" class="${tableAlignmentClass(
+              column.align,
+            )}">${renderSafeInline(column.header[language])}</th>`,
+        )
+        .join("")}</tr></thead>`
+    : "";
   const body = `<tbody>${table.rows
     .map(
       (row) =>
@@ -1506,10 +1776,10 @@ function renderTable(
             const content = cell.content[language];
             const direction = resolvedDirection(content, language);
             return `<td class="${tableAlignmentClass(
-              column.align
+              column.align,
             )}" dir="${direction}">${renderSafeInline(content)}</td>`;
           })
-          .join("")}</tr>`
+          .join("")}</tr>`,
     )
     .join("")}</tbody>`;
   return `<table data-repeat-header="${
@@ -1519,7 +1789,7 @@ function renderTable(
 
 function renderBlockForLanguage(
   block: PairedBlock,
-  language: DocumentLanguage
+  language: DocumentLanguage,
 ): string {
   switch (block.type) {
     case "heading": {
@@ -1527,10 +1797,10 @@ function renderBlockForLanguage(
       const direction = resolvedDirection(
         content,
         language,
-        block.direction ?? "auto"
+        block.direction ?? "auto",
       );
       return `<h${block.level} dir="${direction}">${renderSafeInline(
-        content
+        content,
       )}</h${block.level}>`;
     }
     case "paragraph": {
@@ -1538,17 +1808,12 @@ function renderBlockForLanguage(
       const direction = resolvedDirection(
         content,
         language,
-        block.direction ?? "auto"
+        block.direction ?? "auto",
       );
       return `<p dir="${direction}">${renderSafeInline(content)}</p>`;
     }
     case "list":
-      return renderListItems(
-        block.items,
-        language,
-        block.ordered,
-        block.start
-      );
+      return renderListItems(block.items, language, block.ordered, block.start);
     case "table":
       return renderTable(block, language);
     case "image": {
@@ -1565,7 +1830,7 @@ function renderBlockForLanguage(
         ? `<figcaption>${renderSafeInline(block.caption[language])}</figcaption>`
         : "";
       return `<figure class="bilingual-visual${visualClass}"><img src="${escapeBilingualHtml(
-        imageSource(block.source)
+        imageSource(block.source),
       )}" alt="${escapeBilingualHtml(alt)}"${width}${
         block.decorative ? ' aria-hidden="true"' : ""
       } />${caption}</figure>`;
@@ -1574,6 +1839,7 @@ function renderBlockForLanguage(
       return renderDocumentChart(block.chart, {
         locale: language,
         direction: language === "ar" ? "rtl" : "ltr",
+        instanceKey: block.id,
       }).html;
     default:
       return assertNever(block);
@@ -1581,72 +1847,63 @@ function renderBlockForLanguage(
 }
 
 const MAX_PARAGRAPH_FRAGMENT_CHARACTERS = 360;
-const MAX_LIST_ITEMS_PER_FRAGMENT = 4;
-const MAX_TABLE_ROWS_PER_FRAGMENT = 4;
+const MAX_LIST_ITEMS_PER_FRAGMENT = 1;
+const MAX_TABLE_ROWS_PER_FRAGMENT = 1;
 
 function splitTextAtSemanticBoundary(
   value: string,
-  maximumCharacters: number
+  maximumGraphemes: number,
 ): readonly string[] {
+  const graphemes = segmentGraphemes(value);
+  if (graphemes.length <= maximumGraphemes) return [value];
+
   const parts: string[] = [];
-  let remaining = value;
-  while (remaining.length > maximumCharacters) {
-    const window = remaining.slice(0, maximumCharacters + 1);
-    const candidates = [
-      window.lastIndexOf(". "),
-      window.lastIndexOf("؟ "),
-      window.lastIndexOf("! "),
-      window.lastIndexOf("; "),
-      window.lastIndexOf("، "),
-      window.lastIndexOf(", "),
-      window.lastIndexOf(" "),
-    ];
-    const preferred = Math.max(...candidates);
-    const splitAt =
-      preferred >= Math.floor(maximumCharacters * 0.5)
-        ? preferred + 1
-        : maximumCharacters;
-    const part = remaining.slice(0, splitAt).trimEnd();
+  let cursor = 0;
+  while (graphemes.length - cursor > maximumGraphemes) {
+    const maximumEnd = cursor + maximumGraphemes;
+    const minimumEnd = cursor + Math.floor(maximumGraphemes * 0.5);
+    let splitAt = maximumEnd;
+    for (let index = maximumEnd; index > minimumEnd; index -= 1) {
+      const candidate = graphemes[index - 1];
+      if (candidate !== undefined && /[\s.!?؟;،,]$/u.test(candidate)) {
+        splitAt = index;
+        break;
+      }
+    }
+    const part = graphemes.slice(cursor, splitAt).join("");
     if (part.length > 0) parts.push(part);
-    remaining = remaining.slice(splitAt).trimStart();
+    cursor = splitAt;
   }
+  const remaining = graphemes.slice(cursor).join("");
   if (remaining.length > 0) parts.push(remaining);
   return parts.length > 0 ? parts : [value];
 }
 
 function splitOversizedInlineNode(
   node: BilingualInlineNode,
-  maximumCharacters: number
+  maximumGraphemes: number,
 ): readonly BilingualInlineNode[] {
-  if (inlineText([node]).length <= maximumCharacters) return [node];
+  if (countInlineGraphemes([node]) <= maximumGraphemes) return [node];
   switch (node.type) {
     case "text":
-      return splitTextAtSemanticBoundary(
-        node.text,
-        maximumCharacters
-      ).map((text): TextInlineNode => ({ type: "text", text }));
+      return splitTextAtSemanticBoundary(node.text, maximumGraphemes).map(
+        (text): TextInlineNode => ({ type: "text", text }),
+      );
     case "code":
-      return splitTextAtSemanticBoundary(
-        node.text,
-        maximumCharacters
-      ).map((text): CodeInlineNode => ({ type: "code", text }));
+      return splitTextAtSemanticBoundary(node.text, maximumGraphemes).map(
+        (text): CodeInlineNode => ({ type: "code", text }),
+      );
     case "value":
-      return splitTextAtSemanticBoundary(
-        node.value.text,
-        maximumCharacters
-      ).map(
+      return splitTextAtSemanticBoundary(node.value.text, maximumGraphemes).map(
         (text): ValueInlineNode => ({
           ...node,
           value: { ...node.value, text },
-        })
+        }),
       );
     case "strong":
     case "emphasis":
     case "link": {
-      const childChunks = splitInlineContent(
-        node.children,
-        maximumCharacters
-      );
+      const childChunks = splitInlineContent(node.children, maximumGraphemes);
       return childChunks.map((children) => ({ ...node, children }));
     }
     case "line-break":
@@ -1658,27 +1915,27 @@ function splitOversizedInlineNode(
 
 function splitInlineContent(
   nodes: readonly BilingualInlineNode[],
-  maximumCharacters = MAX_PARAGRAPH_FRAGMENT_CHARACTERS
+  maximumGraphemes = MAX_PARAGRAPH_FRAGMENT_CHARACTERS,
 ): readonly (readonly BilingualInlineNode[])[] {
   const atoms = nodes.flatMap((node) =>
-    splitOversizedInlineNode(node, maximumCharacters)
+    splitOversizedInlineNode(node, maximumGraphemes),
   );
   const chunks: BilingualInlineNode[][] = [];
   let current: BilingualInlineNode[] = [];
-  let currentCharacters = 0;
+  let currentGraphemes = 0;
 
   for (const atom of atoms) {
-    const atomCharacters = Math.max(1, inlineText([atom]).length);
+    const atomGraphemes = Math.max(1, countInlineGraphemes([atom]));
     if (
       current.length > 0 &&
-      currentCharacters + atomCharacters > maximumCharacters
+      currentGraphemes + atomGraphemes > maximumGraphemes
     ) {
       chunks.push(current);
       current = [];
-      currentCharacters = 0;
+      currentGraphemes = 0;
     }
     current.push(atom);
-    currentCharacters += atomCharacters;
+    currentGraphemes += atomGraphemes;
   }
   if (current.length > 0) chunks.push(current);
   return chunks.length > 0 ? chunks : [nodes];
@@ -1686,7 +1943,7 @@ function splitInlineContent(
 
 function chunkArray<T>(
   values: readonly T[],
-  size: number
+  size: number,
 ): readonly (readonly T[])[] {
   const chunks: T[][] = [];
   for (let index = 0; index < values.length; index += size) {
@@ -1706,7 +1963,7 @@ interface CompiledRenderFragment {
 function renderParagraphFragment(
   block: PairedParagraphBlock,
   language: DocumentLanguage,
-  content: readonly BilingualInlineNode[] | undefined
+  content: readonly BilingualInlineNode[] | undefined,
 ): string {
   if (!content || content.length === 0) {
     return '<p class="bilingual-fragment-placeholder" aria-hidden="true"></p>';
@@ -1714,13 +1971,13 @@ function renderParagraphFragment(
   const direction = resolvedDirection(
     content,
     language,
-    block.direction ?? "auto"
+    block.direction ?? "auto",
   );
   return `<p dir="${direction}">${renderSafeInline(content)}</p>`;
 }
 
 function compileBlockRenderFragments(
-  block: PairedBlock
+  block: PairedBlock,
 ): readonly CompiledRenderFragment[] {
   if (block.type === "paragraph") {
     const enChunks = splitInlineContent(block.content.en);
@@ -1756,7 +2013,7 @@ function compileBlockRenderFragments(
           block.ordered,
           block.ordered
             ? (block.start ?? 1) + index * MAX_LIST_ITEMS_PER_FRAGMENT
-            : undefined
+            : undefined,
         ),
         ar: renderListItems(
           items,
@@ -1764,7 +2021,7 @@ function compileBlockRenderFragments(
           block.ordered,
           block.ordered
             ? (block.start ?? 1) + index * MAX_LIST_ITEMS_PER_FRAGMENT
-            : undefined
+            : undefined,
         ),
       },
       keepTogether: true,
@@ -1787,8 +2044,16 @@ function compileBlockRenderFragments(
             : `${block.id}--part-${String(index + 1)}`,
         kind: block.type,
         content: {
-          en: renderTable(table, "en"),
-          ar: renderTable(table, "ar"),
+          en: renderTable(
+            table,
+            "en",
+            index === 0 || block.repeatHeader !== false,
+          ),
+          ar: renderTable(
+            table,
+            "ar",
+            index === 0 || block.repeatHeader !== false,
+          ),
         },
         keepTogether: true,
         keepWithNext: false,
@@ -1805,8 +2070,7 @@ function compileBlockRenderFragments(
         ar: renderBlockForLanguage(block, "ar"),
       },
       keepTogether: true,
-      keepWithNext:
-        block.type === "heading" && block.keepWithNext === true,
+      keepWithNext: block.type === "heading" && block.keepWithNext === true,
     },
   ];
 }
@@ -1814,7 +2078,7 @@ function compileBlockRenderFragments(
 function renderLanguageCell(
   html: string,
   language: DocumentLanguage,
-  className = ""
+  className = "",
 ): string {
   return `<div class="bilingual-cell bilingual-cell--${language}${
     className ? ` ${className}` : ""
@@ -1824,7 +2088,7 @@ function renderLanguageCell(
 }
 
 function orderedLanguages(
-  mode: BilingualLayoutMode
+  mode: BilingualLayoutMode,
 ): readonly DocumentLanguage[] {
   if (mode === "serial-ar-first") return ["ar", "en"];
   return ["en", "ar"];
@@ -1846,6 +2110,8 @@ function renderPairedFragment(options: {
   keepWithNext?: boolean;
   fragmentIndex: number;
   fragmentCount: number;
+  breakBefore?: boolean;
+  sectionMarker?: boolean;
 }): string {
   const {
     section,
@@ -1857,33 +2123,34 @@ function renderPairedFragment(options: {
     keepWithNext = false,
     fragmentIndex,
     fragmentCount,
+    breakBefore = false,
+    sectionMarker = false,
   } = options;
   const languages = orderedLanguages(config.mode);
   const cells = languages
     .map((language) => renderLanguageCell(content[language], language))
     .join("");
   return `<div class="${fragmentClass(
-    config.mode
+    config.mode,
   )}" data-bilingual-pair data-alignment-key="${escapeBilingualHtml(
-    section.alignmentKey
-  )}" data-fragment-id="${escapeBilingualHtml(
-    fragmentId
+    section.alignmentKey,
+  )}"${sectionMarker ? ` data-section-id="${escapeBilingualHtml(section.id)}"` : ""} data-fragment-id="${escapeBilingualHtml(
+    fragmentId,
   )}" data-fragment-kind="${escapeBilingualHtml(
-    kind
+    kind,
   )}" data-fragment-keep="${keepTogether ? "true" : "false"}" data-fragment-keep-with-next="${
     keepWithNext ? "true" : "false"
-  }" data-fragment-index="${String(fragmentIndex)}" data-fragment-count="${String(
-    fragmentCount
+  }" data-fragment-break-before="${breakBefore ? "true" : "false"}" data-fragment-index="${String(fragmentIndex)}" data-fragment-count="${String(
+    fragmentCount,
   )}">${cells}</div>`;
 }
 
 function renderSection(
   section: PairedSection,
-  config: BilingualLayoutConfig
+  config: BilingualLayoutConfig,
+  flattenForPrint: boolean,
 ): string {
-  const compiledBlocks = section.blocks.flatMap(
-    compileBlockRenderFragments
-  );
+  const compiledBlocks = section.blocks.flatMap(compileBlockRenderFragments);
   const headingOffset = section.title ? 1 : 0;
   const fragmentCount = compiledBlocks.length + headingOffset;
   const sectionHeading = section.title
@@ -1892,7 +2159,7 @@ function renderSection(
         fragmentId: `${section.alignmentKey}--heading`,
         content: {
           en: `<h2 id="${escapeBilingualHtml(
-            section.id
+            section.id,
           )}--heading">${renderSafeInline(section.title.en)}</h2>`,
           ar: `<h2>${renderSafeInline(section.title.ar)}</h2>`,
         },
@@ -1902,6 +2169,8 @@ function renderSection(
         keepWithNext: true,
         fragmentIndex: 0,
         fragmentCount,
+        breakBefore: section.startOnNewPage === true,
+        sectionMarker: flattenForPrint,
       })
     : "";
 
@@ -1917,13 +2186,20 @@ function renderSection(
         keepWithNext: fragment.keepWithNext,
         fragmentIndex: blockIndex + headingOffset,
         fragmentCount,
-      })
+        breakBefore:
+          section.startOnNewPage === true &&
+          headingOffset === 0 &&
+          blockIndex === 0,
+        sectionMarker:
+          flattenForPrint && headingOffset === 0 && blockIndex === 0,
+      }),
     )
     .join("");
 
   const label = section.title
     ? ` aria-labelledby="${escapeBilingualHtml(section.id)}--heading"`
     : "";
+  if (flattenForPrint) return sectionHeading + blocks;
   return `<section class="bilingual-section${
     section.startOnNewPage ? " bilingual-section--new-page" : ""
   }" data-section-id="${escapeBilingualHtml(section.id)}"${label}>${
@@ -1934,41 +2210,41 @@ function renderSection(
 function renderViewerMetadata(
   documentId: string,
   config: BilingualLayoutConfig,
-  target: "screen" | "print"
+  target: "screen" | "print",
 ): string {
   if (config.viewer.mode !== "tabs" || target === "print") return "";
-  const enSelected = config.viewer.defaultLanguage === "en";
-  const arSelected = config.viewer.defaultLanguage === "ar";
-  return `<nav class="bilingual-viewer-tabs" data-bilingual-viewer-tabs aria-label="Document language view">
-  <button type="button" data-viewer-language="en" data-viewer-document="${escapeBilingualHtml(
-    documentId
-  )}" aria-pressed="${String(enSelected)}">English</button>
-  <button type="button" data-viewer-language="ar" data-viewer-document="${escapeBilingualHtml(
-    documentId
-  )}" aria-pressed="${String(arSelected)}">العربية</button>
-</nav>`;
+  return `<div class="bilingual-viewer-tabs" data-bilingual-viewer-tabs data-viewer-controller="host" data-viewer-document="${escapeBilingualHtml(
+    documentId,
+  )}" role="note" aria-label="English and Arabic document">
+  <span data-bilingual-viewer-static-label>English / العربية</span>
+</div>`;
 }
 
 function renderDocumentTitle(
   document: BilingualDocumentSpec,
-  config: BilingualLayoutConfig
+  config: BilingualLayoutConfig,
+  flattenForPrint: boolean,
 ): string {
   const languages = orderedLanguages(config.mode);
   const cells = languages
-    .map((language) =>
-      `<span class="bilingual-cell bilingual-cell--${language}" data-language="${language}" lang="${language}" dir="${
-        language === "ar" ? "rtl" : "ltr"
-      }">${renderSafeInline(document.title[language])}</span>`
+    .map(
+      (language) =>
+        `<span class="bilingual-cell bilingual-cell--${language}" data-language="${language}" lang="${language}" dir="${
+          language === "ar" ? "rtl" : "ltr"
+        }">${renderSafeInline(document.title[language])}</span>`,
     )
     .join("");
-  return `<header class="bilingual-document-header"><h1 class="${fragmentClass(
-    config.mode
-  )}" data-bilingual-pair data-alignment-key="document-title" data-fragment-id="document-title" data-fragment-kind="document-title" data-fragment-keep="true" data-fragment-keep-with-next="false" data-fragment-index="0" data-fragment-count="1">${cells}</h1></header>`;
+  const heading = `<h1 class="${fragmentClass(
+    config.mode,
+  )}" data-bilingual-pair data-alignment-key="document-title" data-fragment-id="document-title" data-fragment-kind="document-title" data-fragment-keep="true" data-fragment-keep-with-next="false" data-fragment-break-before="false" data-fragment-index="0" data-fragment-count="1">${cells}</h1>`;
+  return flattenForPrint
+    ? heading
+    : `<header class="bilingual-document-header">${heading}</header>`;
 }
 
 function resolveConfig(
   base: BilingualLayoutConfig,
-  overrides?: BilingualLayoutOverrides
+  overrides?: BilingualLayoutOverrides,
 ): BilingualLayoutConfig {
   const config: BilingualLayoutConfig = {
     mode: overrides?.mode ?? base.mode,
@@ -1989,7 +2265,7 @@ function resolveConfig(
 }
 
 export function generateBilingualCSS(
-  config: BilingualLayoutConfig = DEFAULT_BILINGUAL_CONFIG
+  config: BilingualLayoutConfig = DEFAULT_BILINGUAL_CONFIG,
 ): string {
   const issues: BilingualValidationIssue[] = [];
   validateConfig(config, "$.layout", issues);
@@ -2020,29 +2296,29 @@ body {
 }
 
 .bilingual-document {
+  direction: ltr;
   max-inline-size: 210mm;
   margin-inline: auto;
   padding-inline: ${designTokens.spacing[8]};
   padding-block: ${designTokens.spacing[8]};
 }
 
-.bilingual-document-header {
-  margin-block-end: ${designTokens.spacing[8]};
-  padding-block-end: ${designTokens.spacing[4]};
-  border-block-end: 2px solid var(--bilingual-primary);
+.bilingual-document-header,
+.bilingual-section {
+  display: contents;
 }
 
-.bilingual-document-header h1,
-.bilingual-section h2,
-.bilingual-section h3,
-.bilingual-section h4,
-.bilingual-section h5,
-.bilingual-section h6 {
+.bilingual-document h1,
+.bilingual-document h2,
+.bilingual-document h3,
+.bilingual-document h4,
+.bilingual-document h5,
+.bilingual-document h6 {
   margin-block: 0;
 }
 
-.bilingual-section {
-  margin-block-end: ${designTokens.spacing[8]};
+.bilingual-document h1[data-fragment-kind="document-title"] {
+  border-block-end: 2px solid var(--bilingual-primary);
 }
 
 .bilingual-section--new-page {
@@ -2055,27 +2331,6 @@ body {
   margin-block-end: ${designTokens.spacing[4]};
   break-inside: avoid-page;
   page-break-inside: avoid;
-}
-
-.bilingual-pair[data-sync-continued-from-previous="true"]::before,
-.bilingual-pair[data-sync-continues-on-next="true"]::after {
-  position: absolute;
-  z-index: 1;
-  inset-inline: ${designTokens.spacing[2]};
-  color: var(--bilingual-muted);
-  font-size: ${designTokens.typography.fontSizes.xs};
-  line-height: 1;
-  pointer-events: none;
-}
-
-.bilingual-pair[data-sync-continued-from-previous="true"]::before {
-  content: attr(data-sync-before-label-en) " / " attr(data-sync-before-label-ar);
-  inset-block-start: 0;
-}
-
-.bilingual-pair[data-sync-continues-on-next="true"]::after {
-  content: attr(data-sync-after-label-en) " / " attr(data-sync-after-label-ar);
-  inset-block-end: 0;
 }
 
 .bilingual-pair--parallel {
@@ -2095,10 +2350,29 @@ body {
 }
 
 .bilingual-cell {
+  position: relative;
   min-inline-size: 0;
   padding-inline: ${designTokens.spacing[4]};
   padding-block: ${designTokens.spacing[3]};
   overflow-wrap: break-word;
+}
+
+.bilingual-continuation-marker {
+  position: absolute;
+  inset-inline-start: ${designTokens.spacing[4]};
+  z-index: 1;
+  color: var(--bilingual-muted);
+  font-size: 8px;
+  font-weight: ${String(designTokens.typography.fontWeights.semibold)};
+  line-height: 10px;
+}
+
+.bilingual-continuation-marker--before {
+  inset-block-start: 1px;
+}
+
+.bilingual-continuation-marker--after {
+  inset-block-end: 1px;
 }
 
 .bilingual-cell--en {
@@ -2130,35 +2404,35 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.bilingual-section p {
+.bilingual-cell p {
   margin-block: 0 ${designTokens.spacing[3]};
   line-height: ${designTokens.typography.lineHeights.relaxed};
 }
 
-.bilingual-section ul,
-.bilingual-section ol {
+.bilingual-cell ul,
+.bilingual-cell ol {
   margin-block: ${designTokens.spacing[2]};
   padding-inline-start: ${designTokens.spacing[6]};
 }
 
-.bilingual-section li {
+.bilingual-cell li {
   margin-block: ${designTokens.spacing[1]};
 }
 
-.bilingual-section table {
+.bilingual-cell table {
   inline-size: 100%;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
-.bilingual-section caption {
+.bilingual-cell caption {
   margin-block-end: ${designTokens.spacing[2]};
   font-weight: ${String(designTokens.typography.fontWeights.semibold)};
   text-align: start;
 }
 
-.bilingual-section th,
-.bilingual-section td {
+.bilingual-cell th,
+.bilingual-cell td {
   padding-inline: ${designTokens.spacing[2]};
   padding-block: ${designTokens.spacing[2]};
   border: 1px solid var(--bilingual-border);
@@ -2167,12 +2441,12 @@ body {
   overflow-wrap: anywhere;
 }
 
-.bilingual-section thead {
+.bilingual-cell thead {
   display: table-header-group;
   background: var(--bilingual-surface);
 }
 
-.bilingual-section table[data-repeat-header="false"] thead {
+.bilingual-cell table[data-repeat-header="false"] thead {
   display: table-row-group;
 }
 
@@ -2256,7 +2530,27 @@ body {
   display: none;
 }
 
-@media (max-width: ${String(config.mobileBreakpointPx)}px) {
+[data-bilingual-sync-measuring="true"] .bilingual-pair--parallel {
+  display: grid !important;
+  grid-template-columns:
+    minmax(0, var(--bilingual-en-column))
+    minmax(0, var(--bilingual-ar-column)) !important;
+  gap: var(--bilingual-gap) !important;
+}
+
+[data-bilingual-sync-measuring="true"] .bilingual-pair--parallel [data-language] {
+  display: block !important;
+}
+
+[data-bilingual-sync-measuring="true"] .bilingual-pair--serial {
+  display: flex !important;
+}
+
+[data-bilingual-sync-measuring="true"] .bilingual-pair--serial [data-language] {
+  display: block !important;
+}
+
+@media screen and (max-width: ${String(config.mobileBreakpointPx)}px) {
   .bilingual-document {
     padding-inline: ${designTokens.spacing[4]};
   }
@@ -2284,10 +2578,6 @@ body {
     border: 0;
   }
 
-  .bilingual-document-header h1 {
-    box-shadow: inset 0 -2px var(--bilingual-primary);
-  }
-
   .bilingual-section--new-page {
     break-before: auto;
   }
@@ -2298,6 +2588,13 @@ body {
 
   [data-viewer-mode="tabs"] .bilingual-pair--parallel {
     display: grid !important;
+  }
+
+  .bilingual-pair--parallel {
+    grid-template-columns:
+      minmax(0, var(--bilingual-en-column))
+      minmax(0, var(--bilingual-ar-column)) !important;
+    gap: var(--bilingual-gap) !important;
   }
 
   [data-viewer-mode="tabs"] .bilingual-pair--serial {
@@ -2338,10 +2635,7 @@ export class BilingualLayoutEngine {
     };
   }
 
-  render(
-    input: unknown,
-    options: RenderBilingualDocumentOptions = {}
-  ): string {
+  render(input: unknown, options: RenderBilingualDocumentOptions = {}): string {
     const validation = this.validate(input);
     if (!validation.valid) {
       throw new BilingualLayoutValidationError(validation.issues);
@@ -2350,22 +2644,25 @@ export class BilingualLayoutEngine {
     const config = resolveConfig(this.config, document.layout);
     const target = options.target ?? "screen";
     const includeDocumentShell = options.includeDocumentShell ?? true;
-    const effectiveViewerMode =
-      target === "print" ? "both" : config.viewer.mode;
+    const effectiveViewerMode = "both";
     const root = `<main class="bilingual-document" data-bilingual-document data-document-id="${escapeBilingualHtml(
-      document.id
-    )}" data-layout-mode="${config.mode}" data-viewer-mode="${effectiveViewerMode}" data-viewer-language="${
+      document.id,
+    )}" data-layout-mode="${config.mode}" data-viewer-preference="${
+      config.viewer.mode
+    }" data-viewer-mode="${effectiveViewerMode}" data-viewer-language="${
       config.viewer.defaultLanguage
     }" data-render-target="${target}" data-bilingual-layout-state="pending" data-bilingual-layout-ready="false">
 ${renderViewerMetadata(document.id, config, target)}
-${renderDocumentTitle(document, config)}
-${document.sections.map((section) => renderSection(section, config)).join("\n")}
+${renderDocumentTitle(document, config, target === "print")}
+${document.sections
+  .map((section) => renderSection(section, config, target === "print"))
+  .join("\n")}
 </main>`;
 
     if (!includeDocumentShell) return root;
 
     const title = `${inlineText(document.title.en)} · ${inlineText(
-      document.title.ar
+      document.title.ar,
     )}`;
     return `<!DOCTYPE html>
 <html lang="${config.viewer.defaultLanguage}" dir="${
@@ -2386,7 +2683,7 @@ ${root}
 
 export function renderBilingualHTML(
   document: unknown,
-  options: RenderBilingualDocumentOptions = {}
+  options: RenderBilingualDocumentOptions = {},
 ): string {
   const documentLayout =
     isRecord(document) && isRecord(document.layout)

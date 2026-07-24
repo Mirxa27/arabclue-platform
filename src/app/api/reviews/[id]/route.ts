@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { jsonOk, jsonError, ApiError } from "@/lib/api-controller";
+import { jsonOk, jsonError } from "@/lib/api-controller";
 import { reviewDecisionSchema, parseJsonBody } from "@/lib/validation";
-import { assertWorkspaceMatch, getTenantContext } from "@/lib/workspace-context";
+import { getTenantContext } from "@/lib/workspace-context";
 import { requireReviewerAction } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { getReviewDecisionProposalStatus } from "@/lib/contract-review";
+import {
+  decideProposalReview,
+  ProposalReviewDecisionError,
+} from "@/lib/proposal-review-service";
 
 export const dynamic = "force-dynamic";
 
@@ -26,62 +28,12 @@ export async function PATCH(
     const parsed = await parseJsonBody(req, reviewDecisionSchema);
     if (!parsed.ok) return parsed.response;
 
-    const review = await db.proposalReview.findUnique({
-      where: { id },
-      include: { proposal: true },
-    });
-    if (
-      !review ||
-      !assertWorkspaceMatch(review.proposal.workspaceId, workspace.id)
-    ) {
-      throw new ApiError("not found", 404);
-    }
-    if (review.reviewerId !== session.user.id) {
-      throw new ApiError("Only the assigned reviewer may decide this step", 403);
-    }
-    if (review.status !== "PENDING") {
-      throw new ApiError("Review already decided", 409);
-    }
-
-    // Enforce sequential approval: prior steps must be APPROVED
-    const prior = await db.proposalReview.findMany({
-      where: {
-        proposalId: review.proposalId,
-        stepIndex: { lt: review.stepIndex },
-      },
-    });
-    if (prior.some((p) => p.status !== "APPROVED")) {
-      throw new ApiError("Previous approval steps are not complete", 409);
-    }
-
-    const updated = await db.proposalReview.update({
-      where: { id },
-      data: {
-        status: parsed.data.status,
-        comment: parsed.data.comment ?? null,
-        decidedAt: new Date(),
-      },
-    });
-
-    const remaining =
-      parsed.data.status === "APPROVED"
-        ? await db.proposalReview.count({
-            where: {
-              proposalId: review.proposalId,
-              status: "PENDING",
-            },
-          })
-        : 0;
-    const nextStatus = getReviewDecisionProposalStatus({
+    const result = await decideProposalReview({
+      reviewId: id,
+      reviewerId: session.user.id,
+      workspaceId: workspace.id,
       decision: parsed.data.status,
-      pendingReviewsAfterDecision: remaining,
-    });
-    await db.generatedProposal.update({
-      where: { id: review.proposalId },
-      data: {
-        status: nextStatus,
-        approvedAt: nextStatus === "APPROVED" ? new Date() : undefined,
-      },
+      comment: parsed.data.comment,
     });
 
     await audit({
@@ -92,9 +44,12 @@ export async function PATCH(
       details: { decision: parsed.data.status },
     });
 
-    return jsonOk({ review: updated });
+    return jsonOk({
+      review: result.review,
+      proposalStatus: result.proposalStatus,
+    });
   } catch (err) {
-    if (err instanceof ApiError) {
+    if (err instanceof ProposalReviewDecisionError) {
       return jsonError(err.message, err.status, err.code);
     }
     console.error("[reviews]", err);

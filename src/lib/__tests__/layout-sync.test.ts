@@ -7,12 +7,18 @@ import {
   synchronizeBilingualLayoutPage,
   synchronizeLayout,
   type AppliedBilingualLayout,
+  type BilingualLayoutApplication,
   type BilingualLayoutEvaluationPage,
   type BrowserLayoutMeasurement,
   type LayoutSyncOptions,
   type LayoutSyncResult,
   type PairedRowInput,
 } from "../layout-sync";
+import {
+  renderBilingualHTML,
+  type BilingualDocumentSpec,
+  type BilingualInlineNode,
+} from "../bilingual-layout";
 
 const BASE_OPTIONS = {
   pageContentHeight: 100,
@@ -28,7 +34,7 @@ function row(
   fragmentCount: number,
   enHeight: number,
   arHeight: number,
-  overrides: Partial<PairedRowInput> = {}
+  overrides: Partial<PairedRowInput> = {},
 ): PairedRowInput {
   return {
     alignmentKey: createAlignmentKey(alignmentKey),
@@ -43,7 +49,7 @@ function row(
 
 function expectLayoutError(
   action: () => unknown,
-  code: LayoutSyncError["code"]
+  code: LayoutSyncError["code"],
 ): void {
   try {
     action();
@@ -60,17 +66,14 @@ describe("createAlignmentKey", () => {
   });
 
   test("rejects empty, padded, and direction-control keys", () => {
-    expectLayoutError(
-      () => createAlignmentKey(""),
-      "INVALID_ALIGNMENT_KEY"
-    );
+    expectLayoutError(() => createAlignmentKey(""), "INVALID_ALIGNMENT_KEY");
     expectLayoutError(
       () => createAlignmentKey(" scope.1"),
-      "INVALID_ALIGNMENT_KEY"
+      "INVALID_ALIGNMENT_KEY",
     );
     expectLayoutError(
       () => createAlignmentKey("scope.\u202e1"),
-      "INVALID_ALIGNMENT_KEY"
+      "INVALID_ALIGNMENT_KEY",
     );
   });
 });
@@ -79,7 +82,7 @@ describe("synchronizeLayout height synchronization", () => {
   test("keeps equal-height columns unchanged", () => {
     const result = synchronizeLayout(
       [row("scope.1", 0, 1, 40, 40)],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
     const synchronized = result.rows[0];
 
@@ -108,7 +111,7 @@ describe("synchronizeLayout height synchronization", () => {
           en: { contentHeight: 30, adjustableGaps: 2 },
         }),
       ],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
     const synchronized = result.rows[0];
 
@@ -130,7 +133,7 @@ describe("synchronizeLayout height synchronization", () => {
       {
         ...BASE_OPTIONS,
         maxSpacingPerGap: 3,
-      }
+      },
     );
     const synchronized = result.rows[0];
 
@@ -147,7 +150,7 @@ describe("synchronizeLayout height synchronization", () => {
           en: { contentHeight: 20, adjustableGaps: 2 },
         }),
       ],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
     const synchronized = result.rows[0];
 
@@ -170,7 +173,7 @@ describe("synchronizeLayout height synchronization", () => {
       {
         ...BASE_OPTIONS,
         maxDynamicSpacingPerRow: 12,
-      }
+      },
     );
     const synchronized = result.rows[0];
 
@@ -182,7 +185,7 @@ describe("synchronizeLayout height synchronization", () => {
   test("leaves bounded trailing space when no adjustable gaps exist", () => {
     const result = synchronizeLayout(
       [row("scope.1", 0, 1, 20, 30)],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.rows[0]?.en.addedSpacing).toBe(0);
@@ -191,13 +194,10 @@ describe("synchronizeLayout height synchronization", () => {
   });
 
   test("uses tolerance to ignore sub-pixel imbalance", () => {
-    const result = synchronizeLayout(
-      [row("scope.1", 0, 1, 30, 30.4)],
-      {
-        ...BASE_OPTIONS,
-        balanceTolerance: 0.5,
-      }
-    );
+    const result = synchronizeLayout([row("scope.1", 0, 1, 30, 30.4)], {
+      ...BASE_OPTIONS,
+      balanceTolerance: 0.5,
+    });
 
     expect(result.rows[0]?.overflow).toEqual({ kind: "none" });
     expect(result.rows[0]?.en.trailingSpace).toBeCloseTo(0.4);
@@ -206,7 +206,7 @@ describe("synchronizeLayout height synchronization", () => {
   test("classifies a page-height overflow separately", () => {
     const result = synchronizeLayout(
       [row("scope.1", 0, 1, 120, 120)],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.rows[0]?.overflow).toEqual({
@@ -218,7 +218,7 @@ describe("synchronizeLayout height synchronization", () => {
   test("classifies simultaneous page and column overflow", () => {
     const result = synchronizeLayout(
       [row("scope.1", 0, 1, 120, 80)],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.rows[0]?.overflow).toEqual({
@@ -260,12 +260,8 @@ describe("synchronizeLayout coordinated pagination", () => {
 
   test("places rows using deterministic offsets and row gaps", () => {
     const result = synchronizeLayout(
-      [
-        row("a", 0, 1, 20, 20),
-        row("b", 0, 1, 30, 30),
-        row("c", 0, 1, 10, 10),
-      ],
-      BASE_OPTIONS
+      [row("a", 0, 1, 20, 20), row("b", 0, 1, 30, 30), row("c", 0, 1, 10, 10)],
+      BASE_OPTIONS,
     );
 
     expect(result.pages).toHaveLength(1);
@@ -280,7 +276,7 @@ describe("synchronizeLayout coordinated pagination", () => {
   test("fits an exact page boundary without creating another page", () => {
     const result = synchronizeLayout(
       [row("a", 0, 1, 48, 48), row("b", 0, 1, 48, 48)],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.pages).toHaveLength(1);
@@ -290,7 +286,7 @@ describe("synchronizeLayout coordinated pagination", () => {
   test("moves a row to the next page when it does not fit", () => {
     const result = synchronizeLayout(
       [row("a", 0, 1, 60, 60), row("b", 0, 1, 40, 40)],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.pages).toHaveLength(2);
@@ -309,7 +305,7 @@ describe("synchronizeLayout coordinated pagination", () => {
         row("a", 0, 1, 20, 20, { breakBefore: true }),
         row("b", 0, 1, 20, 20, { breakBefore: true }),
       ],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.pages).toHaveLength(2);
@@ -327,7 +323,7 @@ describe("synchronizeLayout coordinated pagination", () => {
         }),
         row("clause", 1, 2, 30, 30),
       ],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.pages).toHaveLength(2);
@@ -338,7 +334,7 @@ describe("synchronizeLayout coordinated pagination", () => {
       result.pages[1]?.rows.map((item) => [
         item.alignmentKey,
         item.fragmentIndex,
-      ])
+      ]),
     ).toEqual([
       ["clause", 0],
       ["clause", 1],
@@ -354,7 +350,7 @@ describe("synchronizeLayout coordinated pagination", () => {
         }),
         row("clause", 1, 2, 40, 40),
       ],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.pages).toHaveLength(2);
@@ -374,7 +370,7 @@ describe("synchronizeLayout coordinated pagination", () => {
         row("large", 0, 1, 125, 125),
         row("b", 0, 1, 20, 20),
       ],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(result.pages).toHaveLength(3);
@@ -399,7 +395,7 @@ describe("synchronizeLayout continuation metadata", () => {
         row("scope", 1, 3, 55, 55),
         row("scope", 2, 3, 20, 20),
       ],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
     const [first, second, third] = result.rows;
 
@@ -430,7 +426,7 @@ describe("synchronizeLayout continuation metadata", () => {
         row("scope", 1, 3, 100, 100),
         row("scope", 2, 3, 100, 100),
       ],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
     const middle = result.rows[1];
 
@@ -444,15 +440,15 @@ describe("synchronizeLayout continuation metadata", () => {
   test("does not continue across different alignment keys", () => {
     const result = synchronizeLayout(
       [row("scope.1", 0, 1, 70, 70), row("scope.2", 0, 1, 70, 70)],
-      BASE_OPTIONS
+      BASE_OPTIONS,
     );
 
     expect(
       result.rows.every(
         (item) =>
           !item.continuation.continuedFromPreviousPage &&
-          !item.continuation.continuesOnNextPage
-      )
+          !item.continuation.continuesOnNextPage,
+      ),
     ).toBe(true);
   });
 
@@ -465,7 +461,7 @@ describe("synchronizeLayout continuation metadata", () => {
           before: { en: "Continuation", ar: "تكملة" },
           after: { en: "Continues", ar: "مستمر" },
         },
-      }
+      },
     );
 
     expect(result.rows[0]?.continuation.afterLabel).toEqual({
@@ -482,16 +478,12 @@ describe("synchronizeLayout continuation metadata", () => {
 describe("synchronizeLayout validation and determinism", () => {
   test("rejects non-finite, negative, and fractional measurements", () => {
     expectLayoutError(
-      () =>
-        synchronizeLayout(
-          [row("a", 0, 1, Number.NaN, 20)],
-          BASE_OPTIONS
-        ),
-      "INVALID_MEASUREMENT"
+      () => synchronizeLayout([row("a", 0, 1, Number.NaN, 20)], BASE_OPTIONS),
+      "INVALID_MEASUREMENT",
     );
     expectLayoutError(
       () => synchronizeLayout([row("a", 0, 1, -1, 20)], BASE_OPTIONS),
-      "INVALID_MEASUREMENT"
+      "INVALID_MEASUREMENT",
     );
     expectLayoutError(
       () =>
@@ -501,9 +493,9 @@ describe("synchronizeLayout validation and determinism", () => {
               en: { contentHeight: 20, adjustableGaps: 1.5 },
             }),
           ],
-          BASE_OPTIONS
+          BASE_OPTIONS,
         ),
-      "INVALID_MEASUREMENT"
+      "INVALID_MEASUREMENT",
     );
   });
 
@@ -517,7 +509,7 @@ describe("synchronizeLayout validation and determinism", () => {
     ]) {
       expectLayoutError(
         () => synchronizeLayout([], options),
-        "INVALID_OPTIONS"
+        "INVALID_OPTIONS",
       );
     }
   });
@@ -525,15 +517,15 @@ describe("synchronizeLayout validation and determinism", () => {
   test("rejects invalid fragment indexes and counts", () => {
     expectLayoutError(
       () => synchronizeLayout([row("a", -1, 1, 20, 20)], BASE_OPTIONS),
-      "INVALID_FRAGMENT"
+      "INVALID_FRAGMENT",
     );
     expectLayoutError(
       () => synchronizeLayout([row("a", 0, 0, 20, 20)], BASE_OPTIONS),
-      "INVALID_FRAGMENT"
+      "INVALID_FRAGMENT",
     );
     expectLayoutError(
       () => synchronizeLayout([row("a", 1, 1, 20, 20)], BASE_OPTIONS),
-      "INVALID_FRAGMENT"
+      "INVALID_FRAGMENT",
     );
   });
 
@@ -542,21 +534,21 @@ describe("synchronizeLayout validation and determinism", () => {
       () =>
         synchronizeLayout(
           [row("a", 0, 3, 20, 20), row("a", 2, 3, 20, 20)],
-          BASE_OPTIONS
+          BASE_OPTIONS,
         ),
-      "INVALID_FRAGMENT_SEQUENCE"
+      "INVALID_FRAGMENT_SEQUENCE",
     );
     expectLayoutError(
       () =>
         synchronizeLayout(
           [row("a", 0, 2, 20, 20), row("a", 1, 3, 20, 20)],
-          BASE_OPTIONS
+          BASE_OPTIONS,
         ),
-      "INCONSISTENT_FRAGMENT_COUNT"
+      "INCONSISTENT_FRAGMENT_COUNT",
     );
     expectLayoutError(
       () => synchronizeLayout([row("a", 0, 2, 20, 20)], BASE_OPTIONS),
-      "INCOMPLETE_FRAGMENT_GROUP"
+      "INCOMPLETE_FRAGMENT_GROUP",
     );
   });
 
@@ -569,9 +561,9 @@ describe("synchronizeLayout validation and determinism", () => {
             row("b", 0, 1, 20, 20),
             row("a", 0, 1, 20, 20),
           ],
-          BASE_OPTIONS
+          BASE_OPTIONS,
         ),
-      "NON_CONTIGUOUS_ALIGNMENT_KEY"
+      "NON_CONTIGUOUS_ALIGNMENT_KEY",
     );
   });
 
@@ -583,9 +575,9 @@ describe("synchronizeLayout validation and determinism", () => {
             row("a", 0, 1, 20, 20, { keepWithNext: true }),
             row("b", 0, 1, 20, 20, { breakBefore: true }),
           ],
-          BASE_OPTIONS
+          BASE_OPTIONS,
         ),
-      "CONFLICTING_BREAK_POLICY"
+      "CONFLICTING_BREAK_POLICY",
     );
   });
 
@@ -600,20 +592,20 @@ describe("synchronizeLayout validation and determinism", () => {
     ];
 
     expect(synchronizeLayout(input, BASE_OPTIONS)).toEqual(
-      synchronizeLayout(input, BASE_OPTIONS)
+      synchronizeLayout(input, BASE_OPTIONS),
     );
   });
 
   test("handles a 50-page document in stable input order", () => {
     const input = Array.from({ length: 100 }, (_, index) =>
-      row(`section.${index}`, 0, 1, 48, 48)
+      row(`section.${index}`, 0, 1, 48, 48),
     );
     const result = synchronizeLayout(input, BASE_OPTIONS);
 
     expect(result.pages).toHaveLength(50);
     expect(result.rows).toHaveLength(100);
     expect(result.rows.map((item) => item.alignmentKey)).toEqual(
-      input.map((item) => item.alignmentKey)
+      input.map((item) => item.alignmentKey),
     );
     expect(result.pages.every((page) => page.rows.length === 2)).toBe(true);
     expect(result.metrics).toEqual({
@@ -653,18 +645,19 @@ describe("trusted bilingual renderer bridge", () => {
       ],
     };
     let applied: LayoutSyncResult | null = null;
+    let appliedPageHeight: number | null = null;
     const page: BilingualLayoutEvaluationPage = {
       async evaluate<Result, Argument>(
-        pageFunction: (
-          argument: Argument
-        ) => Result | Promise<Result>,
-        argument: Argument
+        pageFunction: (argument: Argument) => Result | Promise<Result>,
+        argument: Argument,
       ): Promise<Result> {
         if (pageFunction === (measureBilingualLayoutInPage as unknown)) {
           return measurement as Result;
         }
         if (pageFunction === (applyBilingualLayoutInPage as unknown)) {
-          applied = argument as LayoutSyncResult;
+          const application = argument as BilingualLayoutApplication;
+          applied = application.result;
+          appliedPageHeight = application.pageContentHeight;
           return {
             rowCount: applied.metrics.inputRowCount,
             pageCount: applied.metrics.pageCount,
@@ -680,10 +673,57 @@ describe("trusted bilingual renderer bridge", () => {
     });
 
     expect(applied).toEqual(result);
+    expect(appliedPageHeight).toBe(100);
     expect(result.rows[0]?.en.addedSpacing).toBe(8);
     expect(result.rows[0]?.rowHeight).toBe(38);
     expect(result.pages).toHaveLength(2);
     expect(result.rows[1]?.pageNumber).toBe(2);
+  });
+
+  test("fails closed before applying a row taller than the printable page", async () => {
+    const measurement: BrowserLayoutMeasurement = {
+      rowGap: 0,
+      rows: [
+        {
+          alignmentKey: "bridge.oversized",
+          fragmentIndex: 0,
+          fragmentCount: 1,
+          kind: "list-item",
+          en: { contentHeight: 101, adjustableGaps: 0 },
+          ar: { contentHeight: 90, adjustableGaps: 0 },
+          keepWithNext: false,
+          breakBefore: false,
+        },
+      ],
+    };
+    let applyCalled = false;
+    const page: BilingualLayoutEvaluationPage = {
+      async evaluate<Result, Argument>(
+        pageFunction: (argument: Argument) => Result | Promise<Result>,
+        _argument: Argument,
+      ): Promise<Result> {
+        if (pageFunction === (measureBilingualLayoutInPage as unknown)) {
+          return measurement as Result;
+        }
+        applyCalled = true;
+        throw new Error("Oversized layout must not be applied.");
+      },
+    };
+
+    let error: unknown;
+    try {
+      await synchronizeBilingualLayoutPage(page, {
+        pageContentHeight: 100,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(LayoutSyncError);
+    expect((error as LayoutSyncError).code).toBe("INVALID_FRAGMENT");
+    expect((error as Error).message).toContain(
+      "taller than the printable page",
+    );
+    expect(applyCalled).toBe(false);
   });
 
   test.skipIf(process.env.PLAYWRIGHT_CHROMIUM !== "1")(
@@ -714,7 +754,7 @@ li { margin-block:2px; }
 
           const result = await synchronizeBilingualLayoutPage(
             page as unknown as BilingualLayoutEvaluationPage,
-            { pageContentHeight: 900 }
+            { pageContentHeight: 900 },
           );
           const snapshot = await page.evaluate(() => {
             const root = document.querySelector("[data-bilingual-document]");
@@ -725,9 +765,7 @@ li { margin-block:2px; }
               ready: root?.getAttribute("data-bilingual-layout-ready"),
               page: row?.getAttribute("data-sync-page"),
               rowHeight: Number(row?.getAttribute("data-sync-row-height")),
-              addedSpacing: Number(
-                en?.getAttribute("data-sync-added-spacing")
-              ),
+              addedSpacing: Number(en?.getAttribute("data-sync-added-spacing")),
             };
           });
 
@@ -744,6 +782,118 @@ li { margin-block:2px; }
         await browser.close();
       }
     },
-    120_000
+    120_000,
+  );
+
+  test.skipIf(process.env.PLAYWRIGHT_CHROMIUM !== "1")(
+    "measures both tab languages before a switch and preserves print pagination",
+    async () => {
+      const inline = (value: string): readonly BilingualInlineNode[] => [
+        { type: "text", text: value },
+      ];
+      const document: BilingualDocumentSpec = {
+        id: "tabs-print-proof",
+        title: { en: inline("TAB_TITLE_EN"), ar: inline("عنوان") },
+        layout: {
+          mode: "parallel",
+          viewer: { mode: "tabs", defaultLanguage: "ar" },
+        },
+        sections: [
+          {
+            id: "tabs",
+            alignmentKey: "tabs",
+            blocks: [
+              {
+                type: "paragraph",
+                id: "long",
+                content: {
+                  en: inline(
+                    `TAB_LONG_EN ${"English delivery governance evidence. ".repeat(
+                      80,
+                    )}`,
+                  ),
+                  ar: inline("TAB_SHORT_AR نص عربي موجز."),
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const { chromium } = await import("playwright");
+      const { PDFParse } = await import("pdf-parse");
+      const browser = await chromium.launch({ headless: true });
+      try {
+        const page = await browser.newPage({
+          viewport: { width: 1_280, height: 900 },
+        });
+        await page.emulateMedia({ media: "screen" });
+        await page.setContent(
+          renderBilingualHTML(document, { target: "screen" }),
+        );
+        await page.evaluate(() => {
+          const root = document.querySelector<HTMLElement>(
+            "[data-bilingual-document]",
+          );
+          if (!root) throw new Error("Missing bilingual root.");
+          root.dataset.viewerMode = "tabs";
+        });
+        const initial = await synchronizeBilingualLayoutPage(page);
+        const continuationMarkers = await page.evaluate(() =>
+          Array.from(
+            document.querySelectorAll<HTMLElement>(
+              "[data-bilingual-continuation-marker]",
+            ),
+            (marker) => marker.textContent,
+          ),
+        );
+        await page.evaluate(() => {
+          const root = document.querySelector<HTMLElement>(
+            "[data-bilingual-document]",
+          );
+          if (!root) throw new Error("Missing bilingual root.");
+          root.dataset.viewerLanguage = "en";
+        });
+        const switched = await synchronizeBilingualLayoutPage(page);
+        await page.emulateMedia({ media: "print" });
+        const overflow = await page.evaluate(() =>
+          Array.from(
+            document.querySelectorAll<HTMLElement>("[data-bilingual-pair]"),
+          ).some((pair) =>
+            Array.from(
+              pair.querySelectorAll<HTMLElement>(":scope > [data-language]"),
+            ).some(
+              (cell) =>
+                cell.scrollHeight > pair.getBoundingClientRect().height + 1,
+            ),
+          ),
+        );
+        const pdf = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: {
+            top: "16mm",
+            bottom: "18mm",
+            left: "14mm",
+            right: "14mm",
+          },
+        });
+        const parser = new PDFParse({ data: pdf });
+        const parsed = await parser.getText();
+        await parser.destroy();
+        const allText = parsed.pages.map((item) => item.text).join("\n");
+
+        expect(initial.metrics.pageCount).toBe(switched.metrics.pageCount);
+        expect(initial.metrics.pageCount).toBeGreaterThan(1);
+        expect(continuationMarkers).toContain("Continued");
+        expect(continuationMarkers).toContain("تابع");
+        expect(parsed.total).toBe(switched.metrics.pageCount);
+        expect(overflow).toBe(false);
+        expect(allText).toContain("TAB_LONG_EN");
+        expect(allText).toContain("TAB_SHORT_AR");
+      } finally {
+        await browser.close();
+      }
+    },
+    120_000,
   );
 });

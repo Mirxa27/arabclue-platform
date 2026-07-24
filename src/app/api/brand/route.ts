@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireSession, requireWriter } from "@/lib/auth";
+import {
+  isWorkspaceManager,
+  requireSession,
+  requireWriter,
+} from "@/lib/auth";
 import { embedText } from "@/lib/llm";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -8,6 +12,14 @@ import {
   DOCUMENT_BRAND_FONT_FAMILIES,
   extractLogoStoragePath,
 } from "@/lib/brand-logo";
+import {
+  approveKnowledgeContent,
+  knowledgeEvidencePointerSchema,
+  markKnowledgeContentUnreviewed,
+  pastProjectKnowledgeContent,
+  resolveKnowledgeApprovalEvidence,
+  revokeKnowledgeContent,
+} from "@/lib/knowledge-approval";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -66,36 +78,53 @@ const pastProjectTextSchema = z
     (value) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value),
     "Control characters are not allowed"
   );
-const revocationTimestampSchema = z
-  .string()
-  .trim()
-  .regex(
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/,
-    "Expected a UTC ISO-8601 timestamp"
-  )
-  .refine((value) => Number.isFinite(Date.parse(value)), "Invalid timestamp");
+const optionalPastProjectTextSchema = pastProjectTextSchema.nullable().optional();
+export const pastProjectCreateSchema = z
+  .object({
+    title: pastProjectTextSchema.max(500),
+    titleAr: optionalPastProjectTextSchema,
+    clientName: optionalPastProjectTextSchema,
+    clientNameAr: optionalPastProjectTextSchema,
+    sector: optionalPastProjectTextSchema,
+    contractValue: z.number().finite().nonnegative().nullable().optional(),
+    startDate: z.string().datetime().nullable().optional(),
+    endDate: z.string().datetime().nullable().optional(),
+    outcome: z.enum(["SUCCESSFUL", "ONGOING", "COMPLETED"]).nullable().optional(),
+    summary: pastProjectTextSchema,
+    summaryAr: optionalPastProjectTextSchema,
+    tags: optionalPastProjectTextSchema,
+  })
+  .strict();
 
-/**
- * A writer may withdraw or edit a claim, but cannot approve or un-revoke it.
- * Content edits automatically return the record to the unapproved state.
- */
-export const pastProjectUpdateSchema = z
+const pastProjectEditSchema = z
   .object({
     id: z.string().trim().min(1).max(200),
-    approved: z.literal(false).optional(),
-    revokedAt: revocationTimestampSchema.optional(),
     title: pastProjectTextSchema.max(500).optional(),
     summary: pastProjectTextSchema.optional(),
   })
   .strict()
-  .refine(
-    (value) =>
-      value.approved === false ||
-      value.revokedAt !== undefined ||
-      value.title !== undefined ||
-      value.summary !== undefined,
-    { message: "At least one project field is required" }
-  );
+  .refine((value) => value.title !== undefined || value.summary !== undefined, {
+    message: "At least one project field is required",
+  });
+const pastProjectApprovalSchema = z
+  .object({
+    id: z.string().trim().min(1).max(200),
+    approved: z.literal(true),
+    provenance: knowledgeEvidencePointerSchema,
+  })
+  .strict();
+const pastProjectRevocationSchema = z
+  .object({
+    id: z.string().trim().min(1).max(200),
+    approved: z.literal(false),
+    reason: z.string().trim().min(1).max(1_000),
+  })
+  .strict();
+export const pastProjectUpdateSchema = z.union([
+  pastProjectApprovalSchema,
+  pastProjectRevocationSchema,
+  pastProjectEditSchema,
+]);
 
 export function validateBrandPatchForWorkspace(
   raw: unknown,
@@ -129,7 +158,12 @@ export async function GET() {
     where: { workspaceId: workspace.id },
     orderBy: { createdAt: "desc" },
   });
-  return NextResponse.json({ brandProfile, company, pastProjects });
+  return NextResponse.json({
+    workspaceId: workspace.id,
+    brandProfile,
+    company,
+    pastProjects,
+  });
 }
 
 // PATCH /api/brand — update brand profile
@@ -174,10 +208,16 @@ export async function POST(req: NextRequest) {
   if (!brandProfile) {
     return NextResponse.json({ error: "No brand profile" }, { status: 400 });
   }
-  const body = await req.json();
-  if (!body.title || !body.summary) {
-    return NextResponse.json({ error: "title and summary are required" }, { status: 400 });
+  const parsed = pastProjectCreateSchema.safeParse(
+    await req.json().catch(() => null)
+  );
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid past project" },
+      { status: 400 }
+    );
   }
+  const body = parsed.data;
 
   const embeddingText = [
     body.title,
@@ -210,9 +250,12 @@ export async function POST(req: NextRequest) {
       summaryAr: body.summaryAr,
       tags: body.tags,
       embeddingJson: JSON.stringify(embedding),
-      // User-entered claims are not evidence. A future provenance workflow
-      // must explicitly verify them before RAG/export eligibility.
-      approved: false,
+      ...markKnowledgeContentUnreviewed(
+        pastProjectKnowledgeContent({
+          ...body,
+          currency: "SAR",
+        })
+      ),
     },
   });
   await audit({
@@ -225,30 +268,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ project });
 }
 
-/** PUT /api/brand — update past project approval / revoke */
+/** PUT /api/brand — edit, evidence-approve, or revoke a past project. */
 export async function PUT(req: NextRequest) {
   const session = await requireWriter();
   if (!session) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const { workspace } = await getTenantContext(session.user.id);
+  const { workspace, membershipRole } = await getTenantContext(session.user.id);
   const body: unknown = await req.json().catch(() => null);
-  if (
-    body &&
-    typeof body === "object" &&
-    ("approved" in body &&
-      (body as { approved?: unknown }).approved === true ||
-      "revokedAt" in body &&
-        (body as { revokedAt?: unknown }).revokedAt === null)
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "Approval restoration requires verified evidence and provenance.",
-      },
-      { status: 409 }
-    );
-  }
   const parsed = pastProjectUpdateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -256,7 +283,7 @@ export async function PUT(req: NextRequest) {
       { status: 400 }
     );
   }
-  const { id, ...update } = parsed.data;
+  const { id } = parsed.data;
   const existing = await db.pastProject.findFirst({
     where: { id, workspaceId: workspace.id },
   });
@@ -264,18 +291,100 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
+  const content = pastProjectKnowledgeContent({
+    ...existing,
+    title: "title" in parsed.data ? parsed.data.title ?? existing.title : existing.title,
+    summary:
+      "summary" in parsed.data
+        ? parsed.data.summary ?? existing.summary
+        : existing.summary,
+  });
   const data: {
-    approved?: boolean;
-    revokedAt?: Date;
     title?: string;
     summary?: string;
+    embeddingJson?: string;
+    approved?: boolean;
+    reviewStatus?: "UNREVIEWED" | "APPROVED" | "REVOKED";
+    evidenceRef?: string | null;
+    provenanceJson?: string | null;
+    reviewedById?: string | null;
+    approvedAt?: Date | null;
+    revokedAt?: Date | null;
+    revokedById?: string | null;
+    revocationReason?: string | null;
+    contentHash?: string;
   } = {};
-  if (update.approved === false) data.approved = false;
-  if (update.revokedAt) data.revokedAt = new Date(update.revokedAt);
-  if (update.title !== undefined) data.title = update.title;
-  if (update.summary !== undefined) data.summary = update.summary;
-  if (update.title !== undefined || update.summary !== undefined) {
-    data.approved = false;
+  if ("approved" in parsed.data && parsed.data.approved === true) {
+    if (!isWorkspaceManager(membershipRole, session.user.role)) {
+      return NextResponse.json(
+        { error: "Only a workspace manager may approve knowledge evidence" },
+        { status: 403 }
+      );
+    }
+    try {
+      const evidence = await resolveKnowledgeApprovalEvidence({
+        workspaceId: workspace.id,
+        request: {
+          approved: true,
+          provenance: parsed.data.provenance,
+        },
+      });
+      Object.assign(
+        data,
+        approveKnowledgeContent({
+          evidence,
+          reviewerId: session.user.id,
+          content,
+        })
+      );
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            "Approval requires a checksummed evidence document from this workspace",
+        },
+        { status: 400 }
+      );
+    }
+  } else if ("approved" in parsed.data && parsed.data.approved === false) {
+    if (!isWorkspaceManager(membershipRole, session.user.role)) {
+      return NextResponse.json(
+        { error: "Only a workspace manager may revoke knowledge evidence" },
+        { status: 403 }
+      );
+    }
+    try {
+      Object.assign(
+        data,
+        revokeKnowledgeContent({
+          request: parsed.data,
+          content,
+          previous: existing,
+          revokerId: session.user.id,
+        })
+      );
+    } catch {
+      return NextResponse.json(
+        { error: "Revocation requires currently approved evidence and a reason" },
+        { status: 400 }
+      );
+    }
+  } else {
+    if (parsed.data.title !== undefined) data.title = parsed.data.title;
+    if (parsed.data.summary !== undefined) data.summary = parsed.data.summary;
+    Object.assign(data, markKnowledgeContentUnreviewed(content));
+    data.embeddingJson = JSON.stringify(
+      await embedText(
+        [
+          "title" in parsed.data ? parsed.data.title : existing.title,
+          "summary" in parsed.data ? parsed.data.summary : existing.summary,
+          existing.sector,
+          existing.tags,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      )
+    );
   }
 
   const project = await db.pastProject.update({
@@ -284,10 +393,29 @@ export async function PUT(req: NextRequest) {
   });
   await audit({
     userId: session.user.id,
-    action: "PAST_PROJECT_UPDATE",
+    action:
+      data.reviewStatus === "APPROVED"
+        ? "KNOWLEDGE_APPROVE"
+        : data.reviewStatus === "REVOKED"
+          ? "KNOWLEDGE_REVOKE"
+          : "KNOWLEDGE_INVALIDATE",
     resource: "PastProject",
     resourceId: project.id,
-    details: { approved: project.approved, revokedAt: project.revokedAt },
+    details: {
+      approved: project.approved,
+      reviewStatus: project.reviewStatus,
+      contentHash: project.contentHash,
+      ...("reason" in parsed.data
+        ? {
+            reason: project.revocationReason,
+            evidenceRef: project.evidenceRef,
+            approvedById: project.reviewedById,
+            approvedAt: project.approvedAt?.toISOString(),
+            previousContentHash: existing.contentHash,
+            revokedById: project.revokedById,
+          }
+        : {}),
+    },
   });
   return NextResponse.json({ project });
 }

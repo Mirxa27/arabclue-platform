@@ -54,12 +54,35 @@ export type ProposalSourceKind =
   | "WORKSPACE"
   | "DERIVED";
 
+export interface ProposalKnowledgeSourceBinding {
+  readonly recordType:
+    | "CERTIFICATE"
+    | "PAST_PROJECT"
+    | "METHODOLOGY"
+    | "LIBRARY_ITEM";
+  readonly contentHash: string;
+  readonly evidenceRef: string;
+  readonly reviewStatus: "APPROVED";
+  readonly reviewedById: string;
+  readonly approvedAt: string;
+  readonly provenance: {
+    readonly sourceKind: "UPLOADED_DOCUMENT";
+    readonly sourceId: string;
+    readonly version: number;
+    readonly checksum: string;
+    readonly originalName: string;
+    readonly capturedAt: string;
+  };
+}
+
 export interface ProposalSourceReference {
   readonly id: string;
   readonly kind: ProposalSourceKind;
   readonly title: LocalizedProposalText;
   readonly locator?: string;
   readonly asOf?: string;
+  /** Required and server-verified when kind is APPROVED_KNOWLEDGE. */
+  readonly knowledgeBinding?: ProposalKnowledgeSourceBinding;
 }
 
 export interface ProposalBrandInput {

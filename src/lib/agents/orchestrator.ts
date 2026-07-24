@@ -8,9 +8,7 @@ import { runTechnicalArchitect } from "./technical";
 import { runFinancialAgent } from "./financial";
 import { draftProposal } from "./drafting";
 import { draftLawContract, validateContractDraft } from "./law-contract";
-import {
-  buildCoveragePlan,
-} from "./coverage";
+import { buildCoveragePlan } from "./coverage";
 import {
   enrichIngestionWithAi,
   enrichComplianceWithAi,
@@ -23,8 +21,23 @@ import { loadProjectTenderCorpus } from "../document-chunks";
 import { audit, AUDIT_ACTIONS } from "../audit";
 import { resolveBidderDisplayName } from "../text-quality";
 import { isQualityPastProjectTitle } from "../text-quality";
+import {
+  certificateKnowledgeContent,
+  hashKnowledgeContent,
+  libraryKnowledgeContent,
+  methodologyKnowledgeContent,
+  pastProjectKnowledgeContent,
+} from "../knowledge-approval";
+import {
+  isCertificateValid,
+  isLibraryItemEligible,
+  isMethodologyEligible,
+  isPastProjectEligible,
+} from "../knowledge-eligibility";
 import type { Locale } from "../types";
 import { parseAgentRunConfig } from "../proposal-studio";
+import { STRUCTURED_SNAPSHOT_INVALIDATION } from "../proposal-snapshot-persistence";
+import { isProposalEditLocked } from "../proposal-status";
 
 export interface OrchestratorResult {
   agentStates: AgentState[];
@@ -330,23 +343,34 @@ export async function runAgentPipeline(opts: {
       where: { id: opts.workspaceId },
       select: { name: true, nameAr: true },
     });
-    const past = await db.pastProject.findMany({
+    const reviewedWhere = {
+      approved: true,
+      reviewStatus: "APPROVED" as const,
+      revokedAt: null,
+      evidenceRef: { not: null },
+      provenanceJson: { not: null },
+      reviewedById: { not: null },
+      approvedAt: { not: null },
+      contentHash: { not: null },
+    };
+    const pastRows = await db.pastProject.findMany({
       where: {
         workspaceId: opts.workspaceId,
-        approved: true,
-        revokedAt: null,
+        ...reviewedWhere,
       },
     });
-    const [libraryItems, staffMembers, methodologies, restrictions, certificates] =
+    const now = new Date();
+    const [libraryRows, methodologyRows, restrictions, certificateRows] =
       await Promise.all([
       db.contentLibraryItem.findMany({
-        where: { workspaceId: opts.workspaceId, approved: true, restricted: false },
-      }),
-      db.staffMember.findMany({
-        where: { workspaceId: opts.workspaceId, active: true },
+        where: {
+          workspaceId: opts.workspaceId,
+          ...reviewedWhere,
+          restricted: false,
+        },
       }),
       db.methodologyAsset.findMany({
-        where: { workspaceId: opts.workspaceId, approved: true },
+        where: { workspaceId: opts.workspaceId, ...reviewedWhere },
       }),
       db.restriction.findMany({
         where: { workspaceId: opts.workspaceId, active: true },
@@ -354,13 +378,44 @@ export async function runAgentPipeline(opts: {
       db.certificate.findMany({
         where: {
           workspaceId: opts.workspaceId,
-          approved: true,
-          revokedAt: null,
+          ...reviewedWhere,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
         },
       }),
     ]);
-    const { filterValidCertificates } = await import("../knowledge-eligibility");
-    const validCerts = filterValidCertificates(certificates);
+    const past = pastRows.filter((project) =>
+      isPastProjectEligible({
+        ...project,
+        expectedContentHash: hashKnowledgeContent(
+          pastProjectKnowledgeContent(project)
+        ),
+      }).eligible
+    );
+    const libraryItems = libraryRows.filter((item) =>
+      isLibraryItemEligible({
+        ...item,
+        expectedContentHash: hashKnowledgeContent(
+          libraryKnowledgeContent(item)
+        ),
+      }).eligible
+    );
+    const methodologies = methodologyRows.filter((methodology) =>
+      isMethodologyEligible({
+        ...methodology,
+        expectedContentHash: hashKnowledgeContent(
+          methodologyKnowledgeContent(methodology)
+        ),
+      }).eligible
+    );
+    const validCerts = certificateRows.filter((certificate) =>
+      isCertificateValid({
+        ...certificate,
+        now,
+        expectedContentHash: hashKnowledgeContent(
+          certificateKnowledgeContent(certificate)
+        ),
+      }).eligible
+    );
     const ragDocs: RagDocument[] = [];
     for (const p of past) {
       if (!isQualityPastProjectTitle(p.title)) continue;
@@ -396,18 +451,6 @@ export async function runAgentPipeline(opts: {
           : null,
       });
     }
-    for (const s of staffMembers) {
-      ragDocs.push({
-        id: s.id,
-        title: `[Staff] ${s.name} — ${s.roleTitle}`,
-        summary: [s.cvSummary, s.certifications, s.requirementTags]
-          .filter(Boolean)
-          .join("\n")
-          .slice(0, 1500),
-        tags: s.requirementTags,
-        embedding: s.embeddingJson ? (JSON.parse(s.embeddingJson) as number[]) : null,
-      });
-    }
     for (const m of methodologies) {
       ragDocs.push({
         id: m.id,
@@ -437,9 +480,9 @@ export async function runAgentPipeline(opts: {
     const knowledgeFindings = [
       `Approved past projects: ${past.length}`,
       `Approved library items: ${libraryItems.length}`,
-      `Active staff: ${staffMembers.length}`,
+      "Staff claims: excluded until evidence review is available",
       `Approved methodologies: ${methodologies.length}`,
-      `Valid certificates (non-expired): ${validCerts.length}/${certificates.length}`,
+      `Valid certificates (non-expired): ${validCerts.length}/${certificateRows.length}`,
     ];
     const restrictionsText = restrictions
       .map((r) => `${r.restrictionType}: ${r.text}`)
@@ -711,21 +754,22 @@ export async function runAgentPipeline(opts: {
       if (!existing) {
         throw new Error("Target proposal not found for version regenerate");
       }
+      if (isProposalEditLocked(existing.status)) {
+        throw new Error(
+          "Target proposal is locked for editing in its current review status"
+        );
+      }
       const nextVersion = existing.version + 1;
       proposal = await db.$transaction(async (tx) => {
-        await tx.proposalReview.deleteMany({ where: { proposalId: existing.id } });
-        await tx.proposalVersion.create({
-          data: {
-            proposalId: existing.id,
-            version: nextVersion,
-            contentMd: draft.contentMd,
-            changeLog: "AI regenerate (new version)",
-            locale,
-            createdBy: opts.userId,
+        const write = await tx.generatedProposal.updateMany({
+          where: {
+            id: existing.id,
+            workspaceId: opts.workspaceId,
+            projectId: opts.projectId,
+            status: existing.status,
+            version: existing.version,
+            updatedAt: existing.updatedAt,
           },
-        });
-        return tx.generatedProposal.update({
-          where: { id: existing.id },
           data: {
             title: titleEn,
             titleAr,
@@ -739,7 +783,29 @@ export async function runAgentPipeline(opts: {
             generatedAt: new Date(),
             submittedAt: null,
             approvedAt: null,
+            ...STRUCTURED_SNAPSHOT_INVALIDATION,
           },
+        });
+        if (write.count !== 1) {
+          throw new Error(
+            "Target proposal changed concurrently; regenerate from the latest version"
+          );
+        }
+        await tx.proposalReview.deleteMany({
+          where: { proposalId: existing.id },
+        });
+        await tx.proposalVersion.create({
+          data: {
+            proposalId: existing.id,
+            version: nextVersion,
+            contentMd: draft.contentMd,
+            changeLog: "AI regenerate (new version)",
+            locale,
+            createdBy: opts.userId,
+          },
+        });
+        return tx.generatedProposal.findUniqueOrThrow({
+          where: { id: existing.id },
         });
       });
     } else {

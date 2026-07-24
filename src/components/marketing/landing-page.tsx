@@ -556,8 +556,12 @@ function ProductMock() {
 
                 <div className="mt-5 rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/[0.06]">
                   <div className="mb-2 flex items-center justify-between text-[11px]">
-                    <span className="font-medium text-white/50">{ar ? "جاهزية العطاء" : "Bid readiness"}</span>
-                    <span className="font-mono font-semibold text-cyan-200">88%</span>
+                    <span className="font-medium text-white/50">
+                      {ar ? "مثال توضيحي للجاهزية" : "Illustrative readiness example"}
+                    </span>
+                    <span className="font-mono font-semibold text-cyan-200">
+                      88% {ar ? "مثال" : "sample"}
+                    </span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                     <motion.div
@@ -762,8 +766,8 @@ function LandingContent() {
                   className="mt-5 sm:mt-6 max-w-[54ch] text-[15px] sm:text-[16.5px] leading-[1.72] tracking-[-0.01em] text-white/70 text-pretty"
                 >
                   {ar
-                    ? "مساعد ذكاء اصطناعي لمناقصات اعتماد: يستوعب الكراسة ثنائية اللغة، يصيغ العرض الفني المتوافق، ويبني هيكل المالي مع حماية تسعير صارمة — وفريقك يبقى صاحب القرار الأخير."
-                    : "AI teammate for Etimad tenders: ingests bilingual RFPs, drafts compliant technical proposals, and builds financial structure with strict pricing guardrails — your team stays in full control."}
+                    ? "مساعد ذكاء اصطناعي لمناقصات اعتماد: يستوعب الكراسة ثنائية اللغة، يساعد على صياغة عرض فني يراعي متطلبات الامتثال، ويبني الهيكل المالي مع حماية تسعير صارمة — وفريقك يبقى صاحب القرار الأخير."
+                    : "AI teammate for Etimad tenders: ingests bilingual RFPs, helps draft compliance-aware technical proposals, and builds financial structure with strict pricing guardrails — your team stays in full control."}
                 </motion.p>
 
                 <motion.div
@@ -827,14 +831,20 @@ function LandingContent() {
                         {Array.from({ length: 5 }).map((_, s) => (
                           <Star key={s} className="h-3 w-3 fill-amber-300 text-amber-300" />
                         ))}
-                        <span className="ml-1 text-[12px] font-semibold text-white/70">4.9/5</span>
+                        <span className="ml-1 text-[12px] font-semibold text-white/70">
+                          {ar ? "عرض توضيحي" : "Interface preview"}
+                        </span>
                       </div>
-                      <p className="text-[11px] text-white/40 leading-none mt-0.5">{ar ? "فرق عطاءات في الرياض وجدة" : "Bid teams in Riyadh & Jeddah"}</p>
+                      <p className="text-[11px] text-white/40 leading-none mt-0.5">
+                        {ar ? "مثال على سير عمل فريق عطاءات" : "Sample bid-team workflow"}
+                      </p>
                     </div>
                   </div>
                   <div className="hidden sm:flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5">
                     <HeartHandshake className="h-3.5 w-3.5 text-cyan-200" />
-                    <span className="text-[11px] font-medium text-white/60">{ar ? "مصمم مع فرق حقيقية" : "Co-designed with real teams"}</span>
+                    <span className="text-[11px] font-medium text-white/60">
+                      {ar ? "مصمم لسير عمل فرق العطاءات" : "Designed for bid-team workflows"}
+                    </span>
                   </div>
                 </motion.div>
               </div>
@@ -843,7 +853,7 @@ function LandingContent() {
                 <ProductMock />
                 <div className="mt-8 grid grid-cols-3 gap-3 md:hidden">
                   {[
-                    { k: "88%", vEn: "Readiness", vAr: "جاهزية" },
+                    { k: "88%", vEn: "Sample readiness", vAr: "جاهزية توضيحية" },
                     { k: "27", vEn: "Clauses", vAr: "بنود" },
                     { k: "0 SAR", vEn: "AI prices", vAr: "تسعير AI" },
                   ].map((s) => (
@@ -867,7 +877,7 @@ function LandingContent() {
         <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8 py-6 sm:py-7">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 lg:gap-8">
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/30 whitespace-nowrap">
-              {ar ? "متوافق ومبني للسعودية" : "Compliant & built for KSA"}
+              {ar ? "يراعي الامتثال ومصمم للسوق السعودي" : "Compliance-aware & built for KSA workflows"}
             </p>
             <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
               {TRUST_PILLS.map((pill) => (
@@ -1021,7 +1031,7 @@ function LandingContent() {
               {ar ? "ثلاث خطوات. هدف واحد: عطاء يمكنك الاعتماد عليه." : "Three steps. One goal: a bid you can stand behind."}
             </h2>
             <p className="mt-4 text-[14px] sm:text-[15.5px] leading-relaxed text-white/60 max-w-[58ch] mx-auto text-pretty">
-              {ar ? "نظام تشغيل مصمم مع فرق المناقصات — ليس ديمو. كل خطوة تحترم وقتك، وخبرتك، ومسؤوليتك." : "An operating system co-designed with bid teams — not a demo. Every step respects time, expertise, and accountability."}
+              {ar ? "نظام تشغيل مصمم لسير عمل فرق المناقصات. كل خطوة تحترم وقتك وخبرتك ومسؤوليتك." : "An operating system designed for bid-team workflows. Every step respects time, expertise, and accountability."}
             </p>
           </motion.div>
 
@@ -1163,14 +1173,14 @@ function LandingContent() {
                     <Users className="h-6 w-6" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-[15px] font-semibold text-white">{ar ? "مبني مع فرق العطاءات — وليس فوقهم" : "Built with bid teams — not over them"}</h3>
+                    <h3 className="text-[15px] font-semibold text-white">{ar ? "مصمم لفرق العطاءات — وليس بديلاً عنها" : "Designed for bid teams — never a replacement"}</h3>
                     <p className="mt-1 text-[13px] leading-[1.6] text-white/55">
-                      {ar ? "كل ميزة صُممت مع مقاولين ومكاتب من الرياض وجدة والدمام. لغة تحترم خبرتك، لا تستبدلها." : "Every feature co-designed with contractors in Riyadh, Jeddah, Dammam. Language that respects expertise — never replaces it."}
+                      {ar ? "سير عمل يدعم المراجعة البشرية ويعرض النواقص بدلاً من اختلاق بيانات. يحترم خبرة فريقك ولا يستبدلها." : "A workflow that keeps human review in control and surfaces gaps instead of inventing data. It supports your team’s expertise rather than replacing it."}
                     </p>
                   </div>
                   <div className="shrink-0 flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] text-white/60">
                     <HeartHandshake className="h-3.5 w-3.5" />
-                    {ar ? "فريق دعم حقيقي" : "Real support"}
+                    {ar ? "مراجعة بشرية أولاً" : "Human review first"}
                   </div>
                 </div>
               </motion.div>

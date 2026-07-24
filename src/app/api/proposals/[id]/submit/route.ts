@@ -6,6 +6,15 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getSubmittedForReviewStatus } from "@/lib/contract-review";
 import { isProposalSubmitBlocked } from "@/lib/proposal-status";
 import { assessQualificationDossier } from "@/lib/qualification";
+import {
+  claimedStructuredKnowledgeIds,
+  validatePersistedProposalSnapshot,
+  validateStructuredProposalOutput,
+  validateStructuredSnapshotEvidence,
+} from "@/lib/proposal-snapshot-persistence";
+import { loadApprovedStructuredEvidenceBindings } from "@/lib/proposal-snapshot-evidence";
+import { loadProjectIngestionEntities } from "@/lib/proposal-studio";
+import { proposalReviewBinding } from "@/lib/proposal-review-integrity";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +34,92 @@ export async function POST(
     }
     if (isProposalSubmitBlocked(proposal.status)) {
       throw new ApiError(`Proposal already ${proposal.status}`, 409);
+    }
+
+    let submittedSnapshotHash: string | null = null;
+    if (proposal.type !== "CONTRACT") {
+      if (proposal.structuredSnapshot === null) {
+        throw new ApiError(
+          "A validated immutable structured snapshot is required before submitting a proposal for approval.",
+          409,
+          "STRUCTURED_SNAPSHOT_REQUIRED"
+        );
+      }
+      const snapshotValidation = validatePersistedProposalSnapshot(
+        proposal.structuredSnapshot,
+        {
+          proposalId: proposal.id,
+          hash: proposal.structuredSnapshotHash,
+          revision: proposal.structuredSnapshotRevision,
+          presetKey: proposal.structuredSnapshotPreset,
+        }
+      );
+      if (!snapshotValidation.ok) {
+        throw new ApiError(
+          "The persisted structured proposal snapshot is invalid.",
+          409,
+          snapshotValidation.code
+        );
+      }
+      const approvedEvidence =
+        await loadApprovedStructuredEvidenceBindings(
+          workspace.id,
+          claimedStructuredKnowledgeIds(snapshotValidation.value.snapshot)
+        );
+      const evidenceDiagnostics = validateStructuredSnapshotEvidence(
+        snapshotValidation.value.snapshot,
+        approvedEvidence
+      );
+      if (evidenceDiagnostics.length > 0) {
+        throw new ApiError(
+          "Structured proposal evidence is no longer approved.",
+          409,
+          "STRUCTURED_EVIDENCE_NOT_APPROVED"
+        );
+      }
+      const [entities, complianceRows, restrictions] = await Promise.all([
+        loadProjectIngestionEntities(proposal.projectId),
+        db.complianceCheck.findMany({
+          where: { projectId: proposal.projectId },
+        }),
+        db.restriction.findMany({
+          where: { workspaceId: workspace.id, active: true },
+          select: { text: true },
+        }),
+      ]);
+      const outputValidation = validateStructuredProposalOutput(
+        snapshotValidation.value.snapshot,
+        {
+          entities,
+          complianceRows: complianceRows.map((row) => ({
+            frameworkId: row.framework,
+            controlId: row.controlId,
+            title: row.title,
+            status: (row.status === "GAP" ? "PARTIAL" : row.status) as
+              | "COMPLIANT"
+              | "PARTIAL"
+              | "NON_COMPLIANT"
+              | "PENDING",
+            evidence: row.evidence ?? "",
+            remediation: row.remediation,
+          })),
+          restrictions: restrictions.map((restriction) => restriction.text),
+          approvedEvidenceIds: approvedEvidence.map((binding) => binding.id),
+        }
+      );
+      if (outputValidation.blocking) {
+        const codes = outputValidation.issues
+          .filter((issue) => issue.severity === "error")
+          .map((issue) => issue.code);
+        throw new ApiError(
+          `Structured proposal validation blocked submission: ${[
+            ...new Set(codes),
+          ].join(", ")}`,
+          422,
+          "STRUCTURED_VALIDATION_BLOCKED"
+        );
+      }
+      submittedSnapshotHash = snapshotValidation.value.hash;
     }
 
     const policy = await db.approvalPolicy.findUnique({
@@ -89,28 +184,67 @@ export async function POST(
       },
     };
 
-    await db.proposalReview.deleteMany({ where: { proposalId: id } });
-    await db.proposalReview.createMany({
-      data: policy.steps.map((s) => ({
-        proposalId: id,
-        stepIndex: s.stepIndex,
-        reviewerId: s.reviewerId,
-        stepRole: s.stepRole,
-        status: "PENDING",
-      })),
+    const binding = proposalReviewBinding(proposal);
+    if (
+      proposal.type !== "CONTRACT" &&
+      binding.submittedSnapshotHash !== submittedSnapshotHash
+    ) {
+      throw new ApiError(
+        "Structured proposal changed during submission preflight",
+        409,
+        "STRUCTURED_SNAPSHOT_CHANGED"
+      );
+    }
+    const submittedAt = new Date();
+    const updated = await db.$transaction(async (tx) => {
+      const write = await tx.generatedProposal.updateMany({
+        where: {
+          id,
+          workspaceId: workspace.id,
+          status: proposal.status,
+          version: proposal.version,
+          updatedAt: proposal.updatedAt,
+          structuredSnapshotHash: proposal.structuredSnapshotHash,
+          structuredSnapshotRevision: proposal.structuredSnapshotRevision,
+        },
+        data: {
+          status: getSubmittedForReviewStatus(),
+          submittedAt,
+          approvedAt: null,
+        },
+      });
+      if (write.count !== 1) return null;
+      await tx.proposalReview.deleteMany({ where: { proposalId: id } });
+      await tx.proposalReview.createMany({
+        data: policy.steps.map((step) => ({
+          proposalId: id,
+          stepIndex: step.stepIndex,
+          reviewerId: step.reviewerId,
+          stepRole: step.stepRole,
+          status: "PENDING",
+          ...binding,
+        })),
+      });
+      return tx.generatedProposal.findUniqueOrThrow({ where: { id } });
     });
-
-    const updated = await db.generatedProposal.update({
-      where: { id },
-      data: { status: getSubmittedForReviewStatus(), submittedAt: new Date() },
-    });
+    if (!updated) {
+      throw new ApiError(
+        "Proposal changed during submission; rerun validation and submit again",
+        409,
+        "PROPOSAL_SUBMIT_CONFLICT"
+      );
+    }
 
     await audit({
       userId,
       action: AUDIT_ACTIONS.PROPOSAL_EDIT,
       resource: "GeneratedProposal",
       resourceId: id,
-      details: { submitted: true, checklist },
+      details: {
+        submitted: true,
+        checklist,
+        structuredSnapshotHash: submittedSnapshotHash,
+      },
     });
 
     const reviews = await db.proposalReview.findMany({

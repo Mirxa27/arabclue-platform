@@ -50,7 +50,7 @@ const fixture: BilingualDocumentSpec = {
 function fixtureWithImage(
   source:
     | { readonly kind: "public"; readonly path: string }
-    | { readonly kind: "data"; readonly uri: string }
+    | { readonly kind: "data"; readonly uri: string },
 ): BilingualDocumentSpec {
   return {
     ...fixture,
@@ -91,10 +91,10 @@ describe("bilingual PDF font embedding", () => {
 
   test("declares traceable OFL metadata and a 300 DPI print target", () => {
     expect(BILINGUAL_FONT_LICENSES["ibm-plex-sans"].license).toContain(
-      "Open Font License"
+      "Open Font License",
     );
     expect(BILINGUAL_FONT_LICENSES["noto-sans"].upstream).toContain(
-      "github.com/google/fonts"
+      "github.com/google/fonts",
     );
     expect(BILINGUAL_PRINT_PROFILE.targetRasterDpi).toBe(300);
     expect(BILINGUAL_PRINT_PROFILE.vectorText).toBe(true);
@@ -123,21 +123,21 @@ describe("canonical bilingual render artifact", () => {
 
     expect(screen.document).toEqual(print.document);
     expect(screen.quality.englishCellCount).toBe(
-      print.quality.englishCellCount
+      print.quality.englishCellCount,
     );
     expect(screen.quality.arabicCellCount).toBe(print.quality.arabicCellCount);
   });
 
   test("quality inspection rejects incomplete renderer output", () => {
     const report = inspectBilingualHtml(
-      "<!doctype html><html><head></head><body><h1>Only English</h1></body></html>"
+      "<!doctype html><html><head></head><body><h1>Only English</h1></body></html>",
     );
     expect(report.valid).toBe(false);
     expect(report.issues.map((issue) => issue.code)).toContain(
-      "MISSING_LAYOUT_MARKER"
+      "MISSING_LAYOUT_MARKER",
     );
     expect(report.issues.map((issue) => issue.code)).toContain(
-      "MISSING_LANGUAGE"
+      "MISSING_LANGUAGE",
     );
   });
 
@@ -178,8 +178,8 @@ describe("bilingual PDF image preflight", () => {
   test("resolver output is decoded, normalized and embedded", async () => {
     const png = await sharp({
       create: {
-        width: 8,
-        height: 5,
+        width: 1_200,
+        height: 750,
         channels: 4,
         background: "#0D9488",
       },
@@ -196,10 +196,10 @@ describe("bilingual PDF image preflight", () => {
           expect(assetPath).toBe("/documents/logo.png");
           return png;
         },
-      }
+      },
     );
     const image = prepared.sections[0].blocks.find(
-      (block) => block.type === "image"
+      (block) => block.type === "image",
     );
 
     expect(image?.type).toBe("image");
@@ -209,6 +209,30 @@ describe("bilingual PDF image preflight", () => {
         expect(image.source.uri).toStartWith("data:image/png;base64,");
       }
     }
+  });
+
+  test("rejects raster assets below 300 effective DPI at rendered width", async () => {
+    const lowResolution = await sharp({
+      create: {
+        width: 300,
+        height: 180,
+        channels: 3,
+        background: "#0D9488",
+      },
+    })
+      .png()
+      .toBuffer();
+
+    await expect(
+      prepareBilingualPdfDocument(
+        fixtureWithImage({
+          kind: "data",
+          uri: `data:image/png;base64,${lowResolution.toString("base64")}`,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      issues: [{ code: "IMAGE_RESOLUTION_INSUFFICIENT" }],
+    });
   });
 
   test("rejects corrupt and MIME-spoofed embedded image data", async () => {
@@ -228,8 +252,8 @@ describe("bilingual PDF image preflight", () => {
         fixtureWithImage({
           kind: "data",
           uri: "data:image/png;base64,AAAA",
-        })
-      )
+        }),
+      ),
     ).rejects.toMatchObject({
       issues: [{ code: "INVALID_IMAGE_ASSET" }],
     });
@@ -238,40 +262,36 @@ describe("bilingual PDF image preflight", () => {
         fixtureWithImage({
           kind: "data",
           uri: `data:image/jpeg;base64,${png.toString("base64")}`,
-        })
-      )
+        }),
+      ),
     ).rejects.toMatchObject({
       issues: [{ code: "INVALID_IMAGE_ASSET" }],
     });
   });
 
-  test(
-    "rejects a valid compressed image above the decoded pixel limit",
-    async () => {
-      const oversized = await sharp({
-        create: {
-          width: 5_001,
-          height: 5_000,
-          channels: 3,
-          background: "#ffffff",
-        },
-      })
-        .png({ compressionLevel: 9 })
-        .toBuffer();
+  test("rejects a valid compressed image above the decoded pixel limit", async () => {
+    const oversized = await sharp({
+      create: {
+        width: 5_001,
+        height: 5_000,
+        channels: 3,
+        background: "#ffffff",
+      },
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
 
-      await expect(
-        prepareBilingualPdfDocument(
-          fixtureWithImage({
-            kind: "data",
-            uri: `data:image/png;base64,${oversized.toString("base64")}`,
-          })
-        )
-      ).rejects.toMatchObject({
-        issues: [{ code: "INVALID_IMAGE_ASSET" }],
-      });
-    },
-    30_000
-  );
+    await expect(
+      prepareBilingualPdfDocument(
+        fixtureWithImage({
+          kind: "data",
+          uri: `data:image/png;base64,${oversized.toString("base64")}`,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      issues: [{ code: "INVALID_IMAGE_ASSET" }],
+    });
+  }, 30_000);
 });
 
 test.skipIf(process.env.PLAYWRIGHT_CHROMIUM !== "1")(
@@ -281,5 +301,5 @@ test.skipIf(process.env.PLAYWRIGHT_CHROMIUM !== "1")(
     expect(artifact.pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
     expect(artifact.pdf.byteLength).toBeGreaterThan(10_000);
   },
-  120_000
+  120_000,
 );

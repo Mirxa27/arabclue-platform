@@ -13,6 +13,11 @@ import {
   Printer,
 } from "lucide-react";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
+import {
+  GENERATED_HTML_PREVIEW_SANDBOX,
+  PDF_PREVIEW_SANDBOX,
+} from "@/lib/file-delivery-policy";
+import { synchronizeCurrentBilingualDocument } from "@/lib/layout-sync";
 
 type Mode = "html" | "pdf";
 
@@ -25,6 +30,85 @@ type Props = {
   className?: string;
   compact?: boolean;
 };
+
+async function waitForPreviewAssets(document: Document): Promise<void> {
+  await document.fonts.ready;
+  const images = Array.from(document.images);
+  await Promise.all(
+    images.map(async (image) => {
+      if (!image.complete) {
+        await new Promise<void>((resolve, reject) => {
+          image.addEventListener("load", () => resolve(), { once: true });
+          image.addEventListener(
+            "error",
+            () => reject(new Error("A document preview image failed to load.")),
+            { once: true },
+          );
+        });
+      }
+      if (typeof image.decode === "function") {
+        await image.decode();
+      }
+    }),
+  );
+}
+
+function bindBilingualViewerTabs(
+  document: Document,
+  onLanguageChange: () => void,
+): void {
+  const root = document.querySelector<HTMLElement>("[data-bilingual-document]");
+  const tabs = document.querySelector<HTMLElement>(
+    "[data-bilingual-viewer-tabs]",
+  );
+  if (
+    !root ||
+    !tabs ||
+    root.dataset.viewerPreference !== "tabs" ||
+    tabs.dataset.bilingualViewerBound === "true"
+  ) {
+    return;
+  }
+  const selectedLanguage = root.dataset.viewerLanguage === "en" ? "en" : "ar";
+  tabs.replaceChildren();
+  tabs.removeAttribute("role");
+  tabs.setAttribute("aria-label", "Document language view");
+  for (const [language, label] of [
+    ["en", "English"],
+    ["ar", "العربية"],
+  ] as const) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.viewerLanguage = language;
+    button.dataset.viewerDocument = tabs.dataset.viewerDocument ?? "";
+    button.setAttribute("aria-pressed", String(language === selectedLanguage));
+    button.textContent = label;
+    tabs.append(button);
+  }
+  root.dataset.viewerMode = "tabs";
+  tabs.dataset.bilingualViewerBound = "true";
+  tabs.addEventListener("click", (event) => {
+    const elementConstructor = document.defaultView?.Element;
+    if (!elementConstructor || !(event.target instanceof elementConstructor)) {
+      return;
+    }
+    const button = event.target.closest<HTMLButtonElement>(
+      "button[data-viewer-language]",
+    );
+    const language = button?.dataset.viewerLanguage;
+    if (language !== "en" && language !== "ar") return;
+    root.dataset.viewerLanguage = language;
+    tabs
+      .querySelectorAll<HTMLButtonElement>("button[data-viewer-language]")
+      .forEach((candidate) => {
+        candidate.setAttribute(
+          "aria-pressed",
+          String(candidate.dataset.viewerLanguage === language),
+        );
+      });
+    onLanguageChange();
+  });
+}
 
 /**
  * In-app document viewer for proposals/contracts.
@@ -49,7 +133,7 @@ export function DocumentPreviewFrame({
 
   const htmlUrl = useMemo(
     () => `/api/proposals/${proposalId}/download?format=html`,
-    [proposalId]
+    [proposalId],
   );
 
   useEffect(() => {
@@ -78,7 +162,7 @@ export function DocumentPreviewFrame({
         }
         const res = await fetch(
           `/api/proposals/${proposalId}/download?format=pdf`,
-          { credentials: "include" }
+          { credentials: "include" },
         );
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as {
@@ -109,7 +193,7 @@ export function DocumentPreviewFrame({
     <div
       className={cn(
         "flex flex-col overflow-hidden rounded-2xl border border-border/70 bg-background",
-        className
+        className,
       )}
       dir={ar ? "rtl" : "ltr"}
     >
@@ -184,7 +268,7 @@ export function DocumentPreviewFrame({
               className="h-8 gap-1"
               onClick={() => {
                 const frame = document.getElementById(
-                  `doc-preview-${proposalId}`
+                  `doc-preview-${proposalId}`,
                 ) as HTMLIFrameElement | null;
                 frame?.contentWindow?.print();
               }}
@@ -198,7 +282,7 @@ export function DocumentPreviewFrame({
       <div
         className={cn(
           "relative overflow-auto bg-slate-100/80 p-3 sm:p-5 dark:bg-slate-950/30",
-          compact ? "h-[420px]" : "h-[min(70vh,760px)]"
+          compact ? "h-[420px]" : "h-[min(70vh,760px)]",
         )}
       >
         {loading ? (
@@ -232,7 +316,57 @@ export function DocumentPreviewFrame({
               title={title || "Document preview"}
               src={htmlSrc}
               className="size-full border-0 bg-white"
-              sandbox="allow-same-origin allow-scripts allow-modals allow-popups"
+              sandbox={GENERATED_HTML_PREVIEW_SANDBOX}
+              referrerPolicy="no-referrer"
+              onLoad={(event) => {
+                const frameDocument = event.currentTarget.contentDocument;
+                if (
+                  !frameDocument?.querySelector("[data-bilingual-document]")
+                ) {
+                  return;
+                }
+                const bilingualRoot = frameDocument.querySelector<HTMLElement>(
+                  "[data-bilingual-document]",
+                );
+                bilingualRoot?.setAttribute(
+                  "data-bilingual-preview-state",
+                  "loading",
+                );
+                const synchronize = (): void => {
+                  try {
+                    synchronizeCurrentBilingualDocument({}, frameDocument);
+                    bilingualRoot?.setAttribute(
+                      "data-bilingual-preview-state",
+                      "ready",
+                    );
+                  } catch (cause) {
+                    bilingualRoot?.setAttribute(
+                      "data-bilingual-preview-state",
+                      "error",
+                    );
+                    setError(
+                      cause instanceof Error
+                        ? cause.message
+                        : "Bilingual preview synchronization failed",
+                    );
+                  }
+                };
+                bindBilingualViewerTabs(frameDocument, synchronize);
+                void waitForPreviewAssets(frameDocument).then(
+                  synchronize,
+                  (cause: unknown) => {
+                    bilingualRoot?.setAttribute(
+                      "data-bilingual-preview-state",
+                      "error",
+                    );
+                    setError(
+                      cause instanceof Error
+                        ? cause.message
+                        : "Bilingual preview asset loading failed",
+                    );
+                  },
+                );
+              }}
             />
           </div>
         ) : null}
@@ -241,6 +375,8 @@ export function DocumentPreviewFrame({
             <iframe
               title={title || "PDF preview"}
               src={pdfSrc}
+              sandbox={PDF_PREVIEW_SANDBOX}
+              referrerPolicy="no-referrer"
               className="size-full border-0 bg-muted/30"
             />
           </div>

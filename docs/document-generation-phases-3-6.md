@@ -25,7 +25,7 @@ verified source records or immutable snapshots
 | Phase | Source model | Validated intermediate form | Implemented output boundary |
 | --- | --- | --- | --- |
 | 3: Contract templates | Explicit template bindings | `BoundContractDocument`, then `BilingualDocumentSpec` | Draft HTML and font-embedded draft PDF |
-| 4: Proposal layouts | `ProposalSnapshot` with source references | `CompiledProposalLayout` | PPTX buffer |
+| 4: Proposal layouts | Canonical, revisioned `ProposalSnapshot` with immutable evidence bindings | `CompiledProposalLayout`, then the Phase 2 bilingual AST for document channels | Authenticated HTML, font-embedded PDF, and native PPTX |
 | 5: Tables and charts | Structured table/chart definitions | `PreparedDocumentTable` or normalized chart geometry | Escaped HTML table and accessible SVG plus data-table fallback |
 | 6: Capability statements | `BusinessProfileSnapshot` | `CapabilityStatementBuildResult` containing a `BilingualDocumentSpec` | Authenticated HTML/PDF business-profile export |
 
@@ -165,12 +165,21 @@ This fragment is not a complete template binding. Inspect
 from verified project, workspace, approved-knowledge, or explicit user-entry
 sources before using `FINAL`.
 
-## Phase 4: Proposal Layouts and PPTX
+## Phase 4: Proposal Layouts and Structured Export
 
 Sources:
 
-- [Proposal layout and PPTX API](../src/lib/proposal-layouts.ts)
-- [Proposal tests](../src/lib/__tests__/proposal-layouts.test.ts)
+- [Proposal layout API](../src/lib/proposal-layouts.ts)
+- [HTML/PDF/PPTX adapter](../src/lib/proposal-layout-export.ts)
+- [Snapshot persistence and export policy](../src/lib/proposal-snapshot-persistence.ts)
+- [Tenant evidence resolver](../src/lib/proposal-snapshot-evidence.ts)
+- [Snapshot HTTP route](../src/app/api/proposals/[id]/snapshot/route.ts)
+- [Active download route](../src/app/api/proposals/[id]/download/route.ts)
+- [Pending database migration](../prisma/migrations/20260724231500_proposal_structured_snapshot/migration.sql)
+- [Layout and export tests](../src/lib/__tests__/proposal-layouts.test.ts)
+- [Persistence tests](../src/lib/__tests__/proposal-snapshot-persistence.test.ts)
+- [Evidence resolver tests](../src/lib/__tests__/proposal-snapshot-evidence.test.ts)
+- [Route tests](../src/lib/__tests__/proposal-snapshot-route.test.ts)
 
 ### Presets and modules
 
@@ -193,9 +202,17 @@ Intent selects a preset deterministically:
 A `ProposalSnapshot` carries its bilingual project identity, brand colors,
 source registry, and module blocks. Blocks may be narrative, bullet list,
 table, KPI, evidence register, commercial handoff, or diagram. References are
-resolved only against the snapshot's explicit source registry. A
-`VERIFIED` evidence status is still source data supplied to the snapshot; the
-layout engine does not independently authenticate the evidence.
+resolved against the snapshot's explicit source registry.
+
+`APPROVED_KNOWLEDGE` is a privileged source kind at the persistence boundary.
+It must exactly match a currently eligible record in the caller's workspace,
+including record type, canonical content hash, evidence pointer, reviewer,
+approval timestamp, and uploaded-document provenance version/checksum. Its
+title, locator, and `asOf` value must also match the server-derived binding.
+The binding is re-resolved on snapshot reads, submit, and export, so revocation,
+expiry, a post-approval content edit, a changed record type, or later
+re-approval under a different hash fails closed. `USER_ENTRY` remains explicit
+draft input and cannot be labeled `VERIFIED`.
 
 ### Public API
 
@@ -211,6 +228,13 @@ layout engine does not independently authenticate the evidence.
 | `validateProposalSnapshot(snapshot, options)` | Returns sorted error diagnostics without changing the snapshot. |
 | `compileProposalLayout(snapshot, options)` | Returns a deterministic `VALID` or `INVALID` channel plan, source/snapshot hash, plan hash, palette, modules, and diagnostics. It does not render content. |
 | `generateProposalPptx(snapshot, options?)` | Validates and writes a real PPTX `Buffer`, or throws `ProposalLayoutValidationError` before producing a partial deck. |
+| `compileProposalLayoutDocument(snapshot, options?)` | Converts a valid bilingual HTML/PDF plan into the Phase 2 AST without dropping content. |
+| `exportProposalLayout(snapshot, options)` | Produces HTML, PDF, or PPTX from the authoritative snapshot; unsupported XLSX fails explicitly. |
+| `canonicalizeProposalSnapshot(input, options)` | Strictly validates shape, proposal identity, optimistic version, and all three production channels, then returns canonical JSON/hash metadata. |
+| `validatePersistedProposalSnapshot(input, metadata)` | Recomputes and compares the stored hash, revision, and preset before use. |
+| `validateStructuredSnapshotEvidence(snapshot, bindings)` | Requires exact current tenant evidence bindings and rejects self-declared verified evidence. |
+| `validateStructuredProposalOutput(snapshot, context)` | Projects exact renderable text into the existing pricing, placeholder, NORA, tender, restriction, and approved-evidence gate without rendering or inventing content. |
+| `selectProposalDownloadEngine(hasSnapshot, format)` | Selects structured HTML/PDF/PPTX when a snapshot exists and never falls through to stale Markdown. |
 
 The validator checks schema version, language parity, module/block identity,
 required content, source references, brand colors, unsafe markup, unresolved
@@ -235,10 +259,12 @@ in slide notes.
 | Commercial handoff | Native | Native | Native | Native |
 | Diagram | Native | Native | Unsupported | Unsupported |
 
-This matrix is a validation and adapter contract. The Phase 4 module currently
-exports a concrete writer only for PPTX. It does not export proposal HTML, PDF,
-or XLSX writers or an HTTP proposal-export route. A `NATIVE` matrix entry must
-not be interpreted as proof that such a writer or route exists.
+This matrix is both a validation and adapter contract for HTML, PDF, and PPTX.
+HTML and PDF share the canonical Phase 2 bilingual AST; PDF embeds the
+configured Arabic fonts through the Phase 2 PDF path. PPTX uses the native
+PptxGenJS writer. Structured XLSX is not implemented and fails explicitly.
+Diagram content remains blocked when a selected channel cannot safely resolve
+or represent its asset.
 
 The PPTX writer lays supported block content out as bilingual text. A `TABLE`
 capability does not mean that the writer creates an editable PowerPoint table
@@ -273,6 +299,41 @@ export async function createProposalDeck(snapshot: ProposalSnapshot) {
 Persist or log the snapshot version, snapshot hash, plan hash, and selected
 preset with the artifact. Do not silently drop an unsupported block; route it
 to a supported channel or block export.
+
+### Snapshot persistence HTTP API
+
+`GET` and `PUT /api/proposals/:id/snapshot` are authenticated and tenant
+scoped. `PUT` requires writer access and this strict body:
+
+```json
+{
+  "snapshot": { "schemaVersion": 1, "snapshotId": "proposal-id" },
+  "expectedRevision": 0,
+  "presetKey": "compact-addendum"
+}
+```
+
+The abbreviated snapshot above is illustrative only and will be rejected;
+every required bilingual source, module, and block must be supplied.
+
+- `snapshotId` must equal the URL proposal ID.
+- `snapshot.version` must equal `expectedRevision + 1`.
+- The request is limited to 1,000,000 UTF-8 bytes and rejects unknown fields.
+- Replacement uses an atomic workspace, status, and revision comparison.
+- A successful replacement clears the prior review chain and resets proposal
+  approval/submission state to `DRAFT`.
+- Any Markdown, title, locale, AI rewrite, version revert, financial-form, or
+  regenerate mutation clears the snapshot metadata and advances its revision.
+- The response includes `X-Arabclue-Proposal-Engine: structured-v1`,
+  `X-Proposal-Snapshot-Hash`, and `X-Proposal-Snapshot-Revision`.
+
+The active `GET /api/proposals/:id/download?format=html|pdf|pptx` route uses the
+structured writer whenever the snapshot exists and emits its hash, revision,
+preset, lifecycle, and authoritative-engine headers. A present but corrupt or
+unsupported structured snapshot never falls back to legacy output. Approved
+or exported non-contract proposals without a structured snapshot are blocked;
+legacy output is retained only as an explicitly non-authoritative draft
+preview when no snapshot exists.
 
 ## Phase 5: Tables and Charts
 
@@ -541,8 +602,10 @@ for completing translations, source evidence, or readiness requirements.
    target phase. Do not pass HTML through a string field.
 3. Preserve independent Arabic and English source fields. Treat a missing
    translation as missing data, not permission to duplicate another language.
-4. Register proposal source records first, then refer to their IDs from blocks.
-   A source ID proves only that the reference resolves inside the snapshot.
+4. Register proposal sources first. For `APPROVED_KNOWLEDGE`, copy the exact
+   server-resolved record type, content hash, evidence pointer, reviewer,
+   approval time, provenance version/checksum, title, locator, and `asOf`
+   binding. A bare or cross-tenant ID is rejected.
 5. Run the target channel's validator before rendering. Surface diagnostic
    `code`, `path`, and localized message to the author.
 6. Pin contract `template.key`, `versionId`, and `canonicalHash`, and proposal
@@ -557,11 +620,13 @@ for completing translations, source evidence, or readiness requirements.
 10. Re-run targeted tests, type checking, lint, the full test suite, and build
     after wiring a new route or template consumer.
 
-No database migration is required by these library modules. Do not run Prisma
-schema mutation commands merely to adopt them, especially against a shared
-database. The in-code contract catalog is the only documented catalog source;
-no database seed or publication workflow for these unreviewed clauses is
-approved.
+Phase 4 persistence requires the pending
+`20260724231500_proposal_structured_snapshot` migration. It adds the JSONB
+snapshot, canonical hash, monotonic revision, preset, updater, and timestamp,
+with database checks that require complete metadata. The migration has not
+been applied to the shared Neon database. Review and apply pending migrations
+through the controlled production release process before deploying code that
+uses these fields; do not run `prisma migrate` or `db push` as local setup.
 
 ## Current Constraints
 
@@ -570,8 +635,9 @@ approved.
   before signature, execution, or representation as legally approved.
 - The jurisdiction label in a template is not evidence of infrastructure,
   processing, or storage residency.
-- The proposal module has a concrete PPTX writer only. HTML, PDF, and XLSX
-  proposal writers and a proposal-export endpoint are not part of this phase.
+- Structured proposal HTML, PDF, and PPTX are wired to the authenticated active
+  download route. Structured XLSX is not implemented, and legacy-only formats
+  are blocked once an authoritative snapshot exists.
 - PPTX diagrams are blocked. PPTX content uses referenced fonts, not embedded
   fonts, and supported tables are currently presented as bilingual text.
 - Capability-statement HTTP export is implemented only on the existing
@@ -599,6 +665,10 @@ bun test \
   src/lib/__tests__/contract-templates.test.ts \
   src/lib/__tests__/contract-template-renderer.test.ts \
   src/lib/__tests__/proposal-layouts.test.ts \
+  src/lib/__tests__/proposal-layout-export.test.ts \
+  src/lib/__tests__/proposal-snapshot-persistence.test.ts \
+  src/lib/__tests__/proposal-snapshot-evidence.test.ts \
+  src/lib/__tests__/proposal-snapshot-route.test.ts \
   src/lib/__tests__/document-visualizations.test.ts \
   src/lib/__tests__/capability-statement.test.ts \
   src/lib/__tests__/business-profile-bilingual.test.ts \

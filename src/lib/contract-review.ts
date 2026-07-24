@@ -11,9 +11,9 @@ export function getSubmittedForReviewStatus(): "REVIEW" {
 export function getReviewDecisionProposalStatus(opts: {
   decision: ReviewDecision;
   pendingReviewsAfterDecision: number;
-}): "APPROVED" | "REJECTED" | "REVIEWED" {
+}): "APPROVED" | "REJECTED" | "REVIEW" {
   if (opts.decision === "REJECTED") return "REJECTED";
-  return opts.pendingReviewsAfterDecision === 0 ? "APPROVED" : "REVIEWED";
+  return opts.pendingReviewsAfterDecision === 0 ? "APPROVED" : "REVIEW";
 }
 
 export function getContractValidationReport(opts: {

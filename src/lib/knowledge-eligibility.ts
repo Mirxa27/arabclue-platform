@@ -8,19 +8,51 @@ export type KnowledgeEligibility = {
   reason?: string;
 };
 
-export function isCertificateValid(cert: {
-  expiresAt: Date | string | null;
-  revokedAt?: Date | string | null;
+export type KnowledgeReviewFields = {
   approved?: boolean | null;
-  now?: Date;
-}): KnowledgeEligibility {
-  const now = cert.now ?? new Date();
-  if (cert.approved === false) {
+  reviewStatus?: string | null;
+  evidenceRef?: string | null;
+  provenanceJson?: string | null;
+  reviewedById?: string | null;
+  approvedAt?: Date | string | null;
+  contentHash?: string | null;
+  revokedAt?: Date | string | null;
+};
+
+export function isKnowledgeReviewApproved(
+  item: KnowledgeReviewFields,
+  expectedContentHash?: string
+): KnowledgeEligibility {
+  if (item.approved !== true || item.reviewStatus !== "APPROVED") {
     return { eligible: false, reason: "not_approved" };
   }
-  if (cert.revokedAt) {
-    return { eligible: false, reason: "revoked" };
+  if (item.revokedAt) return { eligible: false, reason: "revoked" };
+  if (
+    !item.evidenceRef?.trim() ||
+    !item.provenanceJson?.trim() ||
+    !item.reviewedById?.trim() ||
+    !item.approvedAt ||
+    !item.contentHash?.trim()
+  ) {
+    return { eligible: false, reason: "incomplete_review" };
   }
+  if (
+    expectedContentHash !== undefined &&
+    item.contentHash !== expectedContentHash
+  ) {
+    return { eligible: false, reason: "content_changed" };
+  }
+  return { eligible: true };
+}
+
+export function isCertificateValid(cert: {
+  expiresAt: Date | string | null;
+  expectedContentHash?: string;
+  now?: Date;
+} & KnowledgeReviewFields): KnowledgeEligibility {
+  const now = cert.now ?? new Date();
+  const review = isKnowledgeReviewApproved(cert, cert.expectedContentHash);
+  if (!review.eligible) return review;
   if (cert.expiresAt) {
     const exp =
       typeof cert.expiresAt === "string"
@@ -34,31 +66,25 @@ export function isCertificateValid(cert: {
 }
 
 export function isPastProjectEligible(project: {
-  approved?: boolean | null;
-  revokedAt?: Date | string | null;
-}): KnowledgeEligibility {
-  if (project.revokedAt) return { eligible: false, reason: "revoked" };
-  // Default approved when field absent (legacy rows)
-  if (project.approved === false) {
-    return { eligible: false, reason: "not_approved" };
-  }
-  return { eligible: true };
+  expectedContentHash?: string;
+} & KnowledgeReviewFields): KnowledgeEligibility {
+  return isKnowledgeReviewApproved(project, project.expectedContentHash);
 }
 
 export function isLibraryItemEligible(item: {
-  approved: boolean;
   restricted: boolean;
-}): KnowledgeEligibility {
-  if (!item.approved) return { eligible: false, reason: "not_approved" };
+  expectedContentHash?: string;
+} & KnowledgeReviewFields): KnowledgeEligibility {
+  const review = isKnowledgeReviewApproved(item, item.expectedContentHash);
+  if (!review.eligible) return review;
   if (item.restricted) return { eligible: false, reason: "restricted" };
   return { eligible: true };
 }
 
 export function isMethodologyEligible(item: {
-  approved: boolean;
-}): KnowledgeEligibility {
-  if (!item.approved) return { eligible: false, reason: "not_approved" };
-  return { eligible: true };
+  expectedContentHash?: string;
+} & KnowledgeReviewFields): KnowledgeEligibility {
+  return isKnowledgeReviewApproved(item, item.expectedContentHash);
 }
 
 export function isStaffEligible(member: {
@@ -74,9 +100,7 @@ export function isStaffEligible(member: {
 export function filterValidCertificates<
   T extends {
     expiresAt: Date | string | null;
-    revokedAt?: Date | string | null;
-    approved?: boolean | null;
-  },
+  } & KnowledgeReviewFields,
 >(certs: T[], now = new Date()): T[] {
   return certs.filter((c) => isCertificateValid({ ...c, now }).eligible);
 }

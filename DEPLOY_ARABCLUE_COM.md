@@ -2,11 +2,11 @@
 
 Domain: **arabclue.com** (primary), www.arabclue.com → redirect to apex.
 
-> **Deployment is blocked:** a sensitive `.env` file is still tracked in the
-> current Git index and exists in repository history. Rotate every exposed
-> credential and complete the approved history-remediation procedure in
+> **Security note:** `.env` must not be tracked in Git (now gitignored). Rotate any
+> credentials that were previously committed and keep secrets only in Vercel
+> Project → Settings → Environment Variables. See
 > [`docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md`](docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md)
-> before creating any Preview or Production deployment.
+> for history remediation if secrets were exposed in older commits.
 
 ## 1. Vercel project setup
 

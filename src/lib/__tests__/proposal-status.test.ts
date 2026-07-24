@@ -10,6 +10,7 @@ describe("proposal edit locking", () => {
   test("locks review, approval, and export statuses", () => {
     expect(isProposalEditLocked("IN_REVIEW")).toBe(true);
     expect(isProposalEditLocked("REVIEW")).toBe(true);
+    expect(isProposalEditLocked("REVIEWED")).toBe(true);
     expect(isProposalEditLocked("APPROVED")).toBe(true);
     expect(isProposalEditLocked("EXPORTED")).toBe(true);
   });
@@ -17,7 +18,6 @@ describe("proposal edit locking", () => {
   test("keeps editable draft statuses unlocked", () => {
     expect(isProposalEditLocked("DRAFT")).toBe(false);
     expect(isProposalEditLocked("GENERATED")).toBe(false);
-    expect(isProposalEditLocked("REVIEWED")).toBe(false);
     expect(isProposalEditLocked(null)).toBe(false);
   });
 
@@ -50,8 +50,8 @@ describe("proposal submit blocking", () => {
     }
   });
 
-  test("REVIEWED blocks submit but remains editable until approval", () => {
+  test("REVIEWED legacy review state blocks submit and editing", () => {
     expect(isProposalSubmitBlocked("REVIEWED")).toBe(true);
-    expect(isProposalEditLocked("REVIEWED")).toBe(false);
+    expect(isProposalEditLocked("REVIEWED")).toBe(true);
   });
 });

@@ -5,6 +5,7 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { parseJsonBody, proposalPatchSchema } from "@/lib/validation";
 import { isProposalEditLocked } from "@/lib/proposal-status";
+import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
 
 export const dynamic = "force-dynamic";
 
@@ -91,8 +92,43 @@ export async function PATCH(
       contentMd != null && contentMd !== existing.contentMd
         ? existing.version + 1
         : existing.version;
+    const invalidatesStructuredSnapshot =
+      (contentMd !== undefined && contentMd !== existing.contentMd) ||
+      (locale !== undefined && locale !== existing.locale) ||
+      (title !== undefined && title !== existing.title) ||
+      (titleAr !== undefined && titleAr !== existing.titleAr);
 
     const updated = await db.$transaction(async (tx) => {
+      const write = await tx.generatedProposal.updateMany({
+        where: {
+          id,
+          workspaceId: workspace.id,
+          status: existing.status,
+          version: existing.version,
+          updatedAt: existing.updatedAt,
+        },
+        data: {
+          ...(contentMd != null
+            ? { contentMd, version: nextVersion }
+            : {}),
+          ...(locale ? { locale } : {}),
+          ...(title ? { title } : {}),
+          ...(titleAr !== undefined ? { titleAr } : {}),
+          ...(invalidatesStructuredSnapshot
+            ? {
+                status: "DRAFT",
+                submittedAt: null,
+                approvedAt: null,
+                artifactsJson: null,
+                ...STRUCTURED_SNAPSHOT_INVALIDATION,
+              }
+            : {}),
+        },
+      });
+      if (write.count !== 1) return null;
+      if (invalidatesStructuredSnapshot) {
+        await tx.proposalReview.deleteMany({ where: { proposalId: id } });
+      }
       if (contentMd != null && contentMd !== existing.contentMd) {
         await tx.proposalVersion.create({
           data: {
@@ -105,18 +141,19 @@ export async function PATCH(
           },
         });
       }
-      return tx.generatedProposal.update({
+      return tx.generatedProposal.findUniqueOrThrow({
         where: { id },
-        data: {
-          ...(contentMd != null
-            ? { contentMd, version: nextVersion, status: "REVIEWED" }
-            : {}),
-          ...(locale ? { locale } : {}),
-          ...(title ? { title } : {}),
-          ...(titleAr !== undefined ? { titleAr } : {}),
-        },
       });
     });
+    if (!updated) {
+      return NextResponse.json(
+        {
+          error: "Proposal changed concurrently; reload before editing",
+          code: "proposal_concurrent_update",
+        },
+        { status: 409 }
+      );
+    }
 
     await audit({
       userId: session.user.id,

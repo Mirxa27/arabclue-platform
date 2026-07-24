@@ -22,9 +22,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { saveBlob } from "@/lib/download-artifact";
+import {
+  DEFAULT_DOCUMENT_BRAND_COLORS,
+  normalizeDocumentBrandColor,
+  safeBrandLogoUrlForDocument,
+} from "@/lib/brand-policy";
 
 type BusinessProfileSnapshot = {
   workspace: {
+    id: string;
     name: string;
     nameAr: string | null;
     crNumber: string | null;
@@ -88,8 +94,20 @@ export function BusinessProfileView() {
   });
 
   const profile = data?.profile;
-  const primary = profile?.brand?.primaryColor ?? "#1E3A8A";
-  const accent = profile?.brand?.accentColor ?? "#0EA5E9";
+  const primary = normalizeDocumentBrandColor(
+    profile?.brand?.primaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+  );
+  const accent = normalizeDocumentBrandColor(
+    profile?.brand?.accentColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
+  );
+  const safeLogoUrl = profile
+    ? safeBrandLogoUrlForDocument(
+        profile.brand?.logoUrl,
+        profile.workspace.id
+      )
+    : null;
 
   const name = useMemo(() => {
     if (!profile) return "";
@@ -271,10 +289,10 @@ export function BusinessProfileView() {
               {ar ? "ملف تشغيلي · رؤية 2030" : "Live profile · Vision 2030"}
             </div>
             <div className="flex items-start gap-4">
-              {profile.brand?.logoUrl ? (
+              {safeLogoUrl ? (
                  
                 <img
-                  src={profile.brand.logoUrl}
+                  src={safeLogoUrl}
                   alt=""
                   className="h-14 w-auto max-w-[160px] rounded-xl bg-white/15 p-2 object-contain"
                 />

@@ -4,6 +4,7 @@ import { requireWriter } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { isProposalEditLocked } from "@/lib/proposal-status";
+import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,27 @@ export async function POST(
 
   const nextVersion = proposal.version + 1;
   const updated = await db.$transaction(async (tx) => {
+    const write = await tx.generatedProposal.updateMany({
+      where: {
+        id,
+        workspaceId: workspace.id,
+        status: proposal.status,
+        version: proposal.version,
+        updatedAt: proposal.updatedAt,
+      },
+      data: {
+        contentMd: target.contentMd,
+        version: nextVersion,
+        locale: target.locale,
+        status: "DRAFT",
+        submittedAt: null,
+        approvedAt: null,
+        artifactsJson: null,
+        ...STRUCTURED_SNAPSHOT_INVALIDATION,
+      },
+    });
+    if (write.count !== 1) return null;
+    await tx.proposalReview.deleteMany({ where: { proposalId: id } });
     await tx.proposalVersion.create({
       data: {
         proposalId: id,
@@ -57,16 +79,17 @@ export async function POST(
         createdBy: userId,
       },
     });
-    return tx.generatedProposal.update({
-      where: { id },
-      data: {
-        contentMd: target.contentMd,
-        version: nextVersion,
-        locale: target.locale,
-        status: "REVIEWED",
-      },
-    });
+    return tx.generatedProposal.findUniqueOrThrow({ where: { id } });
   });
+  if (!updated) {
+    return NextResponse.json(
+      {
+        error: "Proposal changed concurrently; reload before reverting",
+        code: "proposal_concurrent_update",
+      },
+      { status: 409 }
+    );
+  }
 
   await audit({
     userId,

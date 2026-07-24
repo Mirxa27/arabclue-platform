@@ -4,6 +4,8 @@ import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
 import { financialFormsSchema, parseJsonBody } from "@/lib/validation";
 import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
+import { isProposalEditLocked } from "@/lib/proposal-status";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,13 @@ export async function GET(
     const proposal = await db.generatedProposal.findUnique({ where: { id } });
     if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
       throw new ApiError("not found", 404);
+    }
+    if (isProposalEditLocked(proposal.status)) {
+      throw new ApiError(
+        "Proposal is locked for editing in current status",
+        409,
+        "status_locked"
+      );
     }
     let forms = null;
     if (proposal.financialFormsJson) {
@@ -69,10 +78,35 @@ export async function PATCH(
       source: "human",
     };
 
-    const updated = await db.generatedProposal.update({
-      where: { id },
-      data: { financialFormsJson: JSON.stringify(payload) },
+    const updated = await db.$transaction(async (tx) => {
+      const write = await tx.generatedProposal.updateMany({
+        where: {
+          id,
+          workspaceId: workspace.id,
+          status: proposal.status,
+          version: proposal.version,
+          updatedAt: proposal.updatedAt,
+        },
+        data: {
+          financialFormsJson: JSON.stringify(payload),
+          status: "DRAFT",
+          submittedAt: null,
+          approvedAt: null,
+          artifactsJson: null,
+          ...STRUCTURED_SNAPSHOT_INVALIDATION,
+        },
+      });
+      if (write.count !== 1) return null;
+      await tx.proposalReview.deleteMany({ where: { proposalId: id } });
+      return tx.generatedProposal.findUniqueOrThrow({ where: { id } });
     });
+    if (!updated) {
+      throw new ApiError(
+        "Proposal changed concurrently; reload before editing",
+        409,
+        "proposal_concurrent_update"
+      );
+    }
 
     await audit({
       userId,

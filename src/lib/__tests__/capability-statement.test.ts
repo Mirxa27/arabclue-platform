@@ -150,6 +150,66 @@ describe("capability statement AST adapter", () => {
     expect(JSON.stringify(result.document)).not.toContain('"type":"html"');
   });
 
+  test("never represents unreviewed staff or partnerships as verified claims", () => {
+    const profile = profileFixture();
+    const strict = allowIncomplete(profile);
+    const strictHtml = renderBilingualHTML(strict.document);
+
+    expect(strictHtml).not.toContain("Aisha Al Saud");
+    expect(strictHtml).not.toContain("Delivery Partner");
+    expect(strictHtml).toContain(
+      "Workspace entries were omitted because this record type does not yet have an evidence-review model."
+    );
+    expect(strictHtml).toContain("Evidence-reviewed profile statistics");
+    expect(strictHtml).not.toContain(">Team members<");
+    expect(strictHtml).not.toContain(">Partnerships<");
+    expect(strict.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "UNREVIEWED_SOURCE_OMITTED",
+        path: "highlights.staff",
+        sourceKind: "staff",
+      })
+    );
+    expect(strict.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "UNREVIEWED_SOURCE_OMITTED",
+        path: "highlights.partnerships",
+        sourceKind: "partnerships",
+      })
+    );
+
+    const draft = buildCapabilityStatement(profile, {
+      exportPolicy: ALLOW_ALL_DIAGNOSTICS,
+      includeUnreviewedWorkspaceEntries: true,
+    });
+    const draftHtml = renderBilingualHTML(draft.document);
+    expect(draftHtml).toContain("Aisha Al Saud");
+    expect(draftHtml).toContain("Delivery Partner");
+    expect(draftHtml).toContain(
+      "User-entered team (not evidence reviewed)"
+    );
+    expect(draftHtml).toContain(
+      "User-entered partnerships (not evidence reviewed)"
+    );
+    expect(draftHtml).toContain(
+      "User-declared target-sector preferences"
+    );
+    expect(draft.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "UNREVIEWED_SOURCE_INCLUDED",
+        sourceKind: "staff",
+        blocking: false,
+      })
+    );
+    expect(draft.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "SELF_DECLARED_PREFERENCE_INCLUDED",
+        sourceKind: "target-sectors",
+        blocking: false,
+      })
+    );
+  });
+
   test("never copies English source into a missing Arabic field", () => {
     const profile = profileFixture();
     profile.highlights.pastProjects[0].title =

@@ -79,16 +79,29 @@ describe("safe ZIP extraction", () => {
 });
 
 describe("knowledge eligibility", () => {
+  const approvedReview = {
+    approved: true,
+    reviewStatus: "APPROVED",
+    evidenceRef: "uploaded-document:doc-1:v1:sha256:abc",
+    provenanceJson: "{}",
+    reviewedById: "reviewer-1",
+    approvedAt: new Date("2026-07-01T00:00:00Z"),
+    contentHash: "sha256:abc",
+    revokedAt: null,
+  };
+
   test("rejects expired and revoked certificates", () => {
     const now = new Date("2026-07-22T00:00:00Z");
     expect(
       isCertificateValid({
+        ...approvedReview,
         expiresAt: new Date("2026-01-01"),
         now,
       }).eligible
     ).toBe(false);
     expect(
       isCertificateValid({
+        ...approvedReview,
         expiresAt: new Date("2027-01-01"),
         revokedAt: new Date("2026-06-01"),
         now,
@@ -96,8 +109,8 @@ describe("knowledge eligibility", () => {
     ).toBe(false);
     expect(
       isCertificateValid({
+        ...approvedReview,
         expiresAt: new Date("2027-01-01"),
-        approved: true,
         now,
       }).eligible
     ).toBe(true);
@@ -107,9 +120,9 @@ describe("knowledge eligibility", () => {
     const now = new Date("2026-07-22T00:00:00Z");
     const valid = filterValidCertificates(
       [
-        { id: "1", expiresAt: new Date("2027-01-01"), approved: true },
-        { id: "2", expiresAt: new Date("2025-01-01"), approved: true },
-        { id: "3", expiresAt: null, approved: false },
+        { id: "1", expiresAt: new Date("2027-01-01"), ...approvedReview },
+        { id: "2", expiresAt: new Date("2025-01-01"), ...approvedReview },
+        { id: "3", expiresAt: null, ...approvedReview, approved: false },
       ],
       now
     );
@@ -117,10 +130,18 @@ describe("knowledge eligibility", () => {
   });
 
   test("past projects require approval", () => {
-    expect(isPastProjectEligible({ approved: true }).eligible).toBe(true);
-    expect(isPastProjectEligible({ approved: false }).eligible).toBe(false);
+    expect(isPastProjectEligible(approvedReview).eligible).toBe(true);
     expect(
-      isPastProjectEligible({ approved: true, revokedAt: new Date() }).eligible
+      isPastProjectEligible({ ...approvedReview, approved: false }).eligible
+    ).toBe(false);
+    expect(
+      isPastProjectEligible({ ...approvedReview, revokedAt: new Date() }).eligible
+    ).toBe(false);
+    expect(
+      isPastProjectEligible({
+        ...approvedReview,
+        reviewStatus: "UNREVIEWED",
+      }).eligible
     ).toBe(false);
   });
 });

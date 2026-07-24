@@ -18,7 +18,9 @@ ALTER TABLE "PastProject"
   ADD COLUMN "provenanceJson" TEXT,
   ADD COLUMN "reviewedById" TEXT,
   ADD COLUMN "approvedAt" TIMESTAMP(3),
-  ADD COLUMN "contentHash" TEXT;
+  ADD COLUMN "contentHash" TEXT,
+  ADD COLUMN "revokedById" TEXT,
+  ADD COLUMN "revocationReason" TEXT;
 
 ALTER TABLE "Certificate"
   ALTER COLUMN "approved" SET DEFAULT false,
@@ -26,7 +28,9 @@ ALTER TABLE "Certificate"
   ADD COLUMN "evidenceRef" TEXT,
   ADD COLUMN "provenanceJson" TEXT,
   ADD COLUMN "reviewedById" TEXT,
-  ADD COLUMN "approvedAt" TIMESTAMP(3);
+  ADD COLUMN "approvedAt" TIMESTAMP(3),
+  ADD COLUMN "revokedById" TEXT,
+  ADD COLUMN "revocationReason" TEXT;
 
 ALTER TABLE "MethodologyAsset"
   ALTER COLUMN "approved" SET DEFAULT false,
@@ -36,6 +40,8 @@ ALTER TABLE "MethodologyAsset"
   ADD COLUMN "reviewedById" TEXT,
   ADD COLUMN "approvedAt" TIMESTAMP(3),
   ADD COLUMN "revokedAt" TIMESTAMP(3),
+  ADD COLUMN "revokedById" TEXT,
+  ADD COLUMN "revocationReason" TEXT,
   ADD COLUMN "contentHash" TEXT;
 
 ALTER TABLE "ContentLibraryItem"
@@ -46,6 +52,8 @@ ALTER TABLE "ContentLibraryItem"
   ADD COLUMN "reviewedById" TEXT,
   ADD COLUMN "approvedAt" TIMESTAMP(3),
   ADD COLUMN "revokedAt" TIMESTAMP(3),
+  ADD COLUMN "revokedById" TEXT,
+  ADD COLUMN "revocationReason" TEXT,
   ADD COLUMN "contentHash" TEXT;
 
 ALTER TABLE "PastProject"
@@ -64,6 +72,22 @@ ALTER TABLE "ContentLibraryItem"
   ADD CONSTRAINT "ContentLibraryItem_reviewedById_fkey"
   FOREIGN KEY ("reviewedById") REFERENCES "User"("id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "PastProject"
+  ADD CONSTRAINT "PastProject_revokedById_fkey"
+  FOREIGN KEY ("revokedById") REFERENCES "User"("id")
+  ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Certificate"
+  ADD CONSTRAINT "Certificate_revokedById_fkey"
+  FOREIGN KEY ("revokedById") REFERENCES "User"("id")
+  ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "MethodologyAsset"
+  ADD CONSTRAINT "MethodologyAsset_revokedById_fkey"
+  FOREIGN KEY ("revokedById") REFERENCES "User"("id")
+  ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "ContentLibraryItem"
+  ADD CONSTRAINT "ContentLibraryItem_revokedById_fkey"
+  FOREIGN KEY ("revokedById") REFERENCES "User"("id")
+  ON DELETE RESTRICT ON UPDATE CASCADE;
 
 CREATE INDEX "PastProject_workspaceId_reviewStatus_approved_idx"
   ON "PastProject"("workspaceId", "reviewStatus", "approved");
@@ -78,7 +102,20 @@ CREATE INDEX "ContentLibraryItem_workspaceId_reviewStatus_approved_idx"
 -- the rule on every new or subsequently updated row.
 ALTER TABLE "PastProject" ADD CONSTRAINT "PastProject_approval_evidence_check"
   CHECK (
-    "approved" = false OR (
+    (
+      "approved" = false
+      AND "reviewStatus" = 'UNREVIEWED'
+      AND "evidenceRef" IS NULL
+      AND "provenanceJson" IS NULL
+      AND "reviewedById" IS NULL
+      AND "approvedAt" IS NULL
+      AND "revokedAt" IS NULL
+      AND "revokedById" IS NULL
+      AND "revocationReason" IS NULL
+      AND "contentHash" IS NOT NULL
+    ) OR (
+      "approved" = true
+      AND
       "reviewStatus" = 'APPROVED'
       AND "evidenceRef" IS NOT NULL
       AND length(btrim("evidenceRef")) > 0
@@ -86,12 +123,39 @@ ALTER TABLE "PastProject" ADD CONSTRAINT "PastProject_approval_evidence_check"
       AND "reviewedById" IS NOT NULL
       AND "approvedAt" IS NOT NULL
       AND "revokedAt" IS NULL
+      AND "revokedById" IS NULL
+      AND "revocationReason" IS NULL
+      AND "contentHash" IS NOT NULL
+    ) OR (
+      "approved" = false
+      AND "reviewStatus" = 'REVOKED'
+      AND "evidenceRef" IS NOT NULL
+      AND "provenanceJson" IS NOT NULL
+      AND "reviewedById" IS NOT NULL
+      AND "approvedAt" IS NOT NULL
+      AND "revokedAt" IS NOT NULL
+      AND "revokedById" IS NOT NULL
+      AND "revocationReason" IS NOT NULL
+      AND length(btrim("revocationReason")) > 0
       AND "contentHash" IS NOT NULL
     )
   ) NOT VALID;
 ALTER TABLE "Certificate" ADD CONSTRAINT "Certificate_approval_evidence_check"
   CHECK (
-    "approved" = false OR (
+    (
+      "approved" = false
+      AND "reviewStatus" = 'UNREVIEWED'
+      AND "evidenceRef" IS NULL
+      AND "provenanceJson" IS NULL
+      AND "reviewedById" IS NULL
+      AND "approvedAt" IS NULL
+      AND "revokedAt" IS NULL
+      AND "revokedById" IS NULL
+      AND "revocationReason" IS NULL
+      AND "contentHash" IS NOT NULL
+    ) OR (
+      "approved" = true
+      AND
       "reviewStatus" = 'APPROVED'
       AND "evidenceRef" IS NOT NULL
       AND length(btrim("evidenceRef")) > 0
@@ -99,12 +163,39 @@ ALTER TABLE "Certificate" ADD CONSTRAINT "Certificate_approval_evidence_check"
       AND "reviewedById" IS NOT NULL
       AND "approvedAt" IS NOT NULL
       AND "revokedAt" IS NULL
+      AND "revokedById" IS NULL
+      AND "revocationReason" IS NULL
+      AND "contentHash" IS NOT NULL
+    ) OR (
+      "approved" = false
+      AND "reviewStatus" = 'REVOKED'
+      AND "evidenceRef" IS NOT NULL
+      AND "provenanceJson" IS NOT NULL
+      AND "reviewedById" IS NOT NULL
+      AND "approvedAt" IS NOT NULL
+      AND "revokedAt" IS NOT NULL
+      AND "revokedById" IS NOT NULL
+      AND "revocationReason" IS NOT NULL
+      AND length(btrim("revocationReason")) > 0
       AND "contentHash" IS NOT NULL
     )
   ) NOT VALID;
 ALTER TABLE "MethodologyAsset" ADD CONSTRAINT "MethodologyAsset_approval_evidence_check"
   CHECK (
-    "approved" = false OR (
+    (
+      "approved" = false
+      AND "reviewStatus" = 'UNREVIEWED'
+      AND "evidenceRef" IS NULL
+      AND "provenanceJson" IS NULL
+      AND "reviewedById" IS NULL
+      AND "approvedAt" IS NULL
+      AND "revokedAt" IS NULL
+      AND "revokedById" IS NULL
+      AND "revocationReason" IS NULL
+      AND "contentHash" IS NOT NULL
+    ) OR (
+      "approved" = true
+      AND
       "reviewStatus" = 'APPROVED'
       AND "evidenceRef" IS NOT NULL
       AND length(btrim("evidenceRef")) > 0
@@ -112,12 +203,39 @@ ALTER TABLE "MethodologyAsset" ADD CONSTRAINT "MethodologyAsset_approval_evidenc
       AND "reviewedById" IS NOT NULL
       AND "approvedAt" IS NOT NULL
       AND "revokedAt" IS NULL
+      AND "revokedById" IS NULL
+      AND "revocationReason" IS NULL
+      AND "contentHash" IS NOT NULL
+    ) OR (
+      "approved" = false
+      AND "reviewStatus" = 'REVOKED'
+      AND "evidenceRef" IS NOT NULL
+      AND "provenanceJson" IS NOT NULL
+      AND "reviewedById" IS NOT NULL
+      AND "approvedAt" IS NOT NULL
+      AND "revokedAt" IS NOT NULL
+      AND "revokedById" IS NOT NULL
+      AND "revocationReason" IS NOT NULL
+      AND length(btrim("revocationReason")) > 0
       AND "contentHash" IS NOT NULL
     )
   ) NOT VALID;
 ALTER TABLE "ContentLibraryItem" ADD CONSTRAINT "ContentLibraryItem_approval_evidence_check"
   CHECK (
-    "approved" = false OR (
+    (
+      "approved" = false
+      AND "reviewStatus" = 'UNREVIEWED'
+      AND "evidenceRef" IS NULL
+      AND "provenanceJson" IS NULL
+      AND "reviewedById" IS NULL
+      AND "approvedAt" IS NULL
+      AND "revokedAt" IS NULL
+      AND "revokedById" IS NULL
+      AND "revocationReason" IS NULL
+      AND "contentHash" IS NOT NULL
+    ) OR (
+      "approved" = true
+      AND
       "reviewStatus" = 'APPROVED'
       AND "evidenceRef" IS NOT NULL
       AND length(btrim("evidenceRef")) > 0
@@ -125,6 +243,20 @@ ALTER TABLE "ContentLibraryItem" ADD CONSTRAINT "ContentLibraryItem_approval_evi
       AND "reviewedById" IS NOT NULL
       AND "approvedAt" IS NOT NULL
       AND "revokedAt" IS NULL
+      AND "revokedById" IS NULL
+      AND "revocationReason" IS NULL
+      AND "contentHash" IS NOT NULL
+    ) OR (
+      "approved" = false
+      AND "reviewStatus" = 'REVOKED'
+      AND "evidenceRef" IS NOT NULL
+      AND "provenanceJson" IS NOT NULL
+      AND "reviewedById" IS NOT NULL
+      AND "approvedAt" IS NOT NULL
+      AND "revokedAt" IS NOT NULL
+      AND "revokedById" IS NOT NULL
+      AND "revocationReason" IS NOT NULL
+      AND length(btrim("revocationReason")) > 0
       AND "contentHash" IS NOT NULL
     )
   ) NOT VALID;

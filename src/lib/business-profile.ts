@@ -35,6 +35,17 @@ import {
   normalizeDocumentBrandColor,
   safeBrandLogoUrlForDocument,
 } from "./brand-logo";
+import {
+  certificateKnowledgeContent,
+  hashKnowledgeContent,
+  methodologyKnowledgeContent,
+  pastProjectKnowledgeContent,
+} from "./knowledge-approval";
+import {
+  isCertificateValid,
+  isMethodologyEligible,
+  isPastProjectEligible,
+} from "./knowledge-eligibility";
 
 export type BusinessProfileSnapshot = {
   workspace: {
@@ -138,7 +149,10 @@ export function compileBilingualBusinessProfile(
   const compilation = buildCapabilityStatement(
     profile,
     quality === "draft"
-      ? { exportPolicy: BILINGUAL_BUSINESS_PROFILE_DRAFT_POLICY }
+      ? {
+          exportPolicy: BILINGUAL_BUSINESS_PROFILE_DRAFT_POLICY,
+          includeUnreviewedWorkspaceEntries: true,
+        }
       : undefined
   );
   return Object.freeze({
@@ -249,23 +263,38 @@ type WorkspacePack = Workspace & {
 };
 
 export function isCertificateEligibleForBusinessProfile(
-  certificate: Pick<
-    Certificate,
-    "approved" | "revokedAt" | "expiresAt"
-  >,
+  certificate: Certificate,
   asOf: Date
 ): boolean {
-  return (
-    certificate.approved === true &&
-    certificate.revokedAt === null &&
-    (certificate.expiresAt === null || certificate.expiresAt >= asOf)
-  );
+  return isCertificateValid({
+    ...certificate,
+    expectedContentHash: hashKnowledgeContent(
+      certificateKnowledgeContent(certificate)
+    ),
+    now: asOf,
+  }).eligible;
 }
 
 export function isMethodologyEligibleForBusinessProfile(
-  methodology: Pick<MethodologyAsset, "approved">
+  methodology: MethodologyAsset
 ): boolean {
-  return methodology.approved === true;
+  return isMethodologyEligible({
+    ...methodology,
+    expectedContentHash: hashKnowledgeContent(
+      methodologyKnowledgeContent(methodology)
+    ),
+  }).eligible;
+}
+
+export function isPastProjectEligibleForBusinessProfile(
+  project: PastProject
+): boolean {
+  return isPastProjectEligible({
+    ...project,
+    expectedContentHash: hashKnowledgeContent(
+      pastProjectKnowledgeContent(project)
+    ),
+  }).eligible;
 }
 
 export async function loadBusinessProfile(
@@ -278,9 +307,18 @@ export async function loadBusinessProfile(
       include: {
         brandProfiles: { take: 1 },
         pastProjects: {
-          where: { approved: true, revokedAt: null },
+          where: {
+            approved: true,
+            reviewStatus: "APPROVED",
+            revokedAt: null,
+            evidenceRef: { not: null },
+            provenanceJson: { not: null },
+            reviewedById: { not: null },
+            approvedAt: { not: null },
+            contentHash: { not: null },
+          },
           orderBy: { updatedAt: "desc" },
-          take: 8,
+          take: 40,
         },
         staffMembers: {
           where: { active: true },
@@ -290,21 +328,36 @@ export async function loadBusinessProfile(
         certificates: {
           where: {
             approved: true,
+            reviewStatus: "APPROVED",
             revokedAt: null,
+            evidenceRef: { not: null },
+            provenanceJson: { not: null },
+            reviewedById: { not: null },
+            approvedAt: { not: null },
+            contentHash: { not: null },
             OR: [
               { expiresAt: null },
               { expiresAt: { gte: snapshotTime } },
             ],
           },
           orderBy: { updatedAt: "desc" },
-          take: 8,
+          take: 40,
         },
         partnerships: { orderBy: { updatedAt: "desc" }, take: 6 },
         targetSectors: { orderBy: { updatedAt: "desc" }, take: 8 },
         methodologyAssets: {
-          where: { approved: true },
+          where: {
+            approved: true,
+            reviewStatus: "APPROVED",
+            revokedAt: null,
+            evidenceRef: { not: null },
+            provenanceJson: { not: null },
+            reviewedById: { not: null },
+            approvedAt: { not: null },
+            contentHash: { not: null },
+          },
           orderBy: { updatedAt: "desc" },
-          take: 6,
+          take: 30,
         },
       },
     }),
@@ -313,12 +366,17 @@ export async function loadBusinessProfile(
   const workspace = workspaceRaw as WorkspacePack;
 
   const brand = workspace.brandProfiles[0] ?? null;
-  const eligibleCertificates = workspace.certificates.filter((certificate) =>
-    isCertificateEligibleForBusinessProfile(certificate, snapshotTime)
-  );
-  const eligibleMethodologies = workspace.methodologyAssets.filter(
-    isMethodologyEligibleForBusinessProfile
-  );
+  const eligiblePastProjects = workspace.pastProjects
+    .filter(isPastProjectEligibleForBusinessProfile)
+    .slice(0, 8);
+  const eligibleCertificates = workspace.certificates
+    .filter((certificate) =>
+      isCertificateEligibleForBusinessProfile(certificate, snapshotTime)
+    )
+    .slice(0, 8);
+  const eligibleMethodologies = workspace.methodologyAssets
+    .filter(isMethodologyEligibleForBusinessProfile)
+    .slice(0, 6);
   const requiredTotal = 5;
   const completedRequired = requiredTotal - onboarding.missing.length;
   const score = Math.round((completedRequired / requiredTotal) * 100);
@@ -352,7 +410,7 @@ export async function loadBusinessProfile(
       score,
     },
     stats: {
-      pastProjects: workspace.pastProjects.length,
+      pastProjects: eligiblePastProjects.length,
       staff: workspace.staffMembers.length,
       certificates: eligibleCertificates.length,
       partnerships: workspace.partnerships.length,
@@ -360,7 +418,7 @@ export async function loadBusinessProfile(
       methodologies: eligibleMethodologies.length,
     },
     highlights: {
-      pastProjects: workspace.pastProjects.map((p) => ({
+      pastProjects: eligiblePastProjects.map((p) => ({
         title: p.title,
         titleAr: p.titleAr,
         clientName: p.clientName,
@@ -443,10 +501,10 @@ export function buildBusinessProfileHTML(
           vat: "الرقم الضريبي",
           vision: "مواءمة رؤية 2030",
           track: "أبرز المشاريع",
-          team: "رأس المال البشري",
+          team: "فريق أدخله المستخدم · غير مراجع بالأدلة",
           certs: "الشهادات",
-          partners: "الشراكات",
-          sectors: "القطاعات المستهدفة",
+          partners: "شراكات أدخلها المستخدم · غير مراجعة بالأدلة",
+          sectors: "تفضيلات القطاعات المعلنة من المستخدم",
           methods: "المنهجيات",
           footer:
             "ملف عيّنة تشغيلي من أراب كلاو · ليس استشارة قانونية",
@@ -462,10 +520,10 @@ export function buildBusinessProfileHTML(
           vat: "VAT number",
           vision: "Vision 2030 alignment",
           track: "Flagship projects",
-          team: "Human capital",
+          team: "User-entered team · not evidence reviewed",
           certs: "Certificates",
-          partners: "Partnerships",
-          sectors: "Target sectors",
+          partners: "User-entered partnerships · not evidence reviewed",
+          sectors: "User-declared target-sector preferences",
           methods: "Methodologies",
           footer:
             "Operational profile from ArabClue · Not legal advice",

@@ -199,9 +199,7 @@ describe("BilingualLayoutEngine structured model", () => {
 
   test("creates validated physical column ratios", () => {
     expect(createColumnRatio(60)).toEqual([60, 40]);
-    expect(() => createColumnRatio(75)).toThrow(
-      BilingualLayoutValidationError
-    );
+    expect(() => createColumnRatio(75)).toThrow(BilingualLayoutValidationError);
   });
 });
 
@@ -263,7 +261,9 @@ describe("safe HTML rendering", () => {
   test("renders mixed-direction values with semantic bidi isolation", () => {
     const html = renderBilingualHTML(sampleDocument);
     expect(html).toContain('<bdi class="bilingual-value');
-    expect(html).toContain("bilingual-value--mixed bilingual-value--identifier");
+    expect(html).toContain(
+      "bilingual-value--mixed bilingual-value--identifier",
+    );
     expect(html).toContain('dir="ltr">PO-2026-س١٢</bdi>');
     expect(html).toContain('dir="rtl">PO-2026-س١٢</bdi>');
     expect(html).toContain("unicode-bidi: isolate");
@@ -275,7 +275,7 @@ describe("safe HTML rendering", () => {
     expect(title).toContain('<span class="bilingual-cell bilingual-cell--en"');
     expect(title).toContain('<span class="bilingual-cell bilingual-cell--ar"');
     expect(title).not.toContain("<div");
-    expect((html.match(/<h1\b/g) ?? [])).toHaveLength(1);
+    expect(html.match(/<h1\b/g) ?? []).toHaveLength(1);
   });
 
   test("uses automatic strong-direction detection per localized block", () => {
@@ -391,24 +391,21 @@ describe("safe HTML rendering", () => {
         {
           id: "visuals",
           alignmentKey: "visuals",
-          blocks: [
-            sampleDocument.sections[0].blocks[4],
-            neutralImage,
-          ],
+          blocks: [sampleDocument.sections[0].blocks[4], neutralImage],
         },
       ],
     };
     const html = renderBilingualHTML(document);
     expect(
-      html.match(/bilingual-visual--mirror-in-rtl/g)?.length
+      html.match(/bilingual-visual--mirror-in-rtl/g)?.length,
     ).toBeGreaterThan(0);
     const neutralFragment = html.slice(
-      html.indexOf('data-fragment-id="visuals--logo"')
+      html.indexOf('data-fragment-id="visuals--logo"'),
     );
     expect(neutralFragment.split("</div>", 1)[0]).not.toContain(
-      "bilingual-visual--mirror-in-rtl"
+      "bilingual-visual--mirror-in-rtl",
     );
-    expect(html).not.toContain("[dir=\"rtl\"] img {");
+    expect(html).not.toContain('[dir="rtl"] img {');
   });
 });
 
@@ -419,17 +416,17 @@ describe("layout modes and stable synchronization contract", () => {
       viewer: { mode: "both" },
     }).render(sampleDocument, { includeDocumentShell: false });
     const fragment = html.slice(
-      html.indexOf('data-fragment-id="contract.scope--scope-paragraph"')
+      html.indexOf('data-fragment-id="contract.scope--scope-paragraph"'),
     );
     expect(fragment.indexOf('data-language="en"')).toBeLessThan(
-      fragment.indexOf('data-language="ar"')
+      fragment.indexOf('data-language="ar"'),
     );
     const css = generateBilingualCSS({
       ...DEFAULT_BILINGUAL_CONFIG,
       columnRatio: [55, 45],
     });
     expect(css).toContain(
-      "grid-template-columns:\n    minmax(0, var(--bilingual-en-column))"
+      "grid-template-columns:\n    minmax(0, var(--bilingual-en-column))",
     );
     expect(css).toContain("--bilingual-en-column: 55fr;");
     expect(css).toContain("--bilingual-ar-column: 45fr;");
@@ -441,13 +438,13 @@ describe("layout modes and stable synchronization contract", () => {
       mode: "serial-ar-first",
     }).render(
       { ...sampleDocument, layout: undefined },
-      { includeDocumentShell: false }
+      { includeDocumentShell: false },
     );
     const fragment = html.slice(
-      html.indexOf('data-fragment-id="contract.scope--scope-paragraph"')
+      html.indexOf('data-fragment-id="contract.scope--scope-paragraph"'),
     );
     expect(fragment.indexOf('data-language="ar"')).toBeLessThan(
-      fragment.indexOf('data-language="en"')
+      fragment.indexOf('data-language="en"'),
     );
   });
 
@@ -456,13 +453,13 @@ describe("layout modes and stable synchronization contract", () => {
       mode: "serial-en-first",
     }).render(
       { ...sampleDocument, layout: undefined },
-      { includeDocumentShell: false }
+      { includeDocumentShell: false },
     );
     const fragment = html.slice(
-      html.indexOf('data-fragment-id="contract.scope--scope-paragraph"')
+      html.indexOf('data-fragment-id="contract.scope--scope-paragraph"'),
     );
     expect(fragment.indexOf('data-language="en"')).toBeLessThan(
-      fragment.indexOf('data-language="ar"')
+      fragment.indexOf('data-language="ar"'),
     );
   });
 
@@ -471,7 +468,7 @@ describe("layout modes and stable synchronization contract", () => {
     expect(html).toContain('data-section-id="scope"');
     expect(html).toContain('data-alignment-key="contract.scope"');
     expect(html).toContain(
-      'data-fragment-id="contract.scope--scope-paragraph"'
+      'data-fragment-id="contract.scope--scope-paragraph"',
     );
     expect(html).toContain("data-bilingual-pair");
     expect(html).toContain('data-bilingual-layout-state="pending"');
@@ -489,22 +486,36 @@ describe("layout modes and stable synchronization contract", () => {
       throw new Error("fixture table missing");
     }
     (table as { repeatHeader?: boolean }).repeatHeader = false;
+    (
+      table as {
+        rows: Array<(typeof table.rows)[number]>;
+      }
+    ).rows.push({
+      id: "fee-2",
+      cells: {
+        item: { content: { en: text("Support"), ar: text("الدعم") } },
+        amount: { content: { en: text("100"), ar: text("١٠٠") } },
+      },
+    });
 
     const html = renderBilingualHTML(document);
     expect(html).toContain('data-repeat-header="false"');
+    expect(html.match(/<thead>/g)).toHaveLength(2);
     expect(html).toContain(
-      'table[data-repeat-header="false"] thead {\n  display: table-row-group;'
+      'table[data-repeat-header="false"] thead {\n  display: table-row-group;',
     );
   });
 
-  test("emits viewer-tab metadata without hiding either language in print", () => {
+  test("emits inert host-controller metadata without dead standalone buttons", () => {
     const html = renderBilingualHTML(sampleDocument);
     expect(html).toContain("data-bilingual-viewer-tabs");
-    expect(html).toContain('data-viewer-language="en"');
-    expect(html).toContain('data-viewer-language="ar"');
-    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('data-viewer-controller="host"');
+    expect(html).toContain('data-viewer-preference="tabs"');
+    expect(html).toContain('data-viewer-mode="both"');
+    expect(html).toContain("English / العربية");
+    expect(html).not.toContain("<button");
     expect(html).toContain(
-      '[data-viewer-mode="tabs"] [data-language] {\n    display: block !important;'
+      '[data-viewer-mode="tabs"] [data-language] {\n    display: block !important;',
     );
     expect(html).not.toContain("<script");
   });
@@ -526,8 +537,9 @@ describe("layout modes and stable synchronization contract", () => {
     expect(css).toContain("padding-inline:");
     expect(css).toContain("margin-block-end:");
     expect(css).toContain("border-block-end:");
-    expect(css).toContain("@media (max-width: 720px)");
+    expect(css).toContain("@media screen and (max-width: 720px)");
     expect(css).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(css).toContain("minmax(0, var(--bilingual-ar-column)) !important;");
     expect(css).toContain(".bilingual-cell--ar { order: 1; }");
     expect(css).not.toContain("margin-left:");
     expect(css).not.toContain("border-left:");
@@ -542,7 +554,7 @@ describe("production validation", () => {
       [Number.NaN, 50],
     ] as const) {
       expect(() => new BilingualLayoutEngine({ columnRatio: ratio })).toThrow(
-        BilingualLayoutValidationError
+        BilingualLayoutValidationError,
       );
     }
   });
@@ -567,12 +579,10 @@ describe("production validation", () => {
     const result = validateBilingualDocument(invalid);
     expect(result.valid).toBe(false);
     expect(result.issues.some((issue) => issue.code === "DUPLICATE_ID")).toBe(
-      true
+      true,
     );
     expect(
-      result.issues.some(
-        (issue) => issue.code === "DUPLICATE_ALIGNMENT_KEY"
-      )
+      result.issues.some((issue) => issue.code === "DUPLICATE_ALIGNMENT_KEY"),
     ).toBe(true);
   });
 
@@ -584,7 +594,7 @@ describe("production validation", () => {
     const result = validateBilingualDocument(invalid);
     expect(result.valid).toBe(false);
     expect(
-      result.issues.some((issue) => issue.code === "MISSING_CONTENT")
+      result.issues.some((issue) => issue.code === "MISSING_CONTENT"),
     ).toBe(true);
   });
 
@@ -599,7 +609,7 @@ describe("production validation", () => {
     const result = validateBilingualDocument(invalid);
     expect(result.valid).toBe(false);
     expect(
-      result.issues.some((issue) => issue.code === "UNSAFE_BIDI_CONTROL")
+      result.issues.some((issue) => issue.code === "UNSAFE_BIDI_CONTROL"),
     ).toBe(true);
   });
 
@@ -617,19 +627,19 @@ describe("production validation", () => {
       title: { en: [nested], ar: text("متداخل") },
     };
     expect(validateBilingualDocument(tooDeep).issues).toContainEqual(
-      expect.objectContaining({ code: "DOCUMENT_LIMIT_EXCEEDED" })
+      expect.objectContaining({ code: "DOCUMENT_LIMIT_EXCEEDED" }),
     );
 
     const tooManyNodes = Array.from(
       { length: BILINGUAL_LAYOUT_LIMITS.maxInlineNodes + 1 },
-      (): BilingualInlineNode => ({ type: "text", text: "x" })
+      (): BilingualInlineNode => ({ type: "text", text: "x" }),
     );
     const tooLarge: BilingualDocumentSpec = {
       ...sampleDocument,
       title: { en: tooManyNodes, ar: text("كبير") },
     };
     expect(validateBilingualDocument(tooLarge).issues).toContainEqual(
-      expect.objectContaining({ code: "DOCUMENT_LIMIT_EXCEEDED" })
+      expect.objectContaining({ code: "DOCUMENT_LIMIT_EXCEEDED" }),
     );
   });
 
@@ -638,7 +648,7 @@ describe("production validation", () => {
     const source = {
       kind: "data" as const,
       uri: `data:image/png;base64,${Buffer.alloc(bytesPerImage).toString(
-        "base64"
+        "base64",
       )}`,
     };
     const blocks = Array.from({ length: 4 }, (_, index): PairedImageBlock => ({
@@ -664,8 +674,167 @@ describe("production validation", () => {
       expect.objectContaining({
         code: "DOCUMENT_LIMIT_EXCEEDED",
         message: expect.stringContaining("decoded bytes in total"),
-      })
+      }),
     );
+  });
+
+  test("rejects list subtrees and table cells that cannot fit atomically", () => {
+    const oversizedList: BilingualDocumentSpec = {
+      ...sampleDocument,
+      sections: [
+        {
+          id: "atomic-list",
+          alignmentKey: "atomic.list",
+          blocks: [
+            {
+              type: "list",
+              id: "oversized-list",
+              ordered: false,
+              items: [
+                {
+                  id: "oversized-item",
+                  content: {
+                    en: text(
+                      "x".repeat(
+                        BILINGUAL_LAYOUT_LIMITS.maxAtomicListSubtreeGraphemes +
+                          1,
+                      ),
+                    ),
+                    ar: text("عنصر"),
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(validateBilingualDocument(oversizedList).issues).toContainEqual(
+      expect.objectContaining({
+        code: "DOCUMENT_LIMIT_EXCEEDED",
+        message: expect.stringContaining("list-item subtree"),
+      }),
+    );
+
+    const oversizedTable = structuredClone(sampleDocument);
+    const table = oversizedTable.sections[0]?.blocks[3];
+    if (!table || table.type !== "table") {
+      throw new Error("fixture table missing");
+    }
+    const firstRow = table.rows[0];
+    if (!firstRow) throw new Error("fixture table row missing");
+    firstRow.cells.item = {
+      content: {
+        en: text(
+          "x".repeat(BILINGUAL_LAYOUT_LIMITS.maxAtomicTableRowGraphemes),
+        ),
+        ar: text("خلية"),
+      },
+    };
+    expect(validateBilingualDocument(oversizedTable).issues).toContainEqual(
+      expect.objectContaining({
+        code: "DOCUMENT_LIMIT_EXCEEDED",
+        message: expect.stringContaining("table cell"),
+      }),
+    );
+  });
+
+  test("segments paragraphs only at complete Unicode grapheme boundaries", () => {
+    const unicode = "X" + "😀".repeat(200) + "ا\u0651".repeat(200) + " نهاية";
+    const document: BilingualDocumentSpec = {
+      id: "unicode-segmentation",
+      title: { en: text("Unicode"), ar: text("يونيكود") },
+      sections: [
+        {
+          id: "unicode",
+          alignmentKey: "unicode",
+          blocks: [
+            {
+              type: "paragraph",
+              id: "unicode-paragraph",
+              content: { en: text(unicode), ar: text(unicode) },
+            },
+          ],
+        },
+      ],
+    };
+    const html = renderBilingualHTML(document, {
+      target: "print",
+      includeDocumentShell: false,
+    });
+    const extract = (language: "en" | "ar"): string =>
+      Array.from(
+        html.matchAll(
+          new RegExp(
+            `<div class="bilingual-cell bilingual-cell--${language}"[^>]*><p[^>]*>([\\s\\S]*?)<\\/p><\\/div>`,
+            "g",
+          ),
+        ),
+        (match) => match[1] ?? "",
+      ).join("");
+
+    expect(extract("en")).toBe(unicode);
+    expect(extract("ar")).toBe(unicode);
+    expect(html).not.toContain("\uFFFD");
+    for (let index = 0; index < html.length; index += 1) {
+      const codeUnit = html.charCodeAt(index);
+      if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+        const next = html.charCodeAt(index + 1);
+        expect(next >= 0xdc00 && next <= 0xdfff).toBe(true);
+        index += 1;
+      } else {
+        expect(codeUnit >= 0xdc00 && codeUnit <= 0xdfff).toBe(false);
+      }
+    }
+  });
+
+  test("namespaces every bilingual chart SVG reference by locale and block", () => {
+    const chart = {
+      id: "deliveryChart",
+      type: "bar" as const,
+      title: { en: "Delivery", ar: "التسليم" },
+      summary: { en: "Delivery status", ar: "حالة التسليم" },
+      categories: [{ id: "planned", label: { en: "Planned", ar: "مخطط" } }],
+      series: [
+        {
+          id: "value",
+          label: { en: "Value", ar: "القيمة" },
+          values: [1],
+        },
+      ],
+    };
+    const document: BilingualDocumentSpec = {
+      id: "chart-ids",
+      title: { en: text("Charts"), ar: text("الرسوم") },
+      sections: [
+        {
+          id: "charts",
+          alignmentKey: "charts",
+          blocks: [
+            { type: "chart", id: "chart-one", chart },
+            { type: "chart", id: "chart-two", chart },
+          ],
+        },
+      ],
+    };
+    const html = renderBilingualHTML(document, { target: "print" });
+    const ids = Array.from(
+      html.matchAll(/\sid="([^"]+)"/g),
+      (match) => match[1] ?? "",
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+    const references = [
+      ...Array.from(html.matchAll(/aria-labelledby="([^"]+)"/g), (match) =>
+        (match[1] ?? "").split(/\s+/),
+      ).flat(),
+      ...Array.from(
+        html.matchAll(/url\(#([^)]+)\)/g),
+        (match) => match[1] ?? "",
+      ),
+    ];
+    for (const reference of references) {
+      expect(ids).toContain(reference);
+    }
   });
 
   test("rejects unsafe link protocols before rendering", () => {
@@ -695,10 +864,10 @@ describe("production validation", () => {
       ],
     };
     expect(validateBilingualDocument(invalid).issues).toContainEqual(
-      expect.objectContaining({ code: "INVALID_LINK" })
+      expect.objectContaining({ code: "INVALID_LINK" }),
     );
     expect(() => renderBilingualHTML(invalid)).toThrow(
-      BilingualLayoutValidationError
+      BilingualLayoutValidationError,
     );
   });
 
@@ -721,7 +890,7 @@ describe("production validation", () => {
       invalid.sections[0].blocks[4].source = source;
       const result = validateBilingualDocument(invalid);
       expect(
-        result.issues.some((issue) => issue.code === "INVALID_IMAGE")
+        result.issues.some((issue) => issue.code === "INVALID_IMAGE"),
       ).toBe(true);
     }
   });
@@ -739,9 +908,9 @@ describe("production validation", () => {
     if (!table.rows) throw new Error("fixture table missing");
     delete table.rows[0].cells.amount;
     const result = validateBilingualDocument(invalid);
-    expect(
-      result.issues.some((issue) => issue.code === "INVALID_TABLE")
-    ).toBe(true);
+    expect(result.issues.some((issue) => issue.code === "INVALID_TABLE")).toBe(
+      true,
+    );
   });
 
   test("rejects invalid or non-finite chart data", () => {
@@ -761,9 +930,7 @@ describe("production validation", () => {
                 type: "line",
                 title: { en: "Invalid", ar: "غير صالح" },
                 summary: { en: "Invalid data", ar: "بيانات غير صالحة" },
-                categories: [
-                  { id: "one", label: { en: "One", ar: "واحد" } },
-                ],
+                categories: [{ id: "one", label: { en: "One", ar: "واحد" } }],
                 series: [
                   {
                     id: "bad",
@@ -790,7 +957,7 @@ describe("production validation", () => {
       { type: "emphasis", children: text("& content") },
     ]);
     expect(html).toBe(
-      "<strong>&lt;iframe src=x&gt;</strong><br /><em>&amp; content</em>"
+      "<strong>&lt;iframe src=x&gt;</strong><br /><em>&amp; content</em>",
     );
   });
 });

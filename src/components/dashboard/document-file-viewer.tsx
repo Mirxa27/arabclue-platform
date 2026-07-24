@@ -17,6 +17,10 @@ import {
   Loader2,
   Maximize2,
 } from "lucide-react";
+import {
+  classifyStoredFilePreviewKind,
+  PDF_PREVIEW_SANDBOX,
+} from "@/lib/file-delivery-policy";
 
 type Props = {
   open: boolean;
@@ -28,34 +32,10 @@ type Props = {
   fileName?: string;
 };
 
-function kindFrom(mime: string | null | undefined, name: string) {
-  const m = (mime || "").toLowerCase();
-  const n = name.toLowerCase();
-  if (m.includes("pdf") || n.endsWith(".pdf")) return "pdf" as const;
-  if (
-    m.startsWith("image/") ||
-    /\.(png|jpe?g|gif|webp|svg)$/.test(n)
-  )
-    return "image" as const;
-  if (
-    m.includes("html") ||
-    n.endsWith(".html") ||
-    n.endsWith(".htm")
-  )
-    return "html" as const;
-  if (
-    m.startsWith("text/") ||
-    m.includes("markdown") ||
-    /\.(txt|md|csv|json)$/.test(n)
-  )
-    return "text" as const;
-  return "binary" as const;
-}
-
 /**
  * Full-bleed in-app layout for uploaded workspace documents.
- * PDF/HTML use blob object URLs (same pattern as DocumentPreviewFrame) so
- * preview works even if response headers restrict framing of /api/files.
+ * PDFs use a sandboxed blob URL. Markup uploads are shown only as inert source
+ * text, so workspace files never become a same-origin script execution path.
  */
 export function DocumentFileViewer({
   open,
@@ -67,7 +47,10 @@ export function DocumentFileViewer({
   fileName,
 }: Props) {
   const ar = locale === "ar";
-  const kind = kindFrom(mimeType, fileName || title);
+  const kind = classifyStoredFilePreviewKind(
+    mimeType,
+    fileName || title
+  );
   const fileUrl = useMemo(
     () => `/api/files?path=${encodeURIComponent(storagePath)}`,
     [storagePath]
@@ -110,7 +93,7 @@ export function DocumentFileViewer({
           return;
         }
 
-        if (kind === "pdf" || kind === "html") {
+        if (kind === "pdf") {
           const res = await fetch(fileUrl, { credentials: "include" });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const blob = await res.blob();
@@ -159,7 +142,7 @@ export function DocumentFileViewer({
                   {ar ? "تبويب" : "Open"}
                 </a>
               </Button>
-              {(kind === "pdf" || kind === "html") && (
+              {kind === "pdf" && (
                 <Button size="sm" variant="ghost" className="h-8 gap-1" asChild>
                   <a href={fileUrl} target="_blank" rel="noreferrer">
                     <Maximize2 className="size-3.5" />
@@ -176,7 +159,7 @@ export function DocumentFileViewer({
           )}
           dir={ar ? "rtl" : "ltr"}
         >
-          {kind === "pdf" || kind === "html" ? (
+          {kind === "pdf" ? (
             loading ? (
               <div className="flex size-full items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
@@ -196,6 +179,8 @@ export function DocumentFileViewer({
               <iframe
                 title={title}
                 src={embedSrc}
+                sandbox={PDF_PREVIEW_SANDBOX}
+                referrerPolicy="no-referrer"
                 className="size-full border-0 bg-white"
               />
             ) : null

@@ -112,13 +112,13 @@ describe("Design Tokens", () => {
         primaryColor: null,
         secondaryColor: null,
         accentColor: null,
-        fontFamily: "Custom Font",
+        fontFamily: "Cairo",
       };
 
       const overridden = applyBrandOverrides(designTokens, mockBrand as BrandProfile);
       
-      expect(overridden.typography.fontFamilies.arabic).toContain("Custom Font");
-      expect(overridden.typography.fontFamilies.english).toContain("Custom Font");
+      expect(overridden.typography.fontFamilies.arabic).toContain("Cairo");
+      expect(overridden.typography.fontFamilies.english).toContain("Cairo");
     });
 
     test("should return original tokens when brand is null", () => {
