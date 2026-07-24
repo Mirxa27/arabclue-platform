@@ -187,24 +187,17 @@ export function ProposalEditorDialog({
     createdAt: string;
   }[] = data?.proposal?.versions ?? [];
 
-  const splitLetterhead = useMemo(() => {
-    const companyName = letterheadCompanyName(
-      propLocale,
-      brandProfile,
-      brandData?.company
-    );
-    return {
-      companyName,
-      logoUrl: brandProfile?.logoUrl,
-      primaryColor: brandProfile?.primaryColor,
-      secondaryColor: brandProfile?.secondaryColor,
-      accentColor: brandProfile?.accentColor,
-      tagline:
-        propLocale === "ar"
-          ? brandProfile?.taglineAr || brandProfile?.tagline
-          : brandProfile?.tagline || brandProfile?.taglineAr,
-    };
-  }, [brandData?.company, brandProfile, propLocale]);
+  const splitLetterhead = useMemo(
+    () => ({
+      brand: brandProfile,
+      companyName: letterheadCompanyName(
+        propLocale,
+        brandProfile,
+        brandData?.company
+      ),
+    }),
+    [brandData?.company, brandProfile, propLocale]
+  );
 
   const saveMutation = useMutation({
     mutationFn: async () => {

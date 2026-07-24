@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
+import type { LetterheadBrand } from "@/lib/letterhead";
 
 const Inner = dynamic(
   () =>
@@ -28,12 +29,8 @@ export type MarkdownStudioEditorProps = {
   splitPreview?: boolean;
   brand?: { primaryColor?: string; accentColor?: string };
   letterhead?: {
+    brand: LetterheadBrand | null | undefined;
     companyName: string;
-    logoUrl?: string | null;
-    primaryColor?: string | null;
-    secondaryColor?: string | null;
-    accentColor?: string | null;
-    tagline?: string | null;
   };
   readOnly?: boolean;
 };

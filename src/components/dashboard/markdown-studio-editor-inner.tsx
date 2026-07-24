@@ -24,6 +24,10 @@ import "@mdxeditor/editor/style.css";
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
+import {
+  letterheadBarHtml,
+  type LetterheadBrand,
+} from "@/lib/letterhead";
 
 type BrandColors = {
   primaryColor?: string;
@@ -31,12 +35,8 @@ type BrandColors = {
 };
 
 type LetterheadPreview = {
+  brand: LetterheadBrand | null | undefined;
   companyName: string;
-  logoUrl?: string | null;
-  primaryColor?: string | null;
-  secondaryColor?: string | null;
-  accentColor?: string | null;
-  tagline?: string | null;
 };
 
 type Props = {
@@ -109,6 +109,18 @@ export function MarkdownStudioEditorInner({
     [markdown, brand?.primaryColor, brand?.accentColor]
   );
 
+  const letterheadHtml = useMemo(
+    () =>
+      letterhead
+        ? letterheadBarHtml({
+            brand: letterhead.brand,
+            companyName: letterhead.companyName,
+            locale,
+          })
+        : null,
+    [letterhead, locale]
+  );
+
   return (
     <div
       className={cn(
@@ -141,37 +153,8 @@ export function MarkdownStudioEditorInner({
           dir={resolvedDir}
         >
           <div className="p-4">
-            {letterhead ? (
-              <div
-                className="mb-[18px] flex items-center justify-between gap-3 rounded-lg px-3.5 py-2.5 text-white"
-                style={{
-                  background: `linear-gradient(90deg, ${letterhead.primaryColor ?? "#1E3A8A"}, ${letterhead.secondaryColor ?? "#0F172A"})`,
-                  borderBottom: `3px solid ${letterhead.accentColor ?? "#0EA5E9"}`,
-                }}
-              >
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {letterhead.logoUrl ? (
-                    <img
-                      src={letterhead.logoUrl}
-                      alt=""
-                      className="h-7 max-w-[120px] rounded bg-white/15 px-1.5 py-0.5 object-contain"
-                    />
-                  ) : null}
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-bold">
-                      {letterhead.companyName}
-                    </div>
-                    {letterhead.tagline ? (
-                      <div className="truncate text-[10px] opacity-90">
-                        {letterhead.tagline}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="shrink-0 text-[9px] uppercase tracking-[0.04em] opacity-85">
-                  {ar ? "ورق رسمي" : "Official letterhead"}
-                </div>
-              </div>
+            {letterheadHtml ? (
+              <div dangerouslySetInnerHTML={{ __html: letterheadHtml }} />
             ) : null}
             <div
               className="text-sm"
