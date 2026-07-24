@@ -55,3 +55,28 @@ Added workspace-wide AgentRun history for the agents dashboard. The new API list
 
 None.
 
+---
+
+## Fix: Bilingual project titles in run history (Task 2 review)
+
+**Status:** DONE  
+**Commit:** `fix(agents): bilingual project titles in run history`
+
+### Finding
+
+`projectTitle` in AgentRun history was not locale-aware — the API only selected `title`, so Arabic UI showed English project names.
+
+### Changes
+
+- **`src/lib/agent-runs.ts`**: Extended `AgentRunDto` with `projectTitleAr: string | null`; serializer maps `project.titleAr ?? null`.
+- **`src/app/api/agents/runs/route.ts`**: Project select now includes `titleAr`.
+- **`src/lib/__tests__/agent-runs-list.test.ts`**: Fixture and assertion cover `projectTitleAr`.
+- **`src/components/dashboard/agent-workflow.tsx`**: `AgentRunHistoryItem` includes `projectTitleAr`; `runProjectTitle()` picks `projectTitleAr ?? projectTitle` when `locale === "ar"`.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `bun test src/lib/__tests__/agent-runs-list.test.ts` | Pass: 1 pass, 0 fail |
+| `bunx tsc --noEmit` | Pass (exit 0) |
+
