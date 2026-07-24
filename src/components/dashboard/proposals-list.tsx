@@ -31,7 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { ArtifactDownloadFormat } from "@/lib/download-artifact";
+import { resolveArtifactDownloadFormat } from "@/lib/download-artifact";
 
 function artifactIcon(type: string) {
   if (type === "PPTX" || type === "HTML") return Presentation;
@@ -60,36 +60,6 @@ function parseArtifacts(p: ApiProposal): ApiProposalArtifact[] {
     }
   }
   return [];
-}
-
-function artifactFormat(a: ApiProposalArtifact): ArtifactDownloadFormat {
-  if (a.type === "ZIP") return "zip";
-  if (a.type === "PDF") return "pdf";
-  if (a.filename.includes("Compliance")) return "xlsx-matrix";
-  if (a.filename.includes("BoQ")) return "xlsx-boq";
-  if (
-    a.type === "PPTX" ||
-    a.type === "HTML" ||
-    a.filename.includes("Slides")
-  ) {
-    return "slides";
-  }
-  if (a.downloadPath?.includes("format=")) {
-    const fmt = a.downloadPath.split("format=")[1]?.split("&")[0];
-    if (
-      fmt === "pdf" ||
-      fmt === "html" ||
-      fmt === "zip" ||
-      fmt === "manifest" ||
-      fmt === "xlsx-matrix" ||
-      fmt === "xlsx-boq" ||
-      fmt === "slides" ||
-      fmt === "pptx"
-    ) {
-      return fmt;
-    }
-  }
-  return "zip";
 }
 
 export function ProposalsList() {
@@ -211,7 +181,7 @@ export function ProposalsList() {
                       <div className="grid grid-cols-2 gap-1.5 mt-2">
                         {artifacts.map((a, i) => {
                           const Icon = artifactIcon(a.type);
-                          const fmt = artifactFormat(a);
+                          const fmt = resolveArtifactDownloadFormat(a);
                           const busy = busyFormat === fmt;
                           return (
                             <button

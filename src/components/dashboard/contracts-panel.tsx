@@ -12,6 +12,7 @@ import {
   Eye,
   Loader2,
   Send,
+  Package,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,12 +31,24 @@ import {
   type ContractStudioMode,
 } from "./contract-studio";
 import { DocumentPreviewFrame } from "./document-preview-frame";
-import { EmptyState, QueryState } from "@/components/patterns";
+import {
+  EmptyState,
+  ExportReadinessChecklist,
+  QueryState,
+} from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import { parseContractArtifacts } from "@/lib/contract-artifacts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+
+type ValidationResponse = {
+  exportReady?: boolean;
+  exportBlocker?: { code: string; error: string } | null;
+  validation?: {
+    issues?: Array<{ code: string; severity: string; message: string }>;
+  };
+};
 
 export function ContractsPanel() {
   const { locale } = useLocale();
@@ -75,6 +88,30 @@ export function ContractsPanel() {
   const active = activeData?.proposal ?? activeListItem;
   const artifacts = parseContractArtifacts(active?.artifactsJson);
 
+  const {
+    data: validationData,
+    refetch: refetchValidation,
+    isFetching: isValidationFetching,
+  } = useQuery({
+    queryKey: ["proposal-validate", openId],
+    enabled: Boolean(openId),
+    queryFn: async () => {
+      if (!openId) throw new Error("Missing contract id");
+      const res = await fetch(`/api/proposals/${openId}/validate`);
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(
+          (json as { error?: string }).error || "Validation failed"
+        );
+      }
+      return (await res.json()) as ValidationResponse;
+    },
+  });
+
+  const exportReady = validationData?.exportReady === true;
+  const exportBlocked =
+    validationData != null && validationData.exportReady === false;
+
   const submitForReview = useMutation({
     mutationFn: async (proposalId: string) => {
       const res = await fetch(`/api/proposals/${proposalId}/submit`, {
@@ -88,16 +125,51 @@ export function ContractsPanel() {
       qc.invalidateQueries({ queryKey: ["proposals"] });
       if (json.proposal?.id) {
         qc.invalidateQueries({ queryKey: ["proposal", json.proposal.id] });
+        qc.invalidateQueries({
+          queryKey: ["proposal-validate", json.proposal.id],
+        });
       }
       qc.invalidateQueries({ queryKey: ["reviews"] });
       toast({
-        title: ar ? "أُرسل العقد للمراجعة القانونية" : "Contract sent for legal review",
+        title: ar
+          ? "أُرسل العقد للمراجعة القانونية"
+          : "Contract sent for legal review",
       });
     },
     onError: (err: Error) => {
       toast({ title: err.message, variant: "destructive" });
     },
   });
+
+  async function downloadContract(
+    proposalId: string,
+    format: "html" | "pdf" | "zip",
+    fallbackName: string,
+    requireReady: boolean
+  ) {
+    if (requireReady && validationData != null && !validationData.exportReady) {
+      toast({
+        title: ar ? "العقد غير جاهز للتصدير" : "Contract is not export-ready",
+        description:
+          validationData.exportBlocker?.error ??
+          (ar
+            ? "أكمل المراجعة القانونية وحل عوائق التحقق أولاً"
+            : "Complete legal review and resolve validation blockers first"),
+        variant: "destructive",
+      });
+      return;
+    }
+    const ok = await download({
+      proposalId,
+      format,
+      fallbackName,
+      locale,
+    });
+    if (ok) {
+      void refetchValidation();
+      qc.invalidateQueries({ queryKey: ["proposals"] });
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -147,9 +219,7 @@ export function ContractsPanel() {
           <Card className="border-dashed">
             <EmptyState
               icon={FileText}
-              title={
-                ar ? "لا مسودات عقود بعد" : "No contract drafts yet"
-              }
+              title={ar ? "لا مسودات عقود بعد" : "No contract drafts yet"}
               description={
                 ar
                   ? "1) أنشئ مناقصة 2) ارفع الكراسة 3) شغّل الوكلاء — المرحلة 6 تصوغ العقد."
@@ -157,7 +227,11 @@ export function ContractsPanel() {
               }
               action={
                 <div className="flex flex-wrap justify-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setView("projects")}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setView("projects")}
+                  >
                     {ar ? "المشاريع" : "Projects"}
                   </Button>
                   <Button size="sm" onClick={() => setView("agents")}>
@@ -256,12 +330,12 @@ export function ContractsPanel() {
                     className="gap-1"
                     disabled={busyFormat === "html"}
                     onClick={() =>
-                      void download({
-                        proposalId: c.id,
-                        format: "html",
-                        fallbackName: "Contract.html",
-                        locale,
-                      })
+                      void downloadContract(
+                        c.id,
+                        "html",
+                        "Contract.html",
+                        false
+                      )
                     }
                   >
                     <Download className="size-3.5" />
@@ -271,15 +345,10 @@ export function ContractsPanel() {
                     size="sm"
                     variant="ghost"
                     className="gap-1"
-                    disabled={busyFormat === "pdf"}
-                    onClick={() =>
-                      void download({
-                        proposalId: c.id,
-                        format: "pdf",
-                        fallbackName: "Contract.pdf",
-                        locale,
-                      })
-                    }
+                    onClick={() => {
+                      setOpenStudioMode("preview");
+                      setOpenId(c.id);
+                    }}
                   >
                     <FileDown className="size-3.5" />
                     PDF
@@ -294,24 +363,110 @@ export function ContractsPanel() {
       <Dialog open={Boolean(openId)} onOpenChange={(o) => !o && setOpenId(null)}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0">
           <DialogHeader className="px-5 py-3 border-b border-border/60">
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
               <span>{active ? active.titleAr || active.title : "Contract"}</span>
-              {isActiveFetching ? (
+              {isActiveFetching || isValidationFetching ? (
                 <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+              ) : null}
+              {validationData?.exportReady ? (
+                <Badge className="text-[10px] bg-emerald-600">
+                  {ar ? "جاهز للتصدير" : "Export ready"}
+                </Badge>
+              ) : validationData != null ? (
+                <Badge variant="destructive" className="text-[10px]">
+                  {ar ? "غير جاهز" : "Not export-ready"}
+                </Badge>
               ) : null}
             </DialogTitle>
           </DialogHeader>
           {active ? (
             <Tabs defaultValue="studio" className="flex-1 min-h-0 flex flex-col">
-              <div className="px-5 pt-3">
+              <div className="px-5 pt-3 space-y-3">
                 <TabsList>
                   <TabsTrigger value="studio">
                     {ar ? "الاستوديو" : "Studio"}
                   </TabsTrigger>
                   <TabsTrigger value="export">
-                    {ar ? "معاينة PDF" : "PDF preview"}
+                    {ar ? "معاينة وتصدير" : "Preview & export"}
                   </TabsTrigger>
                 </TabsList>
+                <ExportReadinessChecklist
+                  locale={locale}
+                  exportReady={exportReady}
+                  exportBlocker={validationData?.exportBlocker}
+                  issues={validationData?.validation?.issues}
+                />
+                <div className="flex flex-wrap gap-2 pb-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    disabled={busyFormat === "html"}
+                    onClick={() =>
+                      void downloadContract(
+                        active.id,
+                        "html",
+                        "Contract.html",
+                        false
+                      )
+                    }
+                  >
+                    <Download className="size-3.5" />
+                    HTML
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="gap-1"
+                    disabled={busyFormat === "pdf" || exportBlocked}
+                    onClick={() =>
+                      void downloadContract(
+                        active.id,
+                        "pdf",
+                        "Contract.pdf",
+                        true
+                      )
+                    }
+                  >
+                    {busyFormat === "pdf" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <FileDown className="size-3.5" />
+                    )}
+                    PDF
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="gap-1"
+                    disabled={busyFormat === "zip" || exportBlocked}
+                    onClick={() =>
+                      void downloadContract(
+                        active.id,
+                        "zip",
+                        "Contract_Package.zip",
+                        true
+                      )
+                    }
+                  >
+                    {busyFormat === "zip" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Package className="size-3.5" />
+                    )}
+                    {ar ? "حزمة ZIP" : "ZIP package"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1"
+                    onClick={() => void refetchValidation()}
+                  >
+                    <Loader2
+                      className={`size-3.5 ${isValidationFetching ? "animate-spin" : ""}`}
+                    />
+                    {ar ? "إعادة التحقق" : "Re-validate"}
+                  </Button>
+                </div>
               </div>
               <TabsContent
                 value="studio"
@@ -329,7 +484,10 @@ export function ContractsPanel() {
                   articles={artifacts.articles}
                   milestones={artifacts.milestones}
                   initialMode={openStudioMode}
-                  onSaved={() => void refetch()}
+                  onSaved={() => {
+                    void refetch();
+                    void refetchValidation();
+                  }}
                 />
               </TabsContent>
               <TabsContent

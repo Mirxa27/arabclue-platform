@@ -335,9 +335,9 @@ function extractMilestones(text: string): { name: string; weeks: number }[] {
   const seen = new Set<string>();
 
   const patterns = [
-    /(?:milestone|مرحلة|phase)\s*[:\-–]?\s*([^\n,|;]{2,80}?)[^\d\n]{0,40}?(\d+)\s*(?:week|weeks|أسبوع|أسابيع|wk)/gi,
-    /([A-Za-z\u0600-\u06FF][^\n,|;]{2,60}?)\s*[:\-–]\s*(\d+)\s*(?:week|weeks|أسبوع|أسابيع|wk)/gi,
-    /(\d+)\s*(?:week|weeks|أسبوع|أسابيع)\s*[:\-–]?\s*([A-Za-z\u0600-\u06FF][^\n,|;]{2,60})/gi,
+    /(?:milestone|مرحلة|phase)[ \t]*[:\-–—]?[ \t]*([^\n,|;]{2,80}?)[ \t]*(?:[:\-–—][ \t]*)?(\d+)[ \t]*(?:weeks?|أسبوع|أسابيع|wk)/gi,
+    /([A-Za-z\u0600-\u06FF][^\n,|;]{2,60}?)[ \t]*[:\-–—][ \t]*(\d+)[ \t]*(?:weeks?|أسبوع|أسابيع|wk)/gi,
+    /(\d+)[ \t]*(?:weeks?|أسبوع|أسابيع)[ \t]*(?:[:\-–—][ \t]*)?([A-Za-z\u0600-\u06FF][^\n,|;]{2,60})/gi,
   ];
 
   for (const re of patterns) {
@@ -352,7 +352,10 @@ function extractMilestones(text: string): { name: string; weeks: number }[] {
         name = mm[1].trim();
         weeks = parseInt(mm[2], 10);
       }
-      name = name.replace(/^[\d.\-\s]+/, "").trim();
+      name = name
+        .replace(/^(?:milestone|مرحلة|phase)[ \t]*[:\-–—]?[ \t]*/i, "")
+        .replace(/^[\d.\-\s]+|[\s:\-–—]+$/g, "")
+        .trim();
       if (!name || Number.isNaN(weeks) || weeks <= 0 || weeks > 260) continue;
       if (!isQualityMilestoneName(name)) continue;
       const key = name.toLowerCase();

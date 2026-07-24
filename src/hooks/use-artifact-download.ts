@@ -31,6 +31,7 @@ export function useArtifactDownload() {
           proposalId: opts.proposalId,
           format: opts.format,
           fallbackName: opts.fallbackName,
+          locale: opts.locale,
         });
         if (!result.ok) {
           // Collapse repeated gate codes: "invented_nora_id, invented_nora_id, …"

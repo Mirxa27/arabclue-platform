@@ -2,6 +2,12 @@
 
 Domain: **arabclue.com** (primary), www.arabclue.com → redirect to apex.
 
+> **Deployment is blocked:** a sensitive `.env` file is still tracked in the
+> current Git index and exists in repository history. Rotate every exposed
+> credential and complete the approved history-remediation procedure in
+> [`docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md`](docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md)
+> before creating any Preview or Production deployment.
+
 ## 1. Vercel project setup
 
 ```bash
@@ -55,8 +61,8 @@ Or use Vercel nameservers.
 
 ## 3. Build
 
-- Build command: `prisma generate && next build` (already in vercel.json)
-- Install command: `bun install` or `npm install`
+- Build command: `bun run build` (already in `vercel.json`; it never migrates a database)
+- Install command: `bun install`
 
 Build output:
 
@@ -94,12 +100,9 @@ Then rotate via local script and create role accounts:
 bun run scripts/generate-admins.ts --force
 # Outputs admin-credentials.json (gitignored)
 
-# Credentials (example from last local generation — DO NOT USE IN PROD, regenerate):
-# SUPER_ADMIN: superadmin@arabclue.com / DVQw^SNCk#7kySsWiG2E
-# ADMIN: admin@arabclue.com / _a2kmKez6Jk9$qv=2?Fz
-# BIDDER: bidder@arabclue.com / *3D*qFF6eLn2zpeWw?Rr
-# REVIEWER: reviewer@arabclue.com / GZmkR*Dtd*k7kH6tw%QC
-# FINANCE: finance@arabclue.com / b8UrA^GH&y-Rjp?Ra9fg
+# Credential values are never stored in this repository.
+# Generate one-time credentials through the approved administrator bootstrap process,
+# deliver them through the team secret manager, and rotate them on first login.
 
 # All have mustChangePassword=true — will be forced to change on first login.
 ```
@@ -140,22 +143,32 @@ curl https://arabclue.com/api/health
 # → Test billing callback ownership
 ```
 
-## 6. Operational gaps still to improve (for future)
+## 6. Operational status
 
-- Postgres for prod persistence (SQLite is ephemeral on Vercel)
-- S3 / Vercel Blob for uploads (currently /tmp loses files on cold start)
-- Redis for rate-limit distributed (currently in-memory Map)
-- Cron for subscription expiry / certificate expiry emails
+**Current (shipped):**
+- **Postgres:** Neon Postgres via `DATABASE_URL` (not SQLite)
+- **Cron:** Vercel Cron hits `/api/cron/billing-reconcile` (every 6h) and `/api/cron/expiry-notifications` (daily 06:00 UTC). Protect with `CRON_SECRET` (≥16 chars). Cron Authorization header is set automatically by Vercel when `CRON_SECRET` is configured as the project cron secret.
+- **Email:** Resend via `RESEND_API_KEY` + optional `EMAIL_FROM`. Without the key, expiry cron logs + writes `ExpiryNotificationLog` but does not send mail (in-app cert notifications still work).
+- **PDF on Vercel:** `@sparticuz/chromium` + `playwright-core`. Set `AWS_LAMBDA_JS_RUNTIME=nodejs22.x` in the Vercel project env.
+
+**Required for production uploads on Vercel:**
+- `BLOB_READ_WRITE_TOKEN` — without it `/api/ready` reports storage degraded (`ephemeral_/tmp`) and readiness fails on Vercel.
+
+**Optional hardening:**
+- `REDIS_URL` (e.g. Upstash) for multi-instance rate limiting — otherwise in-memory
+
+**Still deferred (product):**
 - SSO (SAML/OIDC) for Enterprise
 - Real Etimad API submission (currently export only)
+- Live MyFatoorah charges without merchant credentials
 
 ## 7. Security headers
 
 Configured in both `next.config.ts` and `vercel.json`:
 - X-Content-Type-Options: nosniff
-- X-Frame-Options: DENY
+- X-Frame-Options: **SAMEORIGIN** (required for in-app PDF/HTML iframe previews)
 - Referrer-Policy: strict-origin-when-cross-origin
-- Permissions-Policy: camera=(), microphone=(), geolocation=()
+- Permissions-Policy: camera=(self), microphone=(self), geolocation=()
 - HSTS on Vercel (max-age=63072000)
 
 ## 8. Environment rotation

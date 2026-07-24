@@ -6,20 +6,29 @@
 bun install
 cp .env.example .env
 # Set DATABASE_URL (Postgres), NEXTAUTH_SECRET, ARABCLUE_ENC_KEY, BOOTSTRAP_ADMIN_PASSWORD
-bun run dev:setup   # generate + push schema if needed
-bunx prisma migrate deploy
 bun run dev
 ```
+
+The committed development URL points to a shared Neon database whose schema is
+already migrated. Do not run `dev:setup`, `prisma db push`, or Prisma migration
+commands against that shared URL.
 
 Health: call the `/api/health` route on your local app port.
 
 ## Production (Vercel)
 
-1. Postgres `DATABASE_URL` (Neon pooled)
-2. Set `NEXTAUTH_URL` to the public site origin
-3. `NEXTAUTH_SECRET`, `ARABCLUE_ENC_KEY`, bootstrap admin
-4. `BLOB_READ_WRITE_TOKEN` for uploads
-5. Build: `prisma generate && prisma migrate deploy && next build` (`build:vercel`)
+1. Resolve every blocking item in the
+   [production deployment runbook](PRODUCTION_DEPLOYMENT_RUNBOOK.md).
+2. Give Preview deployments their own Neon branch and Preview-scoped
+   `DATABASE_URL`; never reuse the Production database.
+3. Set the Production `DATABASE_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`,
+   `ARABCLUE_ENC_KEY`, bootstrap administrator values, and
+   `BLOB_READ_WRITE_TOKEN` through Vercel's sensitive environment settings.
+4. Validate a committed migration on an isolated Neon branch, then run
+   `bun run db:migrate:deploy` once as a separately approved Production release
+   step.
+5. Run `bun run deploy:check`. The Vercel build command is `bun run build` and
+   is intentionally database-read-only.
 
 See `DEPLOY_ARABCLUE_COM.md`.
 

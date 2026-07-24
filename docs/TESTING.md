@@ -9,6 +9,26 @@ bunx tsc --noEmit
 bun run build
 ```
 
+For the deterministic bilingual-document gate used by CI:
+
+```bash
+bun run quality:documents
+```
+
+This command performs a repository TypeScript check, scopes ESLint to the
+Phase 2 implementation and tests, runs the offline Phase 2 unit/integration
+suite, and enforces at least 85% aggregate line and function coverage across
+the explicitly allow-listed public Phase 2 modules. It does not launch a
+browser, contact a database, or make network requests. The LCOV artifact is
+written to `coverage/documents/lcov.info`.
+
+Browser-dependent visual and PDF smoke tests remain explicit:
+
+```bash
+bun run test:bilingual:visual
+bun run benchmark:bilingual
+```
+
 ## Suites
 
 | Suite | Coverage |

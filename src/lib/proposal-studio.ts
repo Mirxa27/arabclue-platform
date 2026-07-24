@@ -3,6 +3,8 @@
  * Evidence-only; no pricing advice.
  */
 
+import { db } from "./db";
+import type { IngestionEntities } from "./types";
 import type { ValidationReport } from "./validation-gate";
 
 export type ProposalSkillId =
@@ -268,4 +270,49 @@ export function isAgentRunStale(opts: {
     return now - updated > 180_000;
   }
   return false;
+}
+
+/**
+ * Prefer the most recent document whose entities carry NORA principles or
+ * requirements so the validation gate is tender-aware. Pure — unit-testable.
+ */
+export function pickIngestionEntities(
+  docs: Array<{ extractedEntities: string | null }>
+): IngestionEntities | null {
+  let entities: IngestionEntities | null = null;
+  for (const doc of docs) {
+    if (!doc.extractedEntities) continue;
+    try {
+      const parsed = JSON.parse(doc.extractedEntities) as IngestionEntities;
+      if (
+        parsed &&
+        (parsed.noraPrinciplesFromTender?.length || parsed.requirements?.length)
+      ) {
+        return parsed;
+      }
+      if (!entities) entities = parsed;
+    } catch {
+      /* ignore bad JSON */
+    }
+  }
+  return entities;
+}
+
+/**
+ * Load ingestion entities for a project so validate and download routes
+ * apply the same NORA/tender-aware gate.
+ */
+export async function loadProjectIngestionEntities(
+  projectId: string
+): Promise<IngestionEntities | null> {
+  const docs = await db.uploadedDocument.findMany({
+    where: {
+      projectId,
+      extractedEntities: { not: null },
+    },
+    select: { extractedEntities: true },
+    orderBy: { updatedAt: "desc" },
+    take: 8,
+  });
+  return pickIngestionEntities(docs);
 }

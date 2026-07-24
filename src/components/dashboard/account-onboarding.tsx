@@ -386,7 +386,42 @@ function LegalPanel({
     name: string;
     certType: string;
     expiresAt?: string;
+    approved?: boolean;
+    revokedAt?: string | null;
   }>;
+
+  const setCertApproved = useMutation({
+    mutationFn: async (opts: { id: string; approved: boolean }) => {
+      const res = await fetch("/api/certificates", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: opts.id,
+          approved: opts.approved,
+          revokedAt: opts.approved ? null : undefined,
+        }),
+      });
+      await assertOk(res);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["certificates"] });
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["knowledge-pending"] });
+      toast({
+        title:
+          locale === "ar" ? "تم تحديث اعتماد الشهادة" : "Certificate approval updated",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذر تحديث الاعتماد" : "Could not update approval"
+        ),
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleGapAction = (key: QualificationDocKey) => {
     const action = QUALIFICATION_GAP_ACTIONS[key];
@@ -452,7 +487,7 @@ function LegalPanel({
             <ul className="space-y-2">
               {certificates.map((c) => (
                 <li key={c.id} className="flex items-center justify-between text-sm gap-2">
-                  <span>
+                  <span className="min-w-0 flex-1">
                     <Badge variant="outline" className="me-2">{c.certType}</Badge>
                     {c.name}
                     {c.expiresAt && (
@@ -460,15 +495,46 @@ function LegalPanel({
                         {new Date(c.expiresAt).toLocaleDateString()}
                       </span>
                     )}
+                    {c.approved === false || c.revokedAt ? (
+                      <Badge variant="destructive" className="ms-2 text-[10px]">
+                        {locale === "ar" ? "غير معتمد" : "Unapproved"}
+                      </Badge>
+                    ) : (
+                      <Badge className="ms-2 text-[10px] bg-emerald-600">
+                        {locale === "ar" ? "معتمد" : "Approved"}
+                      </Badge>
+                    )}
                   </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => delCert.mutate(c.id)}
-                    disabled={delCert.isPending}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      disabled={setCertApproved.isPending}
+                      onClick={() =>
+                        setCertApproved.mutate({
+                          id: c.id,
+                          approved: c.approved === false,
+                        })
+                      }
+                    >
+                      {c.approved === false
+                        ? locale === "ar"
+                          ? "اعتماد"
+                          : "Approve"
+                        : locale === "ar"
+                          ? "إلغاء الاعتماد"
+                          : "Unapprove"}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => delCert.mutate(c.id)}
+                      disabled={delCert.isPending}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -753,7 +819,37 @@ function SimpleCrudPanel({
     id: string;
     title?: string;
     name?: string;
+    approved?: boolean;
   }>;
+
+  const setApproved = useMutation({
+    mutationFn: async (opts: { id: string; approved: boolean }) => {
+      const res = await fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: opts.id, approved: opts.approved }),
+      });
+      await assertOk(res);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [queryKey] });
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["knowledge-pending"] });
+      toast({
+        title:
+          locale === "ar" ? "تم تحديث الاعتماد" : "Approval updated",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذر تحديث الاعتماد" : "Could not update approval"
+        ),
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <Panel icon={Library} title={locale === "ar" ? titleAr : titleEn}>
@@ -808,16 +904,49 @@ function SimpleCrudPanel({
         ) : (
           <ul className="space-y-2">
             {items.map((item) => (
-              <li key={item.id} className="flex justify-between text-sm">
-                <span>{item.title ?? item.name}</span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => del.mutate(item.id)}
-                  disabled={del.isPending}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
+              <li key={item.id} className="flex justify-between text-sm gap-2 items-center">
+                <span className="min-w-0 flex-1 truncate">
+                  {item.title ?? item.name}
+                  {item.approved === false ? (
+                    <Badge variant="destructive" className="ms-2 text-[10px]">
+                      {locale === "ar" ? "غير معتمد" : "Unapproved"}
+                    </Badge>
+                  ) : (
+                    <Badge className="ms-2 text-[10px] bg-emerald-600">
+                      {locale === "ar" ? "معتمد" : "Approved"}
+                    </Badge>
+                  )}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[11px]"
+                    disabled={setApproved.isPending}
+                    onClick={() =>
+                      setApproved.mutate({
+                        id: item.id,
+                        approved: item.approved === false,
+                      })
+                    }
+                  >
+                    {item.approved === false
+                      ? locale === "ar"
+                        ? "اعتماد"
+                        : "Approve"
+                      : locale === "ar"
+                        ? "إلغاء"
+                        : "Unapprove"}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => del.mutate(item.id)}
+                    disabled={del.isPending}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

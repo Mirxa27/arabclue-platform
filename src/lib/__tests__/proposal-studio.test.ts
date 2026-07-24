@@ -6,6 +6,7 @@ import {
   getProposalSkill,
   isAgentRunStale,
   parseAgentRunConfig,
+  pickIngestionEntities,
   skillInstruction,
   unifiedDiff,
   PROPOSAL_SKILLS,
@@ -190,6 +191,85 @@ describe("agent run config and stale detection", () => {
         overallProgress: 40,
         now,
       })
+    ).toBe(false);
+  });
+});
+
+describe("pickIngestionEntities — validate/download parity", () => {
+  test("prefers document with NORA principles over earlier plain entities", () => {
+    const withNora = {
+      scope: "s",
+      evaluation: { technical: 70, financial: 30 },
+      sla: { perWeek: 1, maxPercent: 10 },
+      milestones: [],
+      evidence: [],
+      noraPrinciplesFromTender: [
+        { id: "TP99", name: "Test", snippet: "from tender" },
+      ],
+    };
+    const plain = {
+      scope: "plain",
+      evaluation: { technical: 70, financial: 30 },
+      sla: { perWeek: 1, maxPercent: 10 },
+      milestones: [],
+      evidence: [],
+    };
+    const picked = pickIngestionEntities([
+      { extractedEntities: JSON.stringify(plain) },
+      { extractedEntities: JSON.stringify(withNora) },
+    ]);
+    expect(picked?.noraPrinciplesFromTender?.[0]?.id).toBe("TP99");
+  });
+
+  test("ignores bad JSON and returns null when empty", () => {
+    expect(pickIngestionEntities([])).toBeNull();
+    expect(
+      pickIngestionEntities([{ extractedEntities: "{not-json" }])
+    ).toBeNull();
+  });
+
+  test("same entities yield same validation.blocking for validate and download paths", () => {
+    const entities = pickIngestionEntities([
+      {
+        extractedEntities: JSON.stringify({
+          scope: "s",
+          evaluation: { technical: 70, financial: 30 },
+          sla: { perWeek: 1, maxPercent: 10 },
+          milestones: [],
+          evidence: [],
+          noraPrinciplesFromTender: [
+            { id: "TP99", name: "Test", snippet: "tender" },
+          ],
+        }),
+      },
+    ]);
+    const contentMd =
+      "# Proposal\nNot legal advice.\nReferences NORA principle TP99.";
+    const validateReport = validateProposalOutput({
+      contentMd,
+      financial: null,
+      entities,
+      complianceRows: [],
+    });
+    const downloadReport = validateProposalOutput({
+      contentMd,
+      financial: null,
+      entities,
+      complianceRows: [],
+    });
+    expect(validateReport.blocking).toBe(downloadReport.blocking);
+    expect(
+      validateReport.issues
+        .filter((i) => i.code === "invented_nora_id")
+        .map((i) => i.message)
+    ).toEqual(
+      downloadReport.issues
+        .filter((i) => i.code === "invented_nora_id")
+        .map((i) => i.message)
+    );
+    // TP99 allowed via tender extract — not invented
+    expect(
+      validateReport.issues.some((i) => i.code === "invented_nora_id")
     ).toBe(false);
   });
 });

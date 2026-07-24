@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "1" || process.env.STANDALONE === "true"
     ? { output: "standalone" as const }
     : {}),
+  // Keep Chromium/Playwright out of the webpack/turbopack bundle — load at runtime.
+  serverExternalPackages: [
+    "playwright",
+    "playwright-core",
+    "@sparticuz/chromium",
+  ],
   turbopack: {
     root: path.resolve(__dirname),
   },
@@ -17,6 +23,18 @@ const nextConfig: NextConfig = {
     "/api/platform-agent/extension": ["./extensions/arabclue-agent/**/*"],
     "/api/platform-agent/extension/download": [
       "./extensions/arabclue-agent/**/*",
+    ],
+    "/api/proposals/[id]/download": [
+      "./node_modules/@fontsource/noto-sans/files/*.woff2",
+      "./node_modules/@fontsource/noto-sans-arabic/files/*.woff2",
+      "./node_modules/@ibm/plex-sans/fonts/complete/woff2/*.woff2",
+      "./node_modules/@ibm/plex-sans-arabic/fonts/complete/woff2/*.woff2",
+    ],
+    "/api/business-profile/export": [
+      "./node_modules/@fontsource/noto-sans/files/*.woff2",
+      "./node_modules/@fontsource/noto-sans-arabic/files/*.woff2",
+      "./node_modules/@ibm/plex-sans/fonts/complete/woff2/*.woff2",
+      "./node_modules/@ibm/plex-sans-arabic/fonts/complete/woff2/*.woff2",
     ],
   },
   async headers() {

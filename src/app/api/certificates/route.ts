@@ -33,6 +33,8 @@ export async function POST(req: NextRequest) {
         filePath: d.filePath ?? null,
         alertDays: d.alertDays ?? 30,
         notes: d.notes ?? null,
+        approved: d.approved ?? true,
+        revokedAt: d.revokedAt ? new Date(d.revokedAt) : null,
       },
     });
     await computeOnboardingSteps(workspace.id);
@@ -67,6 +69,10 @@ export async function PATCH(req: NextRequest) {
           : {}),
         ...(d.alertDays !== undefined ? { alertDays: d.alertDays } : {}),
         ...(d.notes !== undefined ? { notes: d.notes } : {}),
+        ...(d.approved !== undefined ? { approved: d.approved } : {}),
+        ...(d.revokedAt !== undefined
+          ? { revokedAt: d.revokedAt ? new Date(d.revokedAt) : null }
+          : {}),
       },
     });
     return jsonOk({ item });

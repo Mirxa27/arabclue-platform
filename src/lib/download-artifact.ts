@@ -19,6 +19,13 @@ export type ArtifactDownloadResult =
   | { ok: true; blob: Blob; filename: string; contentType: string }
   | { ok: false; status: number; error: string; code?: string };
 
+/** Minimal artifact shape for format resolution (UI + tests). */
+export type ArtifactFormatInput = {
+  type: string;
+  filename: string;
+  downloadPath?: string | null;
+};
+
 function filenameFromDisposition(header: string | null, fallback: string) {
   if (!header) return fallback;
   const utf = /filename\*=UTF-8''([^;]+)/i.exec(header);
@@ -33,6 +40,48 @@ function filenameFromDisposition(header: string | null, fallback: string) {
   return plain?.[1]?.trim() || fallback;
 }
 
+function formatFromDownloadPath(
+  downloadPath: string | null | undefined
+): ArtifactDownloadFormat | null {
+  if (!downloadPath?.includes("format=")) return null;
+  const fmt = downloadPath.split("format=")[1]?.split("&")[0];
+  const parsed = downloadFormatSchema.safeParse(fmt);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Map a proposal artifact metadata row to a download format.
+ * Prefer explicit `downloadPath?format=` over type heuristics so PPTX
+ * artifacts are not misrouted to HTML slides.
+ */
+export function resolveArtifactDownloadFormat(
+  a: ArtifactFormatInput
+): ArtifactDownloadFormat {
+  const fromPath = formatFromDownloadPath(a.downloadPath);
+  if (fromPath) return fromPath;
+
+  if (a.type === "ZIP") return "zip";
+  if (a.type === "PDF") return "pdf";
+  if (a.type === "PPTX") return "pptx";
+  if (a.filename.includes("Compliance")) return "xlsx-matrix";
+  if (a.filename.includes("BoQ")) return "xlsx-boq";
+  if (a.type === "HTML" || a.filename.includes("Slides")) return "slides";
+  return "zip";
+}
+
+export function buildProposalDownloadUrl(opts: {
+  proposalId: string;
+  format: ArtifactDownloadFormat;
+  locale?: "ar" | "en";
+}): string {
+  const format = downloadFormatSchema.parse(opts.format);
+  const params = new URLSearchParams({ format });
+  if (opts.locale === "ar" || opts.locale === "en") {
+    params.set("locale", opts.locale);
+  }
+  return `/api/proposals/${encodeURIComponent(opts.proposalId)}/download?${params}`;
+}
+
 /**
  * Authenticated download of /api/proposals/:id/download?format=…
  * Surfaces JSON validation/approval errors instead of saving them as files.
@@ -41,9 +90,14 @@ export async function downloadProposalArtifact(opts: {
   proposalId: string;
   format: ArtifactDownloadFormat;
   fallbackName?: string;
+  locale?: "ar" | "en";
 }): Promise<ArtifactDownloadResult> {
   const format = downloadFormatSchema.parse(opts.format);
-  const url = `/api/proposals/${encodeURIComponent(opts.proposalId)}/download?format=${format}`;
+  const url = buildProposalDownloadUrl({
+    proposalId: opts.proposalId,
+    format,
+    locale: opts.locale,
+  });
 
   try {
     const res = await fetch(url, {

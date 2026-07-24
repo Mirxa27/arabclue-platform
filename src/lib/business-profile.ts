@@ -16,6 +16,13 @@ import type {
 import { db } from "./db";
 import { computeOnboardingSteps } from "./onboarding";
 import { escapeHtml } from "./markdown";
+import {
+  assertCapabilityStatementExportable,
+  buildCapabilityStatement,
+  type CapabilityStatementBuildResult,
+  type CapabilityStatementExportPolicy,
+} from "./capability-statement";
+import { renderBilingualHTML } from "./bilingual-layout";
 
 export type BusinessProfileSnapshot = {
   workspace: {
@@ -81,6 +88,69 @@ export type BusinessProfileSnapshot = {
   };
   generatedAt: string;
 };
+
+export const BUSINESS_PROFILE_BILINGUAL_EXPORT_QUALITIES = [
+  "strict",
+  "draft",
+] as const;
+
+export type BusinessProfileBilingualExportQuality =
+  (typeof BUSINESS_PROFILE_BILINGUAL_EXPORT_QUALITIES)[number];
+
+/**
+ * Drafts retain every diagnostic placeholder but do not cross the strict final
+ * export gate. The route must require an explicit `quality=draft` opt-in.
+ */
+export const BILINGUAL_BUSINESS_PROFILE_DRAFT_POLICY: CapabilityStatementExportPolicy =
+  Object.freeze({
+    missingTranslation: "allow",
+    missingSource: "allow",
+    unsafeText: "allow",
+    unsafeAsset: "allow",
+    invalidValue: "allow",
+    profileReadiness: "allow",
+  });
+
+/** Compile a profile without reading or mutating persistence state. */
+export function compileBilingualBusinessProfile(
+  profile: BusinessProfileSnapshot,
+  quality: BusinessProfileBilingualExportQuality = "strict"
+): CapabilityStatementBuildResult {
+  return buildCapabilityStatement(
+    profile,
+    quality === "draft"
+      ? { exportPolicy: BILINGUAL_BUSINESS_PROFILE_DRAFT_POLICY }
+      : undefined
+  );
+}
+
+/** Render a previously compiled and exportable bilingual HTML artifact. */
+export function renderBilingualBusinessProfileHTML(
+  compilation: CapabilityStatementBuildResult
+): string {
+  assertCapabilityStatementExportable(compilation);
+  return renderBilingualHTML(compilation.document, {
+    target: "screen",
+    includeDocumentShell: true,
+  });
+}
+
+/**
+ * Generate the final bilingual PDF through the font-embedded renderer.
+ *
+ * `generateBilingualPdf` waits for both embedded fonts and the explicit
+ * bilingual layout readiness marker before Chromium captures the page.
+ */
+export async function generateBilingualBusinessProfilePDF(
+  compilation: CapabilityStatementBuildResult
+): Promise<Buffer> {
+  assertCapabilityStatementExportable(compilation);
+  const { generateBilingualPdf } = await import("./bilingual-pdf");
+  const artifact = await generateBilingualPdf(compilation.document, {
+    fontPair: "ibm-plex-sans",
+  });
+  return artifact.pdf;
+}
 
 type WorkspacePack = Workspace & {
   brandProfiles: BrandProfile[];
@@ -236,7 +306,7 @@ export function buildBusinessProfileHTML(
           sectors: "القطاعات المستهدفة",
           methods: "المنهجيات",
           footer:
-            "ملف عيّنة تشغيلي من أراب كلاو · ليس استشارة قانونية · إقامة البيانات في المملكة عند التهيئة",
+            "ملف عيّنة تشغيلي من أراب كلاو · ليس استشارة قانونية",
           empty: "أضف بيانات من إعداد الحساب لإثراء هذا القسم",
         }
       : {
@@ -255,7 +325,7 @@ export function buildBusinessProfileHTML(
           sectors: "Target sectors",
           methods: "Methodologies",
           footer:
-            "Operational profile from ArabClue · Not legal advice · KSA data residency when configured",
+            "Operational profile from ArabClue · Not legal advice",
           empty: "Add data in Account Setup to enrich this section",
         };
 

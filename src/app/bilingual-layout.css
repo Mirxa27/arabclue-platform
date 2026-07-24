@@ -1,0 +1,278 @@
+/*
+ * Shared styles for the React bilingual document components.
+ *
+ * Pairing happens by semantic row: English is physically left, Arabic is
+ * physically right, and the browser owns height synchronization. The rules use
+ * logical properties so direction changes do not invert spacing or borders.
+ */
+
+:where(.bilingual-header, .bilingual-section, .bilingual-table-wrap, .bilingual-list, .bilingual-footer) {
+  --bilingual-primary: var(--color-primary-600, #0d9488);
+  --bilingual-ink: var(--color-secondary-900, #0f172a);
+  --bilingual-muted: var(--color-secondary-600, #475569);
+  --bilingual-line: var(--color-secondary-200, #e2e8f0);
+  --bilingual-surface: var(--color-neutral-50, #fafafa);
+  --bilingual-gap: var(--space-6, 1.5rem);
+  color: var(--bilingual-ink);
+}
+
+.bilingual-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--bilingual-gap);
+  padding-block-end: var(--space-5, 1.25rem);
+  border-block-end: 2px solid var(--bilingual-primary);
+}
+
+.bilingual-header__pair {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(1px, 10rem) minmax(0, 1fr);
+  gap: var(--bilingual-gap);
+  inline-size: 100%;
+}
+
+.bilingual-header__title,
+.bilingual-header__subtitle,
+.bilingual-header__eyebrow {
+  margin-block: 0;
+}
+
+.bilingual-header__title {
+  color: var(--bilingual-primary);
+  font-size: var(--text-2xl, 1.5rem);
+  line-height: 1.35;
+}
+
+.bilingual-header__subtitle,
+.bilingual-header__eyebrow {
+  color: var(--bilingual-muted);
+}
+
+.bilingual-header__eyebrow {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+}
+
+.bilingual-header__logo img {
+  display: block;
+  max-inline-size: 10rem;
+  block-size: auto;
+}
+
+.bilingual-header__logo,
+.bilingual-header__divider {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  place-self: center;
+  z-index: 1;
+}
+
+.bilingual-header__divider {
+  inline-size: 1px;
+  block-size: 3rem;
+  background: var(--bilingual-line);
+}
+
+.bilingual-section {
+  margin-block-end: var(--space-8, 2rem);
+}
+
+.bilingual-section__heading,
+.bilingual-section__pair,
+.bilingual-continuation {
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--bilingual-en-ratio, 1fr))
+    minmax(0, var(--bilingual-ar-ratio, 1fr));
+  gap: var(--bilingual-gap);
+  direction: ltr;
+}
+
+.bilingual-section__title-en,
+.bilingual-section__title-ar {
+  min-inline-size: 0;
+  margin-block: 0;
+}
+
+.bilingual-cell {
+  min-inline-size: 0;
+  padding-block: var(--space-3, 0.75rem);
+  overflow-wrap: break-word;
+}
+
+.bilingual-cell--en {
+  padding-inline-end: var(--space-4, 1rem);
+  border-inline-end: 1px solid var(--bilingual-line);
+}
+
+.bilingual-cell--ar {
+  padding-inline-start: var(--space-4, 1rem);
+}
+
+.bilingual-section--serial-ar-first .bilingual-section__pair,
+.bilingual-section--serial-en-first .bilingual-section__pair {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.bilingual-section--serial-ar-first .bilingual-cell--ar {
+  order: 1;
+}
+
+.bilingual-section--serial-ar-first .bilingual-cell--en {
+  order: 2;
+}
+
+.bilingual-continuation {
+  margin-block: var(--space-2, 0.5rem);
+  color: var(--bilingual-muted);
+  font-size: var(--text-xs, 0.75rem);
+}
+
+.bilingual-keep-with-next {
+  break-after: avoid;
+}
+
+.bilingual-table-wrap {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.bilingual-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.bilingual-table caption {
+  margin-block-end: var(--space-2, 0.5rem);
+  text-align: start;
+  font-weight: 600;
+}
+
+.bilingual-table thead {
+  display: table-header-group;
+  background: var(--bilingual-surface);
+}
+
+.bilingual-table th,
+.bilingual-table td {
+  padding: var(--space-2, 0.5rem);
+  border: 1px solid var(--bilingual-line);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.bilingual-table__language-divider {
+  border-inline-start-width: 2px !important;
+  border-inline-start-color: var(--bilingual-primary) !important;
+}
+
+.bilingual-table__numeric {
+  text-align: end;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.bilingual-table__empty {
+  color: var(--bilingual-muted);
+  text-align: center;
+}
+
+.bilingual-list__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--bilingual-gap);
+  margin-block-end: var(--space-2, 0.5rem);
+}
+
+.bilingual-list__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2, 0.5rem);
+  min-inline-size: 0;
+}
+
+.bilingual-list__marker {
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+}
+
+.bilingual-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4, 1rem);
+  padding-block-start: var(--space-3, 0.75rem);
+  border-block-start: 1px solid var(--bilingual-line);
+  color: var(--bilingual-muted);
+  font-size: var(--text-xs, 0.75rem);
+}
+
+.bilingual-footer__side {
+  display: grid;
+}
+
+.bilingual-footer__pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  white-space: nowrap;
+}
+
+.bilingual-page-number::before {
+  content: counter(page);
+}
+
+.bilingual-total-pages::before {
+  content: counter(pages);
+}
+
+@media (max-width: 768px) {
+  .bilingual-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bilingual-header__logo,
+  .bilingual-header__divider {
+    grid-column: 1;
+    grid-row: auto;
+    order: -1;
+    justify-self: center;
+  }
+
+  .bilingual-header__pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bilingual-header__pair > :nth-child(2) {
+    display: none;
+  }
+
+  .bilingual-section__heading,
+  .bilingual-section__pair,
+  .bilingual-continuation,
+  .bilingual-list__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bilingual-cell--ar {
+    order: 1;
+  }
+
+  .bilingual-cell--en {
+    order: 2;
+    border-inline-end: 0;
+    border-block-start: 1px solid var(--bilingual-line);
+  }
+}
+
+@media print {
+  .bilingual-table-wrap {
+    overflow: visible;
+  }
+
+  .bilingual-keep-with-next {
+    break-after: avoid-page;
+  }
+}

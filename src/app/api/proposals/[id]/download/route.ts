@@ -21,6 +21,7 @@ import {
 import {
   evaluateExportPolicy,
   financialForValidationGate,
+  loadProjectIngestionEntities,
 } from "@/lib/proposal-studio";
 import { getContractValidationReport } from "@/lib/contract-review";
 import {
@@ -65,8 +66,8 @@ export async function GET(
 
   const isContract = proposal.type === "CONTRACT";
   if (isContract) {
-    // Contracts only support bilingual legal HTML/PDF (and manifest)
-    if (!["html", "pdf", "manifest"].includes(format)) {
+    // Contracts support bilingual legal HTML/PDF, ZIP package, and manifest
+    if (!["html", "pdf", "manifest", "zip"].includes(format)) {
       format = "pdf";
     }
   }
@@ -111,30 +112,7 @@ export async function GET(
   } else {
     const gateFinancial: FinancialExtract | null =
       financialForValidationGate(formsRaw);
-    // Prefer ingestion entities from project documents so NORA gate is tender-aware.
-    let entities: import("@/lib/types").IngestionEntities | null = null;
-    const docs = await db.uploadedDocument.findMany({
-      where: {
-        projectId: proposal.projectId,
-        extractedEntities: { not: null },
-      },
-      select: { extractedEntities: true },
-      orderBy: { updatedAt: "desc" },
-      take: 8,
-    });
-    for (const doc of docs) {
-      if (!doc.extractedEntities) continue;
-      try {
-        const parsed = JSON.parse(doc.extractedEntities) as import("@/lib/types").IngestionEntities;
-        if (parsed && (parsed.noraPrinciplesFromTender?.length || parsed.requirements?.length)) {
-          entities = parsed;
-          break;
-        }
-        if (!entities) entities = parsed;
-      } catch {
-        /* ignore bad JSON */
-      }
-    }
+    const entities = await loadProjectIngestionEntities(proposal.projectId);
     gateReport = validateProposalOutput({
       contentMd: proposal.contentMd,
       financial: gateFinancial,
@@ -396,25 +374,97 @@ export async function GET(
       }
       case "zip":
       default:
-        buffer = await generateBidPackageZIP(proposal, proposal.project, brand, {
-          checks,
-          boqItems,
-          slidesMetrics,
-          validation: gateReport,
-          company: companyLetterhead,
-          locale: exportLocale,
-        });
-        contentType = "application/zip";
-        {
-          const companyName = letterheadCompanyName(
-            exportLocale,
-            brand,
-            companyLetterhead
+        if (isContract) {
+          const { generateContractPackageZIP } = await import(
+            "@/lib/contract-export"
           );
-          const companySlug =
-            sanitizeFilename(companyName).replace(/\s+/g, "_").replace(/_+/g, "_") ||
-            "Bid_Package";
-          filename = `${companySlug}_Bid_Package.zip`;
+          const { extractObligations } = await import(
+            "@/lib/contract-obligations"
+          );
+          const { parseContractArticles } = await import(
+            "@/lib/contract-format"
+          );
+          const articles = parseContractArticles(proposal.contentMd ?? "");
+          let milestones: { title?: string; name?: string; weeks?: number }[] =
+            [];
+          try {
+            const arts = proposal.artifactsJson
+              ? JSON.parse(proposal.artifactsJson)
+              : null;
+            if (arts && Array.isArray(arts.milestones)) {
+              milestones = arts.milestones;
+            }
+          } catch {
+            /* ignore */
+          }
+          const derived = extractObligations(articles, milestones);
+          const states = await db.contractObligationState.findMany({
+            where: { proposalId: proposal.id },
+          });
+          const statusById = new Map(
+            states.map((s) => [s.obligationId, s.status as "open" | "done"])
+          );
+          const obligations = derived.map((row) => ({
+            ...row,
+            status: statusById.get(row.id) ?? row.status,
+          }));
+          buffer = await generateContractPackageZIP({
+            title: proposal.title,
+            titleAr: proposal.titleAr,
+            contentMd: proposal.contentMd ?? "",
+            projectTitle: proposal.project.title,
+            etimadRef: proposal.project.etimadRef,
+            brand,
+            company: companyLetterhead,
+            proposalId: proposal.id,
+            proposalVersion: proposal.version,
+            proposalStatus: proposal.status,
+            proposalLocale: proposal.locale,
+            projectId: proposal.project.id,
+            projectUpdatedAt: proposal.project.updatedAt,
+            validation: gateReport,
+            obligations,
+          });
+          contentType = "application/zip";
+          {
+            const companyName = letterheadCompanyName(
+              exportLocale,
+              brand,
+              companyLetterhead
+            );
+            const companySlug =
+              sanitizeFilename(companyName)
+                .replace(/\s+/g, "_")
+                .replace(/_+/g, "_") || "Contract_Package";
+            filename = `${companySlug}_Contract_Package.zip`;
+          }
+        } else {
+          buffer = await generateBidPackageZIP(
+            proposal,
+            proposal.project,
+            brand,
+            {
+              checks,
+              boqItems,
+              slidesMetrics,
+              validation: gateReport,
+              company: companyLetterhead,
+              locale: exportLocale,
+            }
+          );
+          contentType = "application/zip";
+          {
+            const companyName = letterheadCompanyName(
+              exportLocale,
+              brand,
+              companyLetterhead
+            );
+            const companySlug =
+              sanitizeFilename(companyName)
+                .replace(/\s+/g, "_")
+                .replace(/_+/g, "_") || "Bid_Package";
+            filename = `${companySlug}_Bid_Package.zip`;
+          }
         }
         break;
     }

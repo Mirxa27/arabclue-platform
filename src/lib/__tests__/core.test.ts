@@ -32,7 +32,11 @@ describe("parseTenderText", () => {
     expect(entities.sla.maxPercent).toBe(40);
     expect(entities.sla.perWeek).toBe(5);
     expect(entities.sla.statutoryCandidateMaxPercent).toBe(20);
-    expect(entities.milestones.length).toBeGreaterThanOrEqual(2);
+    expect(entities.milestones).toEqual([
+      { name: "Discovery", weeks: 4 },
+      { name: "Build", weeks: 16 },
+      { name: "Go-Live", weeks: 3 },
+    ]);
     expect(entities.scope.toLowerCase()).toContain("digital platform");
   });
 
@@ -87,6 +91,10 @@ describe("financial QLR", () => {
     expect(result.quickLiquidityRatio).toBeCloseTo(1.37, 1);
     expect(result.qlrPasses).toBeNull();
     expect(result.boqItems.length).toBeGreaterThanOrEqual(2);
+    expect(result.boqItems.map((line) => line.item)).toEqual([
+      "Design",
+      "Build",
+    ]);
     for (const line of result.boqItems) {
       expect(line.unitPrice).toBeNull();
       expect(line.total).toBeNull();

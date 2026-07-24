@@ -1,5 +1,6 @@
 /**
- * Production uses Neon Postgres — schema is applied via `prisma migrate deploy`.
+ * Production uses Neon Postgres; schema migrations run as an explicit,
+ * operator-approved release step before a compatible application deployment.
  * This helper only verifies connectivity (no SQLite /tmp bootstrap).
  */
 import { db } from "./db";

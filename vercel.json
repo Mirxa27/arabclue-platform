@@ -1,16 +1,26 @@
 {
   "framework": "nextjs",
-  "buildCommand": "bun scripts/pack-extension.mjs && prisma generate && PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 DATABASE_URL=\"${POSTGRES_URL_NON_POOLING:-${DATABASE_URL_UNPOOLED:-$DATABASE_URL}}\" prisma migrate deploy && next build",
+  "buildCommand": "bun run build",
   "installCommand": "bun install",
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self), geolocation=()" }
       ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/billing-reconcile",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/expiry-notifications",
+      "schedule": "0 6 * * *"
     }
   ]
 }

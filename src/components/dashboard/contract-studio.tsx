@@ -97,9 +97,6 @@ export function BilingualContractStudio({
   const [showResearch, setShowResearch] = useState(true);
   const [draftMd, setDraftMd] = useState(contentMd);
   const [diffLines, setDiffLines] = useState<string[]>([]);
-  const [doneObligationIds, setDoneObligationIds] = useState<Set<string>>(
-    () => new Set()
-  );
 
   const { data: brandData } = useQuery<BrandResponse>({
     queryKey: ["brand"],
@@ -137,9 +134,6 @@ export function BilingualContractStudio({
       brandData?.company
     );
   }, [ar, brandData?.company, brandProfile]);
-  const obligationsStorageKey = proposalId
-    ? `arabclue-obligations:${proposalId}`
-    : null;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -220,49 +214,118 @@ export function BilingualContractStudio({
     return parseContractArticles(draftMd);
   }, [articlesProp, draftMd, isDirty]);
 
-  useEffect(() => {
-    if (!obligationsStorageKey || typeof window === "undefined") {
-      setDoneObligationIds(new Set());
-      return;
-    }
+  const obligationsQueryKey = ["proposal-obligations", proposalId] as const;
 
-    try {
-      const parsed = JSON.parse(
-        window.localStorage.getItem(obligationsStorageKey) ?? "[]"
-      );
-      setDoneObligationIds(
-        new Set(Array.isArray(parsed) ? parsed.filter(Boolean) : [])
-      );
-    } catch {
-      setDoneObligationIds(new Set());
-    }
-  }, [obligationsStorageKey]);
-
-  const obligationRows = useMemo(
-    () =>
-      extractObligations(articles, milestones).map((row) => ({
-        ...row,
-        status: doneObligationIds.has(row.id) ? "done" : row.status,
-      })),
-    [articles, doneObligationIds, milestones]
-  );
-
-  const toggleObligation = (id: string) => {
-    setDoneObligationIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      if (obligationsStorageKey && typeof window !== "undefined") {
-        window.localStorage.setItem(
-          obligationsStorageKey,
-          JSON.stringify(Array.from(next))
+  const { data: obligationsData } = useQuery({
+    queryKey: obligationsQueryKey,
+    enabled: Boolean(proposalId),
+    queryFn: async () => {
+      const res = await fetch(`/api/proposals/${proposalId}/obligations`);
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(
+          (json as { error?: string }).error || "Failed to load obligations"
         );
       }
-      return next;
-    });
+      return (await res.json()) as {
+        items: Array<{
+          id: string;
+          text: string;
+          source: string;
+          status: "open" | "done";
+        }>;
+        doneIds: string[];
+      };
+    },
+  });
+
+  // One-time migrate localStorage → server, then clear local key
+  useEffect(() => {
+    if (!proposalId || typeof window === "undefined") return;
+    const key = `arabclue-obligations:${proposalId}`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+    let doneIds: string[] = [];
+    try {
+      const parsed = JSON.parse(raw);
+      doneIds = Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === "string")
+        : [];
+    } catch {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    if (doneIds.length === 0) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    void (async () => {
+      try {
+        const res = await fetch(`/api/proposals/${proposalId}/obligations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ doneIds }),
+        });
+        if (res.ok) {
+          window.localStorage.removeItem(key);
+          void qc.invalidateQueries({ queryKey: obligationsQueryKey });
+        }
+      } catch {
+        /* keep local until next visit */
+      }
+    })();
+  }, [proposalId, qc]);
+
+  const obligationRows = useMemo(() => {
+    if (obligationsData?.items?.length) return obligationsData.items;
+    return extractObligations(articles, milestones);
+  }, [articles, milestones, obligationsData]);
+
+  const toggleObligationMutation = useMutation({
+    mutationFn: async (opts: { id: string; next: "open" | "done" }) => {
+      if (!proposalId) throw new Error("Missing contract id");
+      const res = await fetch(`/api/proposals/${proposalId}/obligations`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          obligationId: opts.id,
+          status: opts.next,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Update failed");
+      return json;
+    },
+    onMutate: async (opts) => {
+      await qc.cancelQueries({ queryKey: obligationsQueryKey });
+      const previous = qc.getQueryData(obligationsQueryKey);
+      qc.setQueryData(obligationsQueryKey, (old: typeof obligationsData) => {
+        if (!old?.items) return old;
+        const items = old.items.map((row) =>
+          row.id === opts.id ? { ...row, status: opts.next } : row
+        );
+        return {
+          items,
+          doneIds: items.filter((i) => i.status === "done").map((i) => i.id),
+        };
+      });
+      return { previous };
+    },
+    onError: (err: Error, _vars, ctx) => {
+      if (ctx?.previous) {
+        qc.setQueryData(obligationsQueryKey, ctx.previous);
+      }
+      toast({ title: err.message, variant: "destructive" });
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: obligationsQueryKey });
+    },
+  });
+
+  const toggleObligation = (id: string) => {
+    const current = obligationRows.find((r) => r.id === id);
+    const next = current?.status === "done" ? "open" : "done";
+    toggleObligationMutation.mutate({ id, next });
   };
 
   return (

@@ -11,7 +11,7 @@ export async function GET() {
     const now = new Date();
     const in90 = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
-    const [certs, pendingReviews, onboarding] = await Promise.all([
+    const [certs, pendingReviews, onboarding, dismissals] = await Promise.all([
       db.certificate.findMany({
         where: {
           workspaceId: workspace.id,
@@ -29,8 +29,13 @@ export async function GET() {
         take: 20,
       }),
       computeOnboardingSteps(workspace.id),
+      db.notificationDismissal.findMany({
+        where: { userId },
+        select: { notificationId: true },
+      }),
     ]);
 
+    const dismissed = new Set(dismissals.map((d) => d.notificationId));
     const items: ApiNotification[] = [];
 
     for (const c of certs) {
@@ -40,8 +45,10 @@ export async function GET() {
       );
       const severity =
         days < 0 ? "CRITICAL" : days <= (c.alertDays ?? 30) ? "WARN" : "INFO";
+      const id = `cert-${c.id}`;
+      if (dismissed.has(id)) continue;
       items.push({
-        id: `cert-${c.id}`,
+        id,
         type: "CERT_EXPIRY",
         severity,
         title:
@@ -60,8 +67,10 @@ export async function GET() {
     }
 
     for (const r of pendingReviews) {
+      const id = `review-${r.id}`;
+      if (dismissed.has(id)) continue;
       items.push({
-        id: `review-${r.id}`,
+        id,
         type: "PENDING_REVIEW",
         severity: "WARN",
         title: `Review pending: ${r.proposal.title}`,
@@ -74,17 +83,20 @@ export async function GET() {
     }
 
     if (!onboarding.readyForProposals) {
-      items.push({
-        id: onboardingNotificationId(onboarding.missing),
-        type: "ONBOARDING",
-        severity: "WARN",
-        title: "Complete account onboarding",
-        titleAr: "أكمل إعداد الحساب",
-        body: `Missing: ${onboarding.missing.join(", ")}`,
-        bodyAr: `ناقص: ${onboarding.missing.join(", ")}`,
-        href: "?view=account",
-        createdAt: now.toISOString(),
-      });
+      const id = onboardingNotificationId(onboarding.missing);
+      if (!dismissed.has(id)) {
+        items.push({
+          id,
+          type: "ONBOARDING",
+          severity: "WARN",
+          title: "Complete account onboarding",
+          titleAr: "أكمل إعداد الحساب",
+          body: `Missing: ${onboarding.missing.join(", ")}`,
+          bodyAr: `ناقص: ${onboarding.missing.join(", ")}`,
+          href: "?view=account",
+          createdAt: now.toISOString(),
+        });
+      }
     }
 
     return jsonOk({ items, count: items.length });

@@ -26,5 +26,5 @@ Arabclue is a single Next.js 16 (App Router, Turbopack) B2B SaaS app — there i
 - Locale defaults to **Arabic (RTL)**, persisted in `localStorage["arabclue-locale"]`. Toggle to English via the languages button in the top bar. Sidebar item order (top→bottom): Dashboard, Projects, Documents, Proposals, Compliance, Agents, History, Account, Reviews, Billing, Settings. In Arabic, "المطالبات"/"المراجعات" are Claims/Reviews — not Projects (المشاريع).
 
 ### Optional features
-- PDF/proposal export uses Playwright; browser binaries are **not** installed by default. Run `bunx playwright install chromium` only if you need to exercise export flows.
+- PDF/proposal export uses Playwright locally (`bun run setup:pdf` → `playwright install chromium`). On Vercel, PDF uses `playwright-core` + `@sparticuz/chromium` automatically (`VERCEL=1`); set `AWS_LAMBDA_JS_RUNTIME=nodejs22.x` in the Vercel project env. Optional smoke: `PLAYWRIGHT_CHROMIUM=1 bun run test:pdf`.
 - LLM/billing keys (OpenAI/Anthropic/MyFatoorah, etc.) are optional and unset; agent drafting falls back to deterministic local logic without them.

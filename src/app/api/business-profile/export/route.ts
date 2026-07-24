@@ -3,68 +3,287 @@ import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import {
   buildBusinessProfileHTML,
+  compileBilingualBusinessProfile,
+  generateBilingualBusinessProfilePDF,
   generateBusinessProfilePDF,
   loadBusinessProfile,
+  renderBilingualBusinessProfileHTML,
+  type BusinessProfileBilingualExportQuality,
+  type BusinessProfileSnapshot,
 } from "@/lib/business-profile";
+import type { CapabilityStatementBuildResult } from "@/lib/capability-statement";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** GET ?format=pdf|html&locale=ar|en — export capability statement. */
-export async function GET(req: NextRequest) {
-  const session = await requireSession();
+export const BILINGUAL_CAPABILITY_EXPORT_BLOCKED_CODE =
+  "BILINGUAL_CAPABILITY_EXPORT_BLOCKED" as const;
+export const BILINGUAL_CAPABILITY_EXPORT_BLOCKED_MESSAGE =
+  "Bilingual capability statement export is blocked by unresolved diagnostics.";
+
+export type BusinessProfileExportFormat = "html" | "pdf";
+export type BusinessProfileExportLocale = "ar" | "en" | "bilingual";
+
+interface ExportSession {
+  readonly userId: string;
+}
+
+interface ExportWorkspace {
+  readonly id: string;
+  readonly slug: string | null;
+}
+
+export interface BusinessProfileDownloadAuditEvent {
+  readonly userId: string;
+  readonly workspaceId: string;
+  readonly format: BusinessProfileExportFormat;
+  readonly locale: BusinessProfileExportLocale;
+  readonly quality?: BusinessProfileBilingualExportQuality;
+}
+
+/**
+ * Narrow route dependency boundary. Tests supply pure in-memory functions, so
+ * no authentication, database, PDF runtime, or audit sink is touched.
+ */
+export interface BusinessProfileExportDependencies {
+  readonly getSession: () => Promise<ExportSession | null>;
+  readonly getWorkspace: (userId: string) => Promise<ExportWorkspace>;
+  readonly loadProfile: (
+    workspaceId: string
+  ) => Promise<BusinessProfileSnapshot>;
+  readonly buildLegacyHtml: (
+    profile: BusinessProfileSnapshot,
+    locale: "ar" | "en"
+  ) => string;
+  readonly buildLegacyPdf: (
+    profile: BusinessProfileSnapshot,
+    locale: "ar" | "en"
+  ) => Promise<Buffer>;
+  readonly compileBilingual: (
+    profile: BusinessProfileSnapshot,
+    quality: BusinessProfileBilingualExportQuality
+  ) => CapabilityStatementBuildResult;
+  readonly renderBilingualHtml: (
+    compilation: CapabilityStatementBuildResult
+  ) => string;
+  readonly buildBilingualPdf: (
+    compilation: CapabilityStatementBuildResult
+  ) => Promise<Buffer>;
+  readonly recordDownload: (
+    event: BusinessProfileDownloadAuditEvent
+  ) => Promise<void>;
+}
+
+const productionDependencies: BusinessProfileExportDependencies = {
+  getSession: async () => {
+    const session = await requireSession();
+    return session ? { userId: session.user.id } : null;
+  },
+  getWorkspace: async (userId) => {
+    const { workspace } = await getTenantContext(userId);
+    return { id: workspace.id, slug: workspace.slug };
+  },
+  loadProfile: loadBusinessProfile,
+  buildLegacyHtml: (profile, locale) =>
+    buildBusinessProfileHTML(profile, {
+      locale,
+      forPrint: false,
+    }),
+  buildLegacyPdf: generateBusinessProfilePDF,
+  compileBilingual: compileBilingualBusinessProfile,
+  renderBilingualHtml: renderBilingualBusinessProfileHTML,
+  buildBilingualPdf: generateBilingualBusinessProfilePDF,
+  recordDownload: async (event) => {
+    const details =
+      event.locale === "bilingual"
+        ? {
+            format: event.format,
+            locale: event.locale,
+            quality: event.quality ?? "strict",
+          }
+        : { format: event.format, locale: event.locale };
+    await audit({
+      userId: event.userId,
+      action: AUDIT_ACTIONS.ARTIFACT_DOWNLOAD,
+      resource: "BusinessProfile",
+      resourceId: event.workspaceId,
+      details,
+    });
+  },
+};
+
+export function resolveBusinessProfileExportFormat(
+  value: string | null
+): BusinessProfileExportFormat {
+  // Preserve the legacy behavior: every non-HTML value resolves to PDF.
+  return value === "html" ? "html" : "pdf";
+}
+
+export function resolveBusinessProfileExportLocale(
+  value: string | null
+): BusinessProfileExportLocale {
+  if (value === "bilingual") return "bilingual";
+  // Preserve the legacy behavior: every non-English value resolves to Arabic.
+  return value === "en" ? "en" : "ar";
+}
+
+export function resolveBusinessProfileExportQuality(
+  value: string | null
+): BusinessProfileBilingualExportQuality {
+  // Draft export requires explicit opt-in; unknown values remain strict.
+  return value === "draft" ? "draft" : "strict";
+}
+
+function htmlResponse(html: string, filename: string): NextResponse {
+  return new NextResponse(html, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Disposition": `inline; filename="${filename}"`,
+    },
+  });
+}
+
+function pdfResponse(pdf: Buffer, filename: string): NextResponse {
+  return new NextResponse(new Uint8Array(pdf), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+function blockedBilingualExportResponse(
+  compilation: CapabilityStatementBuildResult
+): NextResponse {
+  return NextResponse.json(
+    {
+      error: BILINGUAL_CAPABILITY_EXPORT_BLOCKED_MESSAGE,
+      code: BILINGUAL_CAPABILITY_EXPORT_BLOCKED_CODE,
+      status: "blocked",
+      diagnostics: compilation.blockingDiagnostics,
+    },
+    { status: 422 }
+  );
+}
+
+async function recordSuccessfulDownload(
+  dependencies: BusinessProfileExportDependencies,
+  event: BusinessProfileDownloadAuditEvent
+): Promise<void> {
+  await dependencies.recordDownload(event).catch(() => {
+    // Export success must not be converted to a failure by audit availability.
+  });
+}
+
+/**
+ * GET ?format=pdf|html&locale=ar|en|bilingual&quality=strict|draft
+ *
+ * `quality` only applies to bilingual output. Strict is the safe default and
+ * returns a stable 422 diagnostic response when source evidence is incomplete.
+ */
+export async function handleBusinessProfileExport(
+  req: NextRequest,
+  dependencies: BusinessProfileExportDependencies = productionDependencies
+): Promise<NextResponse> {
+  const session = await dependencies.getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { workspace } = await getTenantContext(session.user.id);
-  const format = req.nextUrl.searchParams.get("format") ?? "pdf";
-  const localeParam = req.nextUrl.searchParams.get("locale");
-  const locale = localeParam === "en" ? "en" : "ar";
 
-  const profile = await loadBusinessProfile(workspace.id);
+  const workspace = await dependencies.getWorkspace(session.userId);
+  const format = resolveBusinessProfileExportFormat(
+    req.nextUrl.searchParams.get("format")
+  );
+  const locale = resolveBusinessProfileExportLocale(
+    req.nextUrl.searchParams.get("locale")
+  );
+  const quality = resolveBusinessProfileExportQuality(
+    req.nextUrl.searchParams.get("quality")
+  );
+  const profile = await dependencies.loadProfile(workspace.id);
   const slug = workspace.slug || "company";
 
+  if (locale === "bilingual") {
+    const compilation = dependencies.compileBilingual(profile, quality);
+    if (!compilation.canExport) {
+      return blockedBilingualExportResponse(compilation);
+    }
+
+    if (format === "html") {
+      const html = dependencies.renderBilingualHtml(compilation);
+      await recordSuccessfulDownload(dependencies, {
+        userId: session.userId,
+        workspaceId: workspace.id,
+        format,
+        locale,
+        quality,
+      });
+      return htmlResponse(
+        html,
+        `${slug}-capability-statement-bilingual.html`
+      );
+    }
+
+    try {
+      const pdf = await dependencies.buildBilingualPdf(compilation);
+      await recordSuccessfulDownload(dependencies, {
+        userId: session.userId,
+        workspaceId: workspace.id,
+        format,
+        locale,
+        quality,
+      });
+      return pdfResponse(
+        pdf,
+        `${slug}-capability-statement-bilingual.pdf`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      return NextResponse.json(
+        {
+          error: `PDF generation failed: ${message}`,
+          code: "PDF_UNAVAILABLE",
+        },
+        { status: 503 }
+      );
+    }
+  }
+
   if (format === "html") {
-    const html = buildBusinessProfileHTML(profile, {
+    const html = dependencies.buildLegacyHtml(profile, locale);
+    await recordSuccessfulDownload(dependencies, {
+      userId: session.userId,
+      workspaceId: workspace.id,
+      format,
       locale,
-      forPrint: false,
     });
-    await audit({
-      userId: session.user.id,
-      action: AUDIT_ACTIONS.ARTIFACT_DOWNLOAD,
-      resource: "BusinessProfile",
-      resourceId: workspace.id,
-      details: { format: "html", locale },
-    }).catch(() => {});
-    return new NextResponse(html, {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Content-Disposition": `inline; filename="${slug}-business-profile.html"`,
-      },
-    });
+    return htmlResponse(html, `${slug}-business-profile.html`);
   }
 
   try {
-    const pdf = await generateBusinessProfilePDF(profile, locale);
-    await audit({
-      userId: session.user.id,
-      action: AUDIT_ACTIONS.ARTIFACT_DOWNLOAD,
-      resource: "BusinessProfile",
-      resourceId: workspace.id,
-      details: { format: "pdf", locale },
-    }).catch(() => {});
-    return new NextResponse(new Uint8Array(pdf), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${slug}-business-profile-${locale}.pdf"`,
-      },
+    const pdf = await dependencies.buildLegacyPdf(profile, locale);
+    await recordSuccessfulDownload(dependencies, {
+      userId: session.userId,
+      workspaceId: workspace.id,
+      format,
+      locale,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    return pdfResponse(pdf, `${slug}-business-profile-${locale}.pdf`);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: `PDF generation failed: ${message}`, code: "PDF_UNAVAILABLE" },
+      {
+        error: `PDF generation failed: ${message}`,
+        code: "PDF_UNAVAILABLE",
+      },
       { status: 503 }
     );
   }
+}
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  return handleBusinessProfileExport(req);
 }

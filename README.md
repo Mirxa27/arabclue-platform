@@ -122,19 +122,25 @@ See `.env.example` for full catalog.
 
 ## Database
 
-**Local SQLite**:
+**Development database**:
+
+The committed development configuration targets a shared Neon Postgres
+database whose schema is already migrated. Generate the client, but do not push
+or migrate the shared schema:
+
 ```bash
-bun run db:ensure
 bun run db:generate
-bun run db:push:dev
 ```
 
-Do **not** use `--accept-data-loss` in prod.
-
 **Prod Postgres**:
-1. Set `DATABASE_URL` to Postgres URL
-2. In `prisma/schema.prisma` change `provider = "sqlite"` → `postgresql`
-3. `bunx prisma migrate dev --name init` then `migrate deploy`
+
+1. Validate committed migrations against an isolated Neon branch.
+2. Create or verify a Production restore point.
+3. Run `bun run db:migrate:deploy` once in an approved release step.
+4. Build and deploy the application separately.
+
+Never use `prisma db push`, `prisma migrate reset`, or
+`--accept-data-loss` against Preview or Production.
 
 ---
 
@@ -177,10 +183,14 @@ src/
 
 ## Deploy
 
-- **Vercel**: Postgres `DATABASE_URL` (Neon), `BLOB_READ_WRITE_TOKEN`, secrets, then `prisma migrate deploy` in build. Domains: `arabclue.com`.
+- **Vercel**: Builds run `bun run build` and never mutate a database. Scope a
+  dedicated Neon branch to Preview and apply Production migrations through the
+  separately approved release step.
 - **Self-hosted**: `bun run build:standalone` then `bun .next/standalone/server.js` or Docker uses `standalone`.
 
 Ignore `db/*.db`, `.env`, `uploads/`, `.next/` in git (already in `.gitignore`).
+Before any release, follow
+[`docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md`](docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md).
 
 ---
 

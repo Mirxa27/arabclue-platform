@@ -66,20 +66,28 @@ export function isQualityScopeText(text?: string | null): boolean {
 export function isQualityMilestoneName(name?: string | null): boolean {
   if (!name?.trim()) return false;
   const t = name.trim();
-  if (t.length < 8 || t.length > 100) return false;
-  if (isMidSentenceFragment(t)) return false;
+  if (t.length > 100) return false;
   if (looksLikeQuestion(t)) return false;
   if (/\bpilot period\b/i.test(t)) return false;
   if (/\bsandboxed\b/i.test(t)) return false;
   // Reject pipe-delimited Q&A table scraps
   if ((t.match(/\|/g) ?? []).length >= 2) return false;
+  // Short, canonical delivery-phase titles are valid evidence when extracted
+  // from a labeled schedule. Keep this allowlist narrow so arbitrary scraps
+  // still fail the generic mid-sentence and minimum-length gates.
+  const canonicalShortTitle =
+    /^(?:design|build|uat|testing|pilot|launch|cutover|go-?live|mvp|poc|تصميم|بناء|تطوير|تنفيذ|اختبار|تشغيل|إطلاق|تسليم)$/iu.test(
+      t
+    );
+  if (t.length < 8 && !canonicalShortTitle) return false;
+  if (isMidSentenceFragment(t) && !canonicalShortTitle) return false;
   // Prefer names that look like deliverables / phases
   const deliverableCue =
     /milestone|phase|مرحلة|تسليم|mobilization|discovery|design|build|uat|go-?live|تطوير|تنفيذ|اختبار|تشغيل/i.test(
       t
     );
   const hasLetters = /[A-Za-z\u0600-\u06FF]{4,}/.test(t);
-  if (!hasLetters) return false;
+  if (!hasLetters && !canonicalShortTitle) return false;
   // Allow either deliverable cue OR clean short title without question marks
   if (!deliverableCue && /[,;|]/.test(t)) return false;
   return true;

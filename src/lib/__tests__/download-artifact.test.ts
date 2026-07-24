@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { downloadFormatSchema } from "../download-artifact";
+import {
+  buildProposalDownloadUrl,
+  downloadFormatSchema,
+  resolveArtifactDownloadFormat,
+} from "../download-artifact";
 
 describe("artifact download formats", () => {
   test("accepts production formats", () => {
@@ -20,5 +24,54 @@ describe("artifact download formats", () => {
   test("rejects unknown formats", () => {
     expect(() => downloadFormatSchema.parse("docx")).toThrow();
     expect(() => downloadFormatSchema.parse("")).toThrow();
+  });
+});
+
+describe("resolveArtifactDownloadFormat", () => {
+  test("prefers downloadPath format=pptx over PPTX type heuristic", () => {
+    expect(
+      resolveArtifactDownloadFormat({
+        type: "PPTX",
+        filename: "Slides.pptx",
+        downloadPath: "/api/proposals/x/download?format=pptx",
+      })
+    ).toBe("pptx");
+  });
+
+  test("maps PPTX type to pptx when path missing", () => {
+    expect(
+      resolveArtifactDownloadFormat({
+        type: "PPTX",
+        filename: "Presentation.pptx",
+      })
+    ).toBe("pptx");
+  });
+
+  test("maps HTML slides without mistaking PPTX", () => {
+    expect(
+      resolveArtifactDownloadFormat({
+        type: "HTML",
+        filename: "Slides.html",
+        downloadPath: "/api/proposals/x/download?format=slides",
+      })
+    ).toBe("slides");
+  });
+});
+
+describe("buildProposalDownloadUrl", () => {
+  test("includes locale query when provided", () => {
+    expect(
+      buildProposalDownloadUrl({
+        proposalId: "abc",
+        format: "pdf",
+        locale: "ar",
+      })
+    ).toBe("/api/proposals/abc/download?format=pdf&locale=ar");
+  });
+
+  test("omits locale when unset", () => {
+    expect(
+      buildProposalDownloadUrl({ proposalId: "abc", format: "zip" })
+    ).toBe("/api/proposals/abc/download?format=zip");
   });
 });

@@ -1,0 +1,45 @@
+name: Document quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: document-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phase-two:
+    name: Phase 2 deterministic gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run document quality gate
+        run: bun run quality:documents
+
+      - name: Upload document coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: document-coverage
+          path: coverage/documents/lcov.info
+          if-no-files-found: ignore
+          retention-days: 14

@@ -48,6 +48,12 @@ model User {
   copilotMessages CopilotMessage[]
   copilotAttachments CopilotAttachment[]
   copilotActions  CopilotAction[]
+  notificationDismissals NotificationDismissal[]
+  obligationUpdates ContractObligationState[]
+  createdTemplates ContractTemplate[] @relation("TemplateCreator")
+  approvedTemplates ContractTemplate[] @relation("TemplateApprover")
+  templateVersions ContractTemplateVersion[]
+  generatedContracts GeneratedContract[]
 }
 
 model UserSession {
@@ -95,6 +101,8 @@ model Workspace {
   copilotMissions    CopilotMission[]
   copilotAttachments CopilotAttachment[]
   copilotActions     CopilotAction[]
+  contractTemplates  ContractTemplate[]
+  generatedContracts GeneratedContract[]
 }
 
 model WorkspaceMember {
@@ -136,6 +144,7 @@ model TenderProject {
   agentRuns        AgentRun[]
   complianceChecks ComplianceCheck[]
   requirements     TenderRequirement[]
+  generatedContracts GeneratedContract[]
 
   @@index([workspaceId])
   @@index([status])
@@ -430,6 +439,7 @@ model GeneratedProposal {
   childProposals GeneratedProposal[] @relation("ProposalLineage")
   versions      ProposalVersion[]
   reviews       ProposalReview[]
+  obligationStates ContractObligationState[]
 
   @@index([workspaceId])
   @@index([projectId])
@@ -912,4 +922,147 @@ model ProposalReview {
   @@unique([proposalId, stepIndex])
   @@index([reviewerId])
   @@index([status])
+}
+
+// ─── Contract obligation done-state (server-persisted) ───────────────────────
+
+model ContractObligationState {
+  id            String   @id @default(cuid())
+  proposalId    String
+  obligationId  String
+  status        String   @default("open") // open | done
+  updatedById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  proposal      GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  updatedBy     User?             @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([proposalId, obligationId])
+  @@index([proposalId])
+}
+
+// ─── Notification dismissals (per-user, cross-device) ─────────────────────────
+
+model NotificationDismissal {
+  id              String   @id @default(cuid())
+  userId          String
+  notificationId  String
+  dismissedAt     DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, notificationId])
+  @@index([userId])
+}
+
+// ─── Expiry notification dedupe log (cron emails) ────────────────────────────
+
+model ExpiryNotificationLog {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  kind          String   // CERT_EXPIRY | SUBSCRIPTION_EXPIRY
+  resourceId    String
+  channel       String   @default("email") // email | in_app
+  sentAt        DateTime @default(now())
+  metaJson      String?
+
+  @@unique([workspaceId, kind, resourceId, channel])
+  @@index([workspaceId])
+  @@index([sentAt])
+}
+
+// ─── Contract Template System (Phase 3) ──────────────────────────────────────
+
+model ContractTemplate {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  type            String
+  nameEn          String
+  nameAr          String
+  descriptionEn   String?
+  descriptionAr   String?
+  version         String    @default("1.0")
+  status          String    @default("active")
+  sectionsJson    String    @db.Text
+  variablesJson   String    @db.Text
+  clausesJson     String    @db.Text
+  isSystem        Boolean   @default(false)
+  isApproved      Boolean   @default(false)
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace           Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator             User                        @relation("TemplateCreator", fields: [createdBy], references: [id])
+  approver            User?                       @relation("TemplateApprover", fields: [approvedBy], references: [id])
+  versions            ContractTemplateVersion[]
+  generatedContracts  GeneratedContract[]
+
+  @@index([workspaceId, type, status])
+  @@index([workspaceId, isSystem])
+}
+
+model ContractTemplateVersion {
+  id            String   @id @default(cuid())
+  templateId    String
+  version       String
+  sectionsJson  String   @db.Text
+  variablesJson String   @db.Text
+  clausesJson   String   @db.Text
+  changeNote    String?
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  template      ContractTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  creator       User             @relation(fields: [createdBy], references: [id])
+
+  @@index([templateId, version])
+}
+
+model StandardClause {
+  id                 String   @id @default(cuid())
+  category           String
+  nameEn             String
+  nameAr             String
+  contentEn          String   @db.Text
+  contentAr          String   @db.Text
+  mandatory          Boolean  @default(false)
+  customizable       Boolean  @default(true)
+  saudiLawReference  String?
+  order              Int      @default(0)
+  isSystem           Boolean  @default(true)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([category, isActive])
+}
+
+model GeneratedContract {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  templateId    String
+  projectId     String?
+  title         String
+  titleAr       String
+  dataJson      String   @db.Text
+  clausesJson   String   @db.Text
+  contentHtml   String   @db.Text
+  contentPdfPath String?
+  status        String   @default("draft")
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  template      ContractTemplate  @relation(fields: [templateId], references: [id])
+  project       TenderProject?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  creator       User              @relation(fields: [createdBy], references: [id])
+
+  @@index([workspaceId, status])
+  @@index([templateId])
+  @@index([projectId])
 }

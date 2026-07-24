@@ -117,3 +117,58 @@ export async function POST(req: NextRequest) {
   });
   return NextResponse.json({ project });
 }
+
+/** PUT /api/brand — update past project approval / revoke */
+export async function PUT(req: NextRequest) {
+  const session = await requireWriter();
+  if (!session) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const { workspace } = await getTenantContext(session.user.id);
+  const body = await req.json().catch(() => ({}));
+  const id = typeof body.id === "string" ? body.id : null;
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  const existing = await db.pastProject.findFirst({
+    where: { id, workspaceId: workspace.id },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+
+  const data: {
+    approved?: boolean;
+    revokedAt?: Date | null;
+    title?: string;
+    summary?: string;
+  } = {};
+  if (typeof body.approved === "boolean") data.approved = body.approved;
+  if (body.revokedAt === null) data.revokedAt = null;
+  else if (typeof body.revokedAt === "string") {
+    data.revokedAt = new Date(body.revokedAt);
+  }
+  if (typeof body.title === "string" && body.title.trim()) {
+    data.title = body.title.trim();
+  }
+  if (typeof body.summary === "string" && body.summary.trim()) {
+    data.summary = body.summary.trim();
+  }
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "No updatable fields" }, { status: 400 });
+  }
+
+  const project = await db.pastProject.update({
+    where: { id },
+    data,
+  });
+  await audit({
+    userId: session.user.id,
+    action: "PAST_PROJECT_UPDATE",
+    resource: "PastProject",
+    resourceId: project.id,
+    details: { approved: project.approved, revokedAt: project.revokedAt },
+  });
+  return NextResponse.json({ project });
+}

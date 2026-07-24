@@ -61,12 +61,54 @@ export async function GET() {
     checks.myfatoorah = { ok: false, detail: "config_error" };
   }
 
+  const onVercel = Boolean(process.env.VERCEL);
+  const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
+  checks.storage = {
+    ok: !onVercel || blobConfigured,
+    detail: blobConfigured
+      ? "vercel_blob"
+      : onVercel
+        ? "ephemeral_/tmp"
+        : "local_uploads",
+  };
+  if (onVercel && !blobConfigured) {
+    console.warn(
+      "[ready] BLOB_READ_WRITE_TOKEN unset on Vercel — uploads use /tmp and are lost on cold start"
+    );
+  }
+
+  checks.rateLimit = {
+    ok: true,
+    detail: process.env.REDIS_URL?.trim() ? "redis" : "memory",
+  };
+
+  checks.email = {
+    ok: true,
+    detail: process.env.RESEND_API_KEY?.trim()
+      ? "resend"
+      : "degraded_no_resend",
+  };
+
+  checks.cron = {
+    ok: true,
+    detail:
+      process.env.CRON_SECRET && process.env.CRON_SECRET.length >= 16
+        ? "configured"
+        : "CRON_SECRET_missing",
+  };
+
   const ready = Object.values(checks).every((c) => c.ok);
   return NextResponse.json(
     {
       ready,
       service: "arabclue",
       checks,
+      storage: blobConfigured
+        ? "vercel_blob"
+        : onVercel
+          ? "ephemeral"
+          : "local",
+      rateLimit: process.env.REDIS_URL?.trim() ? "redis" : "memory",
       time: new Date().toISOString(),
     },
     { status: ready ? 200 : 503 }

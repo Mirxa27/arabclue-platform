@@ -4,19 +4,77 @@ import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "arabclue-dismissed-notifications";
 
+/**
+ * Cross-device notification dismissals via server, with localStorage as
+ * optimistic cache + one-time migration of legacy local-only dismissals.
+ */
 export function useDismissedNotifications() {
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => new Set());
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setDismissedIds(readDismissedIds());
+    let cancelled = false;
+    (async () => {
+      const local = readDismissedIds();
+      if (!cancelled) setDismissedIds(local);
+
+      try {
+        const res = await fetch("/api/notifications/dismiss");
+        if (res.ok) {
+          const data = (await res.json()) as { ids?: string[] };
+          const serverIds = Array.isArray(data.ids) ? data.ids : [];
+          const merged = new Set([...local, ...serverIds]);
+
+          // Migrate legacy local-only ids to server
+          const toMigrate = [...local].filter((id) => !serverIds.includes(id));
+          if (toMigrate.length > 0) {
+            await fetch("/api/notifications/dismiss", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ids: toMigrate }),
+            });
+          }
+
+          if (!cancelled) {
+            setDismissedIds(merged);
+            writeDismissedIds(merged);
+          }
+        }
+      } catch {
+        /* keep local cache */
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const updateDismissedIds = useCallback((updater: (ids: Set<string>) => Set<string>) => {
-    setDismissedIds((current) => {
-      const next = updater(new Set(current));
-      writeDismissedIds(next);
-      return next;
-    });
+  const updateDismissedIds = useCallback(
+    (updater: (ids: Set<string>) => Set<string>) => {
+      setDismissedIds((current) => {
+        const next = updater(new Set(current));
+        writeDismissedIds(next);
+        return next;
+      });
+    },
+    []
+  );
+
+  const persistServer = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    try {
+      await fetch("/api/notifications/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+    } catch {
+      /* optimistic local still applied */
+    }
   }, []);
 
   const dismiss = useCallback(
@@ -25,8 +83,9 @@ export function useDismissedNotifications() {
         ids.add(id);
         return ids;
       });
+      void persistServer([id]);
     },
-    [updateDismissedIds]
+    [persistServer, updateDismissedIds]
   );
 
   const dismissAll = useCallback(
@@ -35,8 +94,9 @@ export function useDismissedNotifications() {
         for (const id of ids) current.add(id);
         return current;
       });
+      void persistServer(ids);
     },
-    [updateDismissedIds]
+    [persistServer, updateDismissedIds]
   );
 
   const isDismissed = useCallback(
@@ -44,7 +104,7 @@ export function useDismissedNotifications() {
     [dismissedIds]
   );
 
-  return { dismissedIds, dismiss, dismissAll, isDismissed };
+  return { dismissedIds, dismiss, dismissAll, isDismissed, hydrated };
 }
 
 function readDismissedIds() {

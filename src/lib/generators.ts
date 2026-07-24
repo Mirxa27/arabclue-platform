@@ -225,34 +225,12 @@ export async function generateProposalPDF(
   locale?: PdfLocale,
   company?: ProposalCompanyLetterhead | null
 ): Promise<Buffer> {
-  let brandForPdf = brand;
-  if (brand?.logoUrl?.startsWith("/")) {
-    try {
-      const { readStoredFile, fileExists } = await import("./storage");
-      const pathMatch = brand.logoUrl.match(/path=([^&]+)/);
-      if (pathMatch) {
-        const storagePath = decodeURIComponent(pathMatch[1]);
-        if (await fileExists(storagePath)) {
-          const bytes = await readStoredFile(storagePath);
-          const ext = storagePath.split(".").pop()?.toLowerCase() ?? "png";
-          const mime =
-            ext === "jpg" || ext === "jpeg"
-              ? "image/jpeg"
-              : ext === "webp"
-                ? "image/webp"
-                : ext === "svg"
-                  ? "image/svg+xml"
-                  : "image/png";
-          brandForPdf = {
-            ...brand,
-            logoUrl: `data:${mime};base64,${bytes.toString("base64")}`,
-          };
-        }
-      }
-    } catch {
-      /* keep relative logo — may not render in PDF */
-    }
+  const { inlineBrandLogoForPdf } = await import("./brand-logo");
+  const logo = await inlineBrandLogoForPdf(brand);
+  if (logo.warning) {
+    console.warn("[generateProposalPDF]", logo.warning);
   }
+  const brandForPdf = logo.brand;
 
   const html = buildProposalHTML(proposal, project, brandForPdf, {
     forPrint: true,

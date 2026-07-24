@@ -2,9 +2,14 @@ import {
   isPlaceholderCompanyName,
   resolveBidderDisplayName,
 } from "@/lib/text-quality";
+import { designTokens } from "./design-tokens";
 
 /**
  * Client letterhead helpers — apply workspace BrandProfile to HTML/PDF chrome.
+ *
+ * Refactored to use the universal design token system for consistency.
+ *
+ * @see src/lib/design-tokens.ts
  */
 
 export type LetterheadBrand = {
@@ -95,16 +100,16 @@ export function pdfHeaderTemplate(opts: {
   etimadRef?: string | null;
   primaryColor?: string | null;
 }): string {
-  const color = opts.primaryColor || "#1E3A8A";
+  const color = opts.primaryColor || designTokens.colors.primary[600];
   const ref = opts.etimadRef ? ` · ${escapeAttr(opts.etimadRef)}` : "";
-  return `<div style="font-size:8px;width:100%;padding:0 12mm;color:${escapeAttr(color)};font-family:Arial,sans-serif;display:flex;justify-content:space-between;"><span>${escapeAttr(opts.companyName)}${ref}</span><span style="color:#94a3b8">Letterhead</span></div>`;
+  return `<div style="font-size:8px;width:100%;padding:0 12mm;color:${escapeAttr(color)};font-family:Arial,sans-serif;display:flex;justify-content:space-between;"><span>${escapeAttr(opts.companyName)}${ref}</span><span style="color:${designTokens.colors.secondary[400]}">Letterhead</span></div>`;
 }
 
 export function pdfFooterTemplate(opts: {
   companyName: string;
   primaryColor?: string | null;
 }): string {
-  const color = opts.primaryColor || "#64748b";
+  const color = opts.primaryColor || designTokens.colors.secondary[500];
   return `<div style="font-size:8px;width:100%;padding:0 12mm;color:${escapeAttr(color)};font-family:Arial,sans-serif;display:flex;justify-content:space-between;"><span>${escapeAttr(opts.companyName)}</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`;
 }
 
@@ -121,9 +126,9 @@ export function letterheadBarHtml(opts: {
   companyName: string;
   locale: "ar" | "en";
 }): string {
-  const primary = opts.brand?.primaryColor ?? "#1E3A8A";
-  const secondary = opts.brand?.secondaryColor ?? "#0F172A";
-  const accent = opts.brand?.accentColor ?? "#0EA5E9";
+  const primary = opts.brand?.primaryColor ?? designTokens.colors.primary[600];
+  const secondary = opts.brand?.secondaryColor ?? designTokens.colors.secondary[900];
+  const accent = opts.brand?.accentColor ?? designTokens.colors.accent[600];
   const logo = opts.brand?.logoUrl
     ? `<img src="${escapeAttr(opts.brand.logoUrl)}" alt="" style="height:28px;max-width:120px;object-fit:contain;background:rgba(255,255,255,.15);padding:2px 6px;border-radius:4px" />`
     : "";

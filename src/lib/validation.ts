@@ -153,6 +153,8 @@ export const certificateSchema = z.object({
   filePath: z.string().trim().max(500).nullable().optional(),
   alertDays: z.number().int().min(1).max(365).optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
+  approved: z.boolean().optional(),
+  revokedAt: z.string().datetime().nullable().optional(),
 });
 
 export const staffMemberSchema = z.object({

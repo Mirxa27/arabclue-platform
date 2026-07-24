@@ -6,6 +6,7 @@ import { validateProposalOutput } from "@/lib/validation-gate";
 import {
   evaluateExportPolicy,
   financialForValidationGate,
+  loadProjectIngestionEntities,
 } from "@/lib/proposal-studio";
 import { getContractExportReadiness } from "@/lib/contract-review";
 
@@ -28,7 +29,7 @@ export async function GET(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  const [restrictions, checks, policy] = await Promise.all([
+  const [restrictions, checks, policy, entities] = await Promise.all([
     db.restriction.findMany({
       where: { workspaceId: workspace.id, active: true },
       select: { text: true },
@@ -38,6 +39,7 @@ export async function GET(
       where: { workspaceId: workspace.id },
       include: { steps: true },
     }),
+    loadProjectIngestionEntities(proposal.projectId),
   ]);
 
   const forms = proposal.financialFormsJson
@@ -71,7 +73,7 @@ export async function GET(
   const validation = validateProposalOutput({
     contentMd: proposal.contentMd,
     financial: financialForValidationGate(forms),
-    entities: null,
+    entities,
     complianceRows: checks.map((c) => ({
       frameworkId: c.framework,
       controlId: c.controlId,
