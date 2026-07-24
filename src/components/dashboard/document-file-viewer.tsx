@@ -54,6 +54,8 @@ function kindFrom(mime: string | null | undefined, name: string) {
 
 /**
  * Full-bleed in-app layout for uploaded workspace documents.
+ * PDF/HTML use blob object URLs (same pattern as DocumentPreviewFrame) so
+ * preview works even if response headers restrict framing of /api/files.
  */
 export function DocumentFileViewer({
   open,
@@ -77,33 +79,58 @@ export function DocumentFileViewer({
   );
 
   const [textBody, setTextBody] = useState<string | null>(null);
+  const [embedSrc, setEmbedSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open || kind !== "text") {
+    if (!open) {
       setTextBody(null);
+      setEmbedSrc(null);
       setError(null);
+      setLoading(false);
       return;
     }
+
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    void fetch(fileUrl, { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const t = await res.text();
-        if (!cancelled) setTextBody(t);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled)
+    let objectUrl: string | null = null;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      setTextBody(null);
+      setEmbedSrc(null);
+
+      try {
+        if (kind === "text") {
+          const res = await fetch(fileUrl, { credentials: "include" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const t = await res.text();
+          if (!cancelled) setTextBody(t);
+          return;
+        }
+
+        if (kind === "pdf" || kind === "html") {
+          const res = await fetch(fileUrl, { credentials: "include" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const blob = await res.blob();
+          objectUrl = URL.createObjectURL(blob);
+          if (!cancelled) setEmbedSrc(objectUrl);
+          return;
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load");
-      })
-      .finally(() => {
+        }
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    }
+
+    void load();
     return () => {
       cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [open, kind, fileUrl]);
 
@@ -150,11 +177,28 @@ export function DocumentFileViewer({
           dir={ar ? "rtl" : "ltr"}
         >
           {kind === "pdf" || kind === "html" ? (
-            <iframe
-              title={title}
-              src={fileUrl}
-              className="size-full border-0 bg-white"
-            />
+            loading ? (
+              <div className="flex size-full items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                {ar ? "جاري التحميل…" : "Loading…"}
+              </div>
+            ) : error ? (
+              <div className="flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
+                <p className="text-sm text-destructive max-w-md">{error}</p>
+                <Button asChild>
+                  <a href={fileUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink className="size-3.5 me-1.5" />
+                    {ar ? "فتح في تبويب" : "Open in tab"}
+                  </a>
+                </Button>
+              </div>
+            ) : embedSrc ? (
+              <iframe
+                title={title}
+                src={embedSrc}
+                className="size-full border-0 bg-white"
+              />
+            ) : null
           ) : kind === "image" ? (
             <div className="size-full flex items-center justify-center p-6 overflow-auto">
               <img
