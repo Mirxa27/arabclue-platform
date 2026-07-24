@@ -35,3 +35,36 @@
 ## Concerns
 
 - No browser/manual UI walkthrough was performed because this subagent environment does not expose a computer-use executor.
+
+---
+
+## Task 4 review fix: reuse `letterheadBarHtml` in split strip
+
+**Status:** DONE  
+**Commit:** `fix(studio): reuse letterheadBarHtml in split strip`
+
+### Change
+
+- Removed duplicated JSX letterhead strip in `MarkdownStudioEditorInner` split preview.
+- Split preview now renders `letterheadBarHtml()` from `src/lib/letterhead.ts` via `dangerouslySetInnerHTML`, keeping styles/fields aligned with HTML/PDF export.
+- `splitLetterhead` in `proposal-editor.tsx` now passes `{ brand, companyName }`; locale comes from the editor `locale` prop so AR/EN bilingual labels stay correct.
+
+### Files changed
+
+- `src/components/dashboard/markdown-studio-editor-inner.tsx`
+- `src/components/dashboard/markdown-studio-editor.tsx`
+- `src/components/dashboard/proposal-editor.tsx`
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `bunx tsc --noEmit` | Pass (exit 0) |
+| `bun run lint` | Pass (exit 0) |
+
+### Regression guardrails
+
+- Preview/Print still use `DocumentPreviewFrame` (unchanged).
+- Edit/Split still use MDX editor with split preview toggle (unchanged).
+- Paper chrome around preview iframe unchanged.
+- Task 5 not started.
