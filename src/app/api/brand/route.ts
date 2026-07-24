@@ -14,11 +14,17 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { workspace, brandProfile } = await getTenantContext(session.user.id);
+  const company = {
+    name: workspace.name,
+    nameAr: workspace.nameAr,
+    crNumber: workspace.crNumber,
+    vatNumber: workspace.vatNumber,
+  };
   const pastProjects = await db.pastProject.findMany({
     where: { workspaceId: workspace.id },
     orderBy: { createdAt: "desc" },
   });
-  return NextResponse.json({ brandProfile, pastProjects });
+  return NextResponse.json({ brandProfile, company, pastProjects });
 }
 
 // PATCH /api/brand — update brand profile

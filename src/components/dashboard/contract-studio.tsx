@@ -26,6 +26,10 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/store";
 import {
+  letterheadCompanyName,
+  type LetterheadCompany,
+} from "@/lib/letterhead";
+import {
   parseContractArticles,
   type ContractArticle,
 } from "@/lib/contract-format";
@@ -64,6 +68,11 @@ type BrandProfile = {
   taglineAr?: string | null;
 };
 
+type BrandResponse = {
+  brandProfile: BrandProfile | null;
+  company?: LetterheadCompany | null;
+};
+
 export function BilingualContractStudio({
   title,
   titleAr,
@@ -92,11 +101,11 @@ export function BilingualContractStudio({
     () => new Set()
   );
 
-  const { data: brandData } = useQuery<{ brandProfile: BrandProfile | null }>({
+  const { data: brandData } = useQuery<BrandResponse>({
     queryKey: ["brand"],
     queryFn: async () => {
       const res = await fetch("/api/brand");
-      if (!res.ok) return { brandProfile: null };
+      if (!res.ok) return { brandProfile: null, company: null };
       return res.json();
     },
   });
@@ -122,13 +131,12 @@ export function BilingualContractStudio({
     [brandProfile?.primaryColor, brandProfile?.accentColor]
   );
   const mastheadBrandLabel = useMemo(() => {
-    const en = brandProfile?.tagline?.trim();
-    const arLabel = brandProfile?.taglineAr?.trim();
-    if (en && arLabel && en !== arLabel) return `${en} · ${arLabel}`;
-    if (ar && arLabel) return arLabel;
-    if (!ar && en) return en;
-    return en || arLabel || "Client brand · هوية العميل";
-  }, [ar, brandProfile?.tagline, brandProfile?.taglineAr]);
+    return letterheadCompanyName(
+      ar ? "ar" : "en",
+      brandProfile,
+      brandData?.company
+    );
+  }, [ar, brandData?.company, brandProfile]);
   const obligationsStorageKey = proposalId
     ? `arabclue-obligations:${proposalId}`
     : null;
@@ -458,8 +466,8 @@ export function BilingualContractStudio({
           <MarkdownStudioEditor
             markdown={draftMd}
             onChange={setDraftMd}
-            locale={locale}
-            dir={ar ? "rtl" : "ltr"}
+            locale="en"
+            dir="ltr"
             splitPreview
             brand={brandColors}
             readOnly={locked}

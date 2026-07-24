@@ -39,3 +39,20 @@ Replaced the contract studio raw textarea edit mode with the shared MDX studio e
 ## Concerns
 
 None.
+
+## Task 2 Review Fix
+
+**Commit message:** `fix(contracts): company masthead and LTR MDX editor`
+
+### Changes
+
+- Extended `/api/brand` GET with workspace company letterhead fields (`name`, `nameAr`, `crNumber`, `vatNumber`).
+- Updated the contract studio masthead to resolve its company label with `letterheadCompanyName(locale, brand, company)`.
+- Restored the contract MDX edit surface to LTR by passing `locale="en"` and `dir="ltr"` to `MarkdownStudioEditor`.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `bunx tsc --noEmit` | Pass (exit 0; no diagnostics) |
+| `bun run lint` | Pass (exit 0; output: `$ eslint .`) |
