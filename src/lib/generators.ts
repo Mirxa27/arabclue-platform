@@ -589,8 +589,8 @@ export function generateSlidesHTML(
       (s) => `
     <section class="slide" style="background:${s.bg};color:${s.light ? "#fff" : "#0f172a"}">
       <div class="slide-inner">
-        <div class="slide-title">${s.title}</div>
-        <div class="slide-subtitle">${s.subtitle}</div>
+        <div class="slide-title">${escapeHtml(s.title)}</div>
+        <div class="slide-subtitle">${escapeHtml(s.subtitle)}</div>
         <div class="slide-body">${s.body}</div>
       </div>
     </section>`

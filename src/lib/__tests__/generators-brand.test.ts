@@ -113,6 +113,30 @@ describe("export brand chrome", () => {
     expect(html).toContain("#115E59");
     expect(html).toContain("#F59E0B");
     expect(html).not.toContain("<div class=\"slide-title\">Arabclue</div>");
+    expect(html).toContain('<div class="slide-title">Acme Contracting Co.</div>');
+    expect(html).toContain('<div class="slide-subtitle">Acme Bids</div>');
+  });
+
+  test("slides HTML escapes company name and tagline in title and subtitle", () => {
+    const html = generateSlidesHTML(
+      proposal,
+      project,
+      {
+        ...brand,
+        tagline: "<script>alert(1)</script>",
+        taglineAr: "<img onerror=alert(1)>",
+      },
+      undefined,
+      { ...company, name: "Acme<script>alert(1)</script>" }
+    );
+
+    expect(html).toContain(
+      '<div class="slide-title">Acme&lt;script&gt;alert(1)&lt;/script&gt;</div>'
+    );
+    expect(html).toContain(
+      '<div class="slide-subtitle">&lt;script&gt;alert(1)&lt;/script&gt;</div>'
+    );
+    expect(html).not.toContain("<script>alert(1)</script>");
   });
 
   test("PPTX uses client company author, title slide, font, and brand colors", async () => {

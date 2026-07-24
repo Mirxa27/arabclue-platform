@@ -24,6 +24,8 @@ import {
 } from "@/lib/proposal-studio";
 import { getContractValidationReport } from "@/lib/contract-review";
 import type { FinancialExtract } from "@/lib/types";
+import { letterheadCompanyName } from "@/lib/letterhead";
+import { sanitizeFilename } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -381,7 +383,17 @@ export async function GET(
           locale: exportLocale,
         });
         contentType = "application/zip";
-        filename = "Arabclue_Bid_Package.zip";
+        {
+          const companyName = letterheadCompanyName(
+            exportLocale,
+            brand,
+            companyLetterhead
+          );
+          const companySlug =
+            sanitizeFilename(companyName).replace(/\s+/g, "_").replace(/_+/g, "_") ||
+            "Bid_Package";
+          filename = `${companySlug}_Bid_Package.zip`;
+        }
         break;
     }
 
