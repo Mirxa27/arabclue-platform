@@ -1,33 +1,23 @@
 # Implementation Status
 
-**Branch:** `cursor/remaining-gaps-sdd-ab64`
+**Branch:** `cursor/docs-brand-studio-ab64`
 **Verified:** 2026-07-24
 
-## Quality gates
-
-| Gate | Command | Result |
-| --- | --- | --- |
-| Unit tests | `bun test` | **209 pass** |
-| Typecheck | `bunx tsc --noEmit` | **pass** |
-| Lint | `bun run lint` | **pass** |
-
-## Remaining product gaps (SDD Tasks 1–7)
+## Latest closures — docs studio + client letterhead
 
 | Gap | Status | Evidence |
 | --- | --- | --- |
-| QueryState on docs/contracts/history | Closed | Task 1 |
-| Agent ops workspace run history | Closed | `GET /api/agents/runs` + UI |
-| Reviews errors + redline | Closed | QueryState + compare panel |
-| Contract obligation register | Closed | derived extractor + studio tab |
-| Mission Control alert/recovery | Closed | toast + mission Retry + Stop teardown |
-| Qualification CTAs + onboarding CRUD | Closed | gap actions, EmptyState, approval reorder |
-| Billing failure UX | Closed | PAST_DUE/FAILED Alert + Retry |
-| Notification dismiss | Closed | localStorage + fingerprinted onboarding id |
-| Real KPI trends | Closed | 7d vs prior 7d + clarified copy |
+| Uploaded doc view layout | Closed | `DocumentFileViewer` in document matrix (PDF/HTML/image/text) |
+| Seamless proposal editing | Closed | MDXEditor studio + skills + branded live preview |
+| Client letterhead on export | Closed | `letterhead.ts` applied to proposal + contract HTML/PDF headers |
+| Brand typeface + preview | Closed | fontFamily in BrandSetup + letterhead preview card |
 
-## Still deferred / external
+## Previously closed
+
+Remaining product gaps SDD Tasks 1–7, Voice Mission UX, qualification accuracy — see git history.
+
+## Explicitly out of scope
 
 - Etimad portal submission API
 - SSO / OIDC
 - Live MyFatoorah without merchant credentials
-- Persisted server-side notification read-state (client dismiss is enough for v1)
