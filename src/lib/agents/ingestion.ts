@@ -6,6 +6,11 @@ import {
 } from "../procurement-rules";
 import type { IngestionEntities } from "../types";
 import { getTenderType, TENDER_TYPES } from "../constants";
+import {
+  isQualityMilestoneName,
+  isQualityScopeText,
+  STANDARD_DELIVERY_MILESTONES,
+} from "../text-quality";
 
 /** Strip C0 control chars that break JSON round-trips in some clients */
 export function sanitizeText(text: string): string {
@@ -349,6 +354,7 @@ function extractMilestones(text: string): { name: string; weeks: number }[] {
       }
       name = name.replace(/^[\d.\-\s]+/, "").trim();
       if (!name || Number.isNaN(weeks) || weeks <= 0 || weeks > 260) continue;
+      if (!isQualityMilestoneName(name)) continue;
       const key = name.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -442,22 +448,35 @@ export function parseTenderText(
     /(?:scope\s*of\s*work|نطاق\s*العمل|SOW)[:\s\-–]*([\s\S]{40,600})/i
   );
   if (scopeMatch?.[1]) {
-    scope = scopeMatch[1].split(/\n{2,}/)[0].trim().slice(0, 800);
-    evidence.push("Scope of Work section located in source document");
-  } else {
+    const candidate = scopeMatch[1].split(/\n{2,}/)[0].trim().slice(0, 800);
+    if (isQualityScopeText(candidate)) {
+      scope = candidate;
+      evidence.push("Scope of Work section located in source document");
+    }
+  }
+  if (!scope) {
     const cleaned = clean.replace(/\s+/g, " ").trim();
-    scope = cleaned.slice(0, 500) || `Scope derived for ${tenderType.name} tender`;
+    // Prefer a clean paragraph that looks like SOW, not Q&A scraps
+    const paragraphs = cleaned
+      .split(/(?<=[.!?۔؟])\s+/)
+      .map((p) => p.trim())
+      .filter((p) => isQualityScopeText(p));
+    scope =
+      paragraphs[0]?.slice(0, 500) ||
+      `نطاق العمل يُستكمل من كراسة الشروط المرفوعة لمناقصة ${tenderType.nameAr ?? tenderType.name}.`;
+    if (!paragraphs[0]) {
+      evidence.push(
+        "Scope of Work not cleanly located — proposal will prompt human completion"
+      );
+    }
   }
 
   let milestones = extractMilestones(clean);
   if (milestones.length === 0) {
-    milestones = [
-      { name: "Mobilization", weeks: 2 },
-      { name: "Discovery", weeks: 4 },
-      { name: "Design", weeks: 6 },
-      { name: "Build", weeks: 16 },
-      { name: "UAT & Go-Live", weeks: 4 },
-    ];
+    milestones = STANDARD_DELIVERY_MILESTONES.map((m) => ({
+      name: m.name,
+      weeks: m.weeks,
+    }));
     evidence.push("Milestones not explicitly found — applied standard delivery phasing");
   } else {
     evidence.push(`Extracted ${milestones.length} milestone(s) from document`);

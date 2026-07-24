@@ -441,3 +441,6 @@ export const SAUDIZATION_DEFAULT_MIN = 35;
 
 export const LEGAL_DISCLAIMER =
   "Compliance matrices and regulatory commentary are assisted drafting aids, not legal advice. Authorized human legal review and approval are required before submission.";
+
+export const LEGAL_DISCLAIMER_AR =
+  "مصفوفات الامتثال والتعليقات التنظيمية أدوات صياغة مساعدة وليست استشارة قانونية. يلزم مراجعة واعتماد قانوني بشري قبل التقديم.";

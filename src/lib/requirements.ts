@@ -2,6 +2,10 @@ import { db } from "./db";
 import type { IngestionEntities, LinkedResourceType, RequirementStatus } from "./types";
 import type { CoveragePlan } from "./agents/coverage";
 import { coverageStatusToRequirementStatus } from "./agents/coverage";
+import {
+  isQualityRequirementText,
+  isQualityScopeText,
+} from "./text-quality";
 
 type LinkCandidate = {
   type: LinkedResourceType;
@@ -207,17 +211,18 @@ function extractRequirementsFromText(
     const m = line.match(bulletRe);
     if (!m) continue;
     const body = m[1].trim();
-    if (/shall|must|required|يجب|يلتزم|مطلوب/i.test(body) || body.length > 40) {
-      reqs.push({
-        text: body,
-        sectionRef: sectionRe.exec(line)?.[1] ?? null,
-        pageRef: pageRe.exec(line)?.[1] ?? null,
-      });
-    }
+    const mandatory = /shall|must|required|يجب|يلتزم|مطلوب/i.test(body);
+    if (!isQualityRequirementText(body)) continue;
+    if (!mandatory && body.length < 40) continue;
+    reqs.push({
+      text: body,
+      sectionRef: sectionRe.exec(line)?.[1] ?? null,
+      pageRef: pageRe.exec(line)?.[1] ?? null,
+    });
     if (reqs.length >= 80) break;
   }
 
-  if (reqs.length === 0 && entities?.scope) {
+  if (reqs.length === 0 && entities?.scope && isQualityScopeText(entities.scope)) {
     reqs.push({
       text: entities.scope.slice(0, 500),
       sectionRef: "SOW",
@@ -225,13 +230,7 @@ function extractRequirementsFromText(
     });
   }
 
-  if (entities?.evidence) {
-    for (const ev of entities.evidence.slice(0, 20)) {
-      if (ev.length > 15) {
-        reqs.push({ text: ev.slice(0, 500), sectionRef: null, pageRef: null });
-      }
-    }
-  }
+  // Do NOT promote ingestion evidence meta-lines into requirements.
 
   return reqs;
 }

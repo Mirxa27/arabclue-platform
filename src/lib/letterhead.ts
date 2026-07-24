@@ -1,3 +1,8 @@
+import {
+  isPlaceholderCompanyName,
+  resolveBidderDisplayName,
+} from "@/lib/text-quality";
+
 /**
  * Client letterhead helpers — apply workspace BrandProfile to HTML/PDF chrome.
  */
@@ -69,16 +74,20 @@ export function letterheadCompanyName(
   brand: LetterheadBrand | null | undefined,
   company?: LetterheadCompany | null
 ): string {
-  if (locale === "ar") {
-    return (
-      company?.nameAr ||
-      company?.name ||
-      brand?.taglineAr ||
-      brand?.tagline ||
-      "أراب كلاو"
-    );
-  }
-  return company?.name || brand?.tagline || "ArabClue";
+  return resolveBidderDisplayName(locale, brand, company);
+}
+
+/** Secondary line under company — omit platform/placeholder taglines. */
+export function letterheadTagline(
+  locale: "ar" | "en",
+  brand: LetterheadBrand | null | undefined
+): string | null {
+  const raw =
+    locale === "ar"
+      ? brand?.taglineAr || brand?.tagline
+      : brand?.tagline || brand?.taglineAr;
+  if (!raw || isPlaceholderCompanyName(raw)) return null;
+  return raw.trim();
 }
 
 export function pdfHeaderTemplate(opts: {
@@ -118,10 +127,14 @@ export function letterheadBarHtml(opts: {
   const logo = opts.brand?.logoUrl
     ? `<img src="${escapeAttr(opts.brand.logoUrl)}" alt="" style="height:28px;max-width:120px;object-fit:contain;background:rgba(255,255,255,.15);padding:2px 6px;border-radius:4px" />`
     : "";
-  const tag =
+  const tagRaw =
     opts.locale === "ar"
       ? opts.brand?.taglineAr || opts.brand?.tagline || ""
       : opts.brand?.tagline || opts.brand?.taglineAr || "";
+  const tag =
+    tagRaw && !isPlaceholderCompanyName(tagRaw) && tagRaw !== opts.companyName
+      ? tagRaw
+      : "";
   return `<div class="letterhead-bar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-bottom:18px;border-radius:8px;background:linear-gradient(90deg,${primary},${secondary});color:#fff;border-bottom:3px solid ${accent}">
     <div style="display:flex;align-items:center;gap:10px">${logo}<div><div style="font-weight:700;font-size:13px">${escapeAttr(opts.companyName)}</div>${tag ? `<div style="font-size:10px;opacity:.9">${escapeAttr(tag)}</div>` : ""}</div></div>
     <div style="font-size:9px;opacity:.85;letter-spacing:.04em;text-transform:uppercase">${opts.locale === "ar" ? "ورق رسمي" : "Official letterhead"}</div>

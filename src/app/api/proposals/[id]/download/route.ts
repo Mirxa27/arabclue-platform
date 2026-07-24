@@ -23,6 +23,10 @@ import {
   financialForValidationGate,
 } from "@/lib/proposal-studio";
 import { getContractValidationReport } from "@/lib/contract-review";
+import {
+  isQualityMilestoneName,
+  sanitizeMilestonesForBoq,
+} from "@/lib/text-quality";
 import type { FinancialExtract } from "@/lib/types";
 import { letterheadCompanyName } from "@/lib/letterhead";
 import { sanitizeFilename } from "@/lib/storage";
@@ -229,6 +233,24 @@ export async function GET(
   }
 
   const exportLocale = resolveLocale(proposal, pdfLocale);
+
+  // Drop Q&A scraps previously stored as BoQ lines; fall back to standard phases.
+  if (boqItems?.length) {
+    const hadJunk = boqItems.some((b) => !isQualityMilestoneName(b.item));
+    if (hadJunk) {
+      const cleaned = sanitizeMilestonesForBoq(
+        boqItems.map((b) => ({ name: b.item, weeks: 4 })),
+        exportLocale === "ar" ? "ar" : "en"
+      );
+      boqItems = cleaned.map((m) => ({
+        item: m.name,
+        unit: "LS",
+        qty: 1,
+        unitPrice: null,
+        total: null,
+      }));
+    }
+  }
 
   try {
     let buffer: Buffer;

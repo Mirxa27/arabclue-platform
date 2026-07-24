@@ -4,6 +4,7 @@ import {
   extractQlrThreshold,
   SAUDIZATION_DEFAULT_MIN,
 } from "../procurement-rules";
+import { sanitizeMilestonesForBoq } from "../text-quality";
 import type { FinancialExtract, IngestionEntities } from "../types";
 
 function findAmount(text: string, labels: RegExp[]): number | null {
@@ -108,10 +109,7 @@ export function runFinancialAgent(opts: {
     );
   }
 
-  const milestones = opts.entities?.milestones ?? [
-    { name: "Mobilization", weeks: 2 },
-    { name: "Delivery", weeks: 20 },
-  ];
+  const milestones = sanitizeMilestonesForBoq(opts.entities?.milestones, "en");
 
   // Structure-only: item / unit / qty — prices always null (client-entered)
   const boqItems = milestones.map((m) => ({

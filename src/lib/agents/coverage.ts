@@ -12,6 +12,10 @@ import type {
   IngestionEntities,
   TenderRequirementExtract,
 } from "../types";
+import {
+  isQualityMilestoneName,
+  isQualityScopeText,
+} from "../text-quality";
 
 export type CoverageStatus =
   | "COVERED"
@@ -226,7 +230,7 @@ function deriveRequirementsFromEntities(
     ];
   }
   const reqs: TenderRequirementExtract[] = [];
-  if (entities.scope) {
+  if (isQualityScopeText(entities.scope)) {
     reqs.push({
       text: `Scope: ${entities.scope.slice(0, 300)}`,
       sectionRef: "SOW",
@@ -234,6 +238,7 @@ function deriveRequirementsFromEntities(
     });
   }
   for (const m of entities.milestones.slice(0, 8)) {
+    if (!isQualityMilestoneName(m.name)) continue;
     reqs.push({
       text: `Milestone / deliverable: ${m.name} (${m.weeks} weeks)`,
       sectionRef: "Schedule",
@@ -250,8 +255,13 @@ function deriveRequirementsFromEntities(
     sectionRef: "Evaluation",
     pageRef: null,
   });
-  for (const e of entities.evidence.slice(0, 6)) {
-    reqs.push({ text: e, sectionRef: "Evidence", pageRef: null });
+  // Do not promote ingestion evidence meta-lines into requirements.
+  if (reqs.length === 0) {
+    reqs.push({
+      text: "Deliver scope of work as defined in the tender package",
+      sectionRef: "SOW",
+      pageRef: null,
+    });
   }
   return reqs;
 }

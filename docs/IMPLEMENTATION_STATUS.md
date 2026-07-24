@@ -3,6 +3,18 @@
 **Branch:** `cursor/ship-remaining-ux-ab64` → `main`
 **Verified:** 2026-07-24
 
+## Latest closures — proposal content quality
+
+| Gap | Status | Evidence |
+| --- | --- | --- |
+| Cover shows workspace “مساحة test_User” / ArabClue | Closed | `resolveBidderDisplayName` skips placeholders; letterhead omits platform tagline |
+| Mid-sentence Q&A scraps as requirements/milestones/BoQ | Closed | `text-quality.ts` filters + no evidence→requirement promotion |
+| English boilerplate inside Arabic proposal | Closed | Arabic technical templates + `LEGAL_DISCLAIMER_AR` |
+| “testing [proposed] score 0.000” experience | Closed | Score floor + junk title filter on past projects |
+| Export BoQ still junk from old runs | Closed | Download route re-sanitizes BoQ lines |
+
+**Note:** Re-run the agent pipeline on existing projects to regenerate `contentMd`. Set workspace legal name (not “X's Workspace”) under Account for real bidder identity on letterhead.
+
 ## Latest closures — active project UX
 
 | Gap | Status | Evidence |

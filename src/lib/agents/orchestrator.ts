@@ -21,6 +21,8 @@ import type { RagDocument } from "../rag";
 import { embedText } from "../llm";
 import { loadProjectTenderCorpus } from "../document-chunks";
 import { audit, AUDIT_ACTIONS } from "../audit";
+import { resolveBidderDisplayName } from "../text-quality";
+import { isQualityPastProjectTitle } from "../text-quality";
 import type { Locale } from "../types";
 import { parseAgentRunConfig } from "../proposal-studio";
 
@@ -324,6 +326,10 @@ export async function runAgentPipeline(opts: {
     const brand = await db.brandProfile.findFirst({
       where: { workspaceId: opts.workspaceId },
     });
+    const workspaceIdentity = await db.workspace.findUnique({
+      where: { id: opts.workspaceId },
+      select: { name: true, nameAr: true },
+    });
     const past = await db.pastProject.findMany({
       where: {
         workspaceId: opts.workspaceId,
@@ -357,6 +363,7 @@ export async function runAgentPipeline(opts: {
     const validCerts = filterValidCertificates(certificates);
     const ragDocs: RagDocument[] = [];
     for (const p of past) {
+      if (!isQualityPastProjectTitle(p.title)) continue;
       let embedding: number[] | null = p.embeddingJson
         ? (JSON.parse(p.embeddingJson) as number[])
         : null;
@@ -452,6 +459,7 @@ export async function runAgentPipeline(opts: {
       tenderCorpus,
       vision2030Alignment: brand?.vision2030Alignment,
       queryEmbedding,
+      locale,
     });
 
     const technicalAi = await enrichTechnicalWithAi({
@@ -614,10 +622,16 @@ export async function runAgentPipeline(opts: {
       technical,
       financial: financial as FinancialExtract,
       coverage,
-      brandTagline:
-        locale === "ar"
-          ? brand?.taglineAr || brand?.tagline || "أراب كلاو"
-          : brand?.tagline || "Arabclue",
+      brandTagline: resolveBidderDisplayName(
+        locale,
+        brand
+          ? { tagline: brand.tagline, taglineAr: brand.taglineAr }
+          : null,
+        {
+          name: workspaceIdentity?.name,
+          nameAr: workspaceIdentity?.nameAr,
+        }
+      ),
       vision2030: brand?.vision2030Alignment ?? "thriving-economy",
       locale,
       restrictions: restrictionsText,

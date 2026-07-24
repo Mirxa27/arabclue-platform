@@ -1,6 +1,7 @@
 import { generateCompletion } from "../llm";
 import { systemDrafting, draftingUserPrompt } from "./prompts";
-import { LEGAL_DISCLAIMER } from "../procurement-rules";
+import { LEGAL_DISCLAIMER, LEGAL_DISCLAIMER_AR } from "../procurement-rules";
+import { isPlaceholderCompanyName, isQualityScopeText } from "../text-quality";
 import type { CoveragePlan } from "./coverage";
 import type {
   IngestionEntities,
@@ -187,9 +188,10 @@ export function buildDeterministicProposal(opts: {
     .join("\n");
   const experienceBlock = opts.technical.matchedProjects.length
     ? opts.technical.matchedProjects
-        .map(
-          (p) =>
-            `- **${p.title}** [${p.experienceClass}] — score ${p.score.toFixed(3)}: ${p.why}`
+        .map((p) =>
+          locale === "ar"
+            ? `- **${p.title}** [${p.experienceClass}] — ${p.why}`
+            : `- **${p.title}** [${p.experienceClass}] — score ${p.score.toFixed(2)}: ${p.why}`
         )
         .join("\n")
     : locale === "ar"
@@ -204,6 +206,19 @@ export function buildDeterministicProposal(opts: {
     )
     .join("\n");
 
+  const brandLabel = isPlaceholderCompanyName(opts.brandTagline)
+    ? locale === "ar"
+      ? "الشركة المقدّمة للعطاء"
+      : "Bidding Company"
+    : opts.brandTagline;
+
+  const scopeText =
+    e?.scope && isQualityScopeText(e.scope)
+      ? e.scope
+      : locale === "ar"
+        ? "نطاق العمل كما ورد في كراسة الشروط المرفوعة (يُستكمل يدوياً إن لزم)."
+        : "Scope as defined in the uploaded conditions booklet (complete manually if needed).";
+
   const humanNotice =
     locale === "ar"
       ? "مسودة بانتظار اعتماد بشري مخوّل — المستخدم هو المؤلف النهائي."
@@ -212,19 +227,19 @@ export function buildDeterministicProposal(opts: {
   if (locale === "ar") {
     return `# العطاء الفني — ${opts.projectTitle}
 
-**العلامة:** ${opts.brandTagline}  
+**العلامة:** ${brandLabel}  
 **مرجع اعتماد:** ${opts.etimadRef ?? "غير متوفر"}  
 **نوع المناقصة:** ${opts.tenderTypeName}  
 **تغطية المتطلبات:** ${c.coveragePercent}% (${c.coveredCount} مكتمل / ${c.partialCount} جزئي / ${c.gapCount} فجوة)
 
 ## 1. الملخص التنفيذي
-يقدّم هذا العطاء استجابة منظّمة وفق مصفوفة تغطية المتطلبات، مع أولوية الوزن الفني (${c.evaluationWeights.technical}%). تُستخدم exclusively الأدلة المعتمدة لدى المستأجر ونص المناقصة.
+يقدّم هذا العطاء استجابة منظّمة وفق مصفوفة تغطية المتطلبات، مع أولوية الوزن الفني (${c.evaluationWeights.technical}%). تُستخدم حصراً الأدلة المعتمدة لدى المستأجر ونص المناقصة.
 نقاط القوة: ${c.strengths.slice(0, 3).join("؛ ") || "قيد استكمال الأدلة"}
-${LEGAL_DISCLAIMER}
+${LEGAL_DISCLAIMER_AR}
 ${humanNotice}
 
 ## 2. فهم المشروع
-${e?.scope ?? "نطاق العمل كما ورد في كراسة الشروط المرفوعة."}
+${scopeText}
 
 | البند | القيمة |
 | --- | --- |
@@ -281,7 +296,7 @@ ${experienceBlock}
 | --- | --- | --- | --- | --- |
 ${complianceBlock}
 
-${LEGAL_DISCLAIMER}
+${LEGAL_DISCLAIMER_AR}
 
 ## 14. التدريب والانتقال والاستمرارية
 **التدريب والانتقال:** ${opts.technical.trainingTransition}

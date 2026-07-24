@@ -26,6 +26,13 @@ describe("letterhead helpers", () => {
     expect(
       letterheadCompanyName("ar", { taglineAr: "أكمي" }, null)
     ).toBe("أكمي");
+    expect(
+      letterheadCompanyName(
+        "ar",
+        { taglineAr: "أراب كلاو" },
+        { nameAr: "مساحة test_User" }
+      )
+    ).toBe("الشركة المقدّمة للعطاء");
   });
 
   test("header/footer templates embed company not hardcoded Arabclue-only chrome", () => {
