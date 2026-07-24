@@ -30,6 +30,13 @@ const databaseMutationPattern =
   /\bprisma\s+(?:migrate\s+(?:deploy|dev)|db\s+(?:push|reset))\b|\bdb:(?:migrate|push|reset)\b/iu;
 const embeddedRoleCredentialPattern =
   /^#\s+(?:SUPER_ADMIN|ADMIN|BIDDER|REVIEWER|FINANCE):\s+\S+\s+\/\s+\S+/gmu;
+const embeddedDevelopmentIdentityPattern =
+  /[A-Z0-9._%+-]+@arabclue\.local/iu;
+const credentialRiskPaths = [
+  "AGENTS.md",
+  "scripts/ensure-devtest.ts",
+  "DEPLOY_ARABCLUE_COM.md",
+];
 
 export function containsDatabaseMutation(command) {
   return databaseMutationPattern.test(command);
@@ -38,6 +45,24 @@ export function containsDatabaseMutation(command) {
 export function containsEmbeddedRoleCredential(markdown) {
   embeddedRoleCredentialPattern.lastIndex = 0;
   return embeddedRoleCredentialPattern.test(markdown);
+}
+
+export function containsEmbeddedDevelopmentIdentity(text) {
+  return embeddedDevelopmentIdentityPattern.test(String(text));
+}
+
+export function sensitiveEnvironmentPathsFromGitObjectList(objectList) {
+  return [
+    ...new Set(
+      String(objectList)
+        .split("\n")
+        .map((line) => {
+          const separator = line.indexOf(" ");
+          return separator === -1 ? "" : line.slice(separator + 1);
+        })
+        .filter((relativePath) => isSensitiveEnvironmentFile(relativePath)),
+    ),
+  ].sort();
 }
 
 export function runDeploymentSafetyCheck() {
@@ -56,6 +81,78 @@ export function runDeploymentSafetyCheck() {
   if (trackedEnvironmentFiles.length > 0) {
     failures.push(
       `Sensitive environment files remain tracked: ${trackedEnvironmentFiles.join(", ")}`,
+    );
+  }
+
+  const historicalSensitiveEnvironmentFiles =
+    sensitiveEnvironmentPathsFromGitObjectList(
+      execFileSync("git", ["rev-list", "--objects", "--all"], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      }),
+    );
+  if (historicalSensitiveEnvironmentFiles.length > 0) {
+    failures.push(
+      `Sensitive environment files remain in Git history: ${historicalSensitiveEnvironmentFiles.join(", ")}`,
+    );
+  }
+
+  const currentCredentialRiskPaths = credentialRiskPaths.filter((relativePath) => {
+    try {
+      const text = readRepositoryFile(relativePath);
+      return (
+        containsEmbeddedRoleCredential(text) ||
+        containsEmbeddedDevelopmentIdentity(text)
+      );
+    } catch {
+      return false;
+    }
+  });
+  if (currentCredentialRiskPaths.length > 0) {
+    failures.push(
+      `Credential-bearing development or deployment files remain tracked: ${currentCredentialRiskPaths.join(", ")}`,
+    );
+  }
+
+  const historicalCredentialLocations = [];
+  for (const relativePath of credentialRiskPaths) {
+    const commits = execFileSync(
+      "git",
+      ["rev-list", "--all", "--", relativePath],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      },
+    )
+      .split("\n")
+      .filter(Boolean);
+    for (const commit of commits) {
+      try {
+        const text = execFileSync(
+          "git",
+          ["show", `${commit}:${relativePath}`],
+          {
+            cwd: repositoryRoot,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+          },
+        );
+        if (
+          containsEmbeddedRoleCredential(text) ||
+          containsEmbeddedDevelopmentIdentity(text)
+        ) {
+          historicalCredentialLocations.push(
+            `${commit.slice(0, 12)}:${relativePath}`,
+          );
+        }
+      } catch {
+        // The path did not exist in this commit.
+      }
+    }
+  }
+  if (historicalCredentialLocations.length > 0) {
+    failures.push(
+      `Embedded credentials remain in Git history: ${historicalCredentialLocations.join(", ")}`,
     );
   }
 
@@ -80,6 +177,16 @@ export function runDeploymentSafetyCheck() {
   if (!String(process.env.REDIS_URL ?? "").trim()) {
     failures.push(
       "REDIS_URL is required for distributed authentication and document-export rate limiting",
+    );
+  }
+  if (!String(process.env.BLOB_READ_WRITE_TOKEN ?? "").trim()) {
+    failures.push(
+      "BLOB_READ_WRITE_TOKEN is required for durable document storage on Vercel",
+    );
+  }
+  if (String(process.env.CRON_SECRET ?? "").trim().length < 16) {
+    failures.push(
+      "CRON_SECRET is required and must contain at least 16 characters",
     );
   }
 
@@ -111,7 +218,7 @@ export function runDeploymentSafetyCheck() {
   }
 
   console.log(
-    "Deployment safety gate passed: environment files are protected, distributed rate limiting is configured, no role credentials are embedded, and Vercel builds are database-read-only.",
+    "Deployment safety gate passed: environment files are protected, Redis, Blob, and cron authentication are configured, no role credentials are embedded, and Vercel builds are database-read-only.",
   );
   return 0;
 }

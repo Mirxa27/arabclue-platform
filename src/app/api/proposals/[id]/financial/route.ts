@@ -5,6 +5,7 @@ import { financialFormsSchema, parseJsonBody } from "@/lib/validation";
 import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
+import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "@/lib/contract-render-snapshot";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 
 export const dynamic = "force-dynamic";
@@ -18,13 +19,6 @@ export async function GET(
     const proposal = await db.generatedProposal.findUnique({ where: { id } });
     if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
       throw new ApiError("not found", 404);
-    }
-    if (isProposalEditLocked(proposal.status)) {
-      throw new ApiError(
-        "Proposal is locked for editing in current status",
-        409,
-        "status_locked"
-      );
     }
     let forms = null;
     if (proposal.financialFormsJson) {
@@ -51,6 +45,13 @@ export async function PATCH(
     const proposal = await db.generatedProposal.findUnique({ where: { id } });
     if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
       throw new ApiError("not found", 404);
+    }
+    if (isProposalEditLocked(proposal.status)) {
+      throw new ApiError(
+        "Proposal is locked for editing in current status",
+        409,
+        "status_locked"
+      );
     }
     const parsed = await parseJsonBody(req, financialFormsSchema);
     if (!parsed.ok) return parsed.response;
@@ -94,6 +95,7 @@ export async function PATCH(
           approvedAt: null,
           artifactsJson: null,
           ...STRUCTURED_SNAPSHOT_INVALIDATION,
+          ...CONTRACT_RENDER_SNAPSHOT_INVALIDATION,
         },
       });
       if (write.count !== 1) return null;

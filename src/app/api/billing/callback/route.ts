@@ -1,8 +1,11 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fulfillCheckout } from "@/lib/billing";
 import { withTenant, jsonOk, jsonError } from "@/lib/api-controller";
 import { db } from "@/lib/db";
-import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
+import {
+  describeRateLimitDenial,
+  rateLimitAsync as rateLimit,
+} from "@/lib/rate-limit";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +18,16 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   return withTenant("session", async ({ session, userId }) => {
     const rl = await rateLimit({ key: `billing:callback:${userId}`, limit: 10, windowMs: 5 * 60 * 1000 });
-    if (!rl.ok) return jsonError("rate_limited", 429);
+    if (!rl.ok) {
+      const denial = describeRateLimitDenial(rl);
+      return NextResponse.json(
+        { error: denial.error },
+        {
+          status: denial.status,
+          headers: { "Retry-After": String(denial.retryAfterSeconds) },
+        }
+      );
+    }
 
     const paymentId =
       req.nextUrl.searchParams.get("paymentId") ||

@@ -62,6 +62,7 @@ export async function generateContractPackageZIP(
     proposalLocale?: string | null;
     projectId: string;
     projectUpdatedAt?: Date | string | null;
+    generatedAt?: Date | string;
     validation?: import("./validation-gate").ValidationReport;
     obligations?: ContractObligationSnapshot[];
   }
@@ -70,6 +71,7 @@ export async function generateContractPackageZIP(
   const zip = new JSZip();
   const {
     buildExportManifest,
+    CONTRACT_EXPORT_SAFETY,
     manifestToJson,
     validationReportToJson,
   } = await import("./export-manifest");
@@ -78,6 +80,13 @@ export async function generateContractPackageZIP(
   const validation =
     opts.validation ??
     getContractValidationReport({ contentMd: opts.contentMd });
+  const generatedAt =
+    opts.generatedAt instanceof Date
+      ? opts.generatedAt
+      : typeof opts.generatedAt === "string"
+        ? new Date(opts.generatedAt)
+        : new Date();
+  const generatedAtIso = generatedAt.toISOString();
 
   const htmlBuf = generateBilingualContractHTML(opts);
   zip.file("Draft_Contract_Bilingual.html", htmlBuf);
@@ -93,7 +102,7 @@ export async function generateContractPackageZIP(
     JSON.stringify(
       {
         proposalId: opts.proposalId,
-        generatedAt: new Date().toISOString(),
+        generatedAt: generatedAtIso,
         count: obligations.length,
         done: obligations.filter((o) => o.status === "done").length,
         items: obligations,
@@ -127,6 +136,7 @@ export async function generateContractPackageZIP(
           approvedAt: null,
         },
         validation,
+        contractSafety: CONTRACT_EXPORT_SAFETY,
         artifacts: [
           {
             name: "Draft_Contract_Bilingual.pdf",
@@ -139,6 +149,7 @@ export async function generateContractPackageZIP(
             bytes: htmlBuf,
           },
         ],
+        generatedAt,
       })
     )
   );
@@ -147,7 +158,7 @@ export async function generateContractPackageZIP(
     "README.txt",
     `${companyLabel} — Bilingual Contract Package
 Etimad: ${opts.etimadRef ?? "N/A"}
-Generated: ${new Date().toISOString()}
+Generated: ${generatedAtIso}
 Validation blocking: ${validation.blocking}
 Obligations: ${obligations.filter((o) => o.status === "done").length}/${obligations.length} done
 

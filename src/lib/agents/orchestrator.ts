@@ -37,6 +37,7 @@ import {
 import type { Locale } from "../types";
 import { parseAgentRunConfig } from "../proposal-studio";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "../proposal-snapshot-persistence";
+import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "../contract-render-snapshot";
 import { isProposalEditLocked } from "../proposal-status";
 
 export interface OrchestratorResult {
@@ -784,6 +785,7 @@ export async function runAgentPipeline(opts: {
             submittedAt: null,
             approvedAt: null,
             ...STRUCTURED_SNAPSHOT_INVALIDATION,
+            ...CONTRACT_RENDER_SNAPSHOT_INVALIDATION,
           },
         });
         if (write.count !== 1) {

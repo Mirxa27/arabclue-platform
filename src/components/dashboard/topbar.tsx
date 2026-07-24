@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useTheme } from "next-themes";
@@ -18,6 +18,7 @@ import {
   LogOut,
   Menu,
   X,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,11 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useUI, type DashboardView } from "@/lib/store";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { ApiDocument, ApiProject, ApiNotification } from "@/lib/api-types";
 import { useDismissedNotifications } from "@/hooks/use-dismissed-notifications";
 
@@ -88,6 +85,7 @@ export function DashboardTopbar() {
     refetchInterval: searchOpen ? 30_000 : 60_000,
     staleTime: 20_000,
   });
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -103,8 +101,7 @@ export function DashboardTopbar() {
   const members = data?.members ?? [];
   const bootstrapUser = members[0]?.user;
   const currentUser = session?.user ?? bootstrapUser;
-  const isAdmin =
-    currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "ADMIN";
+  const isAdmin = currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "ADMIN";
   const initials = currentUser?.name
     ?.split(" ")
     .map((n: string) => n[0])
@@ -112,55 +109,37 @@ export function DashboardTopbar() {
     .join("");
 
   const hits = useMemo(() => {
-    if (!q.trim())
-      return [] as {
-        type: string;
-        label: string;
-        view: DashboardView;
-        projectId?: string;
-      }[];
+    if (!q.trim()) return [] as { type: string; label: string; view: DashboardView; projectId?: string }[];
     const ql = q.toLowerCase();
     const projects = ((projectsData?.projects ?? []) as ApiProject[])
       .filter((p) => p.title?.toLowerCase().includes(ql))
       .slice(0, 5)
-      .map((p) => ({
-        type: "project",
-        label: p.title,
-        view: "projects" as const,
-        projectId: p.id,
-      }));
+      .map((p) => ({ type: "project", label: p.title, view: "projects" as const, projectId: p.id }));
     const docs = ((docsData?.documents ?? []) as ApiDocument[])
       .filter((d) => d.originalName?.toLowerCase().includes(ql))
       .slice(0, 5)
-      .map((d) => ({
-        type: "document",
-        label: d.originalName,
-        view: "documents" as const,
-        projectId: d.projectId ?? undefined,
-      }));
+      .map((d) => ({ type: "document", label: d.originalName, view: "documents" as const, projectId: d.projectId ?? undefined }));
     return [...projects, ...docs];
   }, [q, projectsData, docsData]);
 
   const notifications = (notifData?.items ?? []) as ApiNotification[];
-  const visibleNotifications = useMemo(
-    () => notifications.filter((n) => !isDismissed(n.id)),
-    [notifications, isDismissed]
-  );
+  const visibleNotifications = useMemo(() => notifications.filter((n) => !isDismissed(n.id)), [notifications, isDismissed]);
 
   return (
-    <header className="h-14 sm:h-16 shrink-0 border-b border-border bg-card/80 glass backdrop-blur-xl flex items-center gap-2 sm:gap-3 px-3 sm:px-4 lg:px-6 z-30">
+    <header className="h-[56px] sm:h-[60px] shrink-0 border-b border-[var(--hairline)] bg-[var(--surface-1)]/90 backdrop-blur-[16px] backdrop-saturate-[1.2] flex items-center gap-2 sm:gap-3 px-3 sm:px-4 lg:px-6 z-30">
       <Button
         type="button"
         variant="outline"
         size="icon"
-        className="md:hidden h-10 w-10 shrink-0"
+        className="md:hidden h-[40px] w-[40px] min-h-[44px] min-w-[44px] rounded-[10px] border-[var(--hairline)] bg-[var(--surface-2)] text-white/60 hover:text-white hover:bg-[var(--surface-3)] active:scale-[0.97]"
         onClick={() => setMobileNavOpen(true)}
         aria-label={locale === "ar" ? "فتح القائمة" : "Open menu"}
       >
         <Menu className="size-4" />
       </Button>
-      <div className="relative flex-1 max-w-md min-w-0">
-        <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+
+      <div className="relative flex-1 max-w-[480px] min-w-0 group">
+        <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-white/30 pointer-events-none group-focus-within:text-white/60 transition-colors" />
         <Input
           ref={searchRef}
           value={q}
@@ -171,27 +150,27 @@ export function DashboardTopbar() {
           onFocus={() => setSearchOpen(true)}
           onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
           placeholder={tr("search_placeholder", locale)}
-          className="ps-9 pe-16 h-10 bg-background/60"
+          className="ps-9 pe-16 h-[40px] rounded-[10px] bg-[var(--surface-2)] border-[var(--hairline)] text-white placeholder:text-white/35 focus-visible:ring-2 focus-visible:ring-[#5e6ad2] focus-visible:border-transparent text-[13.5px]"
         />
-        <kbd className="absolute end-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-0.5 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
-          <Command className="size-2.5" />K
+        <kbd className="absolute end-2 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1 text-[11px] font-mono text-white/30 bg-white/[0.06] border border-white/10 px-1.5 py-1 rounded-[6px]">
+          <Command className="size-3" />K
         </kbd>
         {searchOpen && hits.length > 0 && (
-          <div className="absolute top-full mt-1 inset-x-0 rounded-lg border border-border bg-card shadow-lg z-50 max-h-64 overflow-y-auto">
+          <div className="absolute top-full mt-2 inset-x-0 rounded-[12px] border border-[var(--hairline)] bg-[var(--surface-2)] shadow-[0_16px_40px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.06)_inset] z-50 max-h-[320px] overflow-y-auto backdrop-blur-xl">
             {hits.map((h, i) => (
               <button
                 key={`${h.type}-${h.label}-${i}`}
                 type="button"
-                className="w-full text-start px-3 py-2 text-xs hover:bg-muted/60 flex items-center justify-between"
+                className="w-full text-start px-3.5 py-2.5 text-[12.5px] hover:bg-white/[0.06] text-white/70 hover:text-white flex items-center justify-between gap-2 transition-colors"
                 onMouseDown={() => {
                   if (h.projectId) setActiveProjectId(h.projectId);
-                  setView(h.view);
+                  startTransition(() => setView(h.view));
                   setQ("");
                   setSearchOpen(false);
                 }}
               >
                 <span className="truncate">{h.label}</span>
-                <Badge variant="outline" className="text-[9px]">
+                <Badge variant="outline" className="text-[10px] border-white/15 text-white/40 shrink-0">
                   {h.type}
                 </Badge>
               </button>
@@ -200,25 +179,18 @@ export function DashboardTopbar() {
         )}
       </div>
 
-      <div className="flex-1" />
+      <div className="flex-1 hidden sm:block" />
 
-      <div className="hidden md:flex items-center gap-2 px-3 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-        <ShieldCheck className="size-4 text-emerald-600" />
-        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-          {locale === "ar" ? "PDPL متوافق" : "PDPL Compliant"}
-        </span>
-        <span className="text-[10px] text-emerald-600/70 font-mono">KSA</span>
+      <div className="hidden lg:flex items-center gap-2 px-3 h-[36px] rounded-full bg-emerald-500/10 border border-emerald-500/15 backdrop-blur">
+        <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
+        <ShieldCheck className="size-3.5 text-emerald-400/80" />
+        <span className="text-[12px] font-[550] tracking-[-0.01em] text-emerald-200/80">{locale === "ar" ? "PDPL متوافق" : "PDPL Compliant"}</span>
+        <span className="text-[10px] text-emerald-400/50 font-mono">KSA</span>
       </div>
 
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={toggle}
-        className="h-10 w-10 relative"
-        title="Switch language"
-      >
+      <Button variant="outline" size="icon" onClick={toggle} className="h-[40px] w-[40px] min-h-[44px] min-w-[44px] rounded-[10px] border-[var(--hairline)] bg-[var(--surface-2)] text-white/60 hover:text-white hover:bg-[var(--surface-3)] relative active:scale-[0.97]">
         <Languages className="size-4" />
-        <span className="absolute -bottom-1 -end-1 text-[9px] font-bold bg-primary text-primary-foreground rounded px-1 leading-tight">
+        <span className="absolute -bottom-1 -end-1 text-[9px] font-bold bg-[#5e6ad2] text-white rounded-[4px] px-1 leading-tight min-w-[16px] h-[14px] flex items-center justify-center shadow">
           {locale === "ar" ? "ع" : "EN"}
         </span>
       </Button>
@@ -230,7 +202,7 @@ export function DashboardTopbar() {
           const cur = resolvedTheme ?? theme;
           setTheme(cur === "dark" ? "light" : "dark");
         }}
-        className="h-10 w-10 bg-card"
+        className="h-[40px] w-[40px] min-h-[44px] min-w-[44px] rounded-[10px] border-[var(--hairline)] bg-[var(--surface-2)] text-white/60 hover:text-white hover:bg-[var(--surface-3)] active:scale-[0.97]"
         title={tr("theme_toggle", locale)}
       >
         {(resolvedTheme ?? theme) === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
@@ -238,68 +210,48 @@ export function DashboardTopbar() {
 
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="icon" className="h-10 w-10 relative">
+          <Button variant="outline" size="icon" className="h-[40px] w-[40px] min-h-[44px] min-w-[44px] rounded-[10px] border-[var(--hairline)] bg-[var(--surface-2)] text-white/60 hover:text-white hover:bg-[var(--surface-3)] relative active:scale-[0.97]">
             <Bell className="size-4" />
-            {visibleNotifications.length > 0 && (
-              <span className="absolute top-1.5 end-1.5 size-2 rounded-full bg-destructive ring-2 ring-card" />
-            )}
+            {visibleNotifications.length > 0 && <span className="absolute top-1.5 end-1.5 size-2 rounded-full bg-[#ff6467] ring-2 ring-[var(--surface-1)] shadow-[0_0_8px_#ff6467]" />}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-80 p-0">
-          <div className="px-3 py-2 border-b flex items-center justify-between gap-2">
-            <div className="text-xs font-semibold">
+        <PopoverContent align="end" className="w-[min(92vw,360px)] p-0 rounded-[14px] border-[var(--hairline)] bg-[var(--surface-1)] shadow-[0_16px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+          <div className="px-4 py-3 border-b border-[var(--hairline)] flex items-center justify-between gap-2">
+            <div className="text-[13px] font-[600] tracking-[-0.01em] text-white flex items-center gap-2">
+              <Bell className="size-4 text-white/40" />
               {locale === "ar" ? "الإشعارات" : "Notifications"}
             </div>
             {visibleNotifications.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-[10px]"
-                onClick={() => dismissAll(visibleNotifications.map((n) => n.id))}
-              >
-                {locale === "ar" ? "تحديد الكل كمقروء" : "Mark all read"}
+              <Button type="button" variant="ghost" size="sm" className="h-7 px-2.5 text-[11px] rounded-full bg-white/[0.06] hover:bg-white/[0.10] text-white/60" onClick={() => dismissAll(visibleNotifications.map((n) => n.id))}>
+                {locale === "ar" ? "قراءة الكل" : "Mark all read"}
               </Button>
             )}
           </div>
-          <div className="max-h-64 overflow-y-auto">
+          <div className="max-h-[320px] overflow-y-auto scrollbar-thin">
             {visibleNotifications.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground p-4 text-center">
-                {tr("no_data", locale)}
-              </p>
+              <div className="p-8 text-center">
+                <div className="mx-auto size-10 rounded-full bg-white/[0.04] flex items-center justify-center mb-3">
+                  <Sparkles className="size-5 text-white/20" />
+                </div>
+                <p className="text-[12px] text-white/40">{tr("no_data", locale)}</p>
+              </div>
             ) : (
               visibleNotifications.map((n) => (
-                <div
-                  key={n.id}
-                  className="flex items-start gap-1 border-b border-border/40 hover:bg-muted/50"
-                >
+                <div key={n.id} className="flex items-start gap-1 border-b border-[var(--hairline)]/60 hover:bg-white/[0.04] transition-colors group">
                   <button
                     type="button"
-                    className="min-w-0 flex-1 text-start px-3 py-2 text-[11px]"
+                    className="min-w-0 flex-1 text-start px-4 py-3"
                     onClick={() => {
                       if (n.href?.includes("view=")) {
                         const v = n.href.split("view=")[1] as DashboardView;
-                        if (v) setView(v);
+                        if (v) startTransition(() => setView(v));
                       }
                     }}
                   >
-                    <div className="font-medium">
-                      {locale === "ar" ? n.titleAr : n.title}
-                    </div>
-                    <div className="text-muted-foreground truncate">
-                      {locale === "ar" ? n.bodyAr : n.body}
-                    </div>
+                    <div className="text-[12.5px] font-[500] text-white/80 leading-[1.4]">{locale === "ar" ? n.titleAr : n.title}</div>
+                    <div className="text-[11.5px] text-white/45 truncate mt-0.5">{locale === "ar" ? n.bodyAr : n.body}</div>
                   </button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="me-1 mt-1 size-7 shrink-0"
-                    aria-label={
-                      locale === "ar" ? "تمييز كمقروء" : "Mark as read"
-                    }
-                    onClick={() => dismiss(n.id)}
-                  >
+                  <Button type="button" variant="ghost" size="icon" className="me-1 mt-1 size-7 shrink-0 rounded-full text-white/30 hover:text-white hover:bg-white/[0.06]" onClick={() => dismiss(n.id)}>
                     <X className="size-3.5" />
                   </Button>
                 </div>
@@ -311,60 +263,44 @@ export function DashboardTopbar() {
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2.5 ps-1 pe-3 h-10 rounded-lg hover:bg-accent transition-colors">
-            <Avatar className="size-8 border-2 border-primary/20">
-              {session?.user?.avatarUrl ? (
-                <AvatarImage src={session.user.avatarUrl} alt={currentUser?.name ?? "User"} />
-              ) : null}
-              <AvatarFallback className="bg-gradient-to-br from-chart-1 to-chart-2 text-white text-xs font-bold">
-                {initials ?? "U"}
-              </AvatarFallback>
+          <button className="flex items-center gap-2.5 ps-1 pe-3 h-[40px] rounded-[10px] bg-[var(--surface-2)] border border-[var(--hairline)] hover:bg-[var(--surface-3)] hover:border-[var(--hairline-light)] transition-all active:scale-[0.98] outline-none focus-visible:ring-2 focus-visible:ring-[#5e6ad2]">
+            <Avatar className="size-8 rounded-[8px] border border-white/10">
+              {session?.user?.avatarUrl ? <AvatarImage src={session.user.avatarUrl} alt={currentUser?.name ?? "User"} /> : null}
+              <AvatarFallback className="rounded-[8px] bg-gradient-to-br from-[#5e6ad2] to-[#8b5cf6] text-white text-[12px] font-bold">{initials ?? "U"}</AvatarFallback>
             </Avatar>
-            <div className="hidden lg:block text-start leading-tight">
-              <div className="text-xs font-semibold">{currentUser?.name ?? "User"}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                {currentUser?.role ?? "Bidder"}
-              </div>
+            <div className="hidden lg:block text-start leading-tight min-w-0">
+              <div className="text-[13px] font-[550] tracking-[-0.01em] text-white truncate max-w-[120px]">{currentUser?.name ?? "User"}</div>
+              <div className="text-[11px] text-white/45 uppercase tracking-[0.06em] font-[500] truncate">{currentUser?.role ?? "Bidder"}</div>
             </div>
-            <ChevronDown className="size-3.5 text-muted-foreground" />
+            <ChevronDown className="size-3.5 text-white/40 hidden lg:block" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-60">
-          <DropdownMenuLabel>
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold">{currentUser?.name}</span>
-              <span className="text-xs text-muted-foreground font-normal">
-                {currentUser?.email}
-              </span>
+        <DropdownMenuContent align="end" className="w-64 rounded-[12px] border-[var(--hairline)] bg-[var(--surface-2)] shadow-[0_16px_40px_rgba(0,0,0,0.5)] p-1.5">
+          <DropdownMenuLabel className="px-2.5 py-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[13px] font-[600] text-white">{currentUser?.name}</span>
+              <span className="text-[11px] text-white/45 font-normal truncate">{currentUser?.email}</span>
             </div>
           </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem className="flex items-center justify-between">
-            <span className="text-xs">
-              {locale === "ar" ? "المصادقة الثنائية" : "MFA Enabled"}
-            </span>
-            <Badge
-              variant="outline"
-              className="bg-emerald-500/10 text-emerald-700 border-emerald-500/20 text-[10px]"
-            >
+          <DropdownMenuSeparator className="bg-[var(--hairline)]" />
+          <DropdownMenuItem className="rounded-[8px] text-[12.5px] focus:bg-white/[0.06] focus:text-white">
+            <span className="flex-1">{locale === "ar" ? "المصادقة الثنائية" : "MFA"}</span>
+            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] rounded-full">
               {currentUser?.mfaEnabled ? "ON" : "OFF"}
             </Badge>
           </DropdownMenuItem>
           {isAdmin && (
             <>
-              <DropdownMenuItem onClick={() => setView("admin_security")}>
+              <DropdownMenuItem onClick={() => startTransition(() => setView("admin_security"))} className="rounded-[8px] text-[12.5px] focus:bg-white/[0.06] focus:text-white">
                 {locale === "ar" ? "إعدادات RBAC" : "RBAC Settings"}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setView("admin_audit")}>
+              <DropdownMenuItem onClick={() => startTransition(() => setView("admin_audit"))} className="rounded-[8px] text-[12.5px] focus:bg-white/[0.06] focus:text-white">
                 {locale === "ar" ? "سجل الجلسات" : "Session / Audit Log"}
               </DropdownMenuItem>
             </>
           )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="text-destructive gap-2"
-            onClick={() => signOut({ callbackUrl: "/login" })}
-          >
+          <DropdownMenuSeparator className="bg-[var(--hairline)]" />
+          <DropdownMenuItem className="rounded-[8px] text-[12.5px] text-[#ff6467] focus:bg-[#ff6467]/10 focus:text-[#ff6467] gap-2" onClick={() => signOut({ callbackUrl: "/login" })}>
             <LogOut className="size-3.5" />
             {locale === "ar" ? "تسجيل الخروج" : "Sign out"}
           </DropdownMenuItem>

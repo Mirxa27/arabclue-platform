@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, startTransition } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +66,7 @@ export function TenderFlowBoard() {
         done: docs > 0,
         action: () => {
           if (active) setActiveProjectId(active.id);
-          setView("documents");
+          startTransition(() => setView("documents"));
         },
         actionLabel: ar ? "المستندات" : "Documents",
         icon: FileUp,
@@ -80,7 +80,7 @@ export function TenderFlowBoard() {
         done: runs > 0,
         action: () => {
           if (active) setActiveProjectId(active.id);
-          setView("agents");
+          startTransition(() => setView("agents"));
         },
         actionLabel: ar ? "الوكلاء" : "Agents",
         icon: Bot,
@@ -94,7 +94,7 @@ export function TenderFlowBoard() {
         done: proposals > 0,
         action: () => {
           if (active) setActiveProjectId(active.id);
-          setView(proposals > 0 ? "proposals" : "contracts");
+          startTransition(() => setView(proposals > 0 ? "proposals" : "contracts"));
         },
         actionLabel: ar ? "المخرجات" : "Outputs",
         icon: Scale,

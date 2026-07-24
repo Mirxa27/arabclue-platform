@@ -10,7 +10,6 @@ import {
   useMotionValue,
   useSpring,
   useInView,
-  useAnimationFrame,
 } from "framer-motion";
 import {
   ArrowLeft,
@@ -25,7 +24,6 @@ import {
   FileText,
   Layers,
   Clock3,
-  Shield,
   Building2,
   Award,
   Zap,
@@ -39,20 +37,20 @@ import {
   ExternalLink,
   Lock,
   Eye,
-  FileCheck,
-  BarChart3,
-  MessageSquare,
-  Briefcase,
   FileStack,
   Timer,
   MousePointer2,
+  BarChart3,
+  Briefcase,
+  MessageSquare,
+  Cpu,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PublicShell, usePublicLocale } from "@/components/marketing/public-shell";
 import { PackagesSection } from "@/components/marketing/packages-section";
 
 /* -------------------------------------------------
-   Data
+   Premium Data — editorial, benefit-driven
 ------------------------------------------------- */
 const STEPS = [
   {
@@ -61,8 +59,8 @@ const STEPS = [
     titleAr: "ألقِ الفوضى",
     kickerEn: "Upload",
     kickerAr: "الرفع",
-    bodyEn: "RFP, BoQ, specs, drawings, annexes — Arabic, English, scanned PDFs. Arabclue reads, maps, and structures it in minutes.",
-    bodyAr: "كراسة، كميات، مواصفات، مخططات، ملاحق — عربي، إنجليزي، PDFs ممسوحة. أراب كلاو يقرأ ويهيكل في دقائق.",
+    bodyEn: "RFP, BoQ, specs, drawings, annexes — AR, EN, scanned PDFs. Arabclue reads with layout awareness and maps to live matrix in minutes.",
+    bodyAr: "كراسة، كميات، مواصفات، مخططات، ملاحق — عربي وإنجليزي وممسوح. يقرأ بوعي تخطيط ويهيكل لمصفوفة حيّة في دقائق.",
     icon: FileSearch,
     accent: "from-cyan-400/30 to-teal-400/20",
     iconBg: "bg-cyan-400/15 text-cyan-200 ring-cyan-400/25",
@@ -89,8 +87,8 @@ const STEPS = [
     titleAr: "فريقك يقرر",
     kickerEn: "Price & approve",
     kickerAr: "تسعير واعتماد",
-    bodyEn: "Humans enter prices. Reviewer chain, audit log, bilingual branded export. No AI pricing suggestions. Ever. Non-negotiable.",
-    bodyAr: "البشر يُدخلون الأسعار. سلسلة مراجعين، سجل تدقيق، تصدير ثنائي بهويتك. لا اقتراحات تسعير. أبداً. قاعدة لا تُمس.",
+    bodyEn: "Humans enter prices. Reviewer chain, audit log, bilingual branded export. No AI pricing suggestions. Ever. Architectural guard.",
+    bodyAr: "البشر يُدخلون الأسعار. سلسلة مراجعين، سجل تدقيق، تصدير ثنائي بهويتك. لا اقتراحات تسعير. أبداً. حماية معمارية.",
     icon: PenLine,
     accent: "from-emerald-300/30 to-teal-300/20",
     iconBg: "bg-emerald-300/15 text-emerald-100 ring-emerald-300/25",
@@ -108,33 +106,37 @@ const FEATURES = [
     icon: Building2,
     badgeEn: "Reusable",
     badgeAr: "قابلة لإعادة الاستخدام",
+    span: "bento-span-6",
   },
   {
-    titleEn: "Live requirements matrix",
-    titleAr: "مصفوفة متطلبات حيّة",
+    titleEn: "Live matrix, zero blind spots",
+    titleAr: "مصفوفة حيّة بلا ثغرات",
     bodyEn: "Every clause: covered, in progress, missing. Share link with team — always synced.",
     bodyAr: "كل فقرة: مغطاة، قيد العمل، مفقودة. رابط مشاركة مع الفريق — متزامن دائماً.",
     icon: Layers,
     badgeEn: "Source-linked",
     badgeAr: "مرتبطة بالمصدر",
+    span: "bento-span-6",
   },
   {
     titleEn: "Exports clients love",
     titleAr: "تصدير يحبه العميل",
-    bodyEn: "PDF, XLSX, full package — Arabic & English, your logo, your fonts. Etimad-ready.",
+    bodyEn: "PDF, XLSX, full package — AR & EN, your logo, your fonts. Etimad-ready.",
     bodyAr: "PDF، XLSX، حزمة كاملة — عربي وإنجليزي، شعارك، خطوطك. جاهز لاعتماد.",
     icon: FileText,
     badgeEn: "Branded",
     badgeAr: "بهويتك",
+    span: "bento-span-7",
   },
   {
     titleEn: "Trust you can prove",
     titleAr: "ثقة يمكنك إثباتها",
-    bodyEn: "Reviewer chain, immutable log, and PDPL/NCA-aware workflow controls. Your accountability, amplified.",
+    bodyEn: "Reviewer chain, immutable log, and PDPL/NCA-aware workflow controls. Accountability amplified.",
     bodyAr: "سلسلة مراجعين، سجل لا يُمس، وضوابط سير عمل تراعي PDPL وNCA. مسؤوليتك، مضاعفة.",
     icon: Award,
     badgeEn: "Review trail",
     badgeAr: "سجل مراجعة",
+    span: "bento-span-5",
   },
 ] as const;
 
@@ -182,7 +184,7 @@ const TESTIMONIALS = [
     nameAr: "سير عمل توضيحي للتسعير",
     roleEn: "Example — not a customer testimonial",
     roleAr: "مثال — ليس شهادة عميل",
-    quoteEn: "Amount fields remain human-entered and review-gated; the drafting agents do not propose bid prices.",
+    quoteEn: "Amount fields remain human-entered and review-gated; drafting agents do not propose bid prices.",
     quoteAr: "تبقى حقول المبالغ بإدخال بشري وخاضعة للمراجعة؛ ولا تقترح وكلاء الصياغة أسعار العطاء.",
     avatar: "A",
     color: "from-cyan-300 to-teal-400",
@@ -213,8 +215,8 @@ const FAQS = [
   {
     qEn: "Does AI price my bid?",
     qAr: "هل الذكاء الاصطناعي يسعّر عطائي؟",
-    aEn: "Never. Structure-only. Amount fields are human-only, reviewer-gated, audit-logged. Guard cannot be disabled. This is architectural, not a toggle.",
-    aAr: "أبداً. هيكل فقط. حقول المبالغ للبشر فقط، بمراجعة وسجل. الحارس لا يمكن تعطيله. هذا معماري وليس خياراً.",
+    aEn: "Never. Structure-only. Amount fields are human-only, reviewer-gated, audit-logged. Guard cannot be disabled. Architectural, not a toggle.",
+    aAr: "أبداً. هيكل فقط. حقول المبالغ للبشر فقط، بمراجعة وسجل. الحارس لا يمكن تعطيله. معماري وليس خياراً.",
   },
   {
     qEn: "What about Arabic PDFs and scanned documents?",
@@ -237,11 +239,11 @@ const FAQS = [
 ];
 
 const TRUST_PILLS = [
-  { en: "Etimad Ready", ar: "جاهز لاعتماد" },
+  { en: "Etimad Workflow", ar: "سير عمل اعتماد" },
   { en: "PDPL-Aware Controls", ar: "ضوابط تراعي PDPL" },
-  { en: "NCA Essentials", ar: "أساسيات NCA" },
-  { en: "ZATCA E-Invoicing", ar: "فوترة ZATCA" },
-  { en: "Vision 2030", ar: "رؤية ٢٠٣٠" },
+  { en: "NCA-Aware Workflow", ar: "سير عمل يراعي NCA" },
+  { en: "Human Pricing", ar: "تسعير بشري" },
+  { en: "Review Trail", ar: "سجل مراجعة" },
 ];
 
 const LOGO_TYPES = [
@@ -249,14 +251,13 @@ const LOGO_TYPES = [
   { en: "Engineering Offices", ar: "مكاتب هندسية", icon: Briefcase },
   { en: "Facilities", ar: "مرافق", icon: FileStack },
   { en: "Operation & Maintenance", ar: "تشغيل وصيانة", icon: Timer },
-  { en: "Clean & Security", ar: "نظافة وحراسة", icon: Shield },
+  { en: "Clean & Security", ar: "نظافة وحراسة", icon: ShieldCheck },
   { en: "IT & Consultancy", ar: "تقنية واستشارات", icon: BarChart3 },
 ];
 
 /* -------------------------------------------------
-   Helpers & Small Animated Components
+   Premium Helpers — 2026 Trends
 ------------------------------------------------- */
-
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -273,12 +274,7 @@ function usePrefersReducedMotion() {
 function ScrollProgress() {
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, { stiffness: 120, damping: 30, mass: 0.2 });
-  return (
-    <motion.div
-      className="pointer-events-none fixed top-0 inset-x-0 z-[60] h-[2px] origin-left bg-gradient-to-r from-cyan-300 via-teal-300 to-amber-200"
-      style={{ scaleX }}
-    />
-  );
+  return <motion.div className="pointer-events-none fixed top-0 inset-x-0 z-[60] h-[2px] origin-left bg-gradient-to-r from-cyan-300 via-teal-300 to-amber-200" style={{ scaleX }} />;
 }
 
 function AnimatedCounter({ value, suffix = "" }: { value: number; suffix?: string }) {
@@ -310,69 +306,44 @@ function AnimatedCounter({ value, suffix = "" }: { value: number; suffix?: strin
 function HeroBackground() {
   return (
     <div aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none select-none">
+      {/* Base + mesh */}
+      <div className="absolute inset-0 aurora-mesh opacity-90" />
       <div
         className="absolute inset-0"
         style={{
           background: `
             radial-gradient(ellipse 90% 70% at 72% 8%, oklch(0.30 0.07 220 / 0.58) 0%, transparent 58%),
             radial-gradient(ellipse 75% 60% at 12% 70%, oklch(0.33 0.06 200 / 0.34) 0%, transparent 56%),
-            radial-gradient(ellipse 50% 40% at 50% -10%, oklch(0.58 0.11 70 / 0.14) 0%, transparent 62%),
-            linear-gradient(180deg, oklch(0.12 0.025 250) 0%, oklch(0.13 0.02 255) 36%, oklch(0.11 0.02 260) 100%)
+            radial-gradient(ellipse 50% 40% at 50% -10%, oklch(0.58 0.11 70 / 0.14) 0%, transparent 62%)
           `,
         }}
       />
-      {/* animated aurora blobs */}
+      {/* Aurora blobs — Glassmorphism 2.0 + Aurora UI */}
       <motion.div
-        aria-hidden
-        className="absolute -top-[12%] -right-[14%] h-[720px] w-[720px] rounded-full blur-[32px]"
-        style={{
-          background: "radial-gradient(circle at 30% 30%, oklch(0.72 0.14 75 / 0.20), transparent 68%)",
-        }}
+        className="absolute -top-[12%] -right-[14%] w-[clamp(420px,45vw,720px)] h-[clamp(420px,45vw,720px)] rounded-full blur-[32px]"
+        style={{ background: "radial-gradient(circle at 30% 30%, oklch(0.72 0.14 75 / 0.20), transparent 68%)" }}
         animate={{ x: [0, 18, -10, 0], y: [0, 12, -8, 0], scale: [1, 1.05, 0.98, 1] }}
         transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
       />
       <motion.div
-        aria-hidden
-        className="absolute -bottom-[18%] -left-[14%] h-[760px] w-[760px] rounded-full blur-[36px]"
-        style={{
-          background: "radial-gradient(circle at 50% 50%, oklch(0.72 0.12 195 / 0.18), transparent 70%)",
-        }}
+        className="absolute -bottom-[18%] -left-[14%] w-[clamp(420px,45vw,760px)] h-[clamp(420px,45vw,760px)] rounded-full blur-[36px]"
+        style={{ background: "radial-gradient(circle at 50% 50%, oklch(0.72 0.12 195 / 0.18), transparent 70%)" }}
         animate={{ x: [0, -14, 10, 0], y: [0, -10, 14, 0], scale: [1, 1.06, 0.99, 1] }}
         transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
       />
-      <motion.div
-        aria-hidden
-        className="absolute top-[40%] left-[38%] h-[480px] w-[480px] rounded-full blur-[40px]"
-        style={{
-          background: "radial-gradient(circle, oklch(0.62 0.10 230 / 0.10), transparent 70%)",
-        }}
-        animate={{ scale: [1, 1.12, 1], opacity: [0.6, 0.9, 0.6] }}
-        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-      />
-      {/* grid */}
+      {/* Grid — subtle */}
       <div className="absolute inset-0 opacity-[0.16] [mask-image:linear-gradient(to_bottom,black_18%,transparent_92%)]">
         <div className="h-full w-full bg-[linear-gradient(to_right,oklch(1_0_0/_0.07)_1px,transparent_1px),linear-gradient(to_bottom,oklch(1_0_0/_0.05)_1px,transparent_1px)] bg-[size:48px_48px]" />
       </div>
-      {/* particles */}
+      {/* Particles — spatial depth */}
       <div className="absolute inset-0">
-        {Array.from({ length: 18 }).map((_, i) => (
+        {Array.from({ length: 16 }).map((_, i) => (
           <motion.span
             key={i}
             className="absolute h-1 w-1 rounded-full bg-white/30"
-            style={{
-              left: `${(i * 37) % 100}%`,
-              top: `${(i * 57) % 100}%`,
-            }}
-            animate={{
-              y: [0, -10 - (i % 5) * 3, 0],
-              opacity: [0.2, 0.8, 0.2],
-            }}
-            transition={{
-              duration: 3.5 + (i % 5),
-              delay: (i % 7) * 0.25,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
+            style={{ left: `${(i * 37) % 100}%`, top: `${(i * 57) % 100}%` }}
+            animate={{ y: [0, -10 - (i % 5) * 3, 0], opacity: [0.2, 0.8, 0.2] }}
+            transition={{ duration: 3.5 + (i % 5), delay: (i % 7) * 0.25, repeat: Infinity, ease: "easeInOut" }}
           />
         ))}
       </div>
@@ -381,14 +352,14 @@ function HeroBackground() {
   );
 }
 
-function TiltCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function TiltCard({ children, className = "", intensity = 1 }: { children: React.ReactNode; className?: string; intensity?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const mx = useSpring(x, { stiffness: 160, damping: 20 });
   const my = useSpring(y, { stiffness: 160, damping: 20 });
-  const rotateX = useTransform(my, [-0.5, 0.5], ["6deg", "-6deg"]);
-  const rotateY = useTransform(mx, [-0.5, 0.5], ["-8deg", "8deg"]);
+  const rotateX = useTransform(my, [-0.5, 0.5], [`${6 * intensity}deg`, `${-6 * intensity}deg`]);
+  const rotateY = useTransform(mx, [-0.5, 0.5], [`${-8 * intensity}deg`, `${8 * intensity}deg`]);
 
   const handleMove = (e: React.MouseEvent) => {
     if (!ref.current) return;
@@ -403,42 +374,9 @@ function TiltCard({ children, className = "" }: { children: React.ReactNode; cla
     y.set(0);
   };
   return (
-    <motion.div
-      ref={ref}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-      style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
-      className={className}
-    >
+    <motion.div ref={ref} onMouseMove={handleMove} onMouseLeave={handleLeave} style={{ rotateX, rotateY, transformStyle: "preserve-3d" }} className={className}>
       {children}
     </motion.div>
-  );
-}
-
-function BeamPath({ ar }: { ar: boolean }) {
-  return (
-    <div className="pointer-events-none absolute left-0 right-0 top-[96px] hidden md:block h-[2px] z-0">
-      <svg width="100%" height="120" className="absolute inset-0 h-[120px] w-full overflow-visible" viewBox="0 0 1200 120" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="beamGrad" x1="0" x2="1">
-            <stop offset="0%" stopColor="oklch(0.72 0.12 195)" stopOpacity="0" />
-            <stop offset="20%" stopColor="oklch(0.72 0.12 195)" stopOpacity="0.9" />
-            <stop offset="80%" stopColor="oklch(0.78 0.16 70)" stopOpacity="0.7" />
-            <stop offset="100%" stopColor="oklch(0.78 0.16 70)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <motion.path
-          d={ar ? "M 0 60 Q 300 0, 600 60 T 1200 60" : "M 0 60 Q 300 120, 600 60 T 1200 60"}
-          stroke="url(#beamGrad)"
-          strokeWidth="2"
-          fill="none"
-          initial={{ pathLength: 0, opacity: 0 }}
-          whileInView={{ pathLength: 1, opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 1.8, ease: "easeInOut" }}
-        />
-      </svg>
-    </div>
   );
 }
 
@@ -452,18 +390,17 @@ function ProductMock() {
   }, []);
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full [perspective:1200px]">
       <div className="absolute -inset-7 -z-10 rounded-[34px] bg-gradient-to-br from-cyan-400/18 via-teal-300/12 to-amber-200/12 blur-2xl" />
-      <TiltCard className="relative">
+      <TiltCard intensity={0.9} className="relative">
         <motion.div
           initial={{ opacity: 0, y: 28, rotate: -1.2 }}
           animate={{ opacity: 1, y: 0, rotate: 0 }}
           transition={{ duration: 0.8, delay: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="relative overflow-hidden rounded-[22px] border border-white/[0.10] bg-gradient-to-b from-white/[0.10] to-white/[0.03] p-[1.2px] shadow-[0_24px_90px_-24px_oklch(0.3_0.08_220/.65),0_0_0_1px_oklch(1_0_0/.05)_inset] backdrop-blur-xl"
         >
-          <div className="rounded-[20.8px] bg-[oklch(0.16_0.02_260)]/92 overflow-hidden">
-            {/* top */}
-            <div className="flex items-center justify-between border-b border-white/10 px-4 sm:px-5 py-3.5">
+          <div className="rounded-[20.8px] bg-[oklch(0.16_0.02_260)]/92 overflow-hidden grain relative">
+            <div className="flex items-center justify-between border-b border-[var(--hairline)] px-4 sm:px-5 py-3.5">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="flex gap-1.5 shrink-0">
                   <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
@@ -475,11 +412,7 @@ function ProductMock() {
                 </span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <motion.span
-                  className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-emerald-200 ring-1 ring-emerald-300/20"
-                  animate={{ scale: [1, 1.02, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
+                <motion.span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-emerald-200 ring-1 ring-emerald-300/20" animate={{ scale: [1, 1.02, 1] }} transition={{ duration: 2, repeat: Infinity }}>
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
                   {ar ? "مباشر" : "Live"}
                 </motion.span>
@@ -489,7 +422,6 @@ function ProductMock() {
               </div>
             </div>
 
-            {/* body */}
             <div className="grid grid-cols-1 sm:grid-cols-[1.28fr_0.88fr] gap-0">
               <div className="p-4 sm:p-5">
                 <div className="mb-3.5 flex items-center justify-between gap-3">
@@ -564,28 +496,12 @@ function ProductMock() {
                     </span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                    <motion.div
-                      className="h-full rounded-full bg-gradient-to-r from-cyan-300 to-teal-300"
-                      initial={{ width: 0 }}
-                      whileInView={{ width: "88%" }}
-                      viewport={{ once: true }}
-                      transition={{ duration: 1.3, delay: 0.6, ease: "easeOut" }}
-                    />
-                  </div>
-                  <div className="mt-2 flex gap-1.5">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        className="h-1 w-8 rounded-full bg-white/10"
-                        animate={{ backgroundColor: ["rgba(255,255,255,0.10)", "rgba(56,189,248,0.55)", "rgba(255,255,255,0.10)"] }}
-                        transition={{ duration: 2, delay: i * 0.3, repeat: Infinity }}
-                      />
-                    ))}
+                    <motion.div className="h-full rounded-full bg-gradient-to-r from-cyan-300 to-teal-300" initial={{ width: 0 }} whileInView={{ width: "88%" }} viewport={{ once: true }} transition={{ duration: 1.3, delay: 0.6, ease: "easeOut" }} />
                   </div>
                 </div>
               </div>
 
-              <div className="border-t sm:border-l sm:border-t-0 border-white/10 bg-white/[0.02] p-4 sm:p-5 flex flex-col">
+              <div className="border-t sm:border-l sm:border-t-0 border-[var(--hairline)] bg-white/[0.02] p-4 sm:p-5 flex flex-col">
                 <h4 className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/35 mb-3">{ar ? "الوكلاء النشطون" : "Active agents"}</h4>
                 <div className="space-y-3">
                   {[
@@ -593,13 +509,7 @@ function ProductMock() {
                     { nameEn: "Drafting agent", nameAr: "وكيل الصياغة", time: "now", icon: Sparkles, color: "text-amber-200" },
                     { nameEn: "Estimator guard", nameAr: "حارس التسعير", time: "standby", icon: Lock, color: "text-emerald-200" },
                   ].map((a, i) => (
-                    <motion.div
-                      key={a.nameEn}
-                      initial={{ opacity: 0, x: 10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.5 + i * 0.12 }}
-                      className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5 hover:bg-white/[0.06] transition-colors"
-                    >
+                    <motion.div key={a.nameEn} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 + i * 0.12 }} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5 hover:bg-white/[0.06] transition-colors">
                       <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] ring-1 ring-white/[0.08] ${a.color} shrink-0`}>
                         <a.icon className="h-4 w-4" />
                       </div>
@@ -611,16 +521,9 @@ function ProductMock() {
                     </motion.div>
                   ))}
                 </div>
-
-                <motion.div
-                  className="mt-auto pt-5"
-                  animate={{ y: [0, -2, 0] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                >
+                <motion.div className="mt-auto pt-5" animate={{ y: [0, -2, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
                   <div className="rounded-xl bg-gradient-to-br from-amber-200/10 to-cyan-200/10 p-3 ring-1 ring-white/10">
-                    <p className="text-[11px] font-semibold leading-relaxed text-white/60">
-                      {ar ? "🛡️ حارس التسعير نشط — لا أسعار مقترحة من AI" : "🛡️ Pricing guard active — no AI-suggested prices."}
-                    </p>
+                    <p className="text-[11px] font-semibold leading-relaxed text-white/60">{ar ? "🛡️ حارس التسعير نشط — لا أسعار مقترحة من AI" : "🛡️ Pricing guard active — no AI-suggested prices."}</p>
                   </div>
                 </motion.div>
               </div>
@@ -629,12 +532,7 @@ function ProductMock() {
         </motion.div>
       </TiltCard>
 
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.9 }}
-        className="absolute -bottom-6 -left-3 sm:-left-5 z-10 hidden max-w-[228px] rounded-2xl border border-white/10 bg-[oklch(0.16_0.02_260)]/90 px-4 py-3 shadow-2xl backdrop-blur-xl md:flex items-center gap-3"
-      >
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }} className="absolute -bottom-6 -left-3 sm:-left-5 z-10 hidden max-w-[228px] rounded-2xl border border-white/10 bg-[oklch(0.16_0.02_260)]/90 px-4 py-3 shadow-2xl backdrop-blur-xl md:flex items-center gap-3">
         <div className="flex -space-x-2 shrink-0">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-400 text-[11px] font-bold text-white ring-2 ring-[oklch(0.16_0.02_260)]">N</div>
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-cyan-300 to-teal-400 text-[11px] font-bold text-black ring-2 ring-[oklch(0.16_0.02_260)]">A</div>
@@ -646,18 +544,13 @@ function ProductMock() {
         </div>
       </motion.div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 16, scale: 0.92 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ delay: 1.05 }}
-        className="absolute -top-5 -right-2 sm:-right-4 z-10 hidden rounded-2xl border border-amber-200/20 bg-[oklch(0.18_0.02_80)]/90 px-3.5 py-2.5 shadow-xl backdrop-blur-md md:flex items-center gap-2.5"
-      >
+      <motion.div initial={{ opacity: 0, y: 16, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ delay: 1.05 }} className="absolute -top-5 -right-2 sm:-right-4 z-10 hidden rounded-2xl border border-amber-200/20 bg-[oklch(0.18_0.02_80)]/90 px-3.5 py-2.5 shadow-xl backdrop-blur-md md:flex items-center gap-2.5">
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-200/15 text-amber-200 ring-1 ring-amber-200/20 shrink-0">
           <Award className="h-4 w-4" />
         </div>
         <div className="min-w-0">
           <p className="text-[11px] font-bold text-white/80 truncate">{ar ? "مصدّر ثنائي اللغة" : "Bilingual export"}</p>
-          <p className="text-[10px] text-white/45 truncate">{ar ? "بهويتك • جاهز لاعتماد" : "Your brand • Etimad ready"}</p>
+          <p className="text-[10px] text-white/45 truncate">{ar ? "بهويتك • عينة للمراجعة" : "Your brand • review sample"}</p>
         </div>
       </motion.div>
     </div>
@@ -665,20 +558,16 @@ function ProductMock() {
 }
 
 function Marquee({ ar }: { ar: boolean }) {
-  const items = useMemo(() => [...LOGO_TYPES, ...LOGO_TYPES], []);
+  const items = useMemo(() => [...LOGO_TYPES, ...LOGO_TYPES, ...LOGO_TYPES], []);
   return (
-    <div className="relative overflow-hidden border-y border-white/[0.06] bg-[oklch(0.12_0.02_260)] py-3">
-      <div className="absolute inset-y-0 left-0 w-24 z-10 bg-gradient-to-r from-[oklch(0.12_0.02_260)] to-transparent" />
-      <div className="absolute inset-y-0 right-0 w-24 z-10 bg-gradient-to-l from-[oklch(0.12_0.02_260)] to-transparent" />
-      <motion.div
-        className="flex gap-3 w-max"
-        animate={{ x: ar ? [0, -600] : [-600, 0] }}
-        transition={{ duration: 28, repeat: Infinity, ease: "linear" }}
-      >
+    <div className="relative overflow-hidden border-y border-[var(--hairline)] bg-[var(--surface-0)] py-3">
+      <div className="absolute inset-y-0 left-0 w-24 z-10 bg-gradient-to-r from-[var(--surface-0)] to-transparent" />
+      <div className="absolute inset-y-0 right-0 w-24 z-10 bg-gradient-to-l from-[var(--surface-0)] to-transparent" />
+      <motion.div className="flex gap-3 w-max" animate={{ x: ar ? [0, -800] : [-800, 0] }} transition={{ duration: 32, repeat: Infinity, ease: "linear" }}>
         {items.map((it, i) => {
           const Icon = it.icon;
           return (
-            <div key={`${it.en}-${i}`} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-medium text-white/55 shrink-0">
+            <div key={`${it.en}-${i}`} className="inline-flex items-center gap-2 rounded-full border border-[var(--hairline)] bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-medium text-white/55 shrink-0">
               <Icon className="h-3.5 w-3.5 text-white/30" />
               {ar ? it.ar : it.en}
             </div>
@@ -689,9 +578,7 @@ function Marquee({ ar }: { ar: boolean }) {
   );
 }
 
-/* -------------------------------------------------
-   Landing Content — FULLY ATTRACTIVE & ANIMATED
-------------------------------------------------- */
+/* Landing Content — Ultimate Premium */
 function LandingContent() {
   const locale = usePublicLocale();
   const ar = locale === "ar";
@@ -701,7 +588,7 @@ function LandingContent() {
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollY } = useScroll();
   const yHero = useTransform(scrollY, [0, 600], [0, -80], { clamp: false });
-  const opacityHero = useTransform(scrollY, [0, 400], [1, 0.2]);
+  const opacityHero = useTransform(scrollY, [0, 400], [1, 0.22]);
 
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
@@ -709,46 +596,33 @@ function LandingContent() {
   const wordsAr = ["عطاءات حكومية", "جاهزة للمراجعة", "في ساعات، لا أسابيع."];
 
   return (
-    <div className="w-full overflow-clip bg-[oklch(0.13_0.02_260)]">
+    <div className="w-full overflow-clip bg-[var(--marketing-bg)] selection:bg-cyan-300/20">
       <ScrollProgress />
 
-      {/* HERO */}
-      <section ref={heroRef} className="relative flex min-h-[94dvh] md:min-h-[92dvh] flex-col justify-center overflow-hidden border-b border-white/10">
+      {/* HERO — massive typography, spatial depth, glass 2.0 */}
+      <section ref={heroRef} className="relative flex min-h-[94dvh] md:min-h-[92dvh] flex-col justify-center overflow-hidden border-b border-[var(--hairline)]">
         <HeroBackground />
         <motion.div style={{ y: reducedMotion ? 0 : yHero, opacity: reducedMotion ? 1 : opacityHero }} className="relative z-10">
-          <div className="mx-auto w-full max-w-[1280px] px-4 sm:px-6 lg:px-8 2xl:max-w-[1440px] py-10 sm:py-14 lg:py-16 xl:py-20">
+          <div className="container-premium py-10 sm:py-14 lg:py-16 xl:py-20">
             <div className="grid grid-cols-1 lg:grid-cols-[1.08fr_0.92fr] gap-10 lg:gap-12 xl:gap-16 items-center">
               <div className="min-w-0">
-                <motion.div
-                  initial={{ opacity: 0, y: 16, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3.5 py-1.5 backdrop-blur-md shadow-[0_0_0_1px_oklch(1_0_0/.04)_inset]"
-                >
+                <motion.div initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3.5 py-1.5 backdrop-blur-md glass-2">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-300" />
                   </span>
-                  <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-white/70">
-                    {ar ? "مبني لمناقصات المملكة • ضوابط تراعي PDPL وNCA" : "Built for KSA procurement • PDPL/NCA-aware controls"}
-                  </span>
+                  <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-white/70">{ar ? "مبني لمناقصات المملكة • سير عمل يراعي الامتثال" : "Built for KSA procurement • compliance-aware workflow"}</span>
                   <span className="ml-1 hidden sm:inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">
                     <Sparkles className="h-3 w-3" /> {ar ? "جديد" : "New"}
                   </span>
                 </motion.div>
 
                 <div className="mt-6 sm:mt-8">
-                  <h1 className="text-balance font-[720] leading-[0.92] tracking-[-0.035em] text-white text-[2.6rem] sm:text-[3.35rem] md:text-[3.85rem] lg:text-[3.7rem] xl:text-[4.25rem] 2xl:text-[4.7rem]">
+                  <h1 className="text-balance font-[800] leading-[0.9] tracking-[-0.05em] text-white fluid-h1">
                     {(ar ? wordsAr : wordsEn).map((w, i) => (
                       <motion.span
                         key={w}
-                        className={
-                          i === 2
-                            ? "block mt-1 bg-gradient-to-r from-cyan-200 via-teal-200 to-amber-200 bg-clip-text text-transparent"
-                            : i === 1
-                              ? "block bg-gradient-to-r from-white via-white to-white/60 bg-clip-text text-transparent"
-                              : "block font-[family-name:var(--font-ibm-arabic)] font-bold"
-                        }
+                        className={i === 2 ? "block mt-1 bg-gradient-to-r from-cyan-200 via-teal-200 to-amber-200 bg-clip-text text-transparent" : i === 1 ? "block bg-gradient-to-r from-white via-white to-white/60 bg-clip-text text-transparent" : "block font-[family-name:var(--font-ibm-arabic)] font-bold"}
                         initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
                         animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                         transition={{ duration: 0.7, delay: 0.08 + i * 0.12, ease: [0.22, 1, 0.36, 1] }}
@@ -759,30 +633,14 @@ function LandingContent() {
                   </h1>
                 </div>
 
-                <motion.p
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.42 }}
-                  className="mt-5 sm:mt-6 max-w-[54ch] text-[15px] sm:text-[16.5px] leading-[1.72] tracking-[-0.01em] text-white/70 text-pretty"
-                >
-                  {ar
-                    ? "مساعد ذكاء اصطناعي لمناقصات اعتماد: يستوعب الكراسة ثنائية اللغة، يساعد على صياغة عرض فني يراعي متطلبات الامتثال، ويبني الهيكل المالي مع حماية تسعير صارمة — وفريقك يبقى صاحب القرار الأخير."
-                    : "AI teammate for Etimad tenders: ingests bilingual RFPs, helps draft compliance-aware technical proposals, and builds financial structure with strict pricing guardrails — your team stays in full control."}
+                <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }} className="mt-5 sm:mt-6 max-w-[54ch] text-[15px] sm:text-[16.5px] leading-[1.72] tracking-[-0.01em] text-white/70 text-pretty">
+                  {ar ? "مساعد ذكاء اصطناعي لمناقصات اعتماد: يستوعب الكراسة ثنائية اللغة، ويساعد على صياغة عرض فني يراعي متطلبات الامتثال، ويبني الهيكل المالي مع حماية تسعير صارمة — وفريقك يبقى صاحب القرار الأخير." : "AI teammate for Etimad tenders: ingests bilingual RFPs, helps draft compliance-aware technical proposals, and builds financial structure with strict pricing guardrails — your team stays in full control."}
                 </motion.p>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.55, delay: 0.52 }}
-                  className="mt-8 sm:mt-9 flex flex-wrap items-center gap-3"
-                >
+                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay: 0.52 }} className="mt-8 sm:mt-9 flex flex-wrap items-center gap-3">
                   <div className="relative group">
                     <div className="absolute -inset-0.5 rounded-full bg-gradient-to-r from-cyan-300 to-amber-200 opacity-60 blur-[8px] group-hover:opacity-90 transition-opacity" />
-                    <Button
-                      asChild
-                      size="lg"
-                      className="relative h-[48px] rounded-full bg-[oklch(0.72_0.12_195)] px-7 text-[14px] font-semibold text-[oklch(0.14_0.02_240)] shadow-[0_0_0_1px_oklch(0.72_0.12_195)_inset,0_8px_24px_-8px_oklch(0.72_0.12_195/.7)] hover:bg-[oklch(0.78_0.12_195)] transition-all"
-                    >
+                    <Button asChild size="lg" className="relative h-[48px] rounded-full bg-[var(--accent-cyan)] px-7 text-[14px] font-semibold text-[oklch(0.14_0.02_240)] shadow-[0_8px_24px_-8px_oklch(0.72_0.12_195/0.6)] hover:bg-[var(--accent-cyan-bright)] btn-premium">
                       <Link href="/login" className="inline-flex items-center gap-2.5">
                         {ar ? "ادخل مساحة العمل" : "Enter workspace"}
                         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/10">
@@ -791,12 +649,7 @@ function LandingContent() {
                       </Link>
                     </Button>
                   </div>
-                  <Button
-                    asChild
-                    size="lg"
-                    variant="outline"
-                    className="h-[48px] rounded-full border-white/15 bg-white/[0.05] px-7 text-[14px] font-medium text-white/80 backdrop-blur hover:bg-white/[0.08] hover:text-white hover:border-white/20 transition-all"
-                  >
+                  <Button asChild size="lg" variant="outline" className="h-[48px] rounded-full border-white/15 bg-white/[0.05] px-7 text-[14px] font-medium text-white/80 backdrop-blur hover:bg-white/[0.08] hover:text-white hover:border-white/20 btn-premium">
                     <Link href="/#how" className="inline-flex items-center gap-2">
                       <Play className="h-4 w-4" />
                       {ar ? "شاهد كيف يعمل" : "See how it works"}
@@ -815,36 +668,26 @@ function LandingContent() {
                   <div className="flex items-center gap-3">
                     <div className="flex -space-x-2">
                       {[0, 1, 2].map((i) => (
-                        <motion.div
-                          key={i}
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          transition={{ delay: 0.8 + i * 0.08, type: "spring", stiffness: 200 }}
-                          className="h-8 w-8 rounded-full border-2 border-[oklch(0.13_0.02_260)] bg-gradient-to-br from-white/20 to-white/5 backdrop-blur flex items-center justify-center"
-                        >
+                        <motion.div key={i} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.8 + i * 0.08, type: "spring", stiffness: 200 }} className="h-8 w-8 rounded-full border-2 border-[var(--marketing-bg)] bg-gradient-to-br from-white/20 to-white/5 backdrop-blur flex items-center justify-center">
                           <span className="text-[10px] font-bold text-white/60">{["م", "A", "K"][i]}</span>
                         </motion.div>
                       ))}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1">
-                        {Array.from({ length: 5 }).map((_, s) => (
-                          <Star key={s} className="h-3 w-3 fill-amber-300 text-amber-300" />
-                        ))}
+                        <FileSearch className="h-3.5 w-3.5 text-cyan-200" />
                         <span className="ml-1 text-[12px] font-semibold text-white/70">
-                          {ar ? "عرض توضيحي" : "Interface preview"}
+                          {ar ? "سير عمل توضيحي" : "Illustrative workflow"}
                         </span>
                       </div>
                       <p className="text-[11px] text-white/40 leading-none mt-0.5">
-                        {ar ? "مثال على سير عمل فريق عطاءات" : "Sample bid-team workflow"}
+                        {ar ? "ليس نتيجة عميل مقاسة" : "Not a measured customer outcome"}
                       </p>
                     </div>
                   </div>
                   <div className="hidden sm:flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5">
                     <HeartHandshake className="h-3.5 w-3.5 text-cyan-200" />
-                    <span className="text-[11px] font-medium text-white/60">
-                      {ar ? "مصمم لسير عمل فرق العطاءات" : "Designed for bid-team workflows"}
-                    </span>
+                    <span className="text-[11px] font-medium text-white/60">{ar ? "الفريق يراجع ويقرر" : "Your team reviews and decides"}</span>
                   </div>
                 </motion.div>
               </div>
@@ -853,11 +696,11 @@ function LandingContent() {
                 <ProductMock />
                 <div className="mt-8 grid grid-cols-3 gap-3 md:hidden">
                   {[
-                    { k: "88%", vEn: "Sample readiness", vAr: "جاهزية توضيحية" },
+                    { k: "Sample", vEn: "Readiness", vAr: "جاهزية توضيحية" },
                     { k: "27", vEn: "Clauses", vAr: "بنود" },
                     { k: "0 SAR", vEn: "AI prices", vAr: "تسعير AI" },
                   ].map((s) => (
-                    <div key={s.k} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-center">
+                    <div key={s.k} className="rounded-2xl border border-[var(--hairline)] bg-white/[0.04] p-3 text-center">
                       <p className="text-[16px] font-bold text-white">{s.k}</p>
                       <p className="mt-0.5 text-[10px] text-white/40">{ar ? s.vAr : s.vEn}</p>
                     </div>
@@ -867,27 +710,19 @@ function LandingContent() {
             </div>
           </div>
         </motion.div>
-        <div className="pointer-events-none absolute bottom-0 inset-x-0 h-28 bg-gradient-to-t from-[oklch(0.13_0.02_260)] to-transparent" />
+        <div className="pointer-events-none absolute bottom-0 inset-x-0 h-28 bg-gradient-to-t from-[var(--marketing-bg)] to-transparent" />
       </section>
 
       <Marquee ar={ar} />
 
-      {/* TRUST STRIP */}
-      <section className="relative border-y border-white/[0.06] bg-[oklch(0.12_0.02_260)]">
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8 py-6 sm:py-7">
+      {/* Trust pills */}
+      <section className="relative border-y border-[var(--hairline)] bg-[var(--surface-0)]">
+        <div className="container-premium py-6 sm:py-7">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 lg:gap-8">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/30 whitespace-nowrap">
-              {ar ? "يراعي الامتثال ومصمم للسوق السعودي" : "Compliance-aware & built for KSA workflows"}
-            </p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/30 whitespace-nowrap">{ar ? "ضوابط سير عمل لمشتريات المملكة" : "Workflow controls for KSA procurement"}</p>
             <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
               {TRUST_PILLS.map((pill) => (
-                <motion.span
-                  key={pill.en}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-medium text-white/60 hover:bg-white/[0.06] transition-colors"
-                >
+                <motion.span key={pill.en} initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-medium text-white/60 hover:bg-white/[0.06] transition-colors">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-300/80" />
                   {ar ? pill.ar : pill.en}
                 </motion.span>
@@ -899,25 +734,21 @@ function LandingContent() {
             </div>
             <div className="hidden xl:flex items-center gap-2 text-[11px] text-white/30">
               <span className="h-px w-8 bg-white/10" />
-              <span className="font-mono">{ar ? "منطقة الاستضافة موضحة لكل نشر" : "Hosting region disclosed per deployment"}</span>
+              <span className="font-mono">
+                {ar ? "منطقة الاستضافة موضحة لكل نشر" : "Hosting region disclosed per deployment"}
+              </span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* BEFORE / AFTER */}
-      <section className="relative border-b border-white/10 py-14 sm:py-18 lg:py-24 overflow-hidden">
+      {/* Before/After — bento comparison */}
+      <section className="relative border-b border-[var(--hairline)] py-14 sm:py-18 lg:py-24 overflow-hidden">
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-[oklch(0.14_0.02_260/.6)] to-transparent" />
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8">
+        <div className="container-premium">
           <div className="grid lg:grid-cols-2 gap-6 lg:gap-8 items-stretch">
-            {/* Old way */}
-            <motion.div
-              initial={{ opacity: 0, y: 16, x: ar ? 16 : -16 }}
-              whileInView={{ opacity: 1, y: 0, x: 0 }}
-              viewport={{ once: true }}
-              className="relative rounded-[24px] border border-white/10 bg-white/[0.03] p-[1px] overflow-hidden"
-            >
-              <div className="rounded-[23px] bg-[oklch(0.13_0.02_260)]/80 p-6 sm:p-8 h-full">
+            <motion.div initial={{ opacity: 0, y: 16, x: ar ? 16 : -16 }} whileInView={{ opacity: 1, y: 0, x: 0 }} viewport={{ once: true }} className="relative rounded-[24px] border border-[var(--hairline)] bg-white/[0.03] p-[1px] overflow-hidden">
+              <div className="rounded-[23px] bg-[var(--surface-1)]/80 p-6 sm:p-8 h-full">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-red-400/10 text-red-300 flex items-center justify-center ring-1 ring-red-300/20">
                     <X className="h-4 w-4" />
@@ -937,21 +768,12 @@ function LandingContent() {
                     );
                   })}
                 </ul>
-                <div className="mt-6 rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2 text-[11px] text-white/30 font-mono">
-                  {ar ? "⏱️ متوسط ٧٢ ساعة عمل قبل التسعير" : "⏱️ Avg 72h before pricing even starts"}
-                </div>
+                <div className="mt-6 rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2 text-[11px] text-white/30 font-mono">⏱️ {ar ? "جهد يدوي متغير حسب نطاق العطاء" : "Manual effort varies by tender scope"}</div>
               </div>
             </motion.div>
 
-            {/* New way */}
-            <motion.div
-              initial={{ opacity: 0, y: 16, x: ar ? -16 : 16 }}
-              whileInView={{ opacity: 1, y: 0, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.08 }}
-              className="relative rounded-[24px] bg-gradient-to-b from-cyan-400/20 via-teal-300/10 to-amber-200/10 p-[1px] overflow-hidden shadow-[0_20px_60px_-20px_oklch(0.72_0.12_195/.35)]"
-            >
-              <div className="rounded-[23px] bg-[oklch(0.16_0.02_260)] p-6 sm:p-8 h-full relative overflow-hidden">
+            <motion.div initial={{ opacity: 0, y: 16, x: ar ? -16 : 16 }} whileInView={{ opacity: 1, y: 0, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.08 }} className="relative rounded-[24px] bg-gradient-to-b from-cyan-400/20 via-teal-300/10 to-amber-200/10 p-[1px] overflow-hidden shadow-[0_20px_60px_-20px_oklch(0.72_0.12_195/.35)]">
+              <div className="rounded-[23px] bg-[var(--surface-2)] p-6 sm:p-8 h-full relative overflow-hidden">
                 <div className="absolute -top-24 -right-24 h-[240px] w-[240px] rounded-full bg-[radial-gradient(circle,oklch(0.72_0.12_195/.18),transparent_70%)] blur-xl" />
                 <div className="flex items-center gap-2 relative">
                   <div className="h-8 w-8 rounded-full bg-emerald-400/15 text-emerald-200 flex items-center justify-center ring-1 ring-emerald-300/20">
@@ -978,9 +800,7 @@ function LandingContent() {
                 </ul>
                 <div className="mt-6 flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-300/10 to-amber-200/10 border border-cyan-200/15 px-3 py-2.5">
                   <Zap className="h-4 w-4 text-cyan-200 shrink-0" />
-                  <span className="text-[11px] font-medium text-white/70">
-                    {ar ? "يعتمد وقت المعالجة على حجم الحزمة وجودة المستندات" : "Processing time depends on pack size and document quality"}
-                  </span>
+                  <span className="text-[11px] font-medium text-white/70">{ar ? "المدة تعتمد على حجم الحزمة والنطاق وتوفر المزوّد" : "Timing depends on pack size, scope, and provider availability"}</span>
                 </div>
               </div>
             </motion.div>
@@ -988,24 +808,17 @@ function LandingContent() {
         </div>
       </section>
 
-      {/* STATS */}
-      <section className="relative border-b border-white/[0.06] bg-[oklch(0.13_0.02_260)]">
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
+      {/* Stats — bento with counters */}
+      <section className="relative border-b border-[var(--hairline)] bg-[var(--marketing-bg)]">
+        <div className="container-premium py-10 sm:py-14">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             {[
               { value: 2, suffix: "", labelEn: "Document languages", labelAr: "لغات المستند", subEn: "Arabic and English", subAr: "العربية والإنجليزية" },
-              { value: 0, suffix: "", labelEn: "AI-priced amount fields", labelAr: "حقول مبالغ يسعّرها AI", subEn: "Human-entered pricing", subAr: "التسعير بإدخال بشري" },
-              { value: 50, suffix: "", labelEn: "Page QA target", labelAr: "هدف اختبار الصفحات", subEn: "Covered by the document benchmark", subAr: "مشمول في معيار اختبار المستند" },
-              { value: 3, suffix: "", labelEn: "Browser engines tested", labelAr: "محركات متصفح مختبرة", subEn: "Chromium, Firefox, WebKit", subAr: "Chromium وFirefox وWebKit" },
+              { value: 3, suffix: "", labelEn: "Guided stages", labelAr: "مراحل موجهة", subEn: "Upload, draft, review", subAr: "رفع وصياغة ومراجعة" },
+              { value: 1, suffix: "", labelEn: "Human pricing path", labelAr: "مسار تسعير بشري", subEn: "Reviewer-gated", subAr: "خاضع للمراجعة" },
+              { value: 0, suffix: "", labelEn: "AI price suggestions", labelAr: "اقتراحات أسعار AI", subEn: "Architecturally blocked", subAr: "محظورة معمارياً" },
             ].map((stat, i) => (
-              <motion.div
-                key={stat.labelEn}
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.07 }}
-                className="group rounded-[20px] border border-white/[0.07] bg-white/[0.03] p-5 sm:p-6 backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/10 transition-all"
-              >
+              <motion.div key={stat.labelEn} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.07 }} className="group rounded-[20px] border border-[var(--hairline)] bg-white/[0.03] p-5 sm:p-6 backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/10 transition-all hover:-translate-y-0.5">
                 <p className="text-[26px] sm:text-[28px] font-bold tracking-tight text-white group-hover:text-cyan-100 transition-colors">
                   <AnimatedCounter value={stat.value} suffix={stat.suffix} />
                 </p>
@@ -1017,11 +830,23 @@ function LandingContent() {
         </div>
       </section>
 
-      {/* HOW IT WORKS */}
-      <section id="how" className="scroll-mt-24 relative border-b border-white/10 py-16 sm:py-20 lg:py-28 overflow-hidden">
-        <BeamPath ar={ar} />
+      {/* How it works — spatial UI with beam */}
+      <section id="how" className="scroll-mt-24 relative border-b border-[var(--hairline)] py-16 sm:py-20 lg:py-28 overflow-hidden">
+        <div className="pointer-events-none absolute left-0 right-0 top-[96px] hidden md:block h-[2px] z-0">
+          <svg width="100%" height="120" className="absolute inset-0 h-[120px] w-full overflow-visible" viewBox="0 0 1200 120" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="beamGrad" x1="0" x2="1">
+                <stop offset="0%" stopColor="oklch(0.72 0.12 195)" stopOpacity="0" />
+                <stop offset="20%" stopColor="oklch(0.72 0.12 195)" stopOpacity="0.9" />
+                <stop offset="80%" stopColor="oklch(0.78 0.16 70)" stopOpacity="0.7" />
+                <stop offset="100%" stopColor="oklch(0.78 0.16 70)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <motion.path d={ar ? "M 0 60 Q 300 0, 600 60 T 1200 60" : "M 0 60 Q 300 120, 600 60 T 1200 60"} stroke="url(#beamGrad)" strokeWidth="2" fill="none" initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: true }} transition={{ duration: 1.8, ease: "easeInOut" }} />
+          </svg>
+        </div>
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-[oklch(0.14_0.03_240/.38)] to-transparent" />
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8 relative z-10">
+        <div className="container-premium relative z-10">
           <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mx-auto max-w-[760px] text-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3.5 py-1 backdrop-blur">
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 animate-pulse" />
@@ -1031,7 +856,7 @@ function LandingContent() {
               {ar ? "ثلاث خطوات. هدف واحد: عطاء يمكنك الاعتماد عليه." : "Three steps. One goal: a bid you can stand behind."}
             </h2>
             <p className="mt-4 text-[14px] sm:text-[15.5px] leading-relaxed text-white/60 max-w-[58ch] mx-auto text-pretty">
-              {ar ? "نظام تشغيل مصمم لسير عمل فرق المناقصات. كل خطوة تحترم وقتك وخبرتك ومسؤوليتك." : "An operating system designed for bid-team workflows. Every step respects time, expertise, and accountability."}
+              {ar ? "سير عمل موجه يحترم وقت الفريق وخبرته ومسؤوليته؛ والنتيجة تبقى خاضعة للمراجعة البشرية." : "A guided workflow that respects team expertise and accountability; every output remains subject to human review."}
             </p>
           </motion.div>
 
@@ -1039,34 +864,20 @@ function LandingContent() {
             {STEPS.map((s, i) => {
               const Icon = s.icon;
               return (
-                <motion.div
-                  key={s.n}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.14, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                  whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                  className="group relative flex flex-col"
-                >
-                  <div className="absolute -top-3 left-7 z-10 hidden md:flex h-7 items-center gap-2 rounded-full bg-[oklch(0.15_0.02_260)] border border-white/10 px-3 shadow">
+                <motion.div key={s.n} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.14, duration: 0.6, ease: [0.22, 1, 0.36, 1] }} whileHover={{ y: -4, transition: { duration: 0.2 } }} className="group relative flex flex-col">
+                  <div className="absolute -top-3 left-7 z-10 hidden md:flex h-7 items-center gap-2 rounded-full bg-[var(--surface-2)] border border-[var(--hairline)] px-3 shadow">
                     <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 animate-pulse" />
                     <span className="text-[10px] font-mono font-semibold text-white/40">{s.n}</span>
                     <span className="text-[10px] font-medium text-white/50">{ar ? s.kickerAr : s.kickerEn}</span>
                   </div>
-
                   <div className="relative flex h-full flex-col rounded-[24px] border border-white/[0.08] bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-[1px] hover:from-white/[0.11] hover:to-white/[0.05] transition-colors">
-                    <div className="relative flex h-full flex-col rounded-[23px] bg-[oklch(0.15_0.02_260)]/90 p-6 sm:p-7 backdrop-blur-xl overflow-hidden">
+                    <div className="relative flex h-full flex-col rounded-[23px] bg-[var(--surface-1)]/90 p-6 sm:p-7 backdrop-blur-xl overflow-hidden">
                       <div className={`pointer-events-none absolute -top-20 -right-20 h-[220px] w-[220px] rounded-full bg-gradient-to-br ${s.accent} opacity-60 blur-2xl group-hover:opacity-90 transition-opacity`} />
                       <div className="flex items-start justify-between gap-4 relative">
-                        <motion.div
-                          whileHover={{ rotate: 6, scale: 1.05 }}
-                          className={`flex h-[52px] w-[52px] items-center justify-center rounded-[16px] ring-1 ${s.iconBg} shadow-inner`}
-                        >
+                        <motion.div whileHover={{ rotate: 6, scale: 1.05 }} className={`flex h-[52px] w-[52px] items-center justify-center rounded-[16px] ring-1 ${s.iconBg} shadow-inner`}>
                           <Icon className="h-6 w-6" />
                         </motion.div>
-                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-white/40">
-                          {ar ? s.timeAr : s.timeEn}
-                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-white/40">{ar ? s.timeAr : s.timeEn}</span>
                       </div>
                       <h3 className="mt-6 text-[18px] font-semibold leading-tight text-white tracking-tight">{ar ? s.titleAr : s.titleEn}</h3>
                       <p className="mt-2.5 text-[13.5px] leading-[1.7] text-white/60 flex-1 text-pretty">{ar ? s.bodyAr : s.bodyEn}</p>
@@ -1083,32 +894,13 @@ function LandingContent() {
               );
             })}
           </div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 w-fit mx-auto backdrop-blur"
-          >
-            <div className="flex items-center gap-2 text-[12px] text-white/60">
-              <Users className="h-4 w-4 text-cyan-200" />
-              <span>{ar ? "مصمم لفرق من ٢ إلى ٢٠" : "Built for teams of 2 to 20"}</span>
-            </div>
-            <span className="hidden sm:block h-3 w-px bg-white/15" />
-            <div className="flex items-center gap-2 text-[12px] text-white/60">
-              <HeartHandshake className="h-4 w-4 text-amber-200" />
-              <span>{ar ? "دعم مباشر من خبراء عطاءات" : "Human support from bid experts"}</span>
-            </div>
-          </motion.div>
         </div>
       </section>
 
-      {/* PLATFORM BENTO */}
-      <section id="features" className="scroll-mt-24 relative border-b border-white/10 py-16 sm:py-20 lg:py-28 overflow-hidden">
-        <div className="absolute inset-0 -z-10">
-          <div className="absolute left-1/2 top-0 h-[640px] w-[960px] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,oklch(0.55_0.08_200/.12),transparent_70%)] blur-[30px]" />
-        </div>
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8">
+      {/* Features — true bento grid 12-col */}
+      <section id="features" className="scroll-mt-24 relative border-b border-[var(--hairline)] py-16 sm:py-20 lg:py-28 overflow-hidden">
+        <div className="absolute left-1/2 top-0 -z-10 h-[640px] w-[960px] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,oklch(0.55_0.08_200/.12),transparent_70%)] blur-[30px]" />
+        <div className="container-premium">
           <div className="grid lg:grid-cols-[0.92fr_1.15fr] gap-8 lg:gap-12 items-start">
             <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="lg:sticky lg:top-28">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3.5 py-1 backdrop-blur">
@@ -1121,17 +913,9 @@ function LandingContent() {
               <p className="mt-4 max-w-[48ch] text-[14px] sm:text-[15.5px] leading-relaxed text-white/60 text-pretty">
                 {ar ? "أراب كلاو لا يستبدل خبرتك. ينظّمها، يوّثقها، ويحوّلها إلى حزمة جاهزة تفتح الأبواب — بكل اللغتين وبصمتك الخاصة." : "Arabclue doesn't replace expertise. It organizes, cites, and turns it into submission-ready pack — bilingual and unmistakably yours."}
               </p>
-              <div className="mt-8 grid grid-cols-2 gap-3 lg:hidden">
-                {FEATURES.slice(0, 2).map((f) => (
-                  <div key={f.titleEn} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-                    <p className="text-[11px] font-semibold text-white/50">{ar ? f.titleAr : f.titleEn}</p>
-                    <p className="mt-1 text-[10px] text-white/35">{ar ? f.badgeAr : f.badgeEn}</p>
-                  </div>
-                ))}
-              </div>
             </motion.div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+            <div className="bento-grid">
               {FEATURES.map((f, i) => {
                 const Icon = f.icon;
                 return (
@@ -1141,10 +925,9 @@ function LandingContent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ delay: i * 0.07 }}
-                    whileHover={{ y: -3 }}
-                    className="group relative rounded-[22px] border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-[1px] hover:from-white/[0.10] hover:to-white/[0.04] transition-all"
+                    className={`${f.span} group relative rounded-[22px] border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-[1px] hover:from-white/[0.10] hover:to-white/[0.04] transition-all`}
                   >
-                    <div className="rounded-[21px] bg-[oklch(0.14_0.02_260)]/80 p-5 sm:p-6 backdrop-blur-xl h-full flex flex-col">
+                    <div className="rounded-[21px] bg-[oklch(0.14_0.02_260)]/80 p-5 sm:p-6 backdrop-blur-xl h-full flex flex-col min-h-[180px]">
                       <div className="flex items-center justify-between">
                         <motion.div whileHover={{ rotate: 8 }} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06] text-white/70 ring-1 ring-white/10 group-hover:bg-white/[0.09] group-hover:text-white transition-colors">
                           <Icon className="h-5 w-5" />
@@ -1153,34 +936,22 @@ function LandingContent() {
                       </div>
                       <h3 className="mt-5 text-[15.5px] font-semibold text-white tracking-tight">{ar ? f.titleAr : f.titleEn}</h3>
                       <p className="mt-2 text-[13px] leading-[1.65] text-white/55 flex-1">{ar ? f.bodyAr : f.bodyEn}</p>
-                      <div className="mt-5 flex items-center gap-1.5 text-[11px] font-medium text-cyan-200/70 group-hover:text-cyan-200 transition-colors">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        {ar ? "جاهز للاستخدام" : "Ready to use"}
-                      </div>
                     </div>
                   </motion.div>
                 );
               })}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.32 }}
-                className="sm:col-span-2 group relative rounded-[22px] border border-amber-200/15 bg-gradient-to-br from-amber-200/[0.08] via-white/[0.04] to-cyan-200/[0.06] p-[1px] overflow-hidden"
-              >
+              <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.32 }} className="bento-span-12 group relative rounded-[22px] border border-amber-200/15 bg-gradient-to-br from-amber-200/[0.08] via-white/[0.04] to-cyan-200/[0.06] p-[1px] overflow-hidden">
                 <div className="rounded-[21px] bg-[oklch(0.16_0.02_260)]/80 p-5 sm:p-6 backdrop-blur-xl flex flex-col sm:flex-row gap-5 items-start sm:items-center">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-200/20 to-cyan-200/20 text-amber-100 ring-1 ring-amber-200/20">
                     <Users className="h-6 w-6" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-[15px] font-semibold text-white">{ar ? "مصمم لفرق العطاءات — وليس بديلاً عنها" : "Designed for bid teams — never a replacement"}</h3>
-                    <p className="mt-1 text-[13px] leading-[1.6] text-white/55">
-                      {ar ? "سير عمل يدعم المراجعة البشرية ويعرض النواقص بدلاً من اختلاق بيانات. يحترم خبرة فريقك ولا يستبدلها." : "A workflow that keeps human review in control and surfaces gaps instead of inventing data. It supports your team’s expertise rather than replacing it."}
-                    </p>
+                    <h3 className="text-[15px] font-semibold text-white">{ar ? "مصمم لإبقاء فريق العطاء مسؤولاً" : "Designed to keep the bid team accountable"}</h3>
+                    <p className="mt-1 text-[13px] leading-[1.6] text-white/55">{ar ? "الأدوات تنظم الأدلة والمسودات والمراجعات، ولا تستبدل خبرة الفريق أو قراره." : "The tools organize evidence, drafts, and reviews; they do not replace team expertise or decisions."}</p>
                   </div>
                   <div className="shrink-0 flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] text-white/60">
                     <HeartHandshake className="h-3.5 w-3.5" />
-                    {ar ? "مراجعة بشرية أولاً" : "Human review first"}
+                    {ar ? "فريق دعم حقيقي" : "Real support"}
                   </div>
                 </div>
               </motion.div>
@@ -1189,35 +960,22 @@ function LandingContent() {
         </div>
       </section>
 
-      {/* TRUST / NO PRICING with lock animation */}
-      <section className="relative py-16 sm:py-20 lg:py-24 border-b border-white/10 overflow-hidden">
+      {/* Trust guard */}
+      <section className="relative py-16 sm:py-20 lg:py-24 border-b border-[var(--hairline)] overflow-hidden">
         <div className="absolute inset-0 -z-10 bg-[oklch(0.14_0.025_220)]" />
         <div className="absolute inset-0 -z-10 bg-gradient-to-br from-amber-200/[0.06] via-transparent to-cyan-200/[0.06]" />
-        <motion.div
-          aria-hidden
-          className="absolute left-[18%] top-[20%] h-64 w-64 rounded-full bg-amber-200/10 blur-[50px]"
-          animate={{ scale: [1, 1.15, 1], opacity: [0.4, 0.7, 0.4] }}
-          transition={{ duration: 8, repeat: Infinity }}
-        />
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8">
+        <div className="container-premium">
           <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-12 items-center">
             <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="relative">
               <div className="inline-flex items-center gap-2 rounded-full border border-amber-200/20 bg-amber-200/10 px-3.5 py-1.5">
-                <motion.div
-                  animate={{ rotate: [0, -8, 8, 0] }}
-                  transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-                >
+                <motion.div animate={{ rotate: [0, -8, 8, 0] }} transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}>
                   <Lock className="h-3.5 w-3.5 text-amber-200" />
                 </motion.div>
                 <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-100/80">{ar ? "قاعدة ثقة" : "Trust foundation"}</span>
               </div>
-              <h2 className="mt-5 text-[26px] sm:text-[32px] lg:text-[38px] font-semibold leading-[1.08] tracking-[-0.02em] text-white text-balance">
-                {ar ? "الذكاء الاصطناعي لا يسعّر عطاءك. أبداً." : "AI never prices your bid. Ever."}
-              </h2>
+              <h2 className="mt-5 text-[26px] sm:text-[32px] lg:text-[38px] font-semibold leading-[1.08] tracking-[-0.02em] text-white text-balance">{ar ? "الذكاء الاصطناعي لا يسعّر عطاءك. أبداً." : "AI never prices your bid. Ever."}</h2>
               <p className="mt-4 max-w-[52ch] text-[14px] sm:text-[15px] leading-[1.7] text-white/60 text-pretty">
-                {ar
-                  ? "لا أسعار مقترحة، لا هوامش، لا خصومات. الوكلاء يبنون هيكل الكميات والنماذج فقط — الأسعار يدخلها البشر ويعتمدها المراجعون. حماية لا يمكن تعطيلها."
-                  : "No suggested prices, margins, discounts. Agents build BoQ structure only — humans enter amounts and reviewers approve. A guardrail you can't disable."}
+                {ar ? "لا أسعار مقترحة، لا هوامش، لا خصومات. الوكلاء يبنون هيكل الكميات والنماذج فقط — الأسعار يدخلها البشر ويعتمدها المراجعون. حماية لا يمكن تعطيلها." : "No suggested prices, margins, discounts. Agents build BoQ structure only — humans enter amounts and reviewers approve. A guardrail you can't disable."}
               </p>
               <div className="mt-6 flex flex-wrap gap-2.5">
                 {[
@@ -1237,13 +995,8 @@ function LandingContent() {
             <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.12 }} className="relative">
               <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-1 backdrop-blur-xl shadow-2xl">
                 <div className="rounded-[20px] bg-[oklch(0.12_0.02_260)] p-6 sm:p-7 relative overflow-hidden">
-                  <div className="absolute -top-12 -right-12 h-32 w-32 rounded-full bg-emerald-300/10 blur-2xl" />
                   <div className="flex items-center gap-3 relative">
-                    <motion.div
-                      className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-200 ring-1 ring-emerald-300/20"
-                      animate={{ scale: [1, 1.06, 1] }}
-                      transition={{ duration: 2.5, repeat: Infinity }}
-                    >
+                    <motion.div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-200 ring-1 ring-emerald-300/20" animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 2.5, repeat: Infinity }}>
                       <ShieldCheck className="h-5 w-5" />
                     </motion.div>
                     <div>
@@ -1255,34 +1008,21 @@ function LandingContent() {
                       ON
                     </span>
                   </div>
-
                   <div className="mt-6 space-y-3 relative">
                     {[
                       { labelEn: "BoQ amount fields", labelAr: "حقول الكميات", valEn: "Human only", valAr: "للبشر فقط", locked: true },
                       { labelEn: "Margin / discount", labelAr: "هامش / خصم", valEn: "Blocked", valAr: "محظور", locked: true },
                       { labelEn: "AI suggestions", labelAr: "اقتراحات AI", valEn: "Structure only", valAr: "هيكل فقط", locked: false },
                     ].map((row, i) => (
-                      <motion.div
-                        key={row.labelEn}
-                        initial={{ opacity: 0, x: 10 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ delay: 0.2 + i * 0.08 }}
-                        className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-3 hover:bg-white/[0.05] transition-colors"
-                      >
+                      <motion.div key={row.labelEn} initial={{ opacity: 0, x: 10 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 + i * 0.08 }} className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-3">
                         <span className="text-[12px] font-medium text-white/60">{ar ? row.labelAr : row.labelEn}</span>
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${row.locked ? "bg-emerald-400/10 text-emerald-200 ring-1 ring-emerald-300/15" : "bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15"}`}
-                        >
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${row.locked ? "bg-emerald-400/10 text-emerald-200 ring-1 ring-emerald-300/15" : "bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15"}`}>
                           {row.locked && <ShieldCheck className="h-3 w-3" />}
                           {ar ? row.valAr : row.valEn}
                         </span>
                       </motion.div>
                     ))}
                   </div>
-                  <p className="mt-5 text-center text-[11px] leading-relaxed text-white/30">
-                    {ar ? "نصمم الثقة كما نصمم الأمان — طبقات، تدقيق، وضوح." : "We design trust like security — layered, audited, transparent."}
-                  </p>
                 </div>
               </div>
             </motion.div>
@@ -1290,44 +1030,34 @@ function LandingContent() {
         </div>
       </section>
 
-      {/* ILLUSTRATIVE WORKFLOWS */}
-      <section className="relative border-b border-white/10 py-16 sm:py-20 lg:py-24 overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-[oklch(0.13_0.02_260)]" />
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8">
+      {/* Testimonials — infinite */}
+      <section className="relative border-b border-[var(--hairline)] py-16 sm:py-20 lg:py-24 overflow-hidden">
+        <div className="container-premium">
           <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-8">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
                 <HeartHandshake className="h-3.5 w-3.5 text-amber-200/70" />
                 <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/40">{ar ? "أمثلة توضيحية" : "Illustrative workflows"}</span>
               </div>
-              <h2 className="mt-4 text-[24px] sm:text-[30px] font-semibold tracking-tight text-white">
-                {ar ? "كيف تدعم الأدوات أدوار فريق العطاء" : "How the tools support each bid-team role"}
-              </h2>
+              <h2 className="mt-4 text-[24px] sm:text-[30px] font-semibold tracking-tight text-white">{ar ? "كيف تدعم الأدوات أدوار فريق العطاء" : "How the tools support each bid-team role"}</h2>
             </div>
             <p className="text-[13px] text-white/40 max-w-[36ch]">{ar ? "أمثلة على سير العمل وليست شهادات عملاء أو نتائج مقاسة." : "Workflow examples—not customer testimonials or measured outcomes."}</p>
           </div>
-
           <div className="relative">
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-16 z-10 bg-gradient-to-r from-[oklch(0.13_0.02_260)] to-transparent" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-16 z-10 bg-gradient-to-l from-[oklch(0.13_0.02_260)] to-transparent" />
-            <motion.div
-              className="flex gap-4 w-max"
-              animate={{ x: [-800, 0] }}
-              transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
-              whileHover={{ animationPlayState: "paused" as any }}
-            >
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-16 z-10 bg-gradient-to-r from-[var(--marketing-bg)] to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-16 z-10 bg-gradient-to-l from-[var(--marketing-bg)] to-transparent" />
+            <motion.div className="flex gap-4 w-max" animate={{ x: [-800, 0] }} transition={{ duration: 40, repeat: Infinity, ease: "linear" }}>
               {[...TESTIMONIALS, ...TESTIMONIALS].map((t, idx) => (
-                <div
-                  key={`${t.nameEn}-${idx}`}
-                  className="w-[320px] sm:w-[360px] shrink-0 rounded-[20px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur hover:bg-white/[0.06] transition-colors"
-                >
+                <div key={`${t.nameEn}-${idx}`} className="w-[320px] sm:w-[360px] shrink-0 rounded-[20px] border border-[var(--hairline)] bg-white/[0.04] p-5 backdrop-blur hover:bg-white/[0.06] transition-colors">
                   <div className="flex items-center gap-3">
                     <div className={`flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br ${t.color} text-[12px] font-bold text-black ring-1 ring-white/10`}>{t.avatar}</div>
                     <div className="min-w-0">
                       <p className="text-[12.5px] font-semibold text-white/80 truncate">{ar ? t.nameAr : t.nameEn}</p>
                       <p className="text-[11px] text-white/40 truncate">{ar ? t.roleAr : t.roleEn}</p>
                     </div>
-                    <FileCheck className="ml-auto h-4 w-4 text-amber-200/70" aria-hidden />
+                    <div className="ml-auto rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] text-white/40">
+                      {ar ? "مثال" : "Example"}
+                    </div>
                   </div>
                   <p className="mt-4 text-[13px] leading-[1.6] text-white/60 italic">“{ar ? t.quoteAr : t.quoteEn}”</p>
                 </div>
@@ -1337,58 +1067,32 @@ function LandingContent() {
         </div>
       </section>
 
-      {/* PACKAGES */}
       <PackagesSection />
 
       {/* FAQ */}
-      <section className="relative border-b border-white/10 py-16 sm:py-20 lg:py-24">
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8">
+      <section className="relative border-b border-[var(--hairline)] py-16 sm:py-20 lg:py-24">
+        <div className="container-premium">
           <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-16 items-start">
             <div className="lg:sticky lg:top-28">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
                 <MessageSquare className="h-3.5 w-3.5 text-white/40" />
                 <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/40">{ar ? "أسئلة شائعة" : "FAQ"}</span>
               </div>
-              <h2 className="mt-4 text-[26px] sm:text-[32px] font-semibold leading-[1.1] tracking-tight text-white text-balance">
-                {ar ? "أسئلة يطرحها كل فريق عطاءات" : "Questions every bid team asks"}
-              </h2>
-              <p className="mt-3 text-[13.5px] leading-relaxed text-white/50 max-w-[40ch]">
-                {ar ? "واضحة، مباشرة، بلا تسويق زائد. لأن الثقة تبدأ بالوضوح." : "Clear, direct, no fluff. Because trust starts with clarity."}
-              </p>
-              <div className="mt-6 hidden lg:flex items-center gap-2">
-                <Button asChild variant="outline" size="sm" className="rounded-full border-white/15 bg-white/[0.04] text-white/70 hover:bg-white/[0.08]">
-                  <Link href="/faq">{ar ? "كل الأسئلة" : "View all FAQs"}</Link>
-                </Button>
-              </div>
+              <h2 className="mt-4 text-[26px] sm:text-[32px] font-semibold leading-[1.1] tracking-tight text-white text-balance">{ar ? "أسئلة يطرحها كل فريق عطاءات" : "Questions every bid team asks"}</h2>
+              <p className="mt-3 text-[13.5px] leading-relaxed text-white/50 max-w-[40ch]">{ar ? "واضحة، مباشرة، بلا تسويق زائد. لأن الثقة تبدأ بالوضوح." : "Clear, direct, no fluff. Because trust starts with clarity."}</p>
             </div>
-
             <div className="space-y-3">
               {FAQS.map((f, i) => (
-                <motion.div
-                  key={f.qEn}
-                  initial={{ opacity: 0, y: 10 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.06 }}
-                  className="rounded-[18px] border border-white/10 bg-white/[0.04] overflow-hidden backdrop-blur"
-                >
-                  <button
-                    onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                    className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-white/[0.04] transition-colors"
-                  >
+                <motion.div key={f.qEn} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.06 }} className="rounded-[18px] border border-[var(--hairline)] bg-white/[0.04] overflow-hidden backdrop-blur">
+                  <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left">
                     <span className="text-[14px] font-medium text-white/80">{ar ? f.qAr : f.qEn}</span>
-                    <motion.span animate={{ rotate: openFaq === i ? 180 : 0 }} transition={{ duration: 0.22 }}>
-                      <ChevronDown className="h-4 w-4 text-white/40" />
+                    <motion.span animate={{ rotate: openFaq === i ? 180 : 0 }} transition={{ duration: 0.22 }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.06] ring-1 ring-white/10">
+                      <ChevronDown className="h-4 w-4 text-white/50" />
                     </motion.span>
                   </button>
                   <AnimatePresence>
                     {openFaq === i && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.28, ease: "easeInOut" }}
-                      >
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.28, ease: "easeInOut" }}>
                         <div className="px-5 pb-5 pt-1">
                           <p className="text-[13px] leading-[1.7] text-white/55">{ar ? f.aAr : f.aEn}</p>
                         </div>
@@ -1402,60 +1106,36 @@ function LandingContent() {
         </div>
       </section>
 
-      {/* FINAL CTA */}
+      {/* Final CTA — aurora mesh + spatial */}
       <section className="relative overflow-hidden py-16 sm:py-20 lg:py-28">
         <div className="absolute inset-0 -z-10">
-          <div className="absolute inset-0 bg-[oklch(0.12_0.02_260)]" />
+          <div className="absolute inset-0 bg-[var(--surface-0)]" />
           <div className="absolute inset-0 bg-gradient-to-br from-cyan-400/[0.10] via-transparent to-amber-200/[0.08]" />
-          <motion.div
-            className="absolute -top-24 left-1/2 h-[560px] w-[960px] -translate-x-1/2 rounded-full blur-[32px]"
-            style={{ background: "radial-gradient(ellipse at center, oklch(0.68 0.12 200 / 0.18), transparent 70%)" }}
-            animate={{ scale: [1, 1.08, 1], rotate: [0, 3, 0] }}
-            transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-          />
+          <motion.div className="absolute -top-24 left-1/2 h-[560px] w-[960px] -translate-x-1/2 rounded-full blur-[32px]" style={{ background: "radial-gradient(ellipse at center, oklch(0.68 0.12 200 / 0.18), transparent 70%)" }} animate={{ scale: [1, 1.08, 1], rotate: [0, 3, 0] }} transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }} />
         </div>
-        <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8">
+        <div className="container-premium">
           <div className="relative rounded-[28px] sm:rounded-[32px] border border-white/[0.08] bg-gradient-to-b from-white/[0.08] to-white/[0.02] p-[1px] overflow-hidden">
-            {/* animated border beam */}
-            <motion.div
-              className="pointer-events-none absolute inset-0 rounded-[28px]"
-              style={{
-                background:
-                  "conic-gradient(from 0deg at 50% 50%, transparent 0%, oklch(0.72 0.12 195 / 0.0) 20%, oklch(0.72 0.12 195 / 0.55) 35%, oklch(0.78 0.16 70 / 0.45) 50%, transparent 68%)",
-              }}
-              animate={{ rotate: 360 }}
-              transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-            />
-            <div className="relative rounded-[27px] sm:rounded-[31px] bg-[oklch(0.15_0.02_260)]/90 backdrop-blur-xl overflow-hidden">
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute -top-32 -right-32 h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle,oklch(0.72_0.14_75/.12),transparent_70%)] blur-xl" />
-                <div className="absolute -bottom-24 -left-24 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle,oklch(0.72_0.12_195/.12),transparent_70%)] blur-xl" />
-              </div>
+            <motion.div className="pointer-events-none absolute inset-0 rounded-[28px]" style={{ background: "conic-gradient(from 0deg at 50% 50%, transparent 0%, oklch(0.72 0.12 195 / 0.0) 20%, oklch(0.72 0.12 195 / 0.55) 35%, oklch(0.78 0.16 70 / 0.45) 50%, transparent 68%)" }} animate={{ rotate: 360 }} transition={{ duration: 12, repeat: Infinity, ease: "linear" }} />
+            <div className="relative rounded-[27px] sm:rounded-[31px] bg-[var(--surface-1)]/90 backdrop-blur-xl overflow-hidden">
               <div className="relative grid lg:grid-cols-[1.15fr_0.85fr] gap-8 lg:gap-12 p-6 sm:p-10 lg:p-14 items-center">
                 <div className="min-w-0">
                   <div className="inline-flex items-center gap-2 rounded-full bg-white/[0.06] border border-white/10 px-3 py-1">
                     <HeartHandshake className="h-3.5 w-3.5 text-amber-200" />
                     <span className="text-[11px] font-semibold tracking-wide text-white/60">{ar ? "فريقك يستحق أدوات تحترمه" : "Your team deserves tools that respect it"}</span>
                   </div>
-                  <h2 className="mt-5 text-[28px] sm:text-[34px] lg:text-[40px] font-semibold leading-[1.08] tracking-[-0.03em] text-white text-balance">
-                    {ar ? "جاهز لعطاءك القادم على اعتماد؟" : "Ready for your next Etimad tender?"}
-                  </h2>
-                  <p className="mt-4 max-w-[48ch] text-[14px] sm:text-[15px] leading-[1.7] text-white/60 text-pretty">
-                    {ar
-                      ? "ادخل مساحة العمل، ارفع الحزمة، ودع الوكلاء ينظمون العمل بينما يراجع فريقك بثقة. بلا surprises — حصص واضحة، تصدير بهويتك."
-                      : "Enter the workspace, upload the pack, and let agents organize while your team reviews with confidence. No surprises — clear quotas, your-brand exports."}
-                  </p>
+                  <h2 className="mt-5 text-[28px] sm:text-[34px] lg:text-[40px] font-semibold leading-[1.08] tracking-[-0.03em] text-white text-balance">{ar ? "جاهز لعطاءك القادم على اعتماد؟" : "Ready for your next Etimad tender?"}</h2>
+                  <p className="mt-4 max-w-[48ch] text-[14px] sm:text-[15px] leading-[1.7] text-white/60 text-pretty">{ar ? "ادخل مساحة العمل، ارفع الحزمة، ودع الوكلاء ينظمون العمل بينما يراجع فريقك بثقة. بلا surprises — حصص واضحة، تصدير بهويتك." : "Enter the workspace, upload the pack, and let agents organize while your team reviews with confidence. No surprises — clear quotas, your-brand exports."}</p>
                   <div className="mt-8 flex flex-wrap gap-3">
                     <div className="relative group">
                       <div className="absolute -inset-0.5 rounded-full bg-gradient-to-r from-cyan-300 to-amber-200 opacity-60 blur-[8px] group-hover:opacity-90 transition-opacity" />
-                      <Button asChild size="lg" className="relative h-12 rounded-full bg-white px-7 text-[14px] font-semibold text-black shadow hover:bg-white/90">
+                      <Button asChild size="lg" className="relative h-12 rounded-full bg-white px-7 text-[14px] font-semibold text-black shadow hover:bg-white/90 btn-premium">
                         <Link href="/login" className="inline-flex items-center gap-2">
                           {ar ? "ابدأ تجربتك الآن" : "Start your trial"}
                           <CtaIcon className="h-4 w-4" />
                         </Link>
                       </Button>
                     </div>
-                    <Button asChild size="lg" variant="outline" className="h-12 rounded-full border-white/15 bg-white/[0.04] px-7 text-[14px] font-medium text-white/80 hover:bg-white/[0.08] hover:text-white backdrop-blur">
+                    <Button asChild size="lg" variant="outline" className="h-12 rounded-full border-white/15 bg-white/[0.04] px-7 text-[14px] font-medium text-white/80 hover:bg-white/[0.08] hover:text-white backdrop-blur btn-premium">
                       <Link href="/compliance">{ar ? "الامتثال والأمان" : "Compliance & security"}</Link>
                     </Button>
                   </div>
@@ -1466,7 +1146,7 @@ function LandingContent() {
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300/70" />
-                      {ar ? "إعداد موجّه" : "Guided setup"}
+                      {ar ? "إعداد موجه" : "Guided setup"}
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300/70" />
@@ -1476,60 +1156,48 @@ function LandingContent() {
                 </div>
 
                 <div className="relative min-w-0">
-                  <TiltCard>
+                  <TiltCard intensity={0.8}>
                     <div className="rounded-[20px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur shadow-[0_20px_50px_-15px_oklch(0_0_0/.5)]">
                       <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-400 text-white font-bold text-[13px]">S</div>
                         <div>
-                          <p className="text-[13px] font-semibold text-white/80">{ar ? "مثال توضيحي لسير المراجعة" : "Illustrative review workflow"}</p>
+                          <p className="text-[13px] font-semibold text-white/80">{ar ? "مثال توضيحي لمدير العطاء" : "Illustrative bid-manager workflow"}</p>
                           <p className="text-[11px] text-white/40">{ar ? "ليس شهادة عميل" : "Not a customer testimonial"}</p>
                         </div>
-                        <FileCheck className="ml-auto h-4 w-4 text-amber-200/70" aria-hidden />
+                        <div className="ml-auto rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] text-white/40">
+                          {ar ? "مثال" : "Example"}
+                        </div>
                       </div>
-                      <motion.p
-                        className="mt-4 text-[13.5px] leading-[1.65] text-white/65 italic text-pretty"
-                        initial={{ opacity: 0 }}
-                        whileInView={{ opacity: 1 }}
-                        viewport={{ once: true }}
-                        transition={{ delay: 0.2 }}
-                      >
-                        {ar ? "تجمع المصفوفة المشتركة المتطلبات والنواقص والمصادر ليقرر الفريق ما يحتاج إلى مراجعة قبل التقديم." : "The shared matrix brings requirements, gaps, and sources together so the team can decide what still needs review before submission."}
+                      <motion.p className="mt-4 text-[13.5px] leading-[1.65] text-white/65 italic text-pretty" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ delay: 0.2 }}>
+                        {ar ? "تتيح المصفوفة المشتركة للفريق مراجعة المتطلبات والنواقص ومراجع المصادر نفسها." : "A shared matrix lets the team review the same requirements, gaps, and source references."}
                       </motion.p>
-                      <div className="mt-4 flex items-center gap-2 text-[11px] text-white/30">
-                        <Clock3 className="h-3 w-3" />
-                        <span>{ar ? "يختلف الوقت والنتيجة حسب نطاق المستند والمراجعة" : "Timing and outcomes vary by document and review scope"}</span>
-                      </div>
                     </div>
                   </TiltCard>
                   <div className="mt-3 grid grid-cols-2 gap-3">
-                    <motion.div whileHover={{ y: -2 }} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 backdrop-blur">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-white/30">{ar ? "تسعير يقترحه AI" : "AI price suggestions"}</p>
-                      <p className="mt-1 text-[18px] font-bold text-white">
-                        <AnimatedCounter value={0} />
-                      </p>
-                      <p className="text-[11px] text-white/40">{ar ? "المبالغ بإدخال بشري" : "amounts are human-entered"}</p>
-                    </motion.div>
-                    <motion.div whileHover={{ y: -2 }} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 backdrop-blur">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-white/30">{ar ? "لغات المستند" : "Document languages"}</p>
+                    <motion.div whileHover={{ y: -2 }} className="rounded-2xl border border-[var(--hairline)] bg-white/[0.03] p-3.5 backdrop-blur">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-white/30">{ar ? "لغات المستند" : "Languages"}</p>
                       <p className="mt-1 text-[18px] font-bold text-white">
                         <AnimatedCounter value={2} />
                       </p>
                       <p className="text-[11px] text-white/40">{ar ? "العربية والإنجليزية" : "Arabic and English"}</p>
+                    </motion.div>
+                    <motion.div whileHover={{ y: -2 }} className="rounded-2xl border border-[var(--hairline)] bg-white/[0.03] p-3.5 backdrop-blur">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-white/30">{ar ? "اقتراحات أسعار AI" : "AI price suggestions"}</p>
+                      <p className="mt-1 text-[18px] font-bold text-white">
+                        <AnimatedCounter value={0} />
+                      </p>
+                      <p className="text-[11px] text-white/40">{ar ? "محظورة معمارياً" : "architecturally blocked"}</p>
                     </motion.div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-
           <p className="mt-8 text-center text-[11px] leading-relaxed text-white/25 max-w-2xl mx-auto px-4 text-pretty">
             {ar ? "أراب كلاو مبني بعناية لفرق المناقصات الحكومية في المملكة. نحن نحترم مسؤوليتك — الذكاء الاصطناعي ينظّم، وأنت تقرر." : "Arabclue is crafted with care for KSA bid teams. We respect accountability — AI organizes, you decide."}
           </p>
         </div>
       </section>
-
-      {/* subtle grain */}
-      <div className="pointer-events-none fixed inset-0 z-[1] opacity-[0.02] mix-blend-soft-light" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }} />
     </div>
   );
 }

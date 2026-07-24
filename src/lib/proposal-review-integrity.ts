@@ -14,6 +14,9 @@ export interface ProposalReviewState {
   readonly structuredSnapshot: unknown;
   readonly structuredSnapshotHash: string | null;
   readonly structuredSnapshotRevision: number;
+  readonly contractRenderSnapshot?: unknown;
+  readonly contractRenderSnapshotHash?: string | null;
+  readonly contractRenderSnapshotRevision?: number;
 }
 
 function canonicalStoredJson(value: string | null): unknown {
@@ -50,7 +53,29 @@ export function computeProposalReviewSubmissionHash(
     structuredSnapshot: proposal.structuredSnapshot ?? null,
     structuredSnapshotHash: proposal.structuredSnapshotHash,
     structuredSnapshotRevision: proposal.structuredSnapshotRevision,
+    contractRenderSnapshot: proposal.contractRenderSnapshot ?? null,
+    contractRenderSnapshotHash:
+      proposal.contractRenderSnapshotHash ?? null,
+    contractRenderSnapshotRevision:
+      proposal.contractRenderSnapshotRevision ?? 0,
   });
+}
+
+export function proposalAuthoritativeSnapshotBinding(
+  proposal: ProposalReviewState
+): {
+  readonly hash: string | null;
+  readonly revision: number;
+} {
+  return proposal.type === "CONTRACT"
+    ? {
+        hash: proposal.contractRenderSnapshotHash ?? null,
+        revision: proposal.contractRenderSnapshotRevision ?? 0,
+      }
+    : {
+        hash: proposal.structuredSnapshotHash,
+        revision: proposal.structuredSnapshotRevision,
+      };
 }
 
 export function proposalReviewBinding(
@@ -61,11 +86,13 @@ export function proposalReviewBinding(
   readonly submittedSnapshotHash: string | null;
   readonly submittedSnapshotRevision: number;
 } {
+  const authoritativeSnapshot =
+    proposalAuthoritativeSnapshotBinding(proposal);
   return {
     submissionHash: computeProposalReviewSubmissionHash(proposal),
     submittedProposalVersion: proposal.version,
-    submittedSnapshotHash: proposal.structuredSnapshotHash,
-    submittedSnapshotRevision: proposal.structuredSnapshotRevision,
+    submittedSnapshotHash: authoritativeSnapshot.hash,
+    submittedSnapshotRevision: authoritativeSnapshot.revision,
   };
 }
 
@@ -78,13 +105,15 @@ export function proposalMatchesReviewBinding(
     readonly submittedSnapshotRevision: number | null;
   }
 ): boolean {
+  const authoritativeSnapshot =
+    proposalAuthoritativeSnapshotBinding(proposal);
   return (
     typeof binding.submissionHash === "string" &&
     binding.submissionHash.length > 0 &&
     binding.submittedProposalVersion === proposal.version &&
-    binding.submittedSnapshotHash === proposal.structuredSnapshotHash &&
+    binding.submittedSnapshotHash === authoritativeSnapshot.hash &&
     binding.submittedSnapshotRevision ===
-      proposal.structuredSnapshotRevision &&
+      authoritativeSnapshot.revision &&
     binding.submissionHash === computeProposalReviewSubmissionHash(proposal)
   );
 }

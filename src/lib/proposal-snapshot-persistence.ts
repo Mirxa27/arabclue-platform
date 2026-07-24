@@ -309,6 +309,16 @@ export function validateStructuredSnapshotEvidence(
   const sources = new Map(snapshot.sources.map((source) => [source.id, source]));
   const diagnostics: StructuredSnapshotDiagnostic[] = [];
   for (const source of snapshot.sources) {
+    if (source.kind === "TENDER" || source.kind === "WORKSPACE") {
+      diagnostics.push(
+        persistenceDiagnostic(
+          "UNBOUND_PRIVILEGED_SOURCE",
+          `sources.${source.id}.kind`,
+          `${source.kind} provenance requires an immutable server binding and cannot be self-declared.`,
+          `يتطلب مصدر ${source.kind} ارتباط خادم غير قابل للتغيير ولا يمكن إعلانه ذاتياً.`
+        )
+      );
+    }
     if (
       source.kind !== "APPROVED_KNOWLEDGE" &&
       source.knowledgeBinding !== undefined
@@ -369,6 +379,34 @@ export function validateStructuredSnapshotEvidence(
   }
   for (const snapshotModule of snapshot.modules) {
     for (const block of snapshotModule.blocks) {
+      if (
+        block.type === "COMMERCIAL_HANDOFF" &&
+        block.pricingStatus === "VERIFIED_SOURCE_VALUES"
+      ) {
+        for (const entry of block.entries) {
+          if (entry.amount === null && entry.currency === null) continue;
+          const invalidRefs = entry.sourceRefs.filter((ref) => {
+            const source = sources.get(ref);
+            return (
+              source?.kind !== "APPROVED_KNOWLEDGE" ||
+              !approved.has(ref)
+            );
+          });
+          if (
+            entry.sourceRefs.length === 0 ||
+            invalidRefs.length > 0
+          ) {
+            diagnostics.push(
+              persistenceDiagnostic(
+                "UNVERIFIED_COMMERCIAL_VALUES",
+                `modules.${snapshotModule.key}.blocks.${block.key}.entries.${entry.key}.sourceRefs`,
+                "Values labeled as verified must reference only currently approved tenant knowledge. User, workspace, and self-declared tender values remain unverified.",
+                "يجب أن تشير القيم المصنفة موثقة فقط إلى معرفة مساحة العمل المعتمدة حالياً. وتظل قيم المستخدم ومساحة العمل والمنافسة المعلنة ذاتياً غير موثقة."
+              )
+            );
+          }
+        }
+      }
       if (block.type !== "EVIDENCE_REGISTER") continue;
       for (const entry of block.entries) {
         if (entry.status !== "VERIFIED") continue;

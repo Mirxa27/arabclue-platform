@@ -3,14 +3,63 @@ import { COMPLIANCE_FRAMEWORKS, AI_PROVIDER_PRESETS, ENV_CATALOG, DEFAULT_PLANS 
 import { encryptValue, assertProductionSecrets } from "./crypto";
 import { hashPassword, getBootstrapAdminPassword } from "./password";
 import { ensureDatabaseReady } from "./ensure-db";
+import {
+  isProductionBlockedDevelopmentIdentity,
+  isProductionRuntime,
+} from "./production-identities";
 
 // Ensures default workspace + SUPER_ADMIN exist when BOOTSTRAP_ADMIN_PASSWORD is set.
 // Auth gate is enforced by NextAuth middleware — this only seeds data.
 
 const WORKSPACE_SLUG = "default-workspace";
+let productionIdentitySweepComplete = false;
 
 function bootstrapAdminEmail(): string {
-  return (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@arabclue.com").trim().toLowerCase();
+  const email = (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@arabclue.com")
+    .trim()
+    .toLowerCase();
+  if (isProductionBlockedDevelopmentIdentity(email)) {
+    throw new Error(
+      "BOOTSTRAP_ADMIN_EMAIL cannot use a reserved development identity in production"
+    );
+  }
+  return email;
+}
+
+async function disableProductionDevelopmentIdentities(): Promise<void> {
+  if (!isProductionRuntime()) return;
+  if (productionIdentitySweepComplete) return;
+  await db.$transaction(async (tx) => {
+    const reservedUsers = await tx.user.findMany({
+      where: { email: { endsWith: "@arabclue.local" } },
+      select: { id: true, active: true },
+    });
+    const ids = reservedUsers.map((user) => user.id);
+    if (ids.length === 0) return;
+    await tx.userSession.deleteMany({ where: { userId: { in: ids } } });
+    const activeUsers = reservedUsers.filter((user) => user.active);
+    for (const user of activeUsers) {
+      const disabled = await tx.user.updateMany({
+        where: { id: user.id, active: true },
+        data: { active: false },
+      });
+      if (disabled.count !== 1) continue;
+      await tx.auditLog.create({
+        data: {
+          action: "SECURITY_DEV_IDENTITY_DISABLED",
+          resource: "User",
+          resourceId: user.id,
+          details: JSON.stringify({
+            reason: "reserved_development_identity_in_production",
+            wasActive: true,
+          }),
+          severity: "CRITICAL",
+          success: true,
+        },
+      });
+    }
+  });
+  productionIdentitySweepComplete = true;
 }
 
 let cachedBootstrap: Awaited<ReturnType<typeof runBootstrap>> | null = null;
@@ -18,11 +67,13 @@ let cachedBootstrap: Awaited<ReturnType<typeof runBootstrap>> | null = null;
 /** Clear bootstrap cache after ephemeral DB is replaced (Vercel /tmp). */
 export function resetBootstrapCache() {
   cachedBootstrap = null;
+  productionIdentitySweepComplete = false;
 }
 
 export async function getBootstrapContext() {
   assertProductionSecrets();
   await ensureDatabaseReady();
+  await disableProductionDevelopmentIdentities();
   if (cachedBootstrap) return cachedBootstrap;
   cachedBootstrap = await runBootstrap();
   return cachedBootstrap;

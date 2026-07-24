@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -374,7 +376,7 @@ export function AgentWorkflow() {
     },
     onError: (err: Error) => {
       if (err.message.includes("project") || err.message.includes("مشروع")) {
-        setView("projects");
+        startTransition(() => setView("projects"));
       }
       toast({
         title: locale === "ar" ? "تعذر التشغيل" : "Could not start",
@@ -546,7 +548,7 @@ export function AgentWorkflow() {
                       : "Create or select a project first",
                   variant: "destructive",
                 });
-                setView("projects");
+                startTransition(() => setView("projects"));
                 return;
               }
               runMutation.mutate();
@@ -587,7 +589,7 @@ export function AgentWorkflow() {
         ) : (
           <button
             type="button"
-            onClick={() => setView("projects")}
+            onClick={() => startTransition(() => setView("projects"))}
             className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium hover:underline"
           >
             <AlertCircle className="size-3.5" />
@@ -936,7 +938,7 @@ export function AgentWorkflow() {
             <Button
               size="sm"
               className="h-8 text-[11px]"
-              onClick={() => setView("proposals")}
+              onClick={() => startTransition(() => setView("proposals"))}
               disabled={!proposalId && !completed}
             >
               {locale === "ar" ? "فتح العطاء" : "Open proposal"}
@@ -945,7 +947,7 @@ export function AgentWorkflow() {
               size="sm"
               variant="outline"
               className="h-8 text-[11px] gap-1"
-              onClick={() => setView("contracts")}
+              onClick={() => startTransition(() => setView("contracts"))}
             >
               <Scale className="size-3" />
               {locale === "ar" ? "العقد" : "Contract"}

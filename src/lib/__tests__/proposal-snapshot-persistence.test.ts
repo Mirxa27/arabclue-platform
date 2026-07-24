@@ -267,6 +267,65 @@ describe("structured proposal snapshot persistence", () => {
     );
   });
 
+  test("never labels user-entered commercial amounts as verified source values", () => {
+    const snapshot = structuredProposalSnapshotFixture("proposal-1", 1);
+    const firstModule = snapshot.modules[0];
+    const userSource = snapshot.sources[0];
+    const commercialSnapshot = {
+      ...snapshot,
+      modules: [
+        {
+          ...firstModule,
+          requiredBlockKeys: ["commercial-values"],
+          blocks: [
+            {
+              type: "COMMERCIAL_HANDOFF" as const,
+              key: "commercial-values",
+              title: { en: "Commercial values", ar: "القيم التجارية" },
+              sourceRequired: true,
+              sourceRefs: [userSource.id],
+              instruction: {
+                en: "Commercial value supplied by the user.",
+                ar: "قيمة تجارية أدخلها المستخدم.",
+              },
+              pricingStatus: "VERIFIED_SOURCE_VALUES" as const,
+              entries: [
+                {
+                  key: "total",
+                  description: { en: "Total", ar: "الإجمالي" },
+                  amount: "999999999",
+                  currency: "SAR",
+                  sourceRefs: [userSource.id],
+                },
+              ],
+            },
+          ],
+        },
+        ...snapshot.modules.slice(1),
+      ],
+    };
+
+    const result = canonicalizeProposalSnapshot(commercialSnapshot, {
+      proposalId: "proposal-1",
+      expectedRevision: 0,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "INVALID_SNAPSHOT_CONTENT",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "UNVERIFIED_COMMERCIAL_VALUES" }),
+      ]),
+    });
+    expect(
+      validateStructuredSnapshotEvidence(commercialSnapshot, [])
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "UNVERIFIED_COMMERCIAL_VALUES" }),
+      ])
+    );
+  });
+
   test("requires an exact immutable binding for approved knowledge", () => {
     const binding = approvedBinding("approved-project-1");
     const snapshot = snapshotWithApprovedSource(binding);

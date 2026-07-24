@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyMfaToken } from "@/lib/mfa";
 import { requireSession } from "@/lib/auth";
-import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
+import {
+  describeRateLimitDenial,
+  rateLimitAsync as rateLimit,
+} from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
 import { z } from "zod";
 import { zodErrorResponse } from "@/lib/validation";
@@ -21,7 +24,14 @@ export async function POST(req: NextRequest) {
 
     const rl = await rateLimit({ key: `mfa:verify:${session.user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
     if (!rl.ok) {
-      return NextResponse.json({ error: "rate_limited_try_later" }, { status: 429 });
+      const denial = describeRateLimitDenial(rl);
+      return NextResponse.json(
+        { error: denial.error },
+        {
+          status: denial.status,
+          headers: { "Retry-After": String(denial.retryAfterSeconds) },
+        }
+      );
     }
 
     let raw: unknown;

@@ -3,7 +3,10 @@ import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { parseJsonBody, authPrecheckSchema } from "@/lib/validation";
-import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
+import {
+  describeRateLimitDenial,
+  rateLimitAsync as rateLimit,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +26,14 @@ export async function POST(req: NextRequest) {
       windowMs: 15 * 60 * 1000,
     });
     if (!rl.ok) {
-      return NextResponse.json({ error: "Too many attempts" }, { status: 429 });
+      const denial = describeRateLimitDenial(rl);
+      return NextResponse.json(
+        { error: denial.error },
+        {
+          status: denial.status,
+          headers: { "Retry-After": String(denial.retryAfterSeconds) },
+        }
+      );
     }
 
     const user = await db.user.findUnique({ where: { email } });

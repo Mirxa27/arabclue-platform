@@ -115,6 +115,8 @@ export const proposalPatchSchema = z
     title: z.string().trim().min(1).max(500).optional(),
     titleAr: z.string().trim().max(500).nullable().optional(),
     changeLog: z.string().max(500).optional(),
+    expectedVersion: z.number().int().positive(),
+    expectedUpdatedAt: z.string().datetime(),
   })
   .refine(
     (o) =>

@@ -7,6 +7,10 @@ import { verifyMfaToken } from "./mfa";
 import { audit, AUDIT_ACTIONS } from "./audit";
 import { rateLimitAsync as rateLimit } from "./rate-limit";
 import type { Role } from "./types";
+import {
+  isProductionBlockedDevelopmentIdentity,
+  isProductionRuntime,
+} from "./production-identities";
 
 declare module "next-auth" {
   interface Session {
@@ -74,12 +78,25 @@ export const authOptions: NextAuthOptions = {
           key: `login:${email || "unknown"}`,
           limit: 10,
           windowMs: 15 * 60 * 1000,
+          requireDistributed: isProductionRuntime(),
         });
         if (!rl.ok) {
+          if (rl.backend === "unavailable") {
+            return null;
+          }
           await audit({
             action: AUDIT_ACTIONS.LOGIN_FAILED,
             details: { email, reason: "rate_limited" },
             severity: "WARN",
+            success: false,
+          });
+          return null;
+        }
+        if (isProductionBlockedDevelopmentIdentity(email)) {
+          await audit({
+            action: AUDIT_ACTIONS.LOGIN_FAILED,
+            details: { reason: "reserved_development_identity" },
+            severity: "CRITICAL",
             success: false,
           });
           return null;
@@ -201,6 +218,20 @@ export const authOptions: NextAuthOptions = {
       }
 
       // Revocation check
+      if (
+        isProductionBlockedDevelopmentIdentity(
+          String(token.email ?? "")
+        )
+      ) {
+        if (token.sessionToken) {
+          await db.userSession.deleteMany({
+            where: { token: token.sessionToken },
+          });
+        }
+        token.id = "";
+        token.sessionToken = undefined;
+        return token;
+      }
       if (token.sessionToken) {
         const row = await db.userSession.findUnique({
           where: { token: token.sessionToken },

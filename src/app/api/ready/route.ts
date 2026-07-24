@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getMyFatoorahPublicConfig } from "@/lib/myfatoorah";
+import { productionInfrastructureReadiness } from "@/lib/production-readiness";
+import {
+  probeDistributedRateLimitBackend,
+  requiresDistributedRateLimit,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -61,26 +66,23 @@ export async function GET() {
     checks.myfatoorah = { ok: false, detail: "config_error" };
   }
 
-  const onVercel = Boolean(process.env.VERCEL);
-  const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
-  checks.storage = {
-    ok: !onVercel || blobConfigured,
-    detail: blobConfigured
-      ? "vercel_blob"
-      : onVercel
-        ? "ephemeral_/tmp"
-        : "local_uploads",
-  };
-  if (onVercel && !blobConfigured) {
+  const infrastructure = productionInfrastructureReadiness(process.env);
+  checks.storage = infrastructure.storage;
+  checks.rateLimit = infrastructure.rateLimit;
+  checks.cron = infrastructure.cron;
+  const distributedRateLimitRequired = requiresDistributedRateLimit(undefined);
+  if (checks.rateLimit.ok && distributedRateLimitRequired) {
+    const reachable = await probeDistributedRateLimitBackend();
+    checks.rateLimit = {
+      ok: reachable,
+      detail: reachable ? "redis" : "redis_unavailable",
+    };
+  }
+  if (!infrastructure.storage.ok) {
     console.warn(
       "[ready] BLOB_READ_WRITE_TOKEN unset on Vercel — uploads use /tmp and are lost on cold start"
     );
   }
-
-  checks.rateLimit = {
-    ok: true,
-    detail: process.env.REDIS_URL?.trim() ? "redis" : "memory",
-  };
 
   checks.email = {
     ok: true,
@@ -89,15 +91,9 @@ export async function GET() {
       : "degraded_no_resend",
   };
 
-  checks.cron = {
-    ok: true,
-    detail:
-      process.env.CRON_SECRET && process.env.CRON_SECRET.length >= 16
-        ? "configured"
-        : "CRON_SECRET_missing",
-  };
-
   const ready = Object.values(checks).every((c) => c.ok);
+  const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
+  const onVercel = Boolean(process.env.VERCEL);
   return NextResponse.json(
     {
       ready,
@@ -108,7 +104,11 @@ export async function GET() {
         : onVercel
           ? "ephemeral"
           : "local",
-      rateLimit: process.env.REDIS_URL?.trim() ? "redis" : "memory",
+      rateLimit: checks.rateLimit.ok
+        ? process.env.REDIS_URL?.trim()
+          ? "redis"
+          : "memory"
+        : "unavailable",
       time: new Date().toISOString(),
     },
     { status: ready ? 200 : 503 }

@@ -1,0 +1,71 @@
+import { describe, expect, test } from "bun:test";
+import {
+  describeRateLimitDenial,
+  redisReconnectAllowed,
+  requiresDistributedRateLimit,
+} from "../rate-limit";
+
+describe("distributed rate-limit policy", () => {
+  test("requires Redis only when REDIS_URL is configured", () => {
+    expect(
+      requiresDistributedRateLimit(undefined, { NODE_ENV: "production" })
+    ).toBe(false);
+    expect(
+      requiresDistributedRateLimit(undefined, {
+        NODE_ENV: "development",
+        VERCEL: "1",
+      })
+    ).toBe(false);
+    expect(
+      requiresDistributedRateLimit(undefined, {
+        NODE_ENV: "production",
+        VERCEL: "1",
+        REDIS_URL: "redis://localhost:6379",
+      })
+    ).toBe(true);
+    expect(
+      requiresDistributedRateLimit(undefined, { NODE_ENV: "development" })
+    ).toBe(false);
+  });
+
+  test("honors explicit requireDistributed overrides", () => {
+    expect(
+      requiresDistributedRateLimit(true, { NODE_ENV: "development" })
+    ).toBe(true);
+    expect(
+      requiresDistributedRateLimit(false, {
+        NODE_ENV: "production",
+        REDIS_URL: "redis://localhost:6379",
+      })
+    ).toBe(false);
+  });
+
+  test("distinguishes limiter exhaustion from backend unavailability", () => {
+    expect(
+      describeRateLimitDenial({
+        backend: "redis",
+        retryAfterMs: 1_001,
+      })
+    ).toEqual({
+      status: 429,
+      error: "rate_limited",
+      retryAfterSeconds: 2,
+    });
+    expect(
+      describeRateLimitDenial({
+        backend: "unavailable",
+        retryAfterMs: 5_000,
+      })
+    ).toEqual({
+      status: 503,
+      error: "rate_limit_service_unavailable",
+      retryAfterSeconds: 5,
+    });
+  });
+
+  test("permits Redis initialization retry only after its cooldown", () => {
+    expect(redisReconnectAllowed(10_000, 9_999)).toBe(false);
+    expect(redisReconnectAllowed(10_000, 10_000)).toBe(true);
+    expect(redisReconnectAllowed(10_000, 10_001)).toBe(true);
+  });
+});

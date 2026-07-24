@@ -398,13 +398,13 @@ export const ENV_CATALOG = [
   { key: "DEEPSEEK_API_KEY", category: "AI_PROVIDER", description: "DeepSeek API key (OpenAI-compatible)", isRequired: false },
   { key: "AZURE_OPENAI_API_KEY", category: "AI_PROVIDER", description: "Azure OpenAI API key", isRequired: false },
   { key: "DATABASE_URL", category: "DATABASE", description: "Primary database connection string", isRequired: true },
-  { key: "REDIS_URL", category: "DATABASE", description: "Redis URL for distributed rate limiting (optional; falls back to memory)", isRequired: false },
+  { key: "REDIS_URL", category: "DATABASE", description: "Redis URL required in production for distributed authentication and export rate limiting", isRequired: true },
   { key: "VECTOR_DB_URL", category: "DATABASE", description: "Vector database (Milvus/Pinecone) endpoint", isRequired: false },
   { key: "WEBHOOK_URL", category: "INTEGRATION", description: "Outbound HTTPS webhook for audit/event notifications", isRequired: false },
   { key: "RESEND_API_KEY", category: "INTEGRATION", description: "Resend API key for transactional expiry/billing emails", isRequired: false },
   { key: "EMAIL_FROM", category: "INTEGRATION", description: "From address for Resend (e.g. ArabClue <noreply@arabclue.com>)", isRequired: false },
-  { key: "CRON_SECRET", category: "SECURITY", description: "Bearer secret for /api/cron/* routes (Vercel Cron + manual)", isRequired: false },
-  { key: "BLOB_READ_WRITE_TOKEN", category: "STORAGE", description: "Vercel Blob token — required on Vercel for durable uploads", isRequired: false },
+  { key: "CRON_SECRET", category: "SECURITY", description: "Production bearer secret for /api/cron/* routes (minimum 16 characters)", isRequired: true },
+  { key: "BLOB_READ_WRITE_TOKEN", category: "STORAGE", description: "Vercel Blob token required on Vercel for durable uploads", isRequired: true },
   { key: "SMTP_HOST", category: "INTEGRATION", description: "Email relay host (legacy; prefer Resend)", isRequired: false },
   { key: "SMTP_PORT", category: "INTEGRATION", description: "Email relay port", isRequired: false },
   { key: "ARABCLUE_ENC_KEY", category: "SECURITY", description: "Master encryption key for env secrets", isRequired: true },
@@ -472,4 +472,3 @@ export const DEFAULT_PLANS = [
     featuresJson: JSON.stringify(["all_agents", "all_exports", "pay_per_proposal"]),
   },
 ];
-

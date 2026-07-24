@@ -6,6 +6,8 @@ import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context"
 import { parseJsonBody, proposalPatchSchema } from "@/lib/validation";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
+import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "@/lib/contract-render-snapshot";
+import { matchesProposalEditPrecondition } from "@/lib/proposal-edit-precondition";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +73,14 @@ export async function PATCH(
 
     const { workspace } = await getTenantContext(session.user.id);
     const { id } = await params;
-    const { contentMd, locale, title, titleAr } = parsed.data;
+    const {
+      contentMd,
+      locale,
+      title,
+      titleAr,
+      expectedVersion,
+      expectedUpdatedAt,
+    } = parsed.data;
     const changeLog = parsed.data.changeLog ?? "Manual edit";
 
     const existing = await db.generatedProposal.findUnique({ where: { id } });
@@ -83,6 +92,23 @@ export async function PATCH(
         {
           error: "Proposal is locked for editing in current status",
           code: "status_locked",
+        },
+        { status: 409 }
+      );
+    }
+    if (
+      !matchesProposalEditPrecondition(existing, {
+        version: expectedVersion,
+        updatedAt: expectedUpdatedAt,
+      })
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Proposal changed since this editor loaded it. Reload before saving.",
+          code: "proposal_revision_conflict",
+          currentVersion: existing.version,
+          currentUpdatedAt: existing.updatedAt.toISOString(),
         },
         { status: 409 }
       );
@@ -121,6 +147,7 @@ export async function PATCH(
                 approvedAt: null,
                 artifactsJson: null,
                 ...STRUCTURED_SNAPSHOT_INVALIDATION,
+                ...CONTRACT_RENDER_SNAPSHOT_INVALIDATION,
               }
             : {}),
         },

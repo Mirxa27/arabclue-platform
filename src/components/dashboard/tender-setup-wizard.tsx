@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, startTransition } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
@@ -104,7 +104,7 @@ export function TenderSetupWizard({ open, onOpenChange }: Props) {
       reset();
       if (data.project?.id) {
         setActiveProjectId(data.project.id);
-        setView("documents");
+        startTransition(() => setView("documents"));
       }
       toast({
         title: ar ? "تم إعداد المناقصة" : "Tender project ready",

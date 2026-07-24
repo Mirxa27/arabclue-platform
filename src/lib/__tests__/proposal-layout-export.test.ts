@@ -223,7 +223,7 @@ function richSnapshot(): ProposalSnapshot {
         en: "Values were entered by an authorized user.",
         ar: "أدخل المستخدم المخول القيم.",
       },
-      pricingStatus: "VERIFIED_SOURCE_VALUES",
+      pricingStatus: "USER_ENTRY_REQUIRED",
       entries: [
         {
           key: "line-1",

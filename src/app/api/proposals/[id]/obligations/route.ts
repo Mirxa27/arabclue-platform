@@ -6,6 +6,8 @@ import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { extractObligations } from "@/lib/contract-obligations";
 import { parseContractArticles } from "@/lib/contract-format";
 import { parseContractArtifacts } from "@/lib/contract-artifacts";
+import { isProposalEditLocked } from "@/lib/proposal-status";
+import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "@/lib/contract-render-snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +34,6 @@ export async function GET(
     if (proposal.type !== "CONTRACT") {
       throw new ApiError("Not a contract proposal", 400);
     }
-
     const artifacts = parseContractArtifacts(proposal.artifactsJson);
     const articles =
       artifacts.articles?.length
@@ -71,28 +72,61 @@ export async function PATCH(
     if (proposal.type !== "CONTRACT") {
       throw new ApiError("Not a contract proposal", 400);
     }
+    if (isProposalEditLocked(proposal.status)) {
+      throw new ApiError(
+        "Contract obligations are locked during and after review",
+        409,
+        "status_locked"
+      );
+    }
 
     const body = await req.json().catch(() => ({}));
     const parsed = patchSchema.safeParse(body);
     if (!parsed.success) throw new ApiError("Validation failed", 400);
 
-    const row = await db.contractObligationState.upsert({
-      where: {
-        proposalId_obligationId: {
+    const row = await db.$transaction(async (tx) => {
+      const write = await tx.generatedProposal.updateMany({
+        where: {
+          id,
+          workspaceId: workspace.id,
+          status: proposal.status,
+          version: proposal.version,
+          updatedAt: proposal.updatedAt,
+        },
+        data: {
+          status: "DRAFT",
+          submittedAt: null,
+          approvedAt: null,
+          ...CONTRACT_RENDER_SNAPSHOT_INVALIDATION,
+        },
+      });
+      if (write.count !== 1) {
+        throw new ApiError(
+          "Contract changed concurrently; reload before updating obligations",
+          409,
+          "proposal_concurrent_update"
+        );
+      }
+      const updatedState = await tx.contractObligationState.upsert({
+        where: {
+          proposalId_obligationId: {
+            proposalId: id,
+            obligationId: parsed.data.obligationId,
+          },
+        },
+        create: {
           proposalId: id,
           obligationId: parsed.data.obligationId,
+          status: parsed.data.status,
+          updatedById: userId,
         },
-      },
-      create: {
-        proposalId: id,
-        obligationId: parsed.data.obligationId,
-        status: parsed.data.status,
-        updatedById: userId,
-      },
-      update: {
-        status: parsed.data.status,
-        updatedById: userId,
-      },
+        update: {
+          status: parsed.data.status,
+          updatedById: userId,
+        },
+      });
+      await tx.proposalReview.deleteMany({ where: { proposalId: id } });
+      return updatedState;
     });
 
     return jsonOk({ item: row });
@@ -116,6 +150,13 @@ export async function POST(
     if (proposal.type !== "CONTRACT") {
       throw new ApiError("Not a contract proposal", 400);
     }
+    if (isProposalEditLocked(proposal.status)) {
+      throw new ApiError(
+        "Contract obligations are locked during and after review",
+        409,
+        "status_locked"
+      );
+    }
 
     const body = await req.json().catch(() => ({}));
     const parsed = migrateSchema.safeParse(body);
@@ -126,9 +167,31 @@ export async function POST(
       return jsonOk({ migrated: 0 });
     }
 
-    await db.$transaction(
-      unique.map((obligationId) =>
-        db.contractObligationState.upsert({
+    await db.$transaction(async (tx) => {
+      const write = await tx.generatedProposal.updateMany({
+        where: {
+          id,
+          workspaceId: workspace.id,
+          status: proposal.status,
+          version: proposal.version,
+          updatedAt: proposal.updatedAt,
+        },
+        data: {
+          status: "DRAFT",
+          submittedAt: null,
+          approvedAt: null,
+          ...CONTRACT_RENDER_SNAPSHOT_INVALIDATION,
+        },
+      });
+      if (write.count !== 1) {
+        throw new ApiError(
+          "Contract changed concurrently; reload before migrating obligations",
+          409,
+          "proposal_concurrent_update"
+        );
+      }
+      for (const obligationId of unique) {
+        await tx.contractObligationState.upsert({
           where: {
             proposalId_obligationId: { proposalId: id, obligationId },
           },
@@ -142,9 +205,10 @@ export async function POST(
             status: "done",
             updatedById: userId,
           },
-        })
-      )
-    );
+        });
+      }
+      await tx.proposalReview.deleteMany({ where: { proposalId: id } });
+    });
 
     return jsonOk({ migrated: unique.length });
   }, "proposal-obligations");

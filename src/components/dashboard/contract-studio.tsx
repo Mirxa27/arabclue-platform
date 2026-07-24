@@ -51,6 +51,7 @@ type Props = {
   proposalId?: string;
   status?: string | null;
   version?: number | null;
+  updatedAt?: string | null;
   versions?: ApiProposalVersion[];
   research?: SaudiLawResearchBrief | null;
   articles?: ContractArticle[] | null;
@@ -80,6 +81,7 @@ export function BilingualContractStudio({
   proposalId,
   status,
   version,
+  updatedAt,
   versions = [],
   research,
   articles: articlesProp,
@@ -138,12 +140,15 @@ export function BilingualContractStudio({
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!proposalId) throw new Error("Missing contract id");
+      if (!updatedAt) throw new Error("Reload the contract before saving");
       const res = await fetch(`/api/proposals/${proposalId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contentMd: draftMd,
           changeLog: "Contract studio save",
+          expectedVersion: currentVersion,
+          expectedUpdatedAt: updatedAt,
         }),
       });
       const json = await res.json().catch(() => ({}));

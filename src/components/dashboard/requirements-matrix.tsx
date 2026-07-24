@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useLocale, useUI } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Panel, EmptyState, QueryState } from "@/components/patterns";
@@ -110,7 +112,7 @@ export function RequirementsMatrix() {
               ? "اختر مشروعاً نشطاً لعرض المتطلبات المستخرجة."
               : "Select an active project to view extracted requirements."}
           </p>
-          <Button size="sm" onClick={() => setView("projects")}>
+          <Button size="sm" onClick={() => startTransition(() => setView("projects"))}>
             {ar ? "اختيار مشروع" : "Choose a project"}
           </Button>
         </div>
@@ -138,7 +140,7 @@ export function RequirementsMatrix() {
       title={ar ? "مصفوفة المتطلبات" : "Requirements matrix"}
       subtitle={`${summary.COVERED} covered · ${summary.IN_PROGRESS} in progress · ${summary.MISSING} missing`}
       actions={
-        <Button size="sm" variant="outline" onClick={() => setView("documents")}>
+        <Button size="sm" variant="outline" onClick={() => startTransition(() => setView("documents"))}>
           {ar ? "المستندات" : "Documents"}
         </Button>
       }
@@ -164,7 +166,7 @@ export function RequirementsMatrix() {
                 : "Run agents to extract requirements from the RFP, then link evidence from your account."
             }
             action={
-              <Button size="sm" onClick={() => setView("agents")}>
+              <Button size="sm" onClick={() => startTransition(() => setView("agents"))}>
                 {ar ? "الوكلاء" : "Agents"}
               </Button>
             }

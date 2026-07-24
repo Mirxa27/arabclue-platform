@@ -5,6 +5,7 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
+import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "@/lib/contract-render-snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,7 @@ export async function POST(
         approvedAt: null,
         artifactsJson: null,
         ...STRUCTURED_SNAPSHOT_INVALIDATION,
+        ...CONTRACT_RENDER_SNAPSHOT_INVALIDATION,
       },
     });
     if (write.count !== 1) return null;

@@ -7,8 +7,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   DEFAULT_BILINGUAL_CONFIG,
   parseBilingualDocument,
@@ -35,128 +35,167 @@ import {
 import { BILINGUAL_LAYOUT_READY_SELECTOR } from "./layout-sync";
 import { validateAndNormalizeLogoImage } from "./brand-logo";
 
-const requireFromHere = createRequire(import.meta.url);
-
 type FontAsset = Readonly<{
   family: string;
   weight: SupportedFontWeight;
-  moduleId: string;
+  packageId:
+    | "noto-sans"
+    | "noto-sans-arabic"
+    | "ibm-plex-sans"
+    | "ibm-plex-sans-arabic";
+  relativePath: string;
 }>;
+
+const FONT_PACKAGE_ROOTS = Object.freeze({
+  "noto-sans": path.join(
+    process.cwd(),
+    "node_modules",
+    "@fontsource",
+    "noto-sans",
+  ),
+  "noto-sans-arabic": path.join(
+    process.cwd(),
+    "node_modules",
+    "@fontsource",
+    "noto-sans-arabic",
+  ),
+  "ibm-plex-sans": path.join(
+    process.cwd(),
+    "node_modules",
+    "@ibm",
+    "plex-sans",
+  ),
+  "ibm-plex-sans-arabic": path.join(
+    process.cwd(),
+    "node_modules",
+    "@ibm",
+    "plex-sans-arabic",
+  ),
+} satisfies Readonly<Record<FontAsset["packageId"], string>>);
 
 const FONT_ASSETS = {
   "noto-sans": [
     {
       family: "Noto Sans Arabic",
       weight: 300,
-      moduleId:
-        "@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-300-normal.woff2",
+      packageId: "noto-sans-arabic",
+      relativePath: "files/noto-sans-arabic-arabic-300-normal.woff2",
     },
     {
       family: "Noto Sans Arabic",
       weight: 400,
-      moduleId:
-        "@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff2",
+      packageId: "noto-sans-arabic",
+      relativePath: "files/noto-sans-arabic-arabic-400-normal.woff2",
     },
     {
       family: "Noto Sans Arabic",
       weight: 500,
-      moduleId:
-        "@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-500-normal.woff2",
+      packageId: "noto-sans-arabic",
+      relativePath: "files/noto-sans-arabic-arabic-500-normal.woff2",
     },
     {
       family: "Noto Sans Arabic",
       weight: 600,
-      moduleId:
-        "@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-600-normal.woff2",
+      packageId: "noto-sans-arabic",
+      relativePath: "files/noto-sans-arabic-arabic-600-normal.woff2",
     },
     {
       family: "Noto Sans Arabic",
       weight: 700,
-      moduleId:
-        "@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-700-normal.woff2",
+      packageId: "noto-sans-arabic",
+      relativePath: "files/noto-sans-arabic-arabic-700-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 300,
-      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-300-normal.woff2",
+      packageId: "noto-sans",
+      relativePath: "files/noto-sans-latin-300-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 400,
-      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-400-normal.woff2",
+      packageId: "noto-sans",
+      relativePath: "files/noto-sans-latin-400-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 500,
-      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-500-normal.woff2",
+      packageId: "noto-sans",
+      relativePath: "files/noto-sans-latin-500-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 600,
-      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-600-normal.woff2",
+      packageId: "noto-sans",
+      relativePath: "files/noto-sans-latin-600-normal.woff2",
     },
     {
       family: "Noto Sans",
       weight: 700,
-      moduleId: "@fontsource/noto-sans/files/noto-sans-latin-700-normal.woff2",
+      packageId: "noto-sans",
+      relativePath: "files/noto-sans-latin-700-normal.woff2",
     },
   ],
   "ibm-plex-sans": [
     {
       family: "IBM Plex Sans Arabic",
       weight: 300,
-      moduleId:
-        "@ibm/plex-sans-arabic/fonts/complete/woff2/IBMPlexSansArabic-Light.woff2",
+      packageId: "ibm-plex-sans-arabic",
+      relativePath: "fonts/complete/woff2/IBMPlexSansArabic-Light.woff2",
     },
     {
       family: "IBM Plex Sans Arabic",
       weight: 400,
-      moduleId:
-        "@ibm/plex-sans-arabic/fonts/complete/woff2/IBMPlexSansArabic-Regular.woff2",
+      packageId: "ibm-plex-sans-arabic",
+      relativePath: "fonts/complete/woff2/IBMPlexSansArabic-Regular.woff2",
     },
     {
       family: "IBM Plex Sans Arabic",
       weight: 500,
-      moduleId:
-        "@ibm/plex-sans-arabic/fonts/complete/woff2/IBMPlexSansArabic-Medium.woff2",
+      packageId: "ibm-plex-sans-arabic",
+      relativePath: "fonts/complete/woff2/IBMPlexSansArabic-Medium.woff2",
     },
     {
       family: "IBM Plex Sans Arabic",
       weight: 600,
-      moduleId:
-        "@ibm/plex-sans-arabic/fonts/complete/woff2/IBMPlexSansArabic-SemiBold.woff2",
+      packageId: "ibm-plex-sans-arabic",
+      relativePath: "fonts/complete/woff2/IBMPlexSansArabic-SemiBold.woff2",
     },
     {
       family: "IBM Plex Sans Arabic",
       weight: 700,
-      moduleId:
-        "@ibm/plex-sans-arabic/fonts/complete/woff2/IBMPlexSansArabic-Bold.woff2",
+      packageId: "ibm-plex-sans-arabic",
+      relativePath: "fonts/complete/woff2/IBMPlexSansArabic-Bold.woff2",
     },
     {
       family: "IBM Plex Sans",
       weight: 300,
-      moduleId: "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Light.woff2",
+      packageId: "ibm-plex-sans",
+      relativePath: "fonts/complete/woff2/IBMPlexSans-Light.woff2",
     },
     {
       family: "IBM Plex Sans",
       weight: 400,
-      moduleId: "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Regular.woff2",
+      packageId: "ibm-plex-sans",
+      relativePath: "fonts/complete/woff2/IBMPlexSans-Regular.woff2",
     },
     {
       family: "IBM Plex Sans",
       weight: 500,
-      moduleId: "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Medium.woff2",
+      packageId: "ibm-plex-sans",
+      relativePath: "fonts/complete/woff2/IBMPlexSans-Medium.woff2",
     },
     {
       family: "IBM Plex Sans",
       weight: 600,
-      moduleId:
-        "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-SemiBold.woff2",
+      packageId: "ibm-plex-sans",
+      relativePath: "fonts/complete/woff2/IBMPlexSans-SemiBold.woff2",
     },
     {
       family: "IBM Plex Sans",
       weight: 700,
-      moduleId: "@ibm/plex-sans/fonts/complete/woff2/IBMPlexSans-Bold.woff2",
+      packageId: "ibm-plex-sans",
+      relativePath: "fonts/complete/woff2/IBMPlexSans-Bold.woff2",
     },
   ],
 } as const satisfies Readonly<
@@ -196,7 +235,11 @@ function escapeCssString(value: string): string {
 }
 
 async function loadFontFace(asset: FontAsset): Promise<string> {
-  const resolvedPath = requireFromHere.resolve(asset.moduleId);
+  const packageRoot = FONT_PACKAGE_ROOTS[asset.packageId];
+  const resolvedPath = path.resolve(packageRoot, asset.relativePath);
+  if (!resolvedPath.startsWith(`${packageRoot}${path.sep}`)) {
+    throw new Error("Bilingual font asset escaped its package root.");
+  }
   const bytes = await readFile(resolvedPath);
   const dataUrl = `data:font/woff2;base64,${bytes.toString("base64")}`;
   return `@font-face {

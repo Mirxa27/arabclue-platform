@@ -1,11 +1,32 @@
 import { describe, expect, test } from "bun:test";
 import {
   handleProposalSnapshotGet,
+  handleProposalSnapshotPost,
   handleProposalSnapshotPut,
   type ProposalSnapshotRouteDependencies,
 } from "../../app/api/proposals/[id]/snapshot/route";
 import { canonicalizeProposalSnapshot } from "../proposal-snapshot-persistence";
 import { structuredProposalSnapshotFixture } from "./fixtures/structured-proposal-snapshot";
+import type { ProposalSnapshotServerIdentity } from "../proposal-snapshot-identity";
+
+const SERVER_IDENTITY: ProposalSnapshotServerIdentity = {
+  projectTitle: {
+    en: "Digital services addendum",
+    ar: "ملحق الخدمات الرقمية",
+  },
+  bidderName: {
+    en: "Fixture Bidder",
+    ar: "مقدم العرض التجريبي",
+  },
+  tenderReference: "TENDER-2026-001",
+  brand: {
+    primaryColor: "#173F5F",
+    secondaryColor: "#20639B",
+    accentColor: "#D68C20",
+    backgroundColor: "#FFFFFF",
+    textColor: "#132238",
+  },
+};
 
 type StoredProposal = Awaited<
   ReturnType<ProposalSnapshotRouteDependencies["findProposal"]>
@@ -38,8 +59,14 @@ function harness(overrides: {
     proposal: {
       id: "proposal-1",
       workspaceId: overrides.proposalWorkspaceId ?? "workspace-1",
+      projectId: "project-1",
       type: "COMBINED",
       status: overrides.status ?? "DRAFT",
+      version: 1,
+      contentMd:
+        "## Executive summary\nExact persisted proposal content.",
+      locale: "en",
+      updatedAt: new Date("2026-07-24T12:00:00.000Z"),
       structuredSnapshot: null,
       structuredSnapshotHash: null,
       structuredSnapshotRevision: overrides.revision ?? 0,
@@ -65,7 +92,12 @@ function harness(overrides: {
         input.expectedRevision !==
           state.proposal.structuredSnapshotRevision ||
         input.workspaceId !== state.proposal.workspaceId ||
-        input.expectedStatus !== state.proposal.status
+        input.expectedStatus !== state.proposal.status ||
+        input.expectedProposalVersion !== state.proposal.version ||
+        input.expectedProposalUpdatedAt.getTime() !==
+          state.proposal.updatedAt.getTime() ||
+        input.expectedLocale !== state.proposal.locale ||
+        input.expectedContentMd !== state.proposal.contentMd
       ) {
         return null;
       }
@@ -83,6 +115,7 @@ function harness(overrides: {
       return state.proposal;
     },
     resolveApprovedEvidence: async () => [],
+    resolveServerIdentity: async () => SERVER_IDENTITY,
     recordWrite: async () => {
       state.audits += 1;
     },
@@ -140,6 +173,76 @@ describe("proposal structured snapshot route", () => {
     expect(state.proposal.status).toBe("DRAFT");
   });
 
+  test("hydrates persisted editor content into a structured snapshot before submit", async () => {
+    const { dependencies, state } = harness({ status: "GENERATED" });
+    const response = await handleProposalSnapshotPost(
+      new Request(
+        "http://localhost/api/proposals/proposal-1/snapshot",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            counterpartMd:
+              "## الملخص التنفيذي\nمحتوى العرض العربي الصريح.",
+          }),
+        }
+      ),
+      "proposal-1",
+      dependencies
+    );
+    const body = (await response.json()) as {
+      metadata: {
+        source: string;
+        evidenceStatus: string;
+        presetKey: string;
+      };
+      snapshot: {
+        languageMode: string;
+        sources: Array<{ kind: string }>;
+      };
+    };
+
+    expect(response.status).toBe(201);
+    expect(body.metadata).toMatchObject({
+      source: "CURRENT_PROPOSAL_CONTENT",
+      evidenceStatus: "USER_ENTERED_UNVERIFIED",
+      presetKey: "bilingual-parallel",
+    });
+    expect(body.snapshot.languageMode).toBe("BILINGUAL");
+    expect(body.snapshot.sources).toHaveLength(2);
+    expect(state.proposal.status).toBe("DRAFT");
+    expect(state.writes).toBe(1);
+  });
+
+  test("rejects a same-language counterpart before canonicalization or persistence", async () => {
+    const { dependencies, state } = harness({ status: "GENERATED" });
+    const response = await handleProposalSnapshotPost(
+      new Request("http://localhost/api/proposals/proposal-1/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          counterpartMd:
+            "## Executive summary\nA second English-only proposal draft.",
+        }),
+      }),
+      "proposal-1",
+      dependencies
+    );
+    const body = (await response.json()) as {
+      code: string;
+      diagnostics: Array<{ code: string; path: string }>;
+    };
+
+    expect(response.status).toBe(422);
+    expect(body.code).toBe("BILINGUAL_LANGUAGE_DIRECTION_INVALID");
+    expect(body.diagnostics).toContainEqual({
+      code: "ARABIC_STRONG_SCRIPT_MISSING",
+      path: "contentMd.ar",
+      message: expect.any(String),
+    });
+    expect(state.writes).toBe(0);
+  });
+
   test("rejects stale writers and never attempts replacement", async () => {
     const { dependencies, state } = harness({ revision: 2 });
     const response = await handleProposalSnapshotPut(
@@ -165,6 +268,41 @@ describe("proposal structured snapshot route", () => {
         replaceSnapshot: async () => {
           state.proposal = { ...state.proposal, status: "APPROVED" };
           return null;
+        },
+      }
+    );
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe(
+      "SNAPSHOT_REVISION_CONFLICT"
+    );
+    expect(state.writes).toBe(0);
+    expect(state.audits).toBe(0);
+  });
+
+  test("rejects stale hydration when Markdown changes without changing snapshot revision", async () => {
+    const { dependencies, state } = harness();
+    const replaceSnapshot = dependencies.replaceSnapshot;
+    const response = await handleProposalSnapshotPost(
+      new Request("http://localhost/api/proposals/proposal-1/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          counterpartMd: "## الملخص التنفيذي\nالمحتوى العربي.",
+        }),
+      }),
+      "proposal-1",
+      {
+        ...dependencies,
+        replaceSnapshot: async (input) => {
+          state.proposal = {
+            ...state.proposal,
+            contentMd:
+              "## Executive summary\nConcurrent newer content.",
+            version: state.proposal.version + 1,
+            updatedAt: new Date("2026-07-24T12:01:00.000Z"),
+          };
+          return replaceSnapshot(input);
         },
       }
     );
@@ -249,6 +387,28 @@ describe("proposal structured snapshot route", () => {
     expect(response.status).toBe(422);
     expect((await response.json()).code).toBe(
       "STRUCTURED_EVIDENCE_NOT_APPROVED"
+    );
+    expect(state.writes).toBe(0);
+  });
+
+  test("rejects forged project, bidder, tender, and brand identity", async () => {
+    const { dependencies, state } = harness();
+    const forged = structuredProposalSnapshotFixture("proposal-1", 1);
+    const response = await handleProposalSnapshotPut(
+      request({
+        ...forged,
+        projectTitle: { en: "Other tender", ar: "منافسة أخرى" },
+        bidderName: { en: "Other bidder", ar: "مقدم آخر" },
+        tenderReference: "FAKE-REFERENCE",
+        brand: { primaryColor: "#000000" },
+      }),
+      "proposal-1",
+      dependencies
+    );
+
+    expect(response.status).toBe(422);
+    expect((await response.json()).code).toBe(
+      "STRUCTURED_IDENTITY_MISMATCH"
     );
     expect(state.writes).toBe(0);
   });

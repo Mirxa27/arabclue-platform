@@ -16,14 +16,35 @@ import {
   type StructuredApprovedEvidenceBinding,
 } from "@/lib/proposal-snapshot-persistence";
 import { loadApprovedStructuredEvidenceBindings } from "@/lib/proposal-snapshot-evidence";
+import {
+  loadProposalSnapshotServerIdentity,
+  validateProposalSnapshotServerIdentity,
+  type ProposalSnapshotServerIdentity,
+} from "@/lib/proposal-snapshot-identity";
+import {
+  hydrateProposalSnapshotFromMarkdown,
+  validateProposalDraftLanguageDirections,
+} from "@/lib/proposal-snapshot-hydration";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
+
+const proposalSnapshotHydrationRequestSchema = z
+  .object({
+    counterpartMd: z.string().min(1).max(250_000),
+  })
+  .strict();
 
 interface SnapshotProposalRecord {
   readonly id: string;
   readonly workspaceId: string;
+  readonly projectId: string;
   readonly type: string;
   readonly status: string;
+  readonly version: number;
+  readonly contentMd: string | null;
+  readonly locale: string;
+  readonly updatedAt: Date;
   readonly structuredSnapshot: unknown;
   readonly structuredSnapshotHash: string | null;
   readonly structuredSnapshotRevision: number;
@@ -46,6 +67,10 @@ export interface ProposalSnapshotRouteDependencies {
     readonly workspaceId: string;
     readonly expectedRevision: number;
     readonly expectedStatus: string;
+    readonly expectedProposalVersion: number;
+    readonly expectedProposalUpdatedAt: Date;
+    readonly expectedLocale: string;
+    readonly expectedContentMd: string | null;
     readonly updatedById: string;
     readonly snapshot: CanonicalProposalSnapshot;
   }) => Promise<SnapshotProposalRecord | null>;
@@ -53,6 +78,10 @@ export interface ProposalSnapshotRouteDependencies {
     workspaceId: string,
     claimedIds: readonly string[]
   ) => Promise<readonly StructuredApprovedEvidenceBinding[]>;
+  readonly resolveServerIdentity: (
+    workspaceId: string,
+    projectId: string
+  ) => Promise<ProposalSnapshotServerIdentity | null>;
   readonly recordWrite: (input: {
     readonly userId: string;
     readonly proposalId: string;
@@ -81,8 +110,13 @@ const defaultDependencies: ProposalSnapshotRouteDependencies = {
       select: {
         id: true,
         workspaceId: true,
+        projectId: true,
         type: true,
         status: true,
+        version: true,
+        contentMd: true,
+        locale: true,
+        updatedAt: true,
         structuredSnapshot: true,
         structuredSnapshotHash: true,
         structuredSnapshotRevision: true,
@@ -99,6 +133,10 @@ const defaultDependencies: ProposalSnapshotRouteDependencies = {
           workspaceId: input.workspaceId,
           structuredSnapshotRevision: input.expectedRevision,
           status: input.expectedStatus,
+          version: input.expectedProposalVersion,
+          updatedAt: input.expectedProposalUpdatedAt,
+          locale: input.expectedLocale,
+          contentMd: input.expectedContentMd,
         },
         data: {
           structuredSnapshot: JSON.parse(
@@ -112,6 +150,7 @@ const defaultDependencies: ProposalSnapshotRouteDependencies = {
           status: "DRAFT",
           submittedAt: null,
           approvedAt: null,
+          artifactsJson: null,
         },
       });
       if (result.count !== 1) return null;
@@ -123,8 +162,13 @@ const defaultDependencies: ProposalSnapshotRouteDependencies = {
         select: {
           id: true,
           workspaceId: true,
+          projectId: true,
           type: true,
           status: true,
+          version: true,
+          contentMd: true,
+          locale: true,
+          updatedAt: true,
           structuredSnapshot: true,
           structuredSnapshotHash: true,
           structuredSnapshotRevision: true,
@@ -135,6 +179,7 @@ const defaultDependencies: ProposalSnapshotRouteDependencies = {
       });
     }),
   resolveApprovedEvidence: loadApprovedStructuredEvidenceBindings,
+  resolveServerIdentity: loadProposalSnapshotServerIdentity,
   recordWrite: async (input) => {
     await audit({
       userId: input.userId,
@@ -289,6 +334,29 @@ export async function handleProposalSnapshotPut(
   const claimedEvidenceIds = claimedStructuredKnowledgeIds(
     validation.value.snapshot
   );
+  const serverIdentity = await dependencies.resolveServerIdentity(
+    workspace.id,
+    existing.projectId
+  );
+  if (!serverIdentity) {
+    return errorResponse(
+      "Proposal project or workspace identity was not found.",
+      "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
+      409
+    );
+  }
+  const identityDiagnostics = validateProposalSnapshotServerIdentity(
+    validation.value.snapshot,
+    serverIdentity
+  );
+  if (identityDiagnostics.length > 0) {
+    return errorResponse(
+      "Structured proposal identity does not match current tenant records.",
+      "STRUCTURED_IDENTITY_MISMATCH",
+      422,
+      { diagnostics: identityDiagnostics }
+    );
+  }
   const approvedEvidenceIds = await dependencies.resolveApprovedEvidence(
     workspace.id,
     claimedEvidenceIds
@@ -311,6 +379,10 @@ export async function handleProposalSnapshotPut(
     workspaceId: workspace.id,
     expectedRevision: body.data.expectedRevision,
     expectedStatus: existing.status,
+    expectedProposalVersion: existing.version,
+    expectedProposalUpdatedAt: existing.updatedAt,
+    expectedLocale: existing.locale,
+    expectedContentMd: existing.contentMd,
     updatedById: caller.userId,
     snapshot: validation.value,
   });
@@ -400,6 +472,29 @@ export async function handleProposalSnapshotGet(
       { diagnostics: validation.diagnostics }
     );
   }
+  const serverIdentity = await dependencies.resolveServerIdentity(
+    workspace.id,
+    proposal.projectId
+  );
+  if (!serverIdentity) {
+    return errorResponse(
+      "Proposal project or workspace identity was not found.",
+      "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
+      409
+    );
+  }
+  const identityDiagnostics = validateProposalSnapshotServerIdentity(
+    validation.value.snapshot,
+    serverIdentity
+  );
+  if (identityDiagnostics.length > 0) {
+    return errorResponse(
+      "Persisted structured proposal identity no longer matches tenant records.",
+      "STRUCTURED_IDENTITY_MISMATCH",
+      409,
+      { diagnostics: identityDiagnostics }
+    );
+  }
   const approvedEvidenceIds = await dependencies.resolveApprovedEvidence(
     workspace.id,
     claimedStructuredKnowledgeIds(validation.value.snapshot)
@@ -443,6 +538,195 @@ export async function handleProposalSnapshotGet(
   );
 }
 
+/**
+ * Hydrate the current persisted Markdown plus an explicit counterpart entered
+ * by the writer into an unverified bilingual snapshot. This production bridge
+ * never invents a translation or promotes user-authored claims to verified
+ * evidence.
+ */
+export async function handleProposalSnapshotPost(
+  req: Request,
+  proposalId: string,
+  dependencies: ProposalSnapshotRouteDependencies = defaultDependencies
+): Promise<NextResponse> {
+  const caller = await dependencies.getWriter();
+  if (!caller) {
+    return errorResponse("Forbidden", "FORBIDDEN", 403);
+  }
+  const workspace = await dependencies.getWorkspace(caller.userId);
+  const existing = await dependencies.findProposal(proposalId);
+  if (!existing || existing.workspaceId !== workspace.id) {
+    return errorResponse("not found", "PROPOSAL_NOT_FOUND", 404);
+  }
+  if (existing.type === "CONTRACT") {
+    return errorResponse(
+      "Contract records do not accept Phase 4 proposal snapshots.",
+      "STRUCTURED_SNAPSHOT_TYPE_MISMATCH",
+      409
+    );
+  }
+  if (isProposalEditLocked(existing.status)) {
+    return errorResponse(
+      "Proposal is locked for editing in current status.",
+      "STATUS_LOCKED",
+      409
+    );
+  }
+  if (!existing.contentMd?.trim()) {
+    return errorResponse(
+      "Proposal content is empty.",
+      "EMPTY_PROPOSAL_CONTENT",
+      422
+    );
+  }
+  const raw = await readJsonBody(req);
+  if (!raw.ok) return raw.response;
+  const hydrationRequest =
+    proposalSnapshotHydrationRequestSchema.safeParse(raw.value);
+  if (!hydrationRequest.success) {
+    return errorResponse(
+      "Explicit counterpart-language Markdown is required.",
+      "BILINGUAL_COUNTERPART_REQUIRED",
+      400,
+      {
+        issues: hydrationRequest.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      }
+    );
+  }
+  const serverIdentity = await dependencies.resolveServerIdentity(
+    workspace.id,
+    existing.projectId
+  );
+  if (!serverIdentity) {
+    return errorResponse(
+      "Proposal project or workspace identity was not found.",
+      "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
+      409
+    );
+  }
+  const contentMd =
+    existing.locale === "en"
+      ? {
+          en: existing.contentMd,
+          ar: hydrationRequest.data.counterpartMd,
+        }
+      : {
+          en: hydrationRequest.data.counterpartMd,
+          ar: existing.contentMd,
+        };
+  const languageDiagnostics =
+    validateProposalDraftLanguageDirections(contentMd);
+  if (languageDiagnostics.length > 0) {
+    return errorResponse(
+      "The explicit English and Arabic drafts failed language-direction validation.",
+      "BILINGUAL_LANGUAGE_DIRECTION_INVALID",
+      422,
+      { diagnostics: languageDiagnostics }
+    );
+  }
+  const hydrated = hydrateProposalSnapshotFromMarkdown({
+    proposalId,
+    proposalVersion: existing.version,
+    expectedSnapshotRevision: existing.structuredSnapshotRevision,
+    contentMd,
+    sourceUpdatedAt: existing.updatedAt.toISOString(),
+    identity: serverIdentity,
+  });
+  const validation = canonicalizeProposalSnapshot(hydrated, {
+    proposalId,
+    expectedRevision: existing.structuredSnapshotRevision,
+    presetKey: "bilingual-parallel",
+  });
+  if (!validation.ok) {
+    return errorResponse(
+      "Current proposal content could not be hydrated into the structured engine.",
+      validation.code,
+      422,
+      { diagnostics: validation.diagnostics }
+    );
+  }
+  const identityDiagnostics = validateProposalSnapshotServerIdentity(
+    validation.value.snapshot,
+    serverIdentity
+  );
+  if (identityDiagnostics.length > 0) {
+    return errorResponse(
+      "Hydrated proposal identity does not match current tenant records.",
+      "STRUCTURED_IDENTITY_MISMATCH",
+      422,
+      { diagnostics: identityDiagnostics }
+    );
+  }
+  const evidenceDiagnostics = validateStructuredSnapshotEvidence(
+    validation.value.snapshot,
+    []
+  );
+  if (evidenceDiagnostics.length > 0) {
+    return errorResponse(
+      "Hydrated proposal contains invalid evidence declarations.",
+      "STRUCTURED_EVIDENCE_NOT_APPROVED",
+      422,
+      { diagnostics: evidenceDiagnostics }
+    );
+  }
+  const updated = await dependencies.replaceSnapshot({
+    proposalId,
+    workspaceId: workspace.id,
+    expectedRevision: existing.structuredSnapshotRevision,
+    expectedStatus: existing.status,
+    expectedProposalVersion: existing.version,
+    expectedProposalUpdatedAt: existing.updatedAt,
+    expectedLocale: existing.locale,
+    expectedContentMd: existing.contentMd,
+    updatedById: caller.userId,
+    snapshot: validation.value,
+  });
+  if (!updated) {
+    return errorResponse(
+      "Proposal changed during snapshot hydration. Reload and retry.",
+      "SNAPSHOT_REVISION_CONFLICT",
+      409
+    );
+  }
+  await dependencies.recordWrite({
+    userId: caller.userId,
+    proposalId,
+    hash: validation.value.hash,
+    revision: validation.value.revision,
+    presetKey: validation.value.presetKey,
+  });
+  return NextResponse.json(
+    {
+      proposalId,
+      snapshot: validation.value.snapshot,
+      metadata: {
+        schemaVersion: 1,
+        lifecycle: "DRAFT",
+        source: "CURRENT_PROPOSAL_CONTENT",
+        evidenceStatus: "USER_ENTERED_UNVERIFIED",
+        hash: validation.value.hash,
+        revision: validation.value.revision,
+        presetKey: validation.value.presetKey,
+        channels: ["HTML", "PDF", "PPTX"],
+        updatedAt: updated.structuredSnapshotUpdatedAt,
+        updatedById: updated.structuredSnapshotUpdatedById,
+      },
+    },
+    {
+      status: 201,
+      headers: {
+        "Cache-Control": "no-store",
+        "X-Arabclue-Proposal-Engine": "structured-v1",
+        "X-Proposal-Snapshot-Hash": validation.value.hash,
+        "X-Proposal-Snapshot-Revision": String(validation.value.revision),
+      },
+    }
+  );
+}
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -455,6 +739,23 @@ export async function PUT(
     return errorResponse(
       error instanceof Error ? error.message : "unknown",
       "SNAPSHOT_WRITE_FAILED",
+      500
+    );
+  }
+}
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  try {
+    return await handleProposalSnapshotPost(req, id);
+  } catch (error) {
+    console.error("[proposal snapshot POST]", error);
+    return errorResponse(
+      error instanceof Error ? error.message : "unknown",
+      "SNAPSHOT_HYDRATION_FAILED",
       500
     );
   }

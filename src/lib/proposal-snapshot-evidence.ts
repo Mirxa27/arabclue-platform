@@ -32,10 +32,25 @@ export interface StructuredEvidenceCandidates {
   readonly methodologies: readonly MethodologyAsset[];
 }
 
+export interface LiveEvidenceDocument {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly originalName: string;
+}
+
+export interface LiveEvidenceVersion {
+  readonly documentId: string;
+  readonly version: number;
+  readonly checksum: string | null;
+}
+
 function approvedBinding(
   record: {
     readonly id: string;
     readonly evidenceRef: string | null;
+    readonly evidenceDocumentId: string | null;
+    readonly evidenceVersion: number | null;
+    readonly evidenceChecksum: string | null;
     readonly provenanceJson: string | null;
     readonly reviewedById: string | null;
     readonly approvedAt: Date | null;
@@ -46,6 +61,9 @@ function approvedBinding(
 ): StructuredApprovedEvidenceBinding | null {
   if (
     !record.evidenceRef ||
+    !record.evidenceDocumentId ||
+    !record.evidenceVersion ||
+    !record.evidenceChecksum ||
     !record.provenanceJson ||
     !record.reviewedById ||
     !record.approvedAt ||
@@ -62,9 +80,17 @@ function approvedBinding(
   }
   const provenance = knowledgeProvenanceSchema.safeParse(rawProvenance);
   if (!provenance.success) return null;
+  if (
+    provenance.data.sourceId !== record.evidenceDocumentId ||
+    provenance.data.version !== record.evidenceVersion ||
+    provenance.data.checksum.toLowerCase() !==
+      record.evidenceChecksum.toLowerCase()
+  ) {
+    return null;
+  }
   const expectedEvidenceRef =
-    `uploaded-document:${provenance.data.sourceId}:v${provenance.data.version}` +
-    `:sha256:${provenance.data.checksum}`;
+    `uploaded-document:${record.evidenceDocumentId}:v${record.evidenceVersion}` +
+    `:sha256:${record.evidenceChecksum.toLowerCase()}`;
   if (record.evidenceRef !== expectedEvidenceRef) return null;
   const approvedAt = record.approvedAt.toISOString();
   const knowledgeBinding: ProposalKnowledgeSourceBinding = {
@@ -173,6 +199,42 @@ export function eligibleStructuredEvidenceBindings(
 }
 
 /**
+ * Keep a privileged binding only while its exact tenant document version is
+ * still live. A current document may advance to a newer version; the captured
+ * historical version must remain addressable with the same checksum.
+ */
+export function filterBindingsWithLiveEvidence(
+  workspaceId: string,
+  bindings: readonly StructuredApprovedEvidenceBinding[],
+  documents: readonly LiveEvidenceDocument[],
+  versions: readonly LiveEvidenceVersion[]
+): readonly StructuredApprovedEvidenceBinding[] {
+  const documentMap = new Map(
+    documents
+      .filter((document) => document.workspaceId === workspaceId)
+      .map((document) => [document.id, document])
+  );
+  const versionMap = new Map(
+    versions.map((version) => [
+      `${version.documentId}:${version.version}`,
+      version,
+    ])
+  );
+  return bindings.filter((binding) => {
+    const provenance = binding.knowledgeBinding.provenance;
+    const document = documentMap.get(provenance.sourceId);
+    const version = versionMap.get(
+      `${provenance.sourceId}:${provenance.version}`
+    );
+    return (
+      document?.originalName === provenance.originalName &&
+      version?.checksum?.toLowerCase() ===
+        provenance.checksum.toLowerCase()
+    );
+  });
+}
+
+/**
  * Resolve only currently eligible knowledge records from the caller's tenant.
  * Content hashes are recomputed so a post-approval edit cannot retain trust.
  */
@@ -182,7 +244,12 @@ export async function loadApprovedStructuredEvidenceBindings(
   now = new Date(),
   database: Pick<
     Prisma.TransactionClient,
-    "certificate" | "pastProject" | "contentLibraryItem" | "methodologyAsset"
+    | "certificate"
+    | "pastProject"
+    | "contentLibraryItem"
+    | "methodologyAsset"
+    | "uploadedDocument"
+    | "documentVersion"
   > = db
 ): Promise<readonly StructuredApprovedEvidenceBinding[]> {
   const ids = [...new Set(claimedIds)];
@@ -214,7 +281,7 @@ export async function loadApprovedStructuredEvidenceBindings(
       database.methodologyAsset.findMany({ where: reviewedWhere }),
     ]);
 
-  return eligibleStructuredEvidenceBindings(
+  const bindings = eligibleStructuredEvidenceBindings(
     workspaceId,
     {
       certificates: certificateRows,
@@ -223,5 +290,29 @@ export async function loadApprovedStructuredEvidenceBindings(
       methodologies: methodologyRows,
     },
     now
+  );
+  const sourceIds = [
+    ...new Set(
+      bindings.map(
+        (binding) => binding.knowledgeBinding.provenance.sourceId
+      )
+    ),
+  ];
+  if (sourceIds.length === 0) return [];
+  const [documents, versions] = await Promise.all([
+    database.uploadedDocument.findMany({
+      where: { id: { in: sourceIds }, workspaceId },
+      select: { id: true, workspaceId: true, originalName: true },
+    }),
+    database.documentVersion.findMany({
+      where: { documentId: { in: sourceIds } },
+      select: { documentId: true, version: true, checksum: true },
+    }),
+  ]);
+  return filterBindingsWithLiveEvidence(
+    workspaceId,
+    bindings,
+    documents,
+    versions
   );
 }

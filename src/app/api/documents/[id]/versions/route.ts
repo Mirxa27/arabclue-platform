@@ -1,9 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import type { DocumentVersion } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+import {
+  assertWorkspaceStoragePath,
+  readWorkspaceStoredFile,
+} from "@/lib/storage";
+import {
+  MAX_DOCUMENT_VERSION_BYTES,
+  verifyDocumentVersionBytes,
+} from "@/lib/document-version-integrity";
 
 export const dynamic = "force-dynamic";
+
+const createVersionSchema = z
+  .object({
+    storagePath: z.string().trim().min(1).max(1_000),
+    sizeBytes: z.number().int().positive().max(MAX_DOCUMENT_VERSION_BYTES),
+    changeLog: z.string().trim().min(1).max(1_000).optional(),
+  })
+  .strict();
+
+class DocumentVersionConflictError extends Error {}
 
 async function ownedDoc(id: string, workspaceId: string) {
   const doc = await db.uploadedDocument.findUnique({
@@ -45,58 +65,104 @@ export async function POST(
   const current = await ownedDoc(id, workspace.id);
   if (!current) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const body = await req.json();
-  const { storagePath, sizeBytes, changeLog } = body as {
-    storagePath: string;
-    sizeBytes: number;
-    changeLog?: string;
-  };
-  if (!storagePath || typeof sizeBytes !== "number") {
+  const parsed = createVersionSchema.safeParse(
+    await req.json().catch(() => null)
+  );
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "storagePath and sizeBytes required" },
+      { error: "Invalid document version request" },
       { status: 400 }
     );
   }
+  const { storagePath, sizeBytes, changeLog } = parsed.data;
 
-  // HIGH fix: never trust client path — must be inside workspace folder and exist
-  const normalized = storagePath.replace(/\\/g, "/");
-  const expectedPrefix = `uploads/${workspace.id}/`;
-  if (!normalized.startsWith(expectedPrefix) && !normalized.startsWith(`uploads/${workspace.id}`)) {
-    return NextResponse.json({ error: "invalid storagePath workspace mismatch" }, { status: 400 });
+  let normalized: string;
+  let bytes: Buffer;
+  try {
+    normalized = assertWorkspaceStoragePath(storagePath, workspace.id);
+    bytes = await readWorkspaceStoredFile(normalized, workspace.id, {
+      maxBytes: MAX_DOCUMENT_VERSION_BYTES,
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Stored version file was not found in this workspace" },
+      { status: 400 }
+    );
   }
-  if (normalized.includes("..")) {
-    return NextResponse.json({ error: "invalid path traversal" }, { status: 400 });
+  let verified: ReturnType<typeof verifyDocumentVersionBytes>;
+  try {
+    verified = verifyDocumentVersionBytes(bytes, sizeBytes);
+  } catch {
+    return NextResponse.json(
+      { error: "Declared version size does not match stored bytes" },
+      { status: 400 }
+    );
   }
+  const { checksum } = verified;
 
-  // Verify file actually exists and size matches (if possible) — prevents injection
-  const { fileExists } = await import("@/lib/storage");
-  const exists = await fileExists(normalized);
-  if (!exists) {
-    return NextResponse.json({ error: "file not found on server for version" }, { status: 400 });
-  }
-
-  // Enforce reasonable size (max 100MB per version)
-  if (sizeBytes <= 0 || sizeBytes > 100 * 1024 * 1024) {
-    return NextResponse.json({ error: "invalid sizeBytes" }, { status: 400 });
-  }
-
-  const newVersion = current.currentVersion + 1;
-  const [version] = await db.$transaction([
-    db.documentVersion.create({
-      data: {
-        documentId: id,
-        version: newVersion,
-        storagePath: normalized,
-        sizeBytes,
-        changeLog: changeLog ?? `Version ${newVersion}`,
-        createdBy: session.user.id,
+  let version: DocumentVersion;
+  try {
+    version = await db.$transaction(
+      async (tx) => {
+        const latest = await tx.uploadedDocument.findFirst({
+          where: { id, workspaceId: workspace.id },
+          select: { currentVersion: true },
+        });
+        if (!latest) {
+          throw new DocumentVersionConflictError();
+        }
+        const newVersion = latest.currentVersion + 1;
+        const updated = await tx.uploadedDocument.updateMany({
+          where: {
+            id,
+            workspaceId: workspace.id,
+            currentVersion: latest.currentVersion,
+          },
+          data: {
+            currentVersion: newVersion,
+            storagePath: normalized,
+            sizeBytes: verified.sizeBytes,
+            checksum,
+            parseStatus: "PENDING",
+            parsedSummary: null,
+            extractedEntities: null,
+          },
+        });
+        if (updated.count !== 1) {
+          throw new DocumentVersionConflictError();
+        }
+        // Derived chunks belong to the previous bytes. They must not remain
+        // queryable while the new version awaits parsing.
+        await tx.documentChunk.deleteMany({ where: { documentId: id } });
+        return tx.documentVersion.create({
+          data: {
+            documentId: id,
+            version: newVersion,
+            storagePath: normalized,
+            sizeBytes: verified.sizeBytes,
+            checksum,
+            changeLog: changeLog ?? `Version ${newVersion}`,
+            createdBy: session.user.id,
+          },
+        });
       },
-    }),
-    db.uploadedDocument.update({
-      where: { id },
-      data: { currentVersion: newVersion, storagePath: normalized, sizeBytes },
-    }),
-  ]);
+      { isolationLevel: "Serializable" }
+    );
+  } catch (error) {
+    if (
+      error instanceof DocumentVersionConflictError ||
+      (typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2002")
+    ) {
+      return NextResponse.json(
+        { error: "Document changed concurrently; reload and retry" },
+        { status: 409 }
+      );
+    }
+    throw error;
+  }
 
   const { audit, AUDIT_ACTIONS } = await import("@/lib/audit");
   await audit({
@@ -104,7 +170,12 @@ export async function POST(
     action: AUDIT_ACTIONS.DOC_UPLOAD,
     resource: "UploadedDocument",
     resourceId: id,
-    details: { version: newVersion, storagePath: normalized },
+    details: {
+      version: version.version,
+      sizeBytes: verified.sizeBytes,
+      checksum,
+      parseStatus: "PENDING",
+    },
   });
 
   return NextResponse.json({ version });

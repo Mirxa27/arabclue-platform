@@ -2,6 +2,7 @@ import {
   acquireDistributedLease,
   rateLimitAsync,
   releaseDistributedLease,
+  requiresDistributedRateLimit,
   type DistributedLeaseAdmission,
 } from "./rate-limit";
 
@@ -148,9 +149,9 @@ export class DocumentExportGate {
       DOCUMENT_EXPORT_LIMITS.windowMs,
       "windowMs"
     );
-    this.#requireDistributed =
-      options.requireDistributed ??
-      (process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL));
+    this.#requireDistributed = requiresDistributedRateLimit(
+      options.requireDistributed
+    );
     this.#rateLimiter =
       options.rateLimiter ??
       ((input) =>

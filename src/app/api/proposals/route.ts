@@ -14,6 +14,10 @@ export async function GET(req: NextRequest) {
         ...(projectId ? { projectId } : {}),
       },
       orderBy: { createdAt: "desc" },
+      omit: {
+        structuredSnapshot: true,
+        contractRenderSnapshot: true,
+      },
       include: {
         project: {
           select: { id: true, title: true, titleAr: true, etimadRef: true },

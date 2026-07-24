@@ -242,6 +242,21 @@ describe("business-profile bilingual export library", () => {
 
   test("excludes unapproved, revoked and expired credential evidence", () => {
     const asOf = new Date("2026-07-24T12:00:00.000Z");
+    const evidenceChecksum = "a".repeat(64);
+    const evidenceReview = {
+      evidenceRef: `uploaded-document:doc-1:v1:sha256:${evidenceChecksum}`,
+      evidenceDocumentId: "doc-1",
+      evidenceVersion: 1,
+      evidenceChecksum,
+      provenanceJson: JSON.stringify({
+        sourceKind: "UPLOADED_DOCUMENT",
+        sourceId: "doc-1",
+        version: 1,
+        checksum: evidenceChecksum,
+        originalName: "review-evidence.pdf",
+        capturedAt: "2026-07-24T11:00:00.000Z",
+      }),
+    };
     const certificateContent = {
       certType: "ISO",
       name: "ISO 9001",
@@ -259,8 +274,7 @@ describe("business-profile bilingual export library", () => {
       alertDays: 30,
       approved: true,
       reviewStatus: "APPROVED",
-      evidenceRef: "uploaded-document:doc-1:v1:sha256:abc",
-      provenanceJson: "{}",
+      ...evidenceReview,
       reviewedById: "reviewer-1",
       approvedAt: asOf,
       revokedAt: null,
@@ -309,8 +323,7 @@ describe("business-profile bilingual export library", () => {
       workspaceId: "workspace-1",
       approved: true,
       reviewStatus: "APPROVED",
-      evidenceRef: "uploaded-document:doc-1:v1:sha256:abc",
-      provenanceJson: "{}",
+      ...evidenceReview,
       reviewedById: "reviewer-1",
       approvedAt: asOf,
       revokedAt: null,

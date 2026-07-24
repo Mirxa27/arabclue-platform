@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -268,7 +270,7 @@ export function DocumentMatrix() {
                             title={locale === "ar" ? "مصفوفة المتطلبات" : "Requirements matrix"}
                             onClick={() => {
                               if (d.projectId) setActiveProjectId(d.projectId);
-                              setView("compliance");
+                              startTransition(() => setView("compliance"));
                             }}
                           >
                             <Eye className="size-3" />

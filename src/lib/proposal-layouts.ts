@@ -741,6 +741,7 @@ export type ProposalDiagnosticCode =
   | "INVALID_BLOCK"
   | "UNSUPPORTED_BLOCK_FOR_CHANNEL"
   | "UNSOURCED_PRICING_CONTENT"
+  | "UNVERIFIED_COMMERCIAL_VALUES"
   | "PRESENTATION_CAPACITY_EXCEEDED";
 
 export interface ProposalLayoutDiagnostic {
@@ -1198,13 +1199,31 @@ function validateBlock(
         }
         validateSourceRefs(
           entry.sourceRefs,
-          entry.amount !== null,
+          entry.amount !== null || entry.currency !== null,
           `${entryPath}.sourceRefs`,
           sources,
           diagnostics
         );
         if (
-          entry.amount !== null &&
+          (entry.amount !== null || entry.currency !== null) &&
+          block.pricingStatus === "VERIFIED_SOURCE_VALUES" &&
+          (entry.sourceRefs.length === 0 ||
+            entry.sourceRefs.some(
+              (ref) =>
+                sources.get(ref)?.kind !== "APPROVED_KNOWLEDGE" ||
+                sources.get(ref)?.knowledgeBinding === undefined
+            ))
+        ) {
+          addDiagnostic(
+            diagnostics,
+            "UNVERIFIED_COMMERCIAL_VALUES",
+            `${entryPath}.sourceRefs`,
+            "A value labeled as verified must reference only immutable approved-knowledge bindings. Tender, workspace, and user-entered values remain unverified.",
+            "يجب أن تشير القيمة المصنفة موثقة فقط إلى ارتباطات معرفة معتمدة وغير قابلة للتغيير. وتظل قيم المنافسة ومساحة العمل ومدخلات المستخدم غير موثقة."
+          );
+        }
+        if (
+          (entry.amount !== null || entry.currency !== null) &&
           !entry.sourceRefs.some((ref) => {
             const kind = sources.get(ref)?.kind;
             return (

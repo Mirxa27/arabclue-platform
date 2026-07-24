@@ -16,6 +16,7 @@ import { validateProposalOutput } from "@/lib/validation-gate";
 import { financialForValidationGate } from "@/lib/proposal-studio";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
+import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "@/lib/contract-render-snapshot";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -151,6 +152,7 @@ Return Markdown only.`,
           approvedAt: null,
           artifactsJson: null,
           ...STRUCTURED_SNAPSHOT_INVALIDATION,
+          ...CONTRACT_RENDER_SNAPSHOT_INVALIDATION,
         },
       });
       if (write.count !== 1) return null;

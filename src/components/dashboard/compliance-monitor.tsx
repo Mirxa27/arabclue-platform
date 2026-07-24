@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
@@ -179,7 +181,7 @@ export function ComplianceMonitor() {
               size="sm"
               variant="outline"
               className="h-7 text-[11px] gap-1"
-              onClick={() => setView("account")}
+              onClick={() => startTransition(() => setView("account"))}
             >
               <Upload className="size-3" />
               {locale === "ar" ? "رفع أدلة الحساب" : "Upload account evidence"}
@@ -209,7 +211,7 @@ export function ComplianceMonitor() {
                   size="sm"
                   variant="ghost"
                   className="h-7 shrink-0 text-[11px] gap-1"
-                  onClick={() => setView("agents")}
+                  onClick={() => startTransition(() => setView("agents"))}
                 >
                   {locale === "ar" ? "وكلاء" : "Agents"}
                   <ArrowRight className="size-3" />
@@ -248,7 +250,7 @@ export function ComplianceMonitor() {
                 : "Select a project and run the compliance agent to build the control matrix."
             }
             action={
-              <Button size="sm" onClick={() => setView("agents")}>
+              <Button size="sm" onClick={() => startTransition(() => setView("agents"))}>
                 {locale === "ar" ? "تشغيل الوكلاء" : "Run agents"}
               </Button>
             }

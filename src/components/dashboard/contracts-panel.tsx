@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -133,8 +135,8 @@ export function ContractsPanel() {
       qc.invalidateQueries({ queryKey: ["reviews"] });
       toast({
         title: ar
-          ? "أُرسل العقد للمراجعة القانونية"
-          : "Contract sent for legal review",
+          ? "أُرسل العقد إلى مسار الاعتماد"
+          : "Contract sent to the approval workflow",
       });
     },
     onError: (err: Error) => {
@@ -154,8 +156,8 @@ export function ContractsPanel() {
         description:
           validationData.exportBlocker?.error ??
           (ar
-            ? "أكمل المراجعة القانونية وحل عوائق التحقق أولاً"
-            : "Complete legal review and resolve validation blockers first"),
+            ? "أكمل مسار الاعتماد المكوّن وحل عوائق التحقق أولاً. تبقى مراجعة المستشار القانوني مطلوبة قبل التوقيع."
+            : "Complete the configured approval workflow and resolve validation blockers first. Counsel review remains required before signature."),
         variant: "destructive",
       });
       return;
@@ -194,7 +196,7 @@ export function ContractsPanel() {
           <Button
             size="sm"
             className="gap-1.5"
-            onClick={() => setView("agents")}
+            onClick={() => startTransition(() => setView("agents"))}
           >
             <Sparkles className="size-3.5" />
             {ar ? "تشغيل الوكلاء" : "Run agents"}
@@ -233,11 +235,11 @@ export function ContractsPanel() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setView("projects")}
+                    onClick={() => startTransition(() => setView("projects"))}
                   >
                     {ar ? "المشاريع" : "Projects"}
                   </Button>
-                  <Button size="sm" onClick={() => setView("agents")}>
+                  <Button size="sm" onClick={() => startTransition(() => setView("agents"))}>
                     {ar ? "الوكلاء" : "Agents"}
                   </Button>
                 </div>
@@ -323,8 +325,8 @@ export function ContractsPanel() {
                         <Send className="size-3.5" />
                       )}
                       {ar
-                        ? "إرسال للمراجعة القانونية"
-                        : "Submit for legal review"}
+                        ? "إرسال لمسار الاعتماد"
+                        : "Submit for approval"}
                     </Button>
                   ) : null}
                   <Button
@@ -373,7 +375,9 @@ export function ContractsPanel() {
               ) : null}
               {validationData?.exportReady ? (
                 <Badge className="text-[10px] bg-emerald-600">
-                  {ar ? "جاهز للتصدير" : "Export ready"}
+                  {ar
+                    ? "مسودة جاهزة للتصدير"
+                    : "Draft artifact export-ready"}
                 </Badge>
               ) : validationData != null ? (
                 <Badge variant="destructive" className="text-[10px]">
@@ -482,6 +486,7 @@ export function ContractsPanel() {
                   proposalId={active.id}
                   status={active.status}
                   version={active.version}
+                  updatedAt={active.updatedAt}
                   versions={active.versions ?? []}
                   research={artifacts.research}
                   articles={artifacts.articles}

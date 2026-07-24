@@ -2,9 +2,11 @@
 
 Domain: **arabclue.com** (primary), www.arabclue.com → redirect to apex.
 
-> **Security note:** `.env` must not be tracked in Git (now gitignored). Rotate any
-> credentials that were previously committed and keep secrets only in Vercel
-> Project → Settings → Environment Variables. See
+> **DEPLOYMENT BLOCKED:** `.env` is now gitignored, but it remains present in
+> earlier public commits. Do not deploy until every exposed credential has been
+> rotated, the Git history remediation has been completed and verified from a
+> clean clone, and `bun run deploy:safety` passes. Keep replacement secrets only
+> in Vercel Project → Settings → Environment Variables. See
 > [`docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md`](docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md)
 > for history remediation if secrets were exposed in older commits.
 
@@ -19,18 +21,26 @@ vercel env add NEXTAUTH_URL
 vercel env add NEXT_PUBLIC_APP_URL
 vercel env add BOOTSTRAP_ADMIN_EMAIL
 vercel env add BOOTSTRAP_ADMIN_PASSWORD
+vercel env add REDIS_URL
+vercel env add BLOB_READ_WRITE_TOKEN
+vercel env add CRON_SECRET
+vercel env add AWS_LAMBDA_JS_RUNTIME
 ```
 
 ### Required env vars (Production)
 
 ```
-DATABASE_URL=file:/tmp/arabclue.db
+DATABASE_URL=postgresql://<neon-pooled-connection>?sslmode=require
 NEXTAUTH_SECRET=<openssl rand -base64 32>
 NEXTAUTH_URL=https://arabclue.com
 NEXT_PUBLIC_APP_URL=https://arabclue.com
 ARABCLUE_ENC_KEY=<openssl rand -base64 32>
 BOOTSTRAP_ADMIN_EMAIL=admin@arabclue.com
 BOOTSTRAP_ADMIN_PASSWORD=<strong 16+ chars, rotate after first login>
+REDIS_URL=rediss://<production-redis>
+BLOB_READ_WRITE_TOKEN=<vercel-blob-token>
+CRON_SECRET=<openssl rand -base64 32>
+AWS_LAMBDA_JS_RUNTIME=nodejs22.x
 # Optional LLM
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
@@ -40,7 +50,10 @@ MYFATOORAH_API_URL=https://api-sa.myfatoorah.com   # NOT apitest in prod!
 MYFATOORAH_WEBHOOK_SECRET=
 ```
 
-> **Important**: On Vercel, SQLite is ephemeral under /tmp. Data resets on cold start. For production persistence, migrate to Postgres (change prisma provider to postgresql, set DATABASE_URL to Postgres URL, run `prisma migrate deploy`).
+> **Important**: The repository already uses PostgreSQL and the shared
+> production database is remote Neon. Do not run `prisma migrate` or
+> `prisma db push` during Vercel builds. Apply reviewed migrations in a
+> separate, approved release step before deploying code that depends on them.
 
 ## 2. Custom domain
 
@@ -90,22 +103,11 @@ On first deploy, instrumentation calls `ensureDatabaseReady()` + `getBootstrapCo
 - Plans (STARTER/PRO/ENTERPRISE/PAY_AS_YOU_GO)
 - SUPER_ADMIN from `BOOTSTRAP_ADMIN_EMAIL/PASSWORD`
 
-Then rotate via local script and create role accounts:
-
-```bash
-# Locally against prod? Better run via Vercel env locally with DATABASE_URL pointing to prod Postgres
-# For SQLite ephemeral prod, credentials are lost on redeploy — use Postgres for prod persistence.
-
-# Local dev generation (already done):
-bun run scripts/generate-admins.ts --force
-# Outputs admin-credentials.json (gitignored)
-
-# Credential values are never stored in this repository.
-# Generate one-time credentials through the approved administrator bootstrap process,
-# deliver them through the team secret manager, and rotate them on first login.
-
-# All have mustChangePassword=true — will be forced to change on first login.
-```
+After the forced bootstrap-password change, create required role accounts
+through the authenticated administrator UI. Generate one-time credentials in
+the approved secret manager, deliver them out of band, require MFA, and revoke
+all bootstrap sessions. Never run local account-generation scripts against
+Production or print passwords to a terminal/build log.
 
 **RBAC matrix** (enforced in proxy + API + UI):
 
@@ -147,15 +149,15 @@ curl https://arabclue.com/api/health
 
 **Current (shipped):**
 - **Postgres:** Neon Postgres via `DATABASE_URL` (not SQLite)
-- **Cron:** Vercel Cron hits `/api/cron/billing-reconcile` (daily 05:15 UTC) and `/api/cron/expiry-notifications` (daily 06:00 UTC). Protect with `CRON_SECRET` (≥16 chars). Cron Authorization header is set automatically by Vercel when `CRON_SECRET` is configured as the project cron secret. (Hobby plans allow at most one run per day per job.)
+- **Cron (hybrid):** Primary schedules run from **Hostinger account crons** (no Hobby daily cap) via `curl` + `Authorization: Bearer $CRON_SECRET` against `https://arabclue.com/api/cron/*`. Vercel Cron entries in `vercel.json` remain as a secondary path (Hobby: ≤1 run/day per job). Keep the same `CRON_SECRET` in Vercel Project → Environment Variables and in the Hostinger cron commands. `/api/cron/*` is excluded from session auth in `proxy.ts` and authorized only by `CRON_SECRET`.
 - **Email:** Resend via `RESEND_API_KEY` + optional `EMAIL_FROM`. Without the key, expiry cron logs + writes `ExpiryNotificationLog` but does not send mail (in-app cert notifications still work).
 - **PDF on Vercel:** `@sparticuz/chromium` + `playwright-core`. Set `AWS_LAMBDA_JS_RUNTIME=nodejs22.x` in the Vercel project env.
+- **Hosting note:** Full Next.js hosting on Hostinger was attempted; Node builds succeeded but the managed runtime did not stay healthy. Production DNS stays on Vercel (`ns1/ns2.vercel-dns.com`). Hostinger is used for cron triggers only until a clean Node.js Web App recreate is validated.
 
-**Required for production uploads on Vercel:**
+**Required production infrastructure:**
 - `BLOB_READ_WRITE_TOKEN` — without it `/api/ready` reports storage degraded (`ephemeral_/tmp`) and readiness fails on Vercel.
-
-**Optional hardening:**
-- `REDIS_URL` (e.g. Upstash) for multi-instance rate limiting — otherwise in-memory
+- `REDIS_URL` (optional but recommended, e.g. Upstash) — when unset, rate limiting uses in-memory (fine on Vercel Hobby / single-node). When set, limits are Redis-backed and fail closed if Redis is unreachable.
+- `CRON_SECRET` (minimum 16 characters) — scheduled billing and expiry jobs fail authentication without it, and production readiness returns `503`.
 
 **Still deferred (product):**
 - SSO (SAML/OIDC) for Enterprise

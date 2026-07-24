@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -192,7 +194,7 @@ export function AccountOnboarding() {
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => setView("business-profile")}
+            onClick={() => startTransition(() => setView("business-profile"))}
           >
             {locale === "ar" ? "عرض ملف الشركة" : "View business profile"}
           </Button>

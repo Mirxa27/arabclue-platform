@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
 import { assertWorkspaceMatch } from "@/lib/workspace-context";
@@ -15,6 +16,14 @@ import {
 import { loadApprovedStructuredEvidenceBindings } from "@/lib/proposal-snapshot-evidence";
 import { loadProjectIngestionEntities } from "@/lib/proposal-studio";
 import { proposalReviewBinding } from "@/lib/proposal-review-integrity";
+import {
+  loadProposalSnapshotServerIdentity,
+  validateProposalSnapshotServerIdentity,
+} from "@/lib/proposal-snapshot-identity";
+import {
+  ContractRenderSnapshotError,
+  createContractRenderSnapshot,
+} from "@/lib/contract-render-snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +68,29 @@ export async function POST(
           "The persisted structured proposal snapshot is invalid.",
           409,
           snapshotValidation.code
+        );
+      }
+      const serverIdentity = await loadProposalSnapshotServerIdentity(
+        workspace.id,
+        proposal.projectId
+      );
+      if (!serverIdentity) {
+        throw new ApiError(
+          "Proposal project or workspace identity was not found.",
+          409,
+          "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND"
+        );
+      }
+      if (
+        validateProposalSnapshotServerIdentity(
+          snapshotValidation.value.snapshot,
+          serverIdentity
+        ).length > 0
+      ) {
+        throw new ApiError(
+          "Structured proposal identity no longer matches tenant records.",
+          409,
+          "STRUCTURED_IDENTITY_MISMATCH"
         );
       }
       const approvedEvidence =
@@ -184,56 +216,159 @@ export async function POST(
       },
     };
 
-    const binding = proposalReviewBinding(proposal);
-    if (
-      proposal.type !== "CONTRACT" &&
-      binding.submittedSnapshotHash !== submittedSnapshotHash
-    ) {
-      throw new ApiError(
-        "Structured proposal changed during submission preflight",
-        409,
-        "STRUCTURED_SNAPSHOT_CHANGED"
-      );
-    }
     const submittedAt = new Date();
-    const updated = await db.$transaction(async (tx) => {
-      const write = await tx.generatedProposal.updateMany({
-        where: {
-          id,
-          workspaceId: workspace.id,
-          status: proposal.status,
-          version: proposal.version,
-          updatedAt: proposal.updatedAt,
-          structuredSnapshotHash: proposal.structuredSnapshotHash,
-          structuredSnapshotRevision: proposal.structuredSnapshotRevision,
-        },
-        data: {
-          status: getSubmittedForReviewStatus(),
-          submittedAt,
-          approvedAt: null,
-        },
-      });
-      if (write.count !== 1) return null;
-      await tx.proposalReview.deleteMany({ where: { proposalId: id } });
-      await tx.proposalReview.createMany({
-        data: policy.steps.map((step) => ({
-          proposalId: id,
-          stepIndex: step.stepIndex,
-          reviewerId: step.reviewerId,
-          stepRole: step.stepRole,
-          status: "PENDING",
-          ...binding,
-        })),
-      });
-      return tx.generatedProposal.findUniqueOrThrow({ where: { id } });
+    const submission = await db.$transaction(
+      async (tx) => {
+        const current = await tx.generatedProposal.findUnique({
+          where: { id },
+          include: {
+            project: true,
+            workspace: {
+              include: {
+                brandProfiles: {
+                  orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+                },
+              },
+            },
+            obligationStates: {
+              orderBy: [{ obligationId: "asc" }, { id: "asc" }],
+            },
+          },
+        });
+        if (
+          !current ||
+          current.workspaceId !== workspace.id ||
+          current.status !== proposal.status ||
+          current.version !== proposal.version ||
+          current.updatedAt.getTime() !== proposal.updatedAt.getTime() ||
+          current.structuredSnapshotHash !==
+            proposal.structuredSnapshotHash ||
+          current.structuredSnapshotRevision !==
+            proposal.structuredSnapshotRevision ||
+          current.contractRenderSnapshotHash !==
+            proposal.contractRenderSnapshotHash ||
+          current.contractRenderSnapshotRevision !==
+            proposal.contractRenderSnapshotRevision
+        ) {
+          return null;
+        }
+
+        let contractSnapshot:
+          | ReturnType<typeof createContractRenderSnapshot>
+          | null = null;
+        if (current.type === "CONTRACT") {
+          contractSnapshot = createContractRenderSnapshot(
+            {
+              proposal: current,
+              project: current.project,
+              workspace: current.workspace,
+              brand: current.workspace.brandProfiles[0] ?? null,
+              obligationStates: current.obligationStates,
+            },
+            {
+              revision: current.contractRenderSnapshotRevision + 1,
+              capturedAt: submittedAt,
+            }
+          );
+        }
+
+        const proposalForBinding = {
+          ...current,
+          ...(contractSnapshot === null
+            ? {}
+            : {
+                contractRenderSnapshot: contractSnapshot.snapshot,
+                contractRenderSnapshotHash: contractSnapshot.hash,
+                contractRenderSnapshotRevision:
+                  contractSnapshot.revision,
+              }),
+        };
+        const binding = proposalReviewBinding(proposalForBinding);
+        if (
+          current.type !== "CONTRACT" &&
+          binding.submittedSnapshotHash !== submittedSnapshotHash
+        ) {
+          throw new ApiError(
+            "Structured proposal changed during submission preflight",
+            409,
+            "STRUCTURED_SNAPSHOT_CHANGED"
+          );
+        }
+
+        const write = await tx.generatedProposal.updateMany({
+          where: {
+            id,
+            workspaceId: workspace.id,
+            status: current.status,
+            version: current.version,
+            updatedAt: current.updatedAt,
+            structuredSnapshotHash: current.structuredSnapshotHash,
+            structuredSnapshotRevision:
+              current.structuredSnapshotRevision,
+            contractRenderSnapshotHash:
+              current.contractRenderSnapshotHash,
+            contractRenderSnapshotRevision:
+              current.contractRenderSnapshotRevision,
+          },
+          data: {
+            status: getSubmittedForReviewStatus(),
+            submittedAt,
+            approvedAt: null,
+            ...(contractSnapshot === null
+              ? {}
+              : {
+                  contractRenderSnapshot: contractSnapshot.snapshot,
+                  contractRenderSnapshotHash: contractSnapshot.hash,
+                  contractRenderSnapshotRevision:
+                    contractSnapshot.revision,
+                }),
+          },
+        });
+        if (write.count !== 1) return null;
+        await tx.proposalReview.deleteMany({ where: { proposalId: id } });
+        await tx.proposalReview.createMany({
+          data: policy.steps.map((step) => ({
+            proposalId: id,
+            stepIndex: step.stepIndex,
+            reviewerId: step.reviewerId,
+            stepRole: step.stepRole,
+            status: "PENDING",
+            ...binding,
+          })),
+        });
+        return {
+          proposal: await tx.generatedProposal.findUniqueOrThrow({
+            where: { id },
+          }),
+          authoritativeSnapshotHash: binding.submittedSnapshotHash,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    ).catch((error: unknown) => {
+      if (error instanceof ContractRenderSnapshotError) {
+        throw new ApiError(error.message, 422, error.code);
+      }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2034"
+      ) {
+        throw new ApiError(
+          "Proposal or contract render inputs changed during submission; retry from the latest state",
+          409,
+          "PROPOSAL_SUBMIT_CONFLICT"
+        );
+      }
+      throw error;
     });
-    if (!updated) {
+    if (!submission) {
       throw new ApiError(
         "Proposal changed during submission; rerun validation and submit again",
         409,
         "PROPOSAL_SUBMIT_CONFLICT"
       );
     }
+    const updated = submission.proposal;
+    submittedSnapshotHash = submission.authoritativeSnapshotHash;
 
     await audit({
       userId,

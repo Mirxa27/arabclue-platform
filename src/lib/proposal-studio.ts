@@ -145,8 +145,11 @@ const PREFLIGHT_FORMATS = new Set(["html", "manifest"]);
 export function evaluateExportPolicy(input: ExportPolicyInput): ExportPolicyResult {
   const format = input.format.toLowerCase();
   const preflight = PREFLIGHT_FORMATS.has(format);
+  const finalStatus = ["APPROVED", "EXPORTED"].includes(
+    input.proposalStatus
+  );
 
-  if (input.validation.blocking && !preflight) {
+  if (input.validation.blocking && (!preflight || finalStatus)) {
     return {
       allowed: false,
       status: 422,
@@ -155,14 +158,15 @@ export function evaluateExportPolicy(input: ExportPolicyInput): ExportPolicyResu
     };
   }
 
-  if (!preflight && input.hasApprovalPolicy) {
-    const okStatus = ["APPROVED", "EXPORTED"].includes(input.proposalStatus);
-    if (!okStatus) {
+  if (!preflight) {
+    if (!finalStatus) {
       return {
         allowed: false,
         status: 409,
         error:
-          "Final export requires an approved proposal. Submit for review and complete the approval chain.",
+          input.hasApprovalPolicy
+            ? "Final export requires an approved proposal. Submit for review and complete the approval chain."
+            : "Final export requires a configured approval policy and a completed approval chain.",
         code: "approval_required",
       };
     }
@@ -170,7 +174,8 @@ export function evaluateExportPolicy(input: ExportPolicyInput): ExportPolicyResu
 
   return {
     allowed: true,
-    markExported: format === "zip",
+    markExported:
+      format === "zip" && input.proposalStatus === "APPROVED",
   };
 }
 

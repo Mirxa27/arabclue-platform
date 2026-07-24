@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -272,7 +274,7 @@ export function ProjectsList() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveProjectId(p.id);
-                          setView("overview");
+                          startTransition(() => setView("overview"));
                         }}
                       >
                         <ChevronRight className="size-3.5" />

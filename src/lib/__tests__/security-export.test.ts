@@ -12,6 +12,7 @@ import {
 } from "../knowledge-eligibility";
 import {
   buildExportManifest,
+  CONTRACT_EXPORT_SAFETY,
   sha256Hex,
   GENERATOR_VERSION,
 } from "../export-manifest";
@@ -79,14 +80,25 @@ describe("safe ZIP extraction", () => {
 });
 
 describe("knowledge eligibility", () => {
+  const evidenceChecksum = "a".repeat(64);
   const approvedReview = {
     approved: true,
     reviewStatus: "APPROVED",
-    evidenceRef: "uploaded-document:doc-1:v1:sha256:abc",
-    provenanceJson: "{}",
+    evidenceRef: `uploaded-document:doc-1:v1:sha256:${evidenceChecksum}`,
+    evidenceDocumentId: "doc-1",
+    evidenceVersion: 1,
+    evidenceChecksum,
+    provenanceJson: JSON.stringify({
+      sourceKind: "UPLOADED_DOCUMENT",
+      sourceId: "doc-1",
+      version: 1,
+      checksum: evidenceChecksum,
+      originalName: "evidence.pdf",
+      capturedAt: "2026-07-01T00:00:00.000Z",
+    }),
     reviewedById: "reviewer-1",
     approvedAt: new Date("2026-07-01T00:00:00Z"),
-    contentHash: "sha256:abc",
+    contentHash: `sha256:${"b".repeat(64)}`,
     revokedAt: null,
   };
 
@@ -179,6 +191,7 @@ describe("export manifest", () => {
         contentMd: "# Proposal\nSafe content without pricing.",
       },
       validation,
+      contractSafety: CONTRACT_EXPORT_SAFETY,
       artifacts: [{ name: "Technical_Proposal.pdf", type: "PDF", bytes: artifact }],
     });
     expect(manifest.generatorVersion).toBe(GENERATOR_VERSION);
@@ -188,5 +201,10 @@ describe("export manifest", () => {
     expect(manifest.artifacts[0].contentHash).toBe(sha256Hex(artifact));
     expect(manifest.validation.status).toBe("PASS");
     expect(manifest.humanAuthorityNotice.toLowerCase()).toContain("final author");
+    expect(manifest.contractSafety).toEqual({
+      legalReviewStatus: "UNREVIEWED",
+      counselReviewRequired: true,
+      isExecutable: false,
+    });
   });
 });

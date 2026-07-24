@@ -3,7 +3,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PHASE_TWO_PUBLIC_SOURCES = Object.freeze([
+export const DOCUMENT_GENERATION_PUBLIC_SOURCES = Object.freeze([
   "src/lib/bilingual-layout.tsx",
   "src/lib/layout-sync.ts",
   "src/lib/bilingual-typography.ts",
@@ -17,8 +17,19 @@ export const PHASE_TWO_PUBLIC_SOURCES = Object.freeze([
   "src/components/documents/bilingual/types.ts",
   "src/lib/document-templates/contract-templates.ts",
   "src/lib/document-templates/contract-template-renderer.ts",
+  "src/lib/contract-template-persistence.ts",
+  "src/lib/contract-draft-admission.ts",
   "src/lib/proposal-layouts.ts",
   "src/lib/proposal-layout-export.ts",
+  "src/lib/proposal-snapshot-persistence.ts",
+  "src/lib/proposal-snapshot-evidence.ts",
+  "src/lib/proposal-snapshot-identity.ts",
+  "src/lib/proposal-snapshot-hydration.ts",
+  "src/lib/proposal-submit-client.ts",
+  "src/lib/proposal-edit-precondition.ts",
+  "src/lib/proposal-review-integrity.ts",
+  "src/lib/proposal-final-export.ts",
+  "src/lib/contract-render-snapshot.ts",
   "src/lib/document-visualizations.ts",
   "src/lib/capability-statement.ts",
   "src/lib/business-profile.ts",
@@ -36,8 +47,28 @@ export const DOCUMENT_QUALITY_TEST_FILES = Object.freeze([
   "src/lib/__tests__/contract-template-renderer.test.ts",
   "src/lib/__tests__/contract-template-catalog-route.test.ts",
   "src/lib/__tests__/contract-template-preview-route.test.ts",
+  "src/lib/__tests__/contract-template-persistence.test.ts",
+  "src/lib/__tests__/contract-template-persistence-db.test.ts",
+  "src/lib/__tests__/contract-draft-route.test.ts",
+  "src/lib/__tests__/contract-draft-admission.test.ts",
+  "src/lib/__tests__/contract-template-catalog-ui.test.ts",
+  "src/lib/__tests__/contract-draft-migration.test.ts",
   "src/lib/__tests__/proposal-layouts.test.ts",
   "src/lib/__tests__/proposal-layout-export.test.ts",
+  "src/lib/__tests__/proposal-snapshot-persistence.test.ts",
+  "src/lib/__tests__/proposal-snapshot-evidence.test.ts",
+  "src/lib/__tests__/proposal-snapshot-identity.test.ts",
+  "src/lib/__tests__/proposal-snapshot-route.test.ts",
+  "src/lib/__tests__/proposal-snapshot-hydration.test.ts",
+  "src/lib/__tests__/proposal-submit-client.test.ts",
+  "src/lib/__tests__/proposal-edit-precondition.test.ts",
+  "src/lib/__tests__/proposal-review-integrity.test.ts",
+  "src/lib/__tests__/proposal-final-export.test.ts",
+  "src/lib/__tests__/contract-render-snapshot.test.ts",
+  "src/lib/__tests__/contract-render-snapshot-migration.test.ts",
+  "src/lib/__tests__/proposal-download-format.test.ts",
+  "src/lib/__tests__/proposal-workflow-integrity.test.ts",
+  "src/lib/__tests__/proposal-studio.test.ts",
   "src/lib/__tests__/document-visualizations.test.ts",
   "src/lib/__tests__/capability-statement.test.ts",
   "src/lib/__tests__/business-profile-bilingual.test.ts",
@@ -211,7 +242,7 @@ export function parseLcovCoverage(
 
 export function evaluateDocumentCoverage(
   coverage: ReadonlyMap<string, FileCoverage>,
-  expectedSources: readonly string[] = PHASE_TWO_PUBLIC_SOURCES,
+  expectedSources: readonly string[] = DOCUMENT_GENERATION_PUBLIC_SOURCES,
   thresholds: Readonly<{ lines: number; functions: number }> =
     DOCUMENT_COVERAGE_THRESHOLDS
 ): DocumentCoverageReport {
@@ -255,14 +286,18 @@ export function evaluateDocumentCoverage(
     failures.push(`Missing coverage for: ${missingSources.join(", ")}`);
   }
   if (lineTotals.found === 0) {
-    failures.push("No executable lines were reported for the Phase 2 surface.");
+    failures.push(
+      "No executable lines were reported for the document-generation surface."
+    );
   } else if (totals.lines.percentage < thresholds.lines) {
     failures.push(
       `Line coverage ${totals.lines.percentage.toFixed(2)}% is below ${thresholds.lines.toFixed(2)}%.`
     );
   }
   if (functionTotals.found === 0) {
-    failures.push("No functions were reported for the Phase 2 surface.");
+    failures.push(
+      "No functions were reported for the document-generation surface."
+    );
   } else if (totals.functions.percentage < thresholds.functions) {
     failures.push(
       `Function coverage ${totals.functions.percentage.toFixed(2)}% is below ${thresholds.functions.toFixed(2)}%.`
@@ -288,7 +323,7 @@ export function formatDocumentCoverageReport(
       `${file.functions.percentage.toFixed(2)}% functions`
   );
   rows.push(
-    `Phase 2 total: ${report.totals.lines.percentage.toFixed(2)}% lines ` +
+    `Document-generation total: ${report.totals.lines.percentage.toFixed(2)}% lines ` +
       `(${report.totals.lines.covered}/${report.totals.lines.found}), ` +
       `${report.totals.functions.percentage.toFixed(2)}% functions ` +
       `(${report.totals.functions.covered}/${report.totals.functions.found})`
@@ -337,7 +372,7 @@ async function main(): Promise<void> {
   );
   const lcovPath = path.join(coverageDirectory, "lcov.info");
   const lintFiles = [
-    ...PHASE_TWO_PUBLIC_SOURCES,
+    ...DOCUMENT_GENERATION_PUBLIC_SOURCES,
     ...DOCUMENT_QUALITY_TEST_FILES,
     DOCUMENT_BROWSER_TEST_FILE,
     "scripts/check-document-quality.ts",

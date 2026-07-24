@@ -80,6 +80,7 @@ export type ApiProposal = {
   locale?: string | null;
   version?: number;
   createdAt: string;
+  updatedAt: string;
   generatedAt?: string | null;
   artifacts?: ApiProposalArtifact[];
   artifactsJson?: string | null;

@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useState, startTransition, type ComponentType } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -346,7 +346,7 @@ function AgentsView() {
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => setView("compliance")}
+          onClick={() => startTransition(() => setView("compliance"))}
         >
           <ShieldCheck className="size-3.5" />
           {ar ? "الامتثال" : "Compliance"}
@@ -356,7 +356,7 @@ function AgentsView() {
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => setView("proposals")}
+          onClick={() => startTransition(() => setView("proposals"))}
         >
           <FileText className="size-3.5" />
           {ar ? "العطاءات" : "Proposals"}
@@ -595,6 +595,7 @@ function OnboardingBanner() {
   const [ready, setReady] = useState<boolean | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
 
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/onboarding")
@@ -639,7 +640,7 @@ function OnboardingBanner() {
       <button
         type="button"
         className="underline font-medium"
-        onClick={() => setView("account")}
+        onClick={() => startTransition(() => setView("account"))}
       >
         {locale === "ar" ? "فتح الإعداد" : "Open setup"}
       </button>

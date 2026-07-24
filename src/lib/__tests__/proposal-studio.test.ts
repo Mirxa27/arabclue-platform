@@ -108,14 +108,30 @@ describe("export policy", () => {
     expect(r.allowed).toBe(true);
   });
 
-  test("without approval policy allows generated final export", () => {
+  test("blocked HTML and manifest are never authoritative final exports", () => {
+    for (const format of ["html", "manifest"]) {
+      const result = evaluateExportPolicy({
+        proposalStatus: "APPROVED",
+        validation: blockedValidation,
+        format,
+        hasApprovalPolicy: true,
+      });
+      expect(result.allowed, format).toBe(false);
+      if (!result.allowed) {
+        expect(result.code, format).toBe("validation_blocked");
+      }
+    }
+  });
+
+  test("without approval policy blocks generated final export", () => {
     const r = evaluateExportPolicy({
       proposalStatus: "GENERATED",
       validation: okValidation,
       format: "zip",
       hasApprovalPolicy: false,
     });
-    expect(r.allowed).toBe(true);
+    expect(r.allowed).toBe(false);
+    if (!r.allowed) expect(r.code).toBe("approval_required");
   });
 });
 

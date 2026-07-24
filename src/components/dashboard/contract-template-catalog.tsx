@@ -1,18 +1,32 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Download, FileText, Loader2, Scale } from "lucide-react";
+import { useRef, useState } from "react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  Download,
+  FileText,
+  Loader2,
+  Save,
+  Scale,
+  Trash2,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useLocale } from "@/lib/store";
+import { useLocale, useUI } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { saveBlob } from "@/lib/download-artifact";
+import { ApiClientError, apiJson } from "@/lib/api-client";
 
 interface ContractTemplateCatalogItem {
   key: string;
   versionId: string;
+  canonicalHash: string;
   lifecycle: "DRAFT";
   legalReviewStatus: "UNREVIEWED";
   counselReviewRequired: true;
@@ -31,10 +45,41 @@ interface ContractTemplateCatalogPayload {
   templates: ContractTemplateCatalogItem[];
 }
 
+interface SavedContractDraft {
+  id: string;
+  projectId: string | null;
+  templateKey: string;
+  templateVersionId: string;
+  title: string;
+  titleAr: string;
+  diagnosticCount: number;
+  legalReviewStatus: "UNREVIEWED";
+  counselReviewRequired: true;
+  isExecutable: false;
+  createdAt: string;
+}
+
+interface SavedContractDraftListPayload {
+  executionAllowed: false;
+  drafts: SavedContractDraft[];
+  nextCursor: string | null;
+}
+
+interface SavedContractDraftReadPayload {
+  executionAllowed: false;
+  draft: {
+    summary: SavedContractDraft;
+    contentHtml: string;
+  };
+}
+
 export function ContractTemplateCatalog() {
   const { locale } = useLocale();
+  const { activeProjectId } = useUI();
   const ar = locale === "ar";
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const retryRequestIds = useRef(new Map<string, string>());
   const [busy, setBusy] = useState<string | null>(null);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["contract-template-catalog"],
@@ -48,6 +93,137 @@ export function ContractTemplateCatalog() {
       return (await response.json()) as ContractTemplateCatalogPayload;
     },
   });
+  const {
+    data: savedDraftPages,
+    isError: savedDraftsError,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["contract-drafts", activeProjectId],
+    initialPageParam: "",
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams({ limit: "20" });
+      if (activeProjectId) query.set("projectId", activeProjectId);
+      if (pageParam) query.set("cursor", pageParam);
+      return apiJson<SavedContractDraftListPayload>(
+        `/api/contracts/drafts?${query.toString()}`,
+        {
+          credentials: "include",
+          cache: "no-store",
+        }
+      );
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+  const savedDrafts =
+    savedDraftPages?.pages.flatMap((page) => page.drafts) ?? [];
+
+  const deleteDraft = useMutation({
+    mutationFn: (draft: SavedContractDraft) =>
+      apiJson<{
+        deletedId: string;
+        releasedStorageBytes: number;
+      }>(`/api/contracts/drafts/${encodeURIComponent(draft.id)}`, {
+        method: "DELETE",
+        credentials: "include",
+        cache: "no-store",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["contract-drafts", activeProjectId],
+      });
+      toast({
+        title: ar ? "تم حذف المسودة" : "Draft deleted",
+        description: ar
+          ? "تم تحرير سعة المسودات في مساحة العمل."
+          : "Workspace draft capacity has been released.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: ar ? "تعذر حذف المسودة" : "Draft deletion failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const saveDraft = useMutation({
+    mutationFn: async ({
+      template,
+      clientRequestId,
+    }: {
+      template: ContractTemplateCatalogItem;
+      clientRequestId: string;
+    }) =>
+      apiJson<{
+        created: boolean;
+        draft: SavedContractDraft;
+        executionAllowed: false;
+      }>("/api/contracts/drafts", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateKey: template.key,
+          expectedVersionId: template.versionId,
+          expectedCanonicalHash: template.canonicalHash,
+          clientRequestId,
+          mode: "PREVIEW",
+          bindings: {},
+          projectId: activeProjectId,
+        }),
+      }),
+    onSuccess: (result, variables) => {
+      if (
+        retryRequestIds.current.get(variables.template.key) ===
+        variables.clientRequestId
+      ) {
+        retryRequestIds.current.delete(variables.template.key);
+      }
+      void queryClient.invalidateQueries({
+        queryKey: ["contract-drafts", activeProjectId],
+      });
+      toast({
+        title: ar ? "تم حفظ مسودة آمنة" : "Safe draft saved",
+        description: ar
+          ? "المسودة غير مراجعة وغير قابلة للتوقيع حتى إكمال المتغيرات والمراجعة القانونية."
+          : "The draft remains unreviewed and non-executable until variables and counsel review are complete.",
+      });
+    },
+    onError: (error: Error, variables) => {
+      if (
+        error instanceof ApiClientError &&
+        error.status < 500 &&
+        retryRequestIds.current.get(variables.template.key) ===
+          variables.clientRequestId
+      ) {
+        retryRequestIds.current.delete(variables.template.key);
+      }
+      toast({
+        title: ar ? "تعذر حفظ المسودة" : "Draft save failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function saveTemplateDraft(template: ContractTemplateCatalogItem) {
+    const clientRequestId =
+      retryRequestIds.current.get(template.key) ?? crypto.randomUUID();
+    retryRequestIds.current.set(template.key, clientRequestId);
+    saveDraft.mutate({ template, clientRequestId });
+  }
+
+  function confirmDeleteSavedDraft(draft: SavedContractDraft) {
+    const confirmed = window.confirm(
+      ar
+        ? "هل تريد حذف هذه المسودة غير المراجعة؟ لا يمكن التراجع عن هذا الإجراء."
+        : "Delete this unreviewed draft? This action cannot be undone."
+    );
+    if (confirmed) deleteDraft.mutate(draft);
+  }
 
   async function downloadPreview(
     template: ContractTemplateCatalogItem,
@@ -94,6 +270,36 @@ export function ContractTemplateCatalog() {
     }
   }
 
+  async function downloadSavedDraft(draft: SavedContractDraft) {
+    const key = `${draft.id}:stored-html`;
+    setBusy(key);
+    try {
+      const payload = await apiJson<SavedContractDraftReadPayload>(
+        `/api/contracts/drafts/${encodeURIComponent(draft.id)}`,
+        { credentials: "include", cache: "no-store" }
+      );
+      const filename = `${draft.templateKey}-${draft.id}-unreviewed-draft.html`;
+      saveBlob(
+        new Blob([payload.draft.contentHtml], {
+          type: "text/html;charset=utf-8",
+        }),
+        filename
+      );
+      toast({
+        title: ar ? "تم تنزيل المسودة المحفوظة" : "Saved draft downloaded",
+        description: filename,
+      });
+    } catch (error) {
+      toast({
+        title: ar ? "تعذر تنزيل المسودة" : "Saved draft unavailable",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <section aria-labelledby="contract-template-catalog-heading">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
@@ -106,8 +312,8 @@ export function ContractTemplateCatalog() {
           </h3>
           <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
             {ar
-              ? "سبع مسودات منظمة للمعاينة فقط. جميعها غير مراجعة وغير قابلة للتوقيع، وتتطلب مراجعة محامٍ سعودي مؤهل."
-              : "Seven structured preview-only drafts. Every template is unreviewed, non-executable, and requires qualified Saudi counsel review."}
+              ? "سبع مسودات منظمة للمعاينة أو الحفظ داخل مساحة العمل. جميعها غير مراجعة وغير قابلة للتوقيع، وتتطلب مراجعة محامٍ سعودي مؤهل."
+              : "Seven structured drafts for preview or workspace-safe persistence. Every template is unreviewed, non-executable, and requires qualified Saudi counsel review."}
           </p>
         </div>
         <Badge variant="destructive">
@@ -149,7 +355,7 @@ export function ContractTemplateCatalog() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={busy !== null}
+                  disabled={busy !== null || saveDraft.isPending}
                   onClick={() => void downloadPreview(template, "html")}
                 >
                   {busy === `${template.key}:html` ? (
@@ -162,7 +368,7 @@ export function ContractTemplateCatalog() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={busy !== null}
+                  disabled={busy !== null || saveDraft.isPending}
                   onClick={() => void downloadPreview(template, "pdf")}
                 >
                   {busy === `${template.key}:pdf` ? (
@@ -172,12 +378,140 @@ export function ContractTemplateCatalog() {
                   )}
                   PDF
                 </Button>
+                <Button
+                  size="sm"
+                  disabled={busy !== null || saveDraft.isPending}
+                  onClick={() => saveTemplateDraft(template)}
+                >
+                  {saveDraft.isPending &&
+                  saveDraft.variables?.template.key === template.key ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Save className="size-3.5" />
+                  )}
+                  {ar ? "حفظ مسودة" : "Save draft"}
+                </Button>
               </div>
             </Card>
           ))}
         </div>
       )}
+
+      {savedDrafts.length > 0 ? (
+        <div className="mt-4" aria-labelledby="saved-contract-drafts-heading">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h4
+              id="saved-contract-drafts-heading"
+              className="text-xs font-semibold"
+            >
+              {ar ? "المسودات المحفوظة" : "Saved catalog drafts"}
+            </h4>
+            <span className="text-[11px] text-muted-foreground">
+              {activeProjectId
+                ? ar
+                  ? "للمشروع النشط"
+                  : "Active project"
+                : ar
+                  ? "كل مساحة العمل"
+                  : "Entire workspace"}
+            </span>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {savedDrafts.map((draft) => (
+              <Card
+                key={draft.id}
+                className="flex flex-wrap items-center justify-between gap-3 p-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium">
+                    {ar ? draft.titleAr : draft.title}
+                  </p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {draft.templateVersionId} ·{" "}
+                    {new Intl.DateTimeFormat(ar ? "ar-SA" : "en-US", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    }).format(new Date(draft.createdAt))}
+                  </p>
+                  <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                    {ar
+                      ? `${draft.diagnosticCount} عناصر تحتاج الإكمال · غير قابل للتوقيع`
+                      : `${draft.diagnosticCount} completion diagnostics · non-executable`}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      busy !== null ||
+                      saveDraft.isPending ||
+                      deleteDraft.isPending
+                    }
+                    onClick={() => void downloadSavedDraft(draft)}
+                  >
+                    {busy === `${draft.id}:stored-html` ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Download className="size-3.5" />
+                    )}
+                    HTML
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={
+                      busy !== null ||
+                      saveDraft.isPending ||
+                      deleteDraft.isPending
+                    }
+                    aria-label={
+                      ar
+                        ? `حذف ${draft.titleAr}`
+                        : `Delete ${draft.title}`
+                    }
+                    onClick={() => confirmDeleteSavedDraft(draft)}
+                  >
+                    {deleteDraft.isPending &&
+                    deleteDraft.variables?.id === draft.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-3.5" />
+                    )}
+                    {ar ? "حذف" : "Delete"}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+          {hasNextPage ? (
+            <div className="mt-3 flex justify-center">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                {ar ? "تحميل المزيد" : "Load more"}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {savedDraftsError ? (
+        <p
+          className="mt-3 text-xs text-destructive"
+          role="alert"
+          aria-live="polite"
+        >
+          {ar
+            ? "تعذر تحميل المسودات المحفوظة."
+            : "Saved drafts could not be loaded."}
+        </p>
+      ) : null}
     </section>
   );
 }
-

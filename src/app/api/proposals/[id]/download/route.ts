@@ -49,6 +49,17 @@ import {
   type CanonicalProposalSnapshot,
 } from "@/lib/proposal-snapshot-persistence";
 import { loadApprovedStructuredEvidenceBindings } from "@/lib/proposal-snapshot-evidence";
+import {
+  proposalSnapshotServerIdentityFromRecords,
+  validateProposalSnapshotServerIdentity,
+} from "@/lib/proposal-snapshot-identity";
+import { hasCompleteBoundProposalApproval } from "@/lib/proposal-final-export";
+import {
+  contractExportOptionsFromSnapshot,
+  validatePersistedContractRenderSnapshot,
+  type CanonicalContractRenderSnapshot,
+} from "@/lib/contract-render-snapshot";
+import type { ContractObligationSnapshot } from "@/lib/contract-export";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -89,6 +100,53 @@ export function resolveProposalDownloadFormat(
   }
 }
 
+export function resolveProposalExportLifecycle(input: {
+  readonly proposalStatus: string;
+  readonly finalArtifactRequested: boolean;
+  readonly hasValidatedRenderSnapshot: boolean;
+}): {
+  readonly authoritative: boolean;
+  readonly lifecycle:
+    | "APPROVED"
+    | "EXPORTED"
+    | "NON_AUTHORITATIVE_PREVIEW";
+} {
+  const finalStatus =
+    input.proposalStatus === "APPROVED" ||
+    input.proposalStatus === "EXPORTED";
+  if (
+    finalStatus &&
+    input.finalArtifactRequested &&
+    input.hasValidatedRenderSnapshot
+  ) {
+    return {
+      authoritative: true,
+      lifecycle:
+        input.proposalStatus === "EXPORTED"
+          ? "EXPORTED"
+          : "APPROVED",
+    };
+  }
+  return {
+    authoritative: false,
+    lifecycle: "NON_AUTHORITATIVE_PREVIEW",
+  };
+}
+
+export function shouldMarkProposalExported(input: {
+  readonly policyRequestedTransition: boolean;
+  readonly currentStatus: string;
+  readonly authoritative: boolean;
+  readonly completeBoundReviewChain: boolean;
+}): boolean {
+  return (
+    input.policyRequestedTransition &&
+    input.currentStatus === "APPROVED" &&
+    input.authoritative &&
+    input.completeBoundReviewChain
+  );
+}
+
 // GET /api/proposals/[id]/download?format=zip|pdf|html|xlsx-matrix|ea-matrix|xlsx-boq|boq|slides|pptx
 export async function GET(
   req: NextRequest,
@@ -121,7 +179,16 @@ export async function GET(
 
   const proposal = await db.generatedProposal.findUnique({
     where: { id },
-    include: { project: true, workspace: { include: { brandProfiles: true } } },
+    include: {
+      project: true,
+      workspace: {
+        include: {
+          brandProfiles: {
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          },
+        },
+      },
+    },
   });
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -181,11 +248,31 @@ export async function GET(
       );
     }
     structuredSnapshot = validation.value;
+    const serverIdentity = proposalSnapshotServerIdentityFromRecords({
+      project: proposal.project,
+      workspace: proposal.workspace,
+      brand: proposal.workspace.brandProfiles[0] ?? null,
+    });
+    const identityDiagnostics = validateProposalSnapshotServerIdentity(
+      structuredSnapshot.snapshot,
+      serverIdentity
+    );
+    if (identityDiagnostics.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Persisted structured proposal identity no longer matches tenant records.",
+          code: "STRUCTURED_IDENTITY_MISMATCH",
+          diagnostics: identityDiagnostics,
+        },
+        { status: 409, headers: { "Cache-Control": "no-store" } }
+      );
+    }
     const structuredApprovedEvidence =
       await loadApprovedStructuredEvidenceBindings(
-      workspace.id,
-      claimedStructuredKnowledgeIds(structuredSnapshot.snapshot)
-    );
+        workspace.id,
+        claimedStructuredKnowledgeIds(structuredSnapshot.snapshot)
+      );
     const evidenceDiagnostics = validateStructuredSnapshotEvidence(
       structuredSnapshot.snapshot,
       structuredApprovedEvidence
@@ -223,6 +310,72 @@ export async function GET(
       format = "pdf";
     }
   }
+  const policy = await db.approvalPolicy.findUnique({
+    where: { workspaceId: workspace.id },
+    include: { steps: { orderBy: { stepIndex: "asc" } } },
+  });
+  const finalArtifactRequested = isContract
+    ? ["html", "pdf", "manifest", "zip"].includes(format)
+    : format === "html" || format === "pdf" || format === "pptx";
+  const finalStatus =
+    proposal.status === "APPROVED" || proposal.status === "EXPORTED";
+  let contractRenderSnapshot: CanonicalContractRenderSnapshot | null =
+    null;
+  let finalReviewChainValidated = false;
+  if (isContract && finalStatus && finalArtifactRequested) {
+    const validation = validatePersistedContractRenderSnapshot(
+      proposal.contractRenderSnapshot,
+      {
+        proposalId: proposal.id,
+        hash: proposal.contractRenderSnapshotHash,
+        revision: proposal.contractRenderSnapshotRevision,
+      }
+    );
+    if (!validation.ok) {
+      return NextResponse.json(
+        {
+          error:
+            "Final contract export requires the immutable render snapshot captured at review submission.",
+          code: validation.code,
+          diagnostics: validation.diagnostics,
+        },
+        { status: 409, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    contractRenderSnapshot = validation.value;
+  }
+  if (
+    finalStatus && finalArtifactRequested
+  ) {
+    const reviews = await db.proposalReview.findMany({
+      where: { proposalId: proposal.id },
+      orderBy: { stepIndex: "asc" },
+    });
+    if (
+      !hasCompleteBoundProposalApproval(
+        proposal,
+        reviews,
+        policy?.steps ?? []
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Final export requires the exact current approval-policy chain, with every assigned step approved and bound to the current document state.",
+          code: "FINAL_REVIEW_BINDING_INVALID",
+        },
+        { status: 409, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    finalReviewChainValidated = true;
+  }
+  let exportLifecycle = resolveProposalExportLifecycle({
+    proposalStatus: proposal.status,
+    finalArtifactRequested,
+    hasValidatedRenderSnapshot:
+      structuredSnapshot !== null ||
+      contractRenderSnapshot !== null,
+  });
 
   // Deterministic validation gate — blocks final export on pricing/placeholder/NORA/etc.
   const restrictions = await db.restriction.findMany({
@@ -231,10 +384,6 @@ export async function GET(
   });
   const checksForGate = await db.complianceCheck.findMany({
     where: { projectId: proposal.projectId },
-  });
-  const policy = await db.approvalPolicy.findUnique({
-    where: { workspaceId: workspace.id },
-    include: { steps: true },
   });
   const hasApprovalPolicy = Boolean(policy && policy.steps.length > 0);
 
@@ -281,7 +430,11 @@ export async function GET(
     );
   } else if (isContract) {
     gateReport = getContractValidationReport({
-      contentMd: proposal.contentMd,
+      contentMd:
+        contractRenderSnapshot?.snapshot.proposal.contentMd ??
+        proposal.contentMd,
+      checkedAt:
+        contractRenderSnapshot?.snapshot.capturedAt,
     });
   } else {
     const gateFinancial: FinancialExtract | null =
@@ -346,6 +499,20 @@ export async function GET(
     crNumber: proposal.workspace.crNumber,
     vatNumber: proposal.workspace.vatNumber,
   };
+  const contractOptions =
+    contractRenderSnapshot === null
+      ? {
+          title: proposal.title,
+          titleAr: proposal.titleAr,
+          contentMd: proposal.contentMd ?? "",
+          projectTitle: proposal.project.title,
+          etimadRef: proposal.project.etimadRef,
+          brand,
+          company: companyLetterhead,
+        }
+      : contractExportOptionsFromSnapshot(
+          contractRenderSnapshot.snapshot
+        );
   const checks = checksForGate;
 
   // Prefer human-entered financial forms; fall back to structure-only agent BoQ
@@ -384,7 +551,9 @@ export async function GET(
     };
   }
 
-  const exportLocale = resolveLocale(proposal, pdfLocale);
+  const exportLocale =
+    contractRenderSnapshot?.snapshot.proposal.locale ??
+    resolveLocale(proposal, pdfLocale);
 
   // Drop Q&A scraps previously stored as BoQ lines; fall back to standard phases.
   if (boqItems?.length) {
@@ -407,7 +576,9 @@ export async function GET(
   let exportPermit: DocumentExportPermit | null = null;
   if (format === "pdf" || format === "zip" || format === "pptx") {
     const sourceCharacters =
-      structuredSnapshot === null
+      contractRenderSnapshot !== null
+        ? JSON.stringify(contractRenderSnapshot.snapshot).length
+        : structuredSnapshot === null
         ? JSON.stringify({
             contentMd: proposal.contentMd,
             artifactsJson: proposal.artifactsJson,
@@ -464,15 +635,9 @@ export async function GET(
           const { generateBilingualContractPDF } = await import(
             "@/lib/contract-export"
           );
-          buffer = await generateBilingualContractPDF({
-            title: proposal.title,
-            titleAr: proposal.titleAr,
-            contentMd: proposal.contentMd ?? "",
-            projectTitle: proposal.project.title,
-            etimadRef: proposal.project.etimadRef,
-            brand,
-            company: companyLetterhead,
-          });
+          buffer = await generateBilingualContractPDF(
+            contractOptions
+          );
           contentType = "application/pdf";
           filename = "Draft_Contract_Bilingual.pdf";
         } else {
@@ -507,15 +672,7 @@ export async function GET(
           const { generateBilingualContractHTML } = await import(
             "@/lib/contract-export"
           );
-          buffer = generateBilingualContractHTML({
-            title: proposal.title,
-            titleAr: proposal.titleAr,
-            contentMd: proposal.contentMd ?? "",
-            projectTitle: proposal.project.title,
-            etimadRef: proposal.project.etimadRef,
-            brand,
-            company: companyLetterhead,
-          });
+          buffer = generateBilingualContractHTML(contractOptions);
           contentType = "text/html; charset=utf-8";
           filename = "Draft_Contract_Bilingual.html";
         } else {
@@ -596,27 +753,59 @@ export async function GET(
         }
         break;
       case "manifest": {
-        const { buildExportManifest, manifestToJson } = await import(
-          "@/lib/export-manifest"
-        );
+        const {
+          buildExportManifest,
+          CONTRACT_EXPORT_SAFETY,
+          manifestToJson,
+        } = await import("@/lib/export-manifest");
         buffer = manifestToJson(
           buildExportManifest({
-            project: {
-              id: proposal.project.id,
-              title: proposal.project.title,
-              etimadRef: proposal.project.etimadRef,
-              updatedAt: proposal.project.updatedAt,
-            },
-            proposal: {
-              id: proposal.id,
-              version: proposal.version,
-              status: proposal.status,
-              locale: proposal.locale,
-              contentMd: proposal.contentMd,
-              approvedAt: proposal.approvedAt,
-            },
+            project:
+              contractRenderSnapshot === null
+                ? {
+                    id: proposal.project.id,
+                    title: proposal.project.title,
+                    etimadRef: proposal.project.etimadRef,
+                    updatedAt: proposal.project.updatedAt,
+                  }
+                : {
+                    id: contractRenderSnapshot.snapshot.project.id,
+                    title:
+                      contractRenderSnapshot.snapshot.project.title,
+                    etimadRef:
+                      contractRenderSnapshot.snapshot.project.etimadRef,
+                    updatedAt: new Date(
+                      contractRenderSnapshot.snapshot.project.updatedAt
+                    ),
+                  },
+            proposal:
+              contractRenderSnapshot === null
+                ? {
+                    id: proposal.id,
+                    version: proposal.version,
+                    status: proposal.status,
+                    locale: proposal.locale,
+                    contentMd: proposal.contentMd,
+                    approvedAt: proposal.approvedAt,
+                  }
+                : {
+                    id: contractRenderSnapshot.snapshot.proposal.id,
+                    version:
+                      contractRenderSnapshot.snapshot.proposal.version,
+                    status: "APPROVED",
+                    locale:
+                      contractRenderSnapshot.snapshot.proposal.locale,
+                    contentMd:
+                      contractRenderSnapshot.snapshot.proposal.contentMd,
+                    approvedAt: null,
+                  },
             validation: gateReport,
+            ...(isContract
+              ? { contractSafety: CONTRACT_EXPORT_SAFETY }
+              : {}),
             artifacts: [],
+            generatedAt:
+              contractRenderSnapshot?.snapshot.capturedAt,
           })
         );
         contentType = "application/json; charset=utf-8";
@@ -628,50 +817,67 @@ export async function GET(
           const { generateContractPackageZIP } = await import(
             "@/lib/contract-export"
           );
-          const { extractObligations } = await import(
-            "@/lib/contract-obligations"
-          );
-          const { parseContractArticles } = await import(
-            "@/lib/contract-format"
-          );
-          const articles = parseContractArticles(proposal.contentMd ?? "");
-          let milestones: { title?: string; name?: string; weeks?: number }[] =
-            [];
-          try {
-            const arts = proposal.artifactsJson
-              ? JSON.parse(proposal.artifactsJson)
-              : null;
-            if (arts && Array.isArray(arts.milestones)) {
-              milestones = arts.milestones;
-            }
-          } catch {
-            /* ignore */
+          let obligations: ContractObligationSnapshot[];
+          if (contractRenderSnapshot !== null) {
+            obligations = [
+              ...contractRenderSnapshot.snapshot.obligations,
+            ];
+          } else {
+            const { extractObligations } = await import(
+              "@/lib/contract-obligations"
+            );
+            const { parseContractArticles } = await import(
+              "@/lib/contract-format"
+            );
+            const { parseContractArtifacts } = await import(
+              "@/lib/contract-artifacts"
+            );
+            const artifacts = parseContractArtifacts(
+              proposal.artifactsJson
+            );
+            const articles =
+              artifacts.articles?.length
+                ? artifacts.articles
+                : parseContractArticles(proposal.contentMd ?? "");
+            const derived = extractObligations(
+              articles,
+              artifacts.milestones
+            );
+            const states =
+              await db.contractObligationState.findMany({
+                where: { proposalId: proposal.id },
+              });
+            const statusById = new Map(
+              states.map((state) => [
+                state.obligationId,
+                state.status as "open" | "done",
+              ])
+            );
+            obligations = derived.map((row) => ({
+              ...row,
+              status: statusById.get(row.id) ?? row.status,
+            }));
           }
-          const derived = extractObligations(articles, milestones);
-          const states = await db.contractObligationState.findMany({
-            where: { proposalId: proposal.id },
-          });
-          const statusById = new Map(
-            states.map((s) => [s.obligationId, s.status as "open" | "done"])
-          );
-          const obligations = derived.map((row) => ({
-            ...row,
-            status: statusById.get(row.id) ?? row.status,
-          }));
+          const frozenContract =
+            contractRenderSnapshot?.snapshot ?? null;
           buffer = await generateContractPackageZIP({
-            title: proposal.title,
-            titleAr: proposal.titleAr,
-            contentMd: proposal.contentMd ?? "",
-            projectTitle: proposal.project.title,
-            etimadRef: proposal.project.etimadRef,
-            brand,
-            company: companyLetterhead,
-            proposalId: proposal.id,
-            proposalVersion: proposal.version,
-            proposalStatus: proposal.status,
-            proposalLocale: proposal.locale,
-            projectId: proposal.project.id,
-            projectUpdatedAt: proposal.project.updatedAt,
+            ...contractOptions,
+            proposalId:
+              frozenContract?.proposal.id ?? proposal.id,
+            proposalVersion:
+              frozenContract?.proposal.version ?? proposal.version,
+            proposalStatus:
+              frozenContract === null
+                ? proposal.status
+                : "APPROVED",
+            proposalLocale:
+              frozenContract?.proposal.locale ?? proposal.locale,
+            projectId:
+              frozenContract?.project.id ?? proposal.project.id,
+            projectUpdatedAt:
+              frozenContract?.project.updatedAt ??
+              proposal.project.updatedAt,
+            generatedAt: frozenContract?.capturedAt,
             validation: gateReport,
             obligations,
           });
@@ -679,8 +885,8 @@ export async function GET(
           {
             const companyName = letterheadCompanyName(
               exportLocale,
-              brand,
-              companyLetterhead
+              contractOptions.brand,
+              contractOptions.company
             );
             const companySlug =
               sanitizeFilename(companyName)
@@ -721,6 +927,52 @@ export async function GET(
         throw new Error(`Unsupported normalized export format: ${format}`);
     }
 
+    if (
+      shouldMarkProposalExported({
+        policyRequestedTransition: policyResult.markExported,
+        currentStatus: proposal.status,
+        authoritative: exportLifecycle.authoritative,
+        completeBoundReviewChain: finalReviewChainValidated,
+      })
+    ) {
+      const transition = await db.generatedProposal.updateMany({
+        where: {
+          id,
+          workspaceId: workspace.id,
+          status: "APPROVED",
+          updatedAt: proposal.updatedAt,
+          ...(isContract
+            ? {
+                contractRenderSnapshotHash:
+                  contractRenderSnapshot?.hash ?? null,
+                contractRenderSnapshotRevision:
+                  contractRenderSnapshot?.revision ?? -1,
+              }
+            : {
+                structuredSnapshotHash:
+                  structuredSnapshot?.hash ?? null,
+                structuredSnapshotRevision:
+                  structuredSnapshot?.revision ?? -1,
+              }),
+        },
+        data: { status: "EXPORTED" },
+      });
+      if (transition.count !== 1) {
+        return NextResponse.json(
+          {
+            error:
+              "Proposal changed while the authoritative artifact was being prepared. Retry from the latest state.",
+            code: "EXPORT_STATE_CHANGED",
+          },
+          { status: 409, headers: { "Cache-Control": "no-store" } }
+        );
+      }
+      exportLifecycle = {
+        authoritative: true,
+        lifecycle: "EXPORTED",
+      };
+    }
+
     await audit({
       userId: session.user.id,
       action: AUDIT_ACTIONS.ARTIFACT_DOWNLOAD,
@@ -729,9 +981,20 @@ export async function GET(
       details: {
         format,
         exportEngine:
-          structuredSnapshot === null ? "legacy-markdown" : "structured-v1",
+          structuredSnapshot !== null
+            ? "structured-v1"
+            : contractRenderSnapshot !== null
+              ? "contract-render-v1"
+              : "legacy-markdown",
         ...(structuredSnapshot === null
-          ? {}
+          ? contractRenderSnapshot === null
+            ? {}
+            : {
+                contractRenderSnapshotHash:
+                  contractRenderSnapshot.hash,
+                contractRenderSnapshotRevision:
+                  contractRenderSnapshot.revision,
+              }
           : {
               snapshotHash: structuredSnapshot.hash,
               snapshotRevision: structuredSnapshot.revision,
@@ -740,13 +1003,6 @@ export async function GET(
       },
     });
 
-    if (policyResult.markExported && proposal.status !== "EXPORTED") {
-      await db.generatedProposal.update({
-        where: { id },
-        data: { status: "EXPORTED" },
-      });
-    }
-
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": contentType,
@@ -754,20 +1010,46 @@ export async function GET(
         "Content-Length": String(buffer.length),
         "Cache-Control": "no-store",
         "X-Arabclue-Proposal-Engine":
-          structuredSnapshot === null ? "legacy-markdown" : "structured-v1",
+          structuredSnapshot !== null
+            ? "structured-v1"
+            : contractRenderSnapshot !== null
+              ? "contract-render-v1"
+              : "legacy-markdown",
         "X-Proposal-Structured":
           structuredSnapshot === null ? "false" : "true",
         "X-Proposal-Authoritative":
-          structuredSnapshot === null ? "false" : "true",
+          exportLifecycle.authoritative
+            ? "true"
+            : "false",
+        ...(isContract
+          ? {
+              "X-Contract-Legal-Review-Status": "UNREVIEWED",
+              "X-Contract-Counsel-Review-Required": "true",
+              "X-Contract-Executable": "false",
+            }
+          : {}),
         ...(structuredSnapshot === null
-          ? { "X-Proposal-Lifecycle": "NON_AUTHORITATIVE_PREVIEW" }
+          ? contractRenderSnapshot === null
+            ? {
+                "X-Proposal-Lifecycle":
+                  "NON_AUTHORITATIVE_PREVIEW",
+              }
+            : {
+                "X-Contract-Render-Snapshot-Hash":
+                  contractRenderSnapshot.hash,
+                "X-Contract-Render-Snapshot-Revision": String(
+                  contractRenderSnapshot.revision
+                ),
+                "X-Proposal-Lifecycle":
+                  exportLifecycle.lifecycle,
+              }
           : {
               "X-Proposal-Snapshot-Hash": structuredSnapshot.hash,
               "X-Proposal-Snapshot-Revision": String(
                 structuredSnapshot.revision
               ),
               "X-Proposal-Layout-Preset": structuredSnapshot.presetKey,
-              "X-Proposal-Lifecycle": "DRAFT",
+              "X-Proposal-Lifecycle": exportLifecycle.lifecycle,
             }),
       },
     });

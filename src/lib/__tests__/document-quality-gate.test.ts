@@ -63,7 +63,7 @@ describe("document coverage quality gate", () => {
       percentage: 85,
     });
     expect(formatDocumentCoverageReport(report)).toContain(
-      "Phase 2 total: 85.00% lines"
+      "Document-generation total: 85.00% lines"
     );
   });
 
@@ -134,8 +134,8 @@ describe("document coverage quality gate", () => {
     );
     expect(report.valid).toBe(false);
     expect(report.failures).toEqual([
-      "No executable lines were reported for the Phase 2 surface.",
-      "No functions were reported for the Phase 2 surface.",
+      "No executable lines were reported for the document-generation surface.",
+      "No functions were reported for the document-generation surface.",
     ]);
   });
 });

@@ -6,6 +6,7 @@ import { computeOnboardingSteps } from "@/lib/onboarding";
 import { isWorkspaceManager } from "@/lib/auth";
 import {
   approveKnowledgeContent,
+  isKnowledgeHardDeleteAllowed,
   libraryKnowledgeContent,
   markKnowledgeContentUnreviewed,
   resolveKnowledgeApprovalEvidence,
@@ -196,14 +197,51 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  return withTenant("writer", async ({ workspace }) => {
+  return withTenant("writer", async ({ workspace, userId }) => {
     const id = req.nextUrl.searchParams.get("id");
     if (!id) throw new ApiError("id required", 400);
     const existing = await db.contentLibraryItem.findFirst({
       where: { id, workspaceId: workspace.id },
     });
     if (!existing) throw new ApiError("not found", 404);
-    await db.contentLibraryItem.delete({ where: { id } });
+    if (!isKnowledgeHardDeleteAllowed(existing)) {
+      throw new ApiError(
+        "Reviewed knowledge is an immutable audit record; revoke approved evidence instead",
+        409,
+        "KNOWLEDGE_DELETE_FORBIDDEN"
+      );
+    }
+    const deleted = await db.contentLibraryItem.deleteMany({
+      where: {
+        id,
+        workspaceId: workspace.id,
+        approved: false,
+        reviewStatus: "UNREVIEWED",
+        evidenceRef: null,
+        evidenceDocumentId: null,
+        evidenceVersion: null,
+        evidenceChecksum: null,
+        provenanceJson: null,
+        reviewedById: null,
+        approvedAt: null,
+        revokedAt: null,
+        revokedById: null,
+      },
+    });
+    if (deleted.count !== 1) {
+      throw new ApiError(
+        "Knowledge review state changed; reload before deleting",
+        409,
+        "KNOWLEDGE_DELETE_CONFLICT"
+      );
+    }
+    await audit({
+      userId,
+      action: "KNOWLEDGE_DELETE",
+      resource: "ContentLibraryItem",
+      resourceId: id,
+      details: { reviewStatus: "UNREVIEWED" },
+    });
     await computeOnboardingSteps(workspace.id);
     return jsonOk({ ok: true });
   }, "library");

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { resolveProposalDownloadFormat } from "../../app/api/proposals/[id]/download/route";
+import {
+  resolveProposalDownloadFormat,
+  resolveProposalExportLifecycle,
+  shouldMarkProposalExported,
+} from "../../app/api/proposals/[id]/download/route";
 
 describe("proposal download format resolution", () => {
   test("defaults only an omitted format to the guarded ZIP path", () => {
@@ -15,5 +19,60 @@ describe("proposal download format resolution", () => {
     expect(resolveProposalDownloadFormat("anything")).toBeNull();
     expect(resolveProposalDownloadFormat("ZIP")).toBeNull();
     expect(resolveProposalDownloadFormat("")).toBeNull();
+  });
+
+  test("labels only a validated final artifact as authoritative", () => {
+    expect(
+      resolveProposalExportLifecycle({
+        proposalStatus: "APPROVED",
+        finalArtifactRequested: true,
+        hasValidatedRenderSnapshot: true,
+      })
+    ).toEqual({ authoritative: true, lifecycle: "APPROVED" });
+    expect(
+      resolveProposalExportLifecycle({
+        proposalStatus: "EXPORTED",
+        finalArtifactRequested: true,
+        hasValidatedRenderSnapshot: true,
+      })
+    ).toEqual({ authoritative: true, lifecycle: "EXPORTED" });
+    expect(
+      resolveProposalExportLifecycle({
+        proposalStatus: "DRAFT",
+        finalArtifactRequested: true,
+        hasValidatedRenderSnapshot: true,
+      })
+    ).toEqual({
+      authoritative: false,
+      lifecycle: "NON_AUTHORITATIVE_PREVIEW",
+    });
+  });
+
+  test("promotes only an approved authoritative export with its bound review chain", () => {
+    const approved = {
+      policyRequestedTransition: true,
+      currentStatus: "APPROVED",
+      authoritative: true,
+      completeBoundReviewChain: true,
+    };
+    expect(shouldMarkProposalExported(approved)).toBe(true);
+    expect(
+      shouldMarkProposalExported({
+        ...approved,
+        currentStatus: "DRAFT",
+      })
+    ).toBe(false);
+    expect(
+      shouldMarkProposalExported({
+        ...approved,
+        authoritative: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldMarkProposalExported({
+        ...approved,
+        completeBoundReviewChain: false,
+      })
+    ).toBe(false);
   });
 });

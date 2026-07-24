@@ -10,8 +10,9 @@ bun run dev
 ```
 
 The committed development URL points to a shared Neon database whose schema is
-already migrated. Do not run `dev:setup`, `prisma db push`, or Prisma migration
-commands against that shared URL.
+already migrated. `bun run dev:setup` is safe because it only creates local
+folders and generates Prisma Client. Do not run `prisma db push` or Prisma
+migration commands against that shared URL.
 
 Health: call the `/api/health` route on your local app port.
 

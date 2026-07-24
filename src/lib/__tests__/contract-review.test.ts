@@ -64,7 +64,7 @@ Human legal review is required before signature.
 Contract drafts and regulatory comments are drafting aids, not legal advice. Authorized human legal review and approval required before signature.`;
 }
 
-describe("contract legal review lifecycle", () => {
+describe("contract approval and export lifecycle", () => {
   test("submit, final approval, and PDF export readiness share the proposal review chain", () => {
     const submittedStatus = getSubmittedForReviewStatus();
     expect(submittedStatus).toBe("REVIEW");

@@ -308,20 +308,25 @@ model DocumentChunk {
 }
 
 model DocumentVersion {
-  id                String           @id @default(cuid())
-  documentId        String
-  version           Int
-  storagePath       String
-  sizeBytes         Int
-  changeLog         String?
-  parsedSummary     String?
-  extractedEntities String?
-  checksum          String?
-  createdBy         String
-  createdAt         DateTime         @default(now())
-  document          UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  id                  String               @id @default(cuid())
+  documentId          String
+  version             Int
+  storagePath         String
+  sizeBytes           Int
+  changeLog           String?
+  parsedSummary       String?
+  extractedEntities   String?
+  checksum            String?
+  createdBy           String
+  createdAt           DateTime             @default(now())
+  document            UploadedDocument     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  pastProjectEvidence PastProject[]        @relation("PastProjectEvidence")
+  certificateEvidence Certificate[]        @relation("CertificateEvidence")
+  methodologyEvidence MethodologyAsset[]   @relation("MethodologyEvidence")
+  libraryItemEvidence ContentLibraryItem[] @relation("LibraryItemEvidence")
 
   @@unique([documentId, version])
+  @@unique([documentId, version, checksum])
   @@index([documentId])
 }
 
@@ -346,45 +351,50 @@ model BrandProfile {
 }
 
 model PastProject {
-  id               String                @id @default(cuid())
-  workspaceId      String
-  brandProfileId   String?
-  title            String
-  titleAr          String?
-  clientName       String?
-  clientNameAr     String?
-  sector           String? // GOV | HEALTH | FINANCE | ENERGY | TELECOM | OTHER
-  contractValue    Float?
-  currency         String                @default("SAR")
-  startDate        DateTime?
-  endDate          DateTime?
-  outcome          String? // SUCCESSFUL | ONGOING | COMPLETED
-  summary          String // rich text / vectorized for RAG
-  summaryAr        String?
-  vectorId         String? // optional external vector store id
-  embeddingJson    String? // JSON number[] embedding for local RAG
-  tags             String? // comma-separated
-  approved         Boolean               @default(false)
-  reviewStatus     KnowledgeReviewStatus @default(UNREVIEWED)
-  evidenceRef      String?
-  provenanceJson   String?               @db.Text
-  reviewedById     String?
-  approvedAt       DateTime?
-  contentHash      String?
-  revokedAt        DateTime?
-  revokedById      String?
-  revocationReason String?               @db.Text
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  id                 String                @id @default(cuid())
+  workspaceId        String
+  brandProfileId     String?
+  title              String
+  titleAr            String?
+  clientName         String?
+  clientNameAr       String?
+  sector             String? // GOV | HEALTH | FINANCE | ENERGY | TELECOM | OTHER
+  contractValue      Float?
+  currency           String                @default("SAR")
+  startDate          DateTime?
+  endDate            DateTime?
+  outcome            String? // SUCCESSFUL | ONGOING | COMPLETED
+  summary            String // rich text / vectorized for RAG
+  summaryAr          String?
+  vectorId           String? // optional external vector store id
+  embeddingJson      String? // JSON number[] embedding for local RAG
+  tags               String? // comma-separated
+  approved           Boolean               @default(false)
+  reviewStatus       KnowledgeReviewStatus @default(UNREVIEWED)
+  evidenceRef        String?
+  evidenceDocumentId String?
+  evidenceVersion    Int?
+  evidenceChecksum   String?
+  provenanceJson     String?               @db.Text
+  reviewedById       String?
+  approvedAt         DateTime?
+  contentHash        String?
+  revokedAt          DateTime?
+  revokedById        String?
+  revocationReason   String?               @db.Text
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  brandProfile BrandProfile? @relation(fields: [brandProfileId], references: [id], onDelete: SetNull)
-  reviewer     User?         @relation("PastProjectReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
-  revoker      User?         @relation("PastProjectRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brandProfile          BrandProfile?    @relation(fields: [brandProfileId], references: [id], onDelete: SetNull)
+  reviewer              User?            @relation("PastProjectReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  revoker               User?            @relation("PastProjectRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  evidenceVersionRecord DocumentVersion? @relation("PastProjectEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
   @@index([sector])
   @@index([workspaceId, reviewStatus, approved])
+  @@index([evidenceDocumentId, evidenceVersion])
 }
 
 // ─── Multi-Agent Workflow Runs ───────────────────────────────────────────────
@@ -437,32 +447,35 @@ model ComplianceCheck {
 // ─── Generated Proposals ─────────────────────────────────────────────────────
 
 model GeneratedProposal {
-  id                            String    @id @default(cuid())
-  workspaceId                   String
-  projectId                     String
-  createdById                   String
-  parentProposalId              String? // lineage when forked from another proposal
-  title                         String
-  titleAr                       String?
-  type                          String // TECHNICAL | FINANCIAL | EA_MATRIX | BOQ | COMBINED
-  status                        String    @default("DRAFT") // DRAFT | GENERATED | REVIEW | REVIEWED | APPROVED | REJECTED | EXPORTED
-  version                       Int       @default(1)
-  contentMd                     String? // markdown content
-  locale                        String    @default("ar") // ar | en — generation language
-  artifactsJson                 String? // JSON: list of {type, filename, downloadPath}
-  financialFormsJson            String? // JSON: user-entered BoQ amounts (never AI-filled)
-  complianceScore               Float? // 0-100
-  submittedAt                   DateTime?
-  approvedAt                    DateTime?
-  generatedAt                   DateTime?
-  structuredSnapshot            Json?
-  structuredSnapshotHash        String?
-  structuredSnapshotRevision    Int       @default(0)
-  structuredSnapshotPreset      String?
-  structuredSnapshotUpdatedAt   DateTime?
-  structuredSnapshotUpdatedById String?
-  createdAt                     DateTime  @default(now())
-  updatedAt                     DateTime  @updatedAt
+  id                             String    @id @default(cuid())
+  workspaceId                    String
+  projectId                      String
+  createdById                    String
+  parentProposalId               String? // lineage when forked from another proposal
+  title                          String
+  titleAr                        String?
+  type                           String // TECHNICAL | FINANCIAL | EA_MATRIX | BOQ | COMBINED
+  status                         String    @default("DRAFT") // DRAFT | GENERATED | REVIEW | REVIEWED | APPROVED | REJECTED | EXPORTED
+  version                        Int       @default(1)
+  contentMd                      String? // markdown content
+  locale                         String    @default("ar") // ar | en — generation language
+  artifactsJson                  String? // JSON: list of {type, filename, downloadPath}
+  financialFormsJson             String? // JSON: user-entered BoQ amounts (never AI-filled)
+  complianceScore                Float? // 0-100
+  submittedAt                    DateTime?
+  approvedAt                     DateTime?
+  generatedAt                    DateTime?
+  structuredSnapshot             Json?
+  structuredSnapshotHash         String?
+  structuredSnapshotRevision     Int       @default(0)
+  structuredSnapshotPreset       String?
+  structuredSnapshotUpdatedAt    DateTime?
+  structuredSnapshotUpdatedById  String?
+  contractRenderSnapshot         Json?
+  contractRenderSnapshotHash     String?
+  contractRenderSnapshotRevision Int       @default(0)
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
 
   workspace                   Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   project                     TenderProject             @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -478,6 +491,7 @@ model GeneratedProposal {
   @@index([projectId])
   @@index([parentProposalId])
   @@index([workspaceId, structuredSnapshotHash])
+  @@index([workspaceId, contractRenderSnapshotHash])
 }
 
 model ProposalVersion {
@@ -738,37 +752,42 @@ model AuditLog {
 // ─── Account Onboarding Corpus (Phase 1 knowledge base) ──────────────────────
 
 model Certificate {
-  id               String                @id @default(cuid())
-  workspaceId      String
-  certType         String // ISO | GOSI | VAT | ZAKAT | LICENSE | OTHER
-  name             String
-  number           String?
-  issuer           String?
-  issuedAt         DateTime?
-  expiresAt        DateTime?
-  filePath         String?
-  alertDays        Int                   @default(30)
-  notes            String?
-  approved         Boolean               @default(false)
-  reviewStatus     KnowledgeReviewStatus @default(UNREVIEWED)
-  evidenceRef      String?
-  provenanceJson   String?               @db.Text
-  reviewedById     String?
-  approvedAt       DateTime?
-  revokedAt        DateTime?
-  revokedById      String?
-  revocationReason String?               @db.Text
-  contentHash      String?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  id                 String                @id @default(cuid())
+  workspaceId        String
+  certType           String // ISO | GOSI | VAT | ZAKAT | LICENSE | OTHER
+  name               String
+  number             String?
+  issuer             String?
+  issuedAt           DateTime?
+  expiresAt          DateTime?
+  filePath           String?
+  alertDays          Int                   @default(30)
+  notes              String?
+  approved           Boolean               @default(false)
+  reviewStatus       KnowledgeReviewStatus @default(UNREVIEWED)
+  evidenceRef        String?
+  evidenceDocumentId String?
+  evidenceVersion    Int?
+  evidenceChecksum   String?
+  provenanceJson     String?               @db.Text
+  reviewedById       String?
+  approvedAt         DateTime?
+  revokedAt          DateTime?
+  revokedById        String?
+  revocationReason   String?               @db.Text
+  contentHash        String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  reviewer  User?     @relation("CertificateReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
-  revoker   User?     @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reviewer              User?            @relation("CertificateReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  revoker               User?            @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  evidenceVersionRecord DocumentVersion? @relation("CertificateEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
   @@index([expiresAt])
   @@index([workspaceId, reviewStatus, approved])
+  @@index([evidenceDocumentId, evidenceVersion])
 }
 
 model StaffMember {
@@ -792,64 +811,74 @@ model StaffMember {
 }
 
 model MethodologyAsset {
-  id               String                @id @default(cuid())
-  workspaceId      String
-  category         String // IMPLEMENTATION | QC | RISK | BCP | OTHER
-  title            String
-  titleAr          String?
-  bodyMd           String
-  approved         Boolean               @default(false)
-  reviewStatus     KnowledgeReviewStatus @default(UNREVIEWED)
-  evidenceRef      String?
-  provenanceJson   String?               @db.Text
-  reviewedById     String?
-  approvedAt       DateTime?
-  revokedAt        DateTime?
-  revokedById      String?
-  revocationReason String?               @db.Text
-  contentHash      String?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  id                 String                @id @default(cuid())
+  workspaceId        String
+  category           String // IMPLEMENTATION | QC | RISK | BCP | OTHER
+  title              String
+  titleAr            String?
+  bodyMd             String
+  approved           Boolean               @default(false)
+  reviewStatus       KnowledgeReviewStatus @default(UNREVIEWED)
+  evidenceRef        String?
+  evidenceDocumentId String?
+  evidenceVersion    Int?
+  evidenceChecksum   String?
+  provenanceJson     String?               @db.Text
+  reviewedById       String?
+  approvedAt         DateTime?
+  revokedAt          DateTime?
+  revokedById        String?
+  revocationReason   String?               @db.Text
+  contentHash        String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  reviewer  User?     @relation("MethodologyReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
-  revoker   User?     @relation("MethodologyRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reviewer              User?            @relation("MethodologyReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  revoker               User?            @relation("MethodologyRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  evidenceVersionRecord DocumentVersion? @relation("MethodologyEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
   @@index([category])
   @@index([workspaceId, reviewStatus, approved])
+  @@index([evidenceDocumentId, evidenceVersion])
 }
 
 model ContentLibraryItem {
-  id               String                @id @default(cuid())
-  workspaceId      String
-  title            String
-  titleAr          String?
-  category         String                @default("BOILERPLATE") // BOILERPLATE | DIAGRAM | POLICY | EXCERPT | OTHER
-  bodyMd           String
-  tags             String?
-  restricted       Boolean               @default(false)
-  embeddingJson    String?
-  approved         Boolean               @default(false)
-  reviewStatus     KnowledgeReviewStatus @default(UNREVIEWED)
-  evidenceRef      String?
-  provenanceJson   String?               @db.Text
-  reviewedById     String?
-  approvedAt       DateTime?
-  revokedAt        DateTime?
-  revokedById      String?
-  revocationReason String?               @db.Text
-  contentHash      String?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  id                 String                @id @default(cuid())
+  workspaceId        String
+  title              String
+  titleAr            String?
+  category           String                @default("BOILERPLATE") // BOILERPLATE | DIAGRAM | POLICY | EXCERPT | OTHER
+  bodyMd             String
+  tags               String?
+  restricted         Boolean               @default(false)
+  embeddingJson      String?
+  approved           Boolean               @default(false)
+  reviewStatus       KnowledgeReviewStatus @default(UNREVIEWED)
+  evidenceRef        String?
+  evidenceDocumentId String?
+  evidenceVersion    Int?
+  evidenceChecksum   String?
+  provenanceJson     String?               @db.Text
+  reviewedById       String?
+  approvedAt         DateTime?
+  revokedAt          DateTime?
+  revokedById        String?
+  revocationReason   String?               @db.Text
+  contentHash        String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  reviewer  User?     @relation("LibraryItemReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
-  revoker   User?     @relation("LibraryItemRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reviewer              User?            @relation("LibraryItemReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  revoker               User?            @relation("LibraryItemRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  evidenceVersionRecord DocumentVersion? @relation("LibraryItemEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
   @@index([category])
   @@index([workspaceId, reviewStatus, approved])
+  @@index([evidenceDocumentId, evidenceVersion])
 }
 
 model Partnership {
@@ -1051,6 +1080,7 @@ model ContractTemplate {
   id                    String    @id @default(cuid())
   workspaceId           String
   type                  String
+  catalogKey            String?
   nameEn                String
   nameAr                String
   descriptionEn         String?
@@ -1081,6 +1111,7 @@ model ContractTemplate {
   versions           ContractTemplateVersion[]
   generatedContracts GeneratedContract[]
 
+  @@unique([workspaceId, catalogKey])
   @@index([workspaceId, type, status])
   @@index([workspaceId, isSystem])
   @@index([workspaceId, lifecycle, legalReviewStatus])
@@ -1142,26 +1173,31 @@ model StandardClause {
 }
 
 model GeneratedContract {
-  id                    String   @id @default(cuid())
-  workspaceId           String
-  templateId            String
-  projectId             String?
-  title                 String
-  titleAr               String
-  dataJson              String   @db.Text
-  clausesJson           String   @db.Text
-  contentHtml           String   @db.Text
-  documentSpecJson      String?  @db.Text
-  templateVersionId     String?
-  canonicalHash         String?
-  legalReviewStatus     String   @default("UNREVIEWED")
-  counselReviewRequired Boolean  @default(true)
-  isExecutable          Boolean  @default(false)
-  contentPdfPath        String?
-  status                String   @default("draft")
-  createdBy             String
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  workspaceId             String
+  templateId              String
+  projectId               String?
+  title                   String
+  titleAr                 String
+  dataJson                String   @db.Text
+  clausesJson             String   @db.Text
+  contentHtml             String   @db.Text
+  documentSpecJson        String?  @db.Text
+  templateVersionId       String?
+  canonicalHash           String?
+  legalReviewStatus       String   @default("UNREVIEWED")
+  counselReviewRequired   Boolean  @default(true)
+  isExecutable            Boolean  @default(false)
+  contentPdfPath          String?
+  status                  String   @default("draft")
+  clientRequestId         String?
+  generationSchemaVersion Int      @default(0)
+  generationMode          String?
+  diagnosticCount         Int      @default(0)
+  storageBytes            Int      @default(0)
+  createdBy               String
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   workspace       Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   template        ContractTemplate         @relation(fields: [templateId], references: [id])
@@ -1169,8 +1205,10 @@ model GeneratedContract {
   project         TenderProject?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
   creator         User                     @relation(fields: [createdBy], references: [id])
 
+  @@unique([workspaceId, clientRequestId])
   @@index([workspaceId, status])
   @@index([templateId])
   @@index([projectId])
   @@index([workspaceId, legalReviewStatus, isExecutable])
+  @@index([workspaceId, generationSchemaVersion, status, createdAt, id])
 }

@@ -879,6 +879,20 @@ low-resolution asset. Required horizontal pixels are calculated from the
 resolved paper width, margins, bilingual column ratio, cell padding, and the
 image block's `widthPercent`.
 
+### Serverless font tracing
+
+`bilingual-pdf.ts` resolves each allow-listed package from a fixed filesystem
+root under the deployment's `node_modules`; it does not use `import.meta.url`
+or bundler-rewritten module IDs. `next.config.ts` explicitly traces the 20
+WOFF2 assets into every PDF-producing serverless route using wildcard route
+matchers.
+
+`bun run build` finishes by running
+`scripts/check-bilingual-font-traces.mjs`. The build fails unless all required
+Arabic and Latin weights appear in the emitted Next.js trace manifest for the
+proposal, contract-preview, and business-profile PDF routes. This keeps a local
+development success from hiding a missing-font failure after deployment.
+
 ## Performance and 50-page guidance
 
 `BILINGUAL_PERFORMANCE_TARGETS` defines benchmark budgets, not universal
@@ -1126,10 +1140,12 @@ bun test --coverage src/lib/__tests__/bilingual-layout.test.ts \
   src/lib/__tests__/bilingual-pdf.test.ts
 bunx tsc --noEmit
 bun run lint
+bun run build
 ```
 
 Read module-level coverage rather than inferring a global threshold from one
-focused command. Browser/PDF tests are skipped unless their scripts set
+focused command. The build includes the exact serverless font-trace assertion.
+Browser/PDF tests are skipped unless their scripts set
 `PLAYWRIGHT_CHROMIUM=1`.
 
 For release QA, retain the HTML hash, browser/Chromium version, font pair,

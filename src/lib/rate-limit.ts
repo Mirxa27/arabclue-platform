@@ -9,6 +9,21 @@ type Bucket = { timestamps: number[] };
 
 const buckets = new Map<string, Bucket>();
 
+export function requiresDistributedRateLimit(
+  requested: boolean | undefined,
+  env: {
+    readonly NODE_ENV?: string;
+    readonly VERCEL?: string;
+    readonly REDIS_URL?: string;
+  } = process.env
+): boolean {
+  if (requested === true) return true;
+  if (requested === false) return false;
+  // Only fail-closed on Redis when Redis is actually configured.
+  // Otherwise allow in-memory limits (Hostinger / Vercel Hobby).
+  return Boolean(env.REDIS_URL?.trim());
+}
+
 type RedisClient = {
   zAdd: (
     key: string,
@@ -28,45 +43,190 @@ type RedisClient = {
     options: { keys: string[]; arguments: string[] }
   ) => Promise<unknown>;
   connect: () => Promise<unknown>;
+  ping: () => Promise<string>;
+  on: (
+    event: "error" | "end",
+    listener: (error?: unknown) => void
+  ) => unknown;
   isOpen: boolean;
+  isReady: boolean;
+  destroy: () => void;
 };
 
 let redisClient: RedisClient | null | undefined;
+let redisConnectingClient: RedisClient | undefined;
 let redisInit: Promise<RedisClient | null> | null = null;
+let redisRetryAfter = 0;
+let redisGeneration = 0;
+const REDIS_RETRY_DELAY_MS = 5_000;
+const REDIS_CONNECT_TIMEOUT_MS = 1_000;
+const REDIS_COMMAND_TIMEOUT_MS = 1_000;
+
+function destroyRedisClient(client: RedisClient | undefined): void {
+  if (!client) return;
+  try {
+    client.destroy();
+  } catch {
+    // The client may already be closed. State invalidation still proceeds.
+  }
+}
+
+function markRedisUnavailable(
+  client?: RedisClient,
+  generation = redisGeneration
+): void {
+  if (generation !== redisGeneration) return;
+  if (
+    client &&
+    ((redisClient && redisClient !== client) ||
+      (redisConnectingClient &&
+        redisConnectingClient !== client &&
+        redisClient !== client))
+  ) {
+    return;
+  }
+  destroyRedisClient(client);
+  if (!client || redisClient === client) redisClient = null;
+  if (redisConnectingClient === client) redisConnectingClient = undefined;
+  redisClient = null;
+  redisRetryAfter = Date.now() + REDIS_RETRY_DELAY_MS;
+}
+
+function invalidateAllRedisConnections(): void {
+  const readyClient = redisClient ?? undefined;
+  const connectingClient = redisConnectingClient;
+  redisGeneration += 1;
+  redisClient = null;
+  redisConnectingClient = undefined;
+  redisRetryAfter = Date.now() + REDIS_RETRY_DELAY_MS;
+  destroyRedisClient(readyClient);
+  if (connectingClient !== readyClient) destroyRedisClient(connectingClient);
+}
+
+class RedisDeadlineError extends Error {
+  constructor(label: string) {
+    super(`Redis ${label} timed out`);
+    this.name = "RedisDeadlineError";
+  }
+}
+
+async function withRedisDeadline<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string,
+  onTimeout: () => void
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      onTimeout();
+      reject(new RedisDeadlineError(label));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+  }
+}
+
+async function runRedisCommand<T>(
+  client: RedisClient,
+  command: () => Promise<T>,
+  label: string
+): Promise<T> {
+  if (!client.isReady) {
+    markRedisUnavailable(client);
+    throw new Error("Redis client is not ready");
+  }
+  try {
+    return await withRedisDeadline(
+      command(),
+      REDIS_COMMAND_TIMEOUT_MS,
+      label,
+      () => markRedisUnavailable(client)
+    );
+  } catch (error) {
+    markRedisUnavailable(client);
+    throw error;
+  }
+}
+
+export function redisReconnectAllowed(
+  retryAfter: number,
+  now = Date.now()
+): boolean {
+  return now >= retryAfter;
+}
 
 async function getRedis(): Promise<RedisClient | null> {
-  if (redisClient !== undefined) return redisClient;
+  if (redisClient?.isReady) return redisClient;
+  if (redisClient) markRedisUnavailable(redisClient);
+  if (
+    redisClient === null &&
+    !redisReconnectAllowed(redisRetryAfter)
+  ) {
+    return null;
+  }
   if (redisInit) return redisInit;
-  redisInit = (async () => {
+  const generation = ++redisGeneration;
+  const initialization = (async () => {
     const url = process.env.REDIS_URL?.trim();
     if (!url) {
-      redisClient = null;
+      markRedisUnavailable(undefined, generation);
       return null;
     }
+    let client: RedisClient | undefined;
     try {
       const { createClient } = await import("redis");
-      const client = createClient({ url }) as unknown as RedisClient;
-      client.connect().catch((err: unknown) => {
-        console.warn("[rate-limit] redis connect failed", err);
-        redisClient = null;
+      const createdClient = createClient({
+        url,
+        socket: {
+          connectTimeout: REDIS_CONNECT_TIMEOUT_MS,
+          reconnectStrategy: false,
+        },
+      }) as unknown as RedisClient;
+      client = createdClient;
+      redisConnectingClient = createdClient;
+      createdClient.on("error", (error: unknown) => {
+        if (generation !== redisGeneration) return;
+        console.warn("[rate-limit] redis client error", error);
+        markRedisUnavailable(createdClient, generation);
       });
-      // wait briefly for connect
-      for (let i = 0; i < 20 && !client.isOpen; i++) {
-        await new Promise((r) => setTimeout(r, 50));
+      createdClient.on("end", () => {
+        markRedisUnavailable(createdClient, generation);
+      });
+      await withRedisDeadline(
+        createdClient.connect(),
+        REDIS_CONNECT_TIMEOUT_MS,
+        "connect",
+        () => markRedisUnavailable(createdClient, generation)
+      );
+      if (!createdClient.isReady || generation !== redisGeneration) {
+        throw new Error("Redis connection did not become ready");
       }
-      if (!client.isOpen) {
-        redisClient = null;
-        return null;
-      }
-      redisClient = client;
-      return client;
+      const pong = await runRedisCommand(
+        createdClient,
+        () => createdClient.ping(),
+        "ping"
+      );
+      if (pong !== "PONG") throw new Error("Redis ping failed");
+      redisClient = createdClient;
+      redisConnectingClient = undefined;
+      redisRetryAfter = 0;
+      return createdClient;
     } catch (err) {
       console.warn("[rate-limit] redis unavailable", err);
-      redisClient = null;
+      markRedisUnavailable(client, generation);
       return null;
     }
   })();
-  return redisInit;
+  redisInit = initialization;
+  try {
+    return await initialization;
+  } finally {
+    if (redisInit === initialization) redisInit = null;
+  }
 }
 
 function memoryRateLimit(opts: {
@@ -104,8 +264,11 @@ async function redisRateLimit(opts: {
   const now = Date.now();
   const redisKey = `rl:${opts.key}`;
   const member = `${now}:${randomUUID()}`;
-  const result = await opts.client.eval(
-    `
+  const result = await runRedisCommand(
+    opts.client,
+    () =>
+      opts.client.eval(
+        `
       local key = KEYS[1]
       local now = tonumber(ARGV[1])
       local window = tonumber(ARGV[2])
@@ -122,16 +285,18 @@ async function redisRateLimit(opts: {
       redis.call("ZADD", key, now, member)
       redis.call("PEXPIRE", key, window + 5000)
       return {1, count + 1, 0}
-    `,
-    {
-      keys: [redisKey],
-      arguments: [
-        String(now),
-        String(opts.windowMs),
-        String(opts.limit),
-        member,
-      ],
-    }
+        `,
+        {
+          keys: [redisKey],
+          arguments: [
+            String(now),
+            String(opts.windowMs),
+            String(opts.limit),
+            member,
+          ],
+        }
+      ),
+    "rate-limit command"
   );
   if (!Array.isArray(result) || result.length < 3) {
     throw new Error("Redis rate limiter returned an invalid response");
@@ -164,7 +329,7 @@ export function rateLimit(opts: {
 }): { ok: boolean; remaining: number; retryAfterMs: number } {
   // Kick off Redis connect in background; sync path uses memory until ready.
   void getRedis();
-  if (redisClient && redisClient.isOpen) {
+  if (redisClient?.isReady) {
     // Fire-and-forget async path cannot return Promise from sync callers —
     // use memory for sync, and expose rateLimitAsync for new code.
     return memoryRateLimit(opts);
@@ -184,8 +349,11 @@ export async function rateLimitAsync(opts: {
   retryAfterMs: number;
   backend: "redis" | "memory" | "unavailable";
 }> {
+  const requireDistributed = requiresDistributedRateLimit(
+    opts.requireDistributed
+  );
   const client = await getRedis();
-  if (client?.isOpen) {
+  if (client?.isReady) {
     try {
       return {
         ...(await redisRateLimit({ ...opts, client })),
@@ -193,7 +361,8 @@ export async function rateLimitAsync(opts: {
       };
     } catch (err) {
       console.warn("[rate-limit] redis op failed", err);
-      if (opts.requireDistributed) {
+      markRedisUnavailable(client);
+      if (requireDistributed) {
         return {
           ok: false,
           remaining: 0,
@@ -203,7 +372,7 @@ export async function rateLimitAsync(opts: {
       }
     }
   }
-  if (opts.requireDistributed) {
+  if (requireDistributed) {
     return {
       ok: false,
       remaining: 0,
@@ -212,6 +381,63 @@ export async function rateLimitAsync(opts: {
     };
   }
   return { ...memoryRateLimit(opts), backend: "memory" };
+}
+
+export function describeRateLimitDenial(result: {
+  readonly backend: "redis" | "memory" | "unavailable";
+  readonly retryAfterMs: number;
+}): {
+  readonly status: 429 | 503;
+  readonly error: "rate_limited" | "rate_limit_service_unavailable";
+  readonly retryAfterSeconds: number;
+} {
+  return {
+    status: result.backend === "unavailable" ? 503 : 429,
+    error:
+      result.backend === "unavailable"
+        ? "rate_limit_service_unavailable"
+        : "rate_limited",
+    retryAfterSeconds: Math.max(
+      1,
+      Math.ceil(result.retryAfterMs / 1_000)
+    ),
+  };
+}
+
+/** Bounded connectivity probe shared by readiness and guarded operations. */
+export async function probeDistributedRateLimitBackend(
+  timeoutMs = 1_500
+): Promise<boolean> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 5_000) {
+    throw new RangeError("Redis readiness timeout is invalid");
+  }
+  const probe = (async () => {
+    const client = await getRedis();
+    if (!client?.isReady) return false;
+    try {
+      return (
+        (await runRedisCommand(client, () => client.ping(), "readiness ping")) ===
+        "PONG"
+      );
+    } catch (error) {
+      console.warn("[rate-limit] redis readiness probe failed", error);
+      markRedisUnavailable(client);
+      return false;
+    }
+  })();
+  try {
+    return await withRedisDeadline(
+      probe,
+      timeoutMs,
+      "readiness probe",
+      invalidateAllRedisConnections
+    );
+  } catch (error) {
+    if (!(error instanceof RedisDeadlineError)) {
+      console.warn("[rate-limit] redis readiness probe failed", error);
+    }
+    return false;
+  }
 }
 
 export type DistributedLeaseAdmission =
@@ -229,14 +455,17 @@ export async function acquireDistributedLease(options: {
   readonly leaseMs: number;
 }): Promise<DistributedLeaseAdmission> {
   const client = await getRedis();
-  if (!client?.isOpen) {
+  if (!client?.isReady) {
     return { status: "unavailable", retryAfterMs: 5_000 };
   }
   const now = Date.now();
   const token = randomUUID();
   try {
-    const result = await client.eval(
-      `
+    const result = await runRedisCommand(
+      client,
+      () =>
+        client.eval(
+          `
         local key = KEYS[1]
         local now = tonumber(ARGV[1])
         local limit = tonumber(ARGV[2])
@@ -253,16 +482,18 @@ export async function acquireDistributedLease(options: {
         redis.call("ZADD", key, expiresAt, token)
         redis.call("PEXPIRE", key, (expiresAt - now) + 5000)
         return {1, expiresAt}
-      `,
-      {
-        keys: [`lease:${options.key}`],
-        arguments: [
-          String(now),
-          String(options.limit),
-          String(now + options.leaseMs),
-          token,
-        ],
-      }
+          `,
+          {
+            keys: [`lease:${options.key}`],
+            arguments: [
+              String(now),
+              String(options.limit),
+              String(now + options.leaseMs),
+              token,
+            ],
+          }
+        ),
+      "lease acquisition"
     );
     if (!Array.isArray(result) || result.length < 2) {
       throw new Error("Redis lease returned an invalid response");
@@ -286,14 +517,16 @@ export async function releaseDistributedLease(options: {
   readonly token: string;
 }): Promise<void> {
   const client = await getRedis();
-  if (!client?.isOpen) return;
+  if (!client?.isReady) return;
   try {
-    await client.eval(
-      `return redis.call("ZREM", KEYS[1], ARGV[1])`,
-      {
-        keys: [`lease:${options.key}`],
-        arguments: [options.token],
-      }
+    await runRedisCommand(
+      client,
+      () =>
+        client.eval(`return redis.call("ZREM", KEYS[1], ARGV[1])`, {
+          keys: [`lease:${options.key}`],
+          arguments: [options.token],
+        }),
+      "lease release"
     );
   } catch (error) {
     // The bounded lease expiry is the recovery path if release is unavailable.

@@ -8,6 +8,11 @@ import {
   validateStructuredSnapshotEvidence,
 } from "./proposal-snapshot-persistence";
 import { loadApprovedStructuredEvidenceBindings } from "./proposal-snapshot-evidence";
+import {
+  loadProposalSnapshotServerIdentity,
+  validateProposalSnapshotServerIdentity,
+} from "./proposal-snapshot-identity";
+import { validatePersistedContractRenderSnapshot } from "./contract-render-snapshot";
 
 export type ProposalReviewDecision = "APPROVED" | "REJECTED";
 
@@ -81,7 +86,25 @@ export async function decideProposalReview(
             "REVIEW_STATE_CHANGED"
           );
         }
-        if (review.proposal.type !== "CONTRACT") {
+        if (review.proposal.type === "CONTRACT") {
+          const contractSnapshot =
+            validatePersistedContractRenderSnapshot(
+              review.proposal.contractRenderSnapshot,
+              {
+                proposalId: review.proposal.id,
+                hash: review.proposal.contractRenderSnapshotHash,
+                revision:
+                  review.proposal.contractRenderSnapshotRevision,
+              }
+            );
+          if (!contractSnapshot.ok) {
+            throw new ProposalReviewDecisionError(
+              "The reviewed contract render snapshot is missing or invalid",
+              409,
+              contractSnapshot.code
+            );
+          }
+        } else {
           const snapshot = validatePersistedProposalSnapshot(
             review.proposal.structuredSnapshot,
             {
@@ -96,6 +119,25 @@ export async function decideProposalReview(
               "The reviewed structured snapshot is no longer valid",
               409,
               snapshot.code
+            );
+          }
+          const serverIdentity =
+            await loadProposalSnapshotServerIdentity(
+              input.workspaceId,
+              review.proposal.projectId,
+              tx
+            );
+          if (
+            !serverIdentity ||
+            validateProposalSnapshotServerIdentity(
+              snapshot.value.snapshot,
+              serverIdentity
+            ).length > 0
+          ) {
+            throw new ProposalReviewDecisionError(
+              "Proposal project, bidder, tender, or brand identity changed after submission",
+              409,
+              "REVIEW_IDENTITY_CHANGED"
             );
           }
           const approvedEvidence =
@@ -197,9 +239,19 @@ export async function decideProposalReview(
             status: review.proposal.status,
             updatedAt: review.proposal.updatedAt,
             version: review.submittedProposalVersion ?? -1,
-            structuredSnapshotHash: review.submittedSnapshotHash,
-            structuredSnapshotRevision:
-              review.submittedSnapshotRevision ?? -1,
+            ...(review.proposal.type === "CONTRACT"
+              ? {
+                  contractRenderSnapshotHash:
+                    review.submittedSnapshotHash,
+                  contractRenderSnapshotRevision:
+                    review.submittedSnapshotRevision ?? -1,
+                }
+              : {
+                  structuredSnapshotHash:
+                    review.submittedSnapshotHash,
+                  structuredSnapshotRevision:
+                    review.submittedSnapshotRevision ?? -1,
+                }),
           },
           data: {
             status: nextStatus,

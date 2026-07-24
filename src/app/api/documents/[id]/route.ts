@@ -60,7 +60,52 @@ export async function DELETE(
     const { id } = await params;
     const doc = await loadOwnedDoc(id, workspace.id);
     if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
-    await db.uploadedDocument.delete({ where: { id } });
+    const [
+      pastProjectReferences,
+      certificateReferences,
+      methodologyReferences,
+      libraryReferences,
+    ] = await db.$transaction([
+      db.pastProject.count({ where: { evidenceDocumentId: id } }),
+      db.certificate.count({ where: { evidenceDocumentId: id } }),
+      db.methodologyAsset.count({ where: { evidenceDocumentId: id } }),
+      db.contentLibraryItem.count({ where: { evidenceDocumentId: id } }),
+    ]);
+    const evidenceReferenceCount =
+      pastProjectReferences +
+      certificateReferences +
+      methodologyReferences +
+      libraryReferences;
+    if (evidenceReferenceCount > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Document is retained as reviewed knowledge evidence and cannot be deleted",
+          code: "DOCUMENT_EVIDENCE_DELETE_FORBIDDEN",
+        },
+        { status: 409 }
+      );
+    }
+    try {
+      await db.uploadedDocument.delete({ where: { id } });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2003"
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Document became reviewed knowledge evidence and cannot be deleted",
+            code: "DOCUMENT_EVIDENCE_DELETE_CONFLICT",
+          },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
     await audit({
       userId: session.user.id,
       action: AUDIT_ACTIONS.DOC_DELETE,

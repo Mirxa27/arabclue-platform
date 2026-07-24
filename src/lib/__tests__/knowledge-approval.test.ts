@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   approveKnowledgeContent,
   certificateKnowledgeContent,
+  isKnowledgeHardDeleteAllowed,
   markKnowledgeContentUnreviewed,
   resolveKnowledgeApprovalEvidence,
   revokeKnowledgeContent,
@@ -121,6 +122,9 @@ describe("knowledge approval evidence binding", () => {
       approved: true,
       reviewStatus: "APPROVED",
       evidenceRef: `uploaded-document:certificate-1:v1:sha256:${checksum}`,
+      evidenceDocumentId: "certificate-1",
+      evidenceVersion: 1,
+      evidenceChecksum: checksum,
       reviewedById: "reviewer-1",
       approvedAt: now,
       revokedAt: null,
@@ -155,6 +159,9 @@ describe("knowledge approval evidence binding", () => {
       approved: false,
       reviewStatus: "UNREVIEWED",
       evidenceRef: null,
+      evidenceDocumentId: null,
+      evidenceVersion: null,
+      evidenceChecksum: null,
       reviewedById: null,
     });
 
@@ -185,6 +192,9 @@ describe("knowledge approval evidence binding", () => {
       approved: false,
       reviewStatus: "REVOKED",
       evidenceRef: approved.evidenceRef,
+      evidenceDocumentId: approved.evidenceDocumentId,
+      evidenceVersion: approved.evidenceVersion,
+      evidenceChecksum: approved.evidenceChecksum,
       provenanceJson: approved.provenanceJson,
       reviewedById: "reviewer-1",
       approvedAt: new Date("2026-07-24T12:00:00.000Z"),
@@ -208,5 +218,57 @@ describe("knowledge approval evidence binding", () => {
         revokerId: "reviewer-2",
       })
     ).toThrow("Only approved");
+  });
+
+  test("never falls back to a mutable document-level checksum", async () => {
+    await expect(
+      resolveKnowledgeApprovalEvidence({
+        workspaceId: "workspace-1",
+        request: {
+          approved: true,
+          provenance: {
+            sourceKind: "UPLOADED_DOCUMENT",
+            sourceId: "certificate-1",
+          },
+        },
+        loadDocument: async () => ({
+          id: "certificate-1",
+          workspaceId: "workspace-1",
+          originalName: "certificate.pdf",
+          currentVersion: 2,
+          checksum: "a".repeat(64),
+          versionChecksum: null,
+        }),
+      })
+    ).rejects.toThrow("current version");
+  });
+
+  test("permits hard deletion only before any review history exists", () => {
+    const pristine = markKnowledgeContentUnreviewed(content);
+    expect(isKnowledgeHardDeleteAllowed(pristine)).toBe(true);
+
+    const approved = approveKnowledgeContent({
+      evidence: {
+        evidenceRef: `uploaded-document:certificate-1:v1:sha256:${"a".repeat(64)}`,
+        provenance: {
+          sourceKind: "UPLOADED_DOCUMENT",
+          sourceId: "certificate-1",
+          version: 1,
+          checksum: "a".repeat(64),
+          originalName: "certificate.pdf",
+          capturedAt: "2026-07-24T11:00:00.000Z",
+        },
+      },
+      reviewerId: "reviewer-1",
+      content,
+    });
+    expect(isKnowledgeHardDeleteAllowed(approved)).toBe(false);
+    expect(
+      isKnowledgeHardDeleteAllowed({
+        ...pristine,
+        reviewStatus: "REVOKED",
+        evidenceRef: approved.evidenceRef,
+      })
+    ).toBe(false);
   });
 });

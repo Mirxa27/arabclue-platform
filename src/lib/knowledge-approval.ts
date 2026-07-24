@@ -35,6 +35,9 @@ export interface KnowledgeApprovalMutation {
   readonly approved: boolean;
   readonly reviewStatus: "UNREVIEWED" | "APPROVED" | "REVOKED";
   readonly evidenceRef: string | null;
+  readonly evidenceDocumentId: string | null;
+  readonly evidenceVersion: number | null;
+  readonly evidenceChecksum: string | null;
   readonly provenanceJson: string | null;
   readonly reviewedById: string | null;
   readonly approvedAt: Date | null;
@@ -48,6 +51,9 @@ export interface ApprovedKnowledgeState {
   readonly approved: boolean;
   readonly reviewStatus: "UNREVIEWED" | "APPROVED" | "REVOKED";
   readonly evidenceRef: string | null;
+  readonly evidenceDocumentId: string | null;
+  readonly evidenceVersion: number | null;
+  readonly evidenceChecksum: string | null;
   readonly provenanceJson: string | null;
   readonly reviewedById: string | null;
   readonly approvedAt: Date | null;
@@ -234,9 +240,11 @@ export async function resolveKnowledgeApprovalEvidence(input: {
   if (document.workspaceId !== input.workspaceId) {
     throw new Error("Knowledge evidence document belongs to another workspace");
   }
-  const checksum = document.versionChecksum ?? document.checksum;
+  const checksum = document.versionChecksum;
   if (!checksum || !/^[a-f0-9]{64}$/i.test(checksum)) {
-    throw new Error("Knowledge evidence document has no verifiable checksum");
+    throw new Error(
+      "Knowledge evidence document current version has no verifiable checksum"
+    );
   }
   const provenance = knowledgeProvenanceSchema.parse({
     sourceKind: "UPLOADED_DOCUMENT",
@@ -276,6 +284,9 @@ export function approveKnowledgeContent(input: {
     approved: true,
     reviewStatus: "APPROVED",
     evidenceRef: expectedReference,
+    evidenceDocumentId: provenance.sourceId,
+    evidenceVersion: provenance.version,
+    evidenceChecksum: provenance.checksum,
     provenanceJson: JSON.stringify(provenance),
     reviewedById: input.reviewerId,
     approvedAt: now,
@@ -298,6 +309,9 @@ export function revokeKnowledgeContent(input: {
     !input.previous.approved ||
     input.previous.reviewStatus !== "APPROVED" ||
     !input.previous.evidenceRef ||
+    !input.previous.evidenceDocumentId ||
+    !input.previous.evidenceVersion ||
+    !input.previous.evidenceChecksum ||
     !input.previous.provenanceJson ||
     !input.previous.reviewedById ||
     !input.previous.approvedAt
@@ -308,6 +322,9 @@ export function revokeKnowledgeContent(input: {
     approved: false,
     reviewStatus: "REVOKED",
     evidenceRef: input.previous.evidenceRef,
+    evidenceDocumentId: input.previous.evidenceDocumentId,
+    evidenceVersion: input.previous.evidenceVersion,
+    evidenceChecksum: input.previous.evidenceChecksum,
     provenanceJson: input.previous.provenanceJson,
     reviewedById: input.previous.reviewedById,
     approvedAt: input.previous.approvedAt,
@@ -326,6 +343,9 @@ export function markKnowledgeContentUnreviewed(
     approved: false,
     reviewStatus: "UNREVIEWED",
     evidenceRef: null,
+    evidenceDocumentId: null,
+    evidenceVersion: null,
+    evidenceChecksum: null,
     provenanceJson: null,
     reviewedById: null,
     approvedAt: null,
@@ -334,4 +354,41 @@ export function markKnowledgeContentUnreviewed(
     revocationReason: null,
     contentHash: hashKnowledgeContent(content),
   };
+}
+
+export type KnowledgeDeletionFields = {
+  readonly approved?: boolean | null;
+  readonly reviewStatus?: string | null;
+  readonly evidenceRef?: string | null;
+  readonly evidenceDocumentId?: string | null;
+  readonly evidenceVersion?: number | null;
+  readonly evidenceChecksum?: string | null;
+  readonly provenanceJson?: string | null;
+  readonly reviewedById?: string | null;
+  readonly approvedAt?: Date | string | null;
+  readonly revokedAt?: Date | string | null;
+  readonly revokedById?: string | null;
+};
+
+/**
+ * Reviewed knowledge is an auditable record and must never be hard-deleted.
+ * Only a pristine UNREVIEWED record without any evidence/review history may be
+ * removed. Approved records must be explicitly revoked and remain durable.
+ */
+export function isKnowledgeHardDeleteAllowed(
+  item: KnowledgeDeletionFields
+): boolean {
+  return (
+    item.approved !== true &&
+    item.reviewStatus === "UNREVIEWED" &&
+    !item.evidenceRef &&
+    !item.evidenceDocumentId &&
+    !item.evidenceVersion &&
+    !item.evidenceChecksum &&
+    !item.provenanceJson &&
+    !item.reviewedById &&
+    !item.approvedAt &&
+    !item.revokedAt &&
+    !item.revokedById
+  );
 }

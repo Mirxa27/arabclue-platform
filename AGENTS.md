@@ -2,29 +2,36 @@
 
 ## Cursor Cloud specific instructions
 
-Arabclue is a single Next.js 16 (App Router, Turbopack) B2B SaaS app — there is one service to run. `mini-services/` is empty and `examples/` is only sample code. Standard scripts live in `package.json`; run them with **bun** (the repo uses `bun.lock`, not npm).
+Arabclue is a single Next.js 16 (App Router, Turbopack) B2B SaaS app. There is one service to run. `mini-services/` is empty and `examples/` is sample code. Standard scripts live in `package.json`; run them with **bun** because the repository uses `bun.lock`.
 
 ### Toolchain
-- **bun** is the package manager/runtime. It is installed at `~/.bun/bin` and added to `PATH` via `~/.bashrc`. The startup update script installs it if missing and runs `bun install` (which triggers the `postinstall` → `prisma generate`). If `bun` is ever not found in a fresh shell, use the absolute path `~/.bun/bin/bun` or `source ~/.bashrc`.
-- Node 22 is preinstalled; only used indirectly.
+
+- **bun** is the package manager/runtime. It is installed at `~/.bun/bin` and added to `PATH` through `~/.bashrc`. If it is unavailable in a fresh shell, use `~/.bun/bin/bun` or source `~/.bashrc`.
+- Node 22 is preinstalled and used indirectly.
 
 ### Database (important)
-- The committed `.env` points `DATABASE_URL` at a **remote Neon Postgres** instance, and the Prisma schema is `provider = "postgresql"`. The schema is already migrated on that DB — do **not** run `prisma migrate`/`db push` as part of setup. There is **no local Postgres**; nothing to start.
-- Because the DB is remote and shared, seed/user data persists across VM sessions and is visible to anyone using this `.env`.
 
-### Running / verifying
-- Dev server: `bun run dev` (foreground, listens on port 3000; it auto-runs `db:ensure` to create `db/` + `uploads/`). Health check: `GET /api/health` on that port → `{"ok":true,...}`.
-- Lint: `bun run lint`. Tests: `bun run test` (bun test over `src/lib/__tests__`). Build: `bun run build`.
-- Avoid running `bun run build` and `bun run dev` at the same time — both write to `.next`.
+- The local ignored environment points at remote Neon Postgres, and Prisma uses `provider = "postgresql"`. Never run `prisma migrate`, `prisma db push`, or reset commands against the shared database as part of setup.
+- There is no local Postgres by default. Shared seed/user data persists across sessions; use read-only checks unless a task explicitly authorizes a controlled mutation.
 
-### Login / test account
-- Bootstrap only seeds the initial admin when the default workspace/user does **not** exist; it will **not** reset passwords for existing users, and the existing users' passwords are unknown here.
-- A dedicated dev SUPER_ADMIN is seeded into the `default-workspace`: **`devtest@arabclue.local` / `DevTest2026!`** (member OWNER, `mustChangePassword=false`). Use it to log in at `/login`. To re-create/reset it, upsert the user with `hashPassword()` from `src/lib/password.ts` (scrypt) — plain `UPDATE`s won't match the app's hash format.
+### Running and verification
+
+- Dev server: `bun run dev` on port 3000. `GET /api/health` returns the liveness result.
+- Lint: `bun run lint`. Tests: `bun run test`. Build: `bun run build`.
+- Do not run `bun run build` and `bun run dev` simultaneously because both write to `.next`.
+
+### Login and test identities
+
+- Never store login credentials in this file, source code, documentation, or Git history.
+- Production rejects reserved development identities. Development test accounts must be supplied through an approved local secret source and must never be created in a shared or production database.
+- Bootstrap only creates the initial administrator when the default workspace/user does not exist; it does not reset existing passwords.
 
 ### UI navigation gotchas
-- The dashboard at `/app` is a single client-rendered **view switcher** (Zustand). There are no per-view routes — e.g. `/app/projects` returns 404. Change views only via the left sidebar buttons.
-- Locale defaults to **Arabic (RTL)**, persisted in `localStorage["arabclue-locale"]`. Toggle to English via the languages button in the top bar. Sidebar item order (top→bottom): Dashboard, Projects, Documents, Proposals, Compliance, Agents, History, Account, Reviews, Billing, Settings. In Arabic, "المطالبات"/"المراجعات" are Claims/Reviews — not Projects (المشاريع).
+
+- `/app` is a client-rendered Zustand view switcher. There are no per-view routes such as `/app/projects`; use the sidebar buttons.
+- Locale defaults to Arabic (RTL), persisted in `localStorage["arabclue-locale"]`. Toggle English through the language button.
 
 ### Optional features
-- PDF/proposal export uses Playwright locally (`bun run setup:pdf` → `playwright install chromium`). On Vercel, PDF uses `playwright-core` + `@sparticuz/chromium` automatically (`VERCEL=1`); set `AWS_LAMBDA_JS_RUNTIME=nodejs22.x` in the Vercel project env. Optional smoke: `PLAYWRIGHT_CHROMIUM=1 bun run test:pdf`.
-- LLM/billing keys (OpenAI/Anthropic/MyFatoorah, etc.) are optional and unset; agent drafting falls back to deterministic local logic without them.
+
+- Local PDF/proposal export uses Playwright (`bun run setup:pdf`). Vercel uses `playwright-core` with `@sparticuz/chromium`; set `AWS_LAMBDA_JS_RUNTIME=nodejs22.x`. Optional smoke: `PLAYWRIGHT_CHROMIUM=1 bun run test:pdf`.
+- LLM and billing keys are optional for local drafting. Agent drafting uses deterministic fallback logic when providers are not configured.

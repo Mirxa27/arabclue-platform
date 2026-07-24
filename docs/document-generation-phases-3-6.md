@@ -40,8 +40,18 @@ Sources:
 
 - [Contract catalog and binding API](../src/lib/document-templates/contract-templates.ts)
 - [Bilingual contract renderer](../src/lib/document-templates/contract-template-renderer.ts)
+- [Draft persistence service](../src/lib/contract-template-persistence.ts)
+- [Distributed draft-write admission](../src/lib/contract-draft-admission.ts)
+- [Tenant draft collection route](../src/app/api/contracts/drafts/route.ts)
+- [Tenant draft read/delete route](../src/app/api/contracts/drafts/%5Bid%5D/route.ts)
+- [Pending draft-persistence migration](../prisma/migrations/20260725003000_contract_draft_persistence/migration.sql)
 - [Catalog and binding tests](../src/lib/__tests__/contract-templates.test.ts)
 - [Renderer and live PDF tests](../src/lib/__tests__/contract-template-renderer.test.ts)
+- [Persistence tests](../src/lib/__tests__/contract-template-persistence.test.ts)
+- [Transactional persistence tests](../src/lib/__tests__/contract-template-persistence-db.test.ts)
+- [Route tests](../src/lib/__tests__/contract-draft-route.test.ts)
+- [Admission tests](../src/lib/__tests__/contract-draft-admission.test.ts)
+- [Migration invariant tests](../src/lib/__tests__/contract-draft-migration.test.ts)
 
 ### Catalog
 
@@ -165,6 +175,114 @@ This fragment is not a complete template binding. Inspect
 from verified project, workspace, approved-knowledge, or explicit user-entry
 sources before using `FINAL`.
 
+### Draft persistence API
+
+The catalog dashboard can persist an authoring draft without changing its
+legal state. The server does not trust a client-authored AST, HTML document,
+template body, or clause body. It accepts only bindings plus the catalog
+identity the caller saw, then recompiles from the frozen server catalog.
+
+```text
+POST /api/contracts/drafts
+GET  /api/contracts/drafts?projectId=<optional>&limit=25&cursor=<optional>
+GET  /api/contracts/drafts/<id>
+DELETE /api/contracts/drafts/<id>
+```
+
+Example writer request:
+
+```json
+{
+  "templateKey": "nda-v1",
+  "expectedVersionId": "nda-v1@1",
+  "expectedCanonicalHash": "sha256:<64 lowercase hex characters>",
+  "clientRequestId": "11111111-1111-4111-8111-111111111111",
+  "mode": "PREVIEW",
+  "bindings": {},
+  "projectId": null
+}
+```
+
+The request body limit is 512 KiB, and the four serialized generated fields
+(`dataJson`, `clausesJson`, `documentSpecJson`, and `contentHtml`) have a
+combined 4 MiB post-compilation limit. This second check prevents a small
+binding request from expanding into an unbounded persisted/rendered result.
+Unknown fields, invalid JSON, stale template identity, a project outside the
+active workspace, blocked compilation, and oversized compiled output are
+rejected before a write. `clientRequestId` is unique inside a workspace:
+repeating the same request is idempotent, while reusing it for different
+content fails with `409`.
+
+Before compilation, the writer route checks both a user bucket (30 writes) and
+a workspace bucket (120 writes) in a ten-minute window. Production and Vercel
+require the shared Redis backend and fail closed with `503` and `Retry-After`
+when it is unavailable; an exhausted bucket returns `429`. In-memory admission
+is used only outside those production modes.
+
+Active draft count and serialized storage are also bounded by the workspace
+plan:
+
+| Plan | Active drafts | Draft storage |
+| --- | ---: | ---: |
+| `STARTER` (and unknown/fail-safe fallback) | 50 | 64 MiB |
+| `PRO` | 250 | 256 MiB |
+| `ENTERPRISE` | 1,000 | 1 GiB |
+| `PAY_AS_YOU_GO` | 100 | 128 MiB |
+
+The plan quota is checked in the same serializable transaction as creation, so
+concurrent writes cannot exceed it. A quota rejection returns `429`. A writer
+can recover both count and storage with tenant-scoped `DELETE`; only
+generation-schema version 1 rows that are still unreviewed, counsel-required,
+non-executable drafts with no PDF path are eligible. Deletion and
+`CONTRACT_DRAFT_DELETE` audit creation commit atomically.
+
+Persistence and admission exports:
+
+| Export | Contract |
+| --- | --- |
+| `contractDraftWriteSchema` | Strictly validates a binding-only draft request and normalizes its UUID request id. |
+| `contractDraftListQuerySchema` | Validates project, bounded limit, and optional keyset cursor filters. |
+| `prepareContractDraft(input)` | Recompiles from the frozen catalog, serializes the result once, enforces the 4 MiB output budget, and returns canonical draft metadata. |
+| `contractDraftSerializedBytes(input)` | Returns the UTF-8 byte total of the four persisted generated fields. |
+| `assertContractDraftSerializedOutputBudget(input, maxBytes?)` | Returns the byte total or throws `CONTRACT_DRAFT_OUTPUT_TOO_LARGE` (`413`). |
+| `persistPreparedContractDraft(input, database?)` | Performs project revalidation, catalog/version synchronization, idempotency, plan quota enforcement, creation, integrity validation, and audit append in a serializable transaction. |
+| `listPersistedContractDrafts(input, database?)` | Returns a narrow, keyset-paginated summary page plus excluded-integrity count and `nextCursor`. |
+| `loadPersistedContractDraft(input, database?)` | Tenant-loads one full source record and fails closed on AST, byte-count, catalog, safety, or hash drift. |
+| `deletePersistedContractDraft(input, database?)` | Atomically audits and deletes one tenant-scoped, unreviewed, non-executable catalog draft. |
+| `admitContractDraftWrite(input, options?)` | Applies distributed user/workspace admission and production fail-closed behavior. |
+
+For every successful creation, one serializable database transaction:
+
+1. syncs a workspace catalog row with `catalogKey`, without updating an
+   existing row;
+2. verifies its exact canonical hash and serialized sections, variables,
+   clauses, provenance, and unreviewed state;
+3. inserts or reuses the immutable `templateId + versionId` row and performs
+   the same drift checks;
+4. checks the plan's active-count and serialized-storage budgets;
+5. stores bindings, bound clauses, rendered HTML, the bilingual AST,
+   `templateVersionId`, generation mode, diagnostic count, exact storage byte
+   count, and a canonical hash covering all generated values;
+6. forces `UNREVIEWED`, `counselReviewRequired = true`,
+   `isExecutable = false`, `status = draft`, and no PDF path; and
+7. appends `CONTRACT_DRAFT_CREATE` to the audit log atomically with creation.
+
+`PREVIEW` drafts may contain structured placeholders and diagnostics.
+`FINAL` persists only when binding is variable-complete, but still means
+unreviewed and non-executable. There is deliberately no approval, publish, or
+execution mutation in this API.
+
+The list route uses deterministic keyset pagination (`createdAt DESC`, then
+`id DESC`), returns at most 50 records, and exposes `nextCursor` when another
+page exists. Its Prisma projection reads only bounded scalar summary and
+template-identity fields: it does not select or parse bindings, clauses, HTML,
+or the document AST. Full AST validation, serialized-byte verification, and
+canonical-hash recomputation are reserved for the single-record read route.
+The dashboard turns returned HTML source into a downloaded file rather than
+injecting it into the application DOM. It exposes bilingual, confirmed
+deletion for quota recovery and follows `nextCursor` with an explicit
+load-more control, so older drafts remain reachable.
+
 ## Phase 4: Proposal Layouts and Structured Export
 
 Sources:
@@ -173,13 +291,24 @@ Sources:
 - [HTML/PDF/PPTX adapter](../src/lib/proposal-layout-export.ts)
 - [Snapshot persistence and export policy](../src/lib/proposal-snapshot-persistence.ts)
 - [Tenant evidence resolver](../src/lib/proposal-snapshot-evidence.ts)
+- [Server identity binding](../src/lib/proposal-snapshot-identity.ts)
+- [Explicit bilingual Markdown hydration](../src/lib/proposal-snapshot-hydration.ts)
+- [Immutable contract render snapshots](../src/lib/contract-render-snapshot.ts)
+- [Final approval-chain export gate](../src/lib/proposal-final-export.ts)
 - [Snapshot HTTP route](../src/app/api/proposals/[id]/snapshot/route.ts)
 - [Active download route](../src/app/api/proposals/[id]/download/route.ts)
 - [Pending database migration](../prisma/migrations/20260724231500_proposal_structured_snapshot/migration.sql)
+- [Pending contract render-snapshot migration](../prisma/migrations/20260725004000_contract_render_snapshot/migration.sql)
 - [Layout and export tests](../src/lib/__tests__/proposal-layouts.test.ts)
 - [Persistence tests](../src/lib/__tests__/proposal-snapshot-persistence.test.ts)
 - [Evidence resolver tests](../src/lib/__tests__/proposal-snapshot-evidence.test.ts)
 - [Route tests](../src/lib/__tests__/proposal-snapshot-route.test.ts)
+- [Hydration tests](../src/lib/__tests__/proposal-snapshot-hydration.test.ts)
+- [Identity tests](../src/lib/__tests__/proposal-snapshot-identity.test.ts)
+- [Editor concurrency tests](../src/lib/__tests__/proposal-edit-precondition.test.ts)
+- [Final export tests](../src/lib/__tests__/proposal-final-export.test.ts)
+- [Contract render-snapshot tests](../src/lib/__tests__/contract-render-snapshot.test.ts)
+- [Contract render-snapshot migration tests](../src/lib/__tests__/contract-render-snapshot-migration.test.ts)
 
 ### Presets and modules
 
@@ -212,7 +341,17 @@ title, locator, and `asOf` value must also match the server-derived binding.
 The binding is re-resolved on snapshot reads, submit, and export, so revocation,
 expiry, a post-approval content edit, a changed record type, or later
 re-approval under a different hash fails closed. `USER_ENTRY` remains explicit
-draft input and cannot be labeled `VERIFIED`.
+draft input and cannot be labeled `VERIFIED`. The referenced tenant
+`UploadedDocument` and exact `DocumentVersion` must still exist with the
+captured name, version, and checksum. Reviewed evidence versions are protected
+by database foreign keys and cannot be hard-deleted.
+
+Project title, bidder identity, Etimad reference, and brand colors are bound to
+the current tenant project, workspace, and brand profile on write, read,
+submit, review, and export. Client-authored `TENDER` and `WORKSPACE` source
+kinds are rejected until they carry an immutable server binding. Use
+`USER_ENTRY` for unverified author input or `APPROVED_KNOWLEDGE` for reviewed
+tenant evidence.
 
 ### Public API
 
@@ -233,14 +372,23 @@ draft input and cannot be labeled `VERIFIED`.
 | `canonicalizeProposalSnapshot(input, options)` | Strictly validates shape, proposal identity, optimistic version, and all three production channels, then returns canonical JSON/hash metadata. |
 | `validatePersistedProposalSnapshot(input, metadata)` | Recomputes and compares the stored hash, revision, and preset before use. |
 | `validateStructuredSnapshotEvidence(snapshot, bindings)` | Requires exact current tenant evidence bindings and rejects self-declared verified evidence. |
+| `validateProposalSnapshotServerIdentity(snapshot, identity)` | Rejects forged or stale project, bidder, tender, brand, `TENDER`, and `WORKSPACE` identities. |
+| `validateProposalDraftLanguageDirections(content)` | Requires Latin-script content on the English side and Arabic-script content on the Arabic side while allowing numbers and mixed technical terms. |
+| `hydrateProposalSnapshotFromMarkdown(input)` | Positionally pairs explicit English and Arabic Markdown by classified module and block index; it never translates, semantically matches, or verifies the text. |
+| `createContractRenderSnapshot(source, options)` | Captures and hashes the exact contract, project, workspace, brand, artifacts, milestones, and obligation register read during serializable submit. |
+| `validatePersistedContractRenderSnapshot(input, metadata)` | Revalidates a stored contract snapshot's schema, proposal identity, byte budget, revision, and canonical hash. |
+| `contractExportOptionsFromSnapshot(snapshot)` | Projects only frozen contract renderer inputs for final HTML, PDF, ZIP, and manifest generation. |
 | `validateStructuredProposalOutput(snapshot, context)` | Projects exact renderable text into the existing pricing, placeholder, NORA, tender, restriction, and approved-evidence gate without rendering or inventing content. |
 | `selectProposalDownloadEngine(hasSnapshot, format)` | Selects structured HTML/PDF/PPTX when a snapshot exists and never falls through to stale Markdown. |
+| `hasCompleteBoundProposalApproval(proposal, reviews, expectedSteps)` | Requires the exact approval-policy step count, indices, reviewers, roles, all-approved decisions, and immutable submission binding before final export. |
 
 The validator checks schema version, language parity, module/block identity,
-required content, source references, brand colors, unsafe markup, unresolved
+required content, server identity, source references, brand colors, unsafe markup, unresolved
 tokens, bidi controls, channel support, and commercial provenance. Populated
-commercial values require a tender, workspace, or explicit user-entry source.
-It does not calculate, round, or manufacture prices.
+commercial values labeled `VERIFIED_SOURCE_VALUES` require exclusively current
+`APPROVED_KNOWLEDGE` bindings. Tender, workspace, and explicit user-entry
+amounts remain human-entered/unverified and must use `USER_ENTRY_REQUIRED`. The
+engine does not calculate, round, or manufacture prices.
 
 For PPTX, aggregated narrative, bullet-list, and table text is limited to 2,400
 characters per language per block. Each rendered block becomes one slide with
@@ -302,8 +450,9 @@ to a supported channel or block export.
 
 ### Snapshot persistence HTTP API
 
-`GET` and `PUT /api/proposals/:id/snapshot` are authenticated and tenant
-scoped. `PUT` requires writer access and this strict body:
+`GET`, `PUT`, and `POST /api/proposals/:id/snapshot` are authenticated and
+tenant scoped. `PUT` is the full structured-authoring API and requires writer
+access with this strict body:
 
 ```json
 {
@@ -319,7 +468,8 @@ every required bilingual source, module, and block must be supplied.
 - `snapshotId` must equal the URL proposal ID.
 - `snapshot.version` must equal `expectedRevision + 1`.
 - The request is limited to 1,000,000 UTF-8 bytes and rejects unknown fields.
-- Replacement uses an atomic workspace, status, and revision comparison.
+- Replacement uses an atomic workspace, status, snapshot revision, proposal
+  version, proposal update timestamp, locale, and exact Markdown comparison.
 - A successful replacement clears the prior review chain and resets proposal
   approval/submission state to `DRAFT`.
 - Any Markdown, title, locale, AI rewrite, version revert, financial-form, or
@@ -327,13 +477,60 @@ every required bilingual source, module, and block must be supplied.
 - The response includes `X-Arabclue-Proposal-Engine: structured-v1`,
   `X-Proposal-Snapshot-Hash`, and `X-Proposal-Snapshot-Revision`.
 
+`POST` is the production bridge used by the proposal editor. The persisted
+editor language is one side and the writer must supply the complete explicit
+counterpart:
+
+```json
+{
+  "counterpartMd": "# العرض العربي\n\nمحتوى عربي راجعه المستخدم."
+}
+```
+
+The endpoint never calls a translator. A coarse strong-script check rejects an
+English-only Arabic counterpart, an Arabic-only English counterpart, empty
+content, and same-language pairs; numbers and mixed technical terms remain
+allowed. It classifies each section and then pairs blocks positionally by
+module and index. This is structural coordination, not a claim of semantic
+translation or equivalence. Mismatched counts and absent formal modules remain
+visible not-available gaps. Both inputs are labeled `USER_ENTRY`.
+
+The editor saves dirty Markdown first using required `expectedVersion` and
+`expectedUpdatedAt` preconditions, calls this endpoint, and then submits the
+resulting canonical snapshot. The hydration write repeats an exact
+version/timestamp/locale/Markdown CAS, so a concurrent edit cannot install a
+snapshot built from stale content. An existing explicitly authored structured
+snapshot is preserved until a content edit invalidates it.
+
 The active `GET /api/proposals/:id/download?format=html|pdf|pptx` route uses the
 structured writer whenever the snapshot exists and emits its hash, revision,
 preset, lifecycle, and authoritative-engine headers. A present but corrupt or
 unsupported structured snapshot never falls back to legacy output. Approved
 or exported non-contract proposals without a structured snapshot are blocked;
 legacy output is retained only as an explicitly non-authoritative draft
-preview when no snapshot exists.
+preview when no snapshot exists. Final proposal HTML/PDF/PPTX and final
+contract HTML/PDF/ZIP/manifest additionally require the exact current approval
+policy chain: the step count, indices, assigned reviewers, roles, decisions,
+and immutable submission binding must all match. Contract submission captures
+a canonical v1 render snapshot in the same serializable transaction as the
+review rows. Final contract outputs use only its frozen title/content/locale,
+project identity, company registration fields, brand fields, artifacts,
+milestones, and obligation register. Live project, workspace, brand, artifact,
+or obligation changes cannot drift an approved artifact. Contract content and
+obligation mutations clear the render snapshot, advance its revision, and
+invalidate prior reviews. Blocking validation diagnostics reject every
+approved/exported output format, including HTML and manifest. HTML and manifest
+may bypass that gate only while authoring a draft, and those responses are
+explicitly labeled `NON_AUTHORITATIVE_PREVIEW`.
+
+The configured proposal approval roles are currently `TECHNICAL` and `FINAL`;
+they do not designate or credential legal counsel. Contract UI therefore calls
+this the configured approval workflow, never legal review. Even after that
+workflow permits an immutable artifact export, contract manifests and response
+headers remain explicit: `legalReviewStatus = UNREVIEWED`,
+`counselReviewRequired = true`, and `isExecutable = false`. Platform
+`APPROVED`/`EXPORTED` means the exact configured workflow approved that frozen
+artifact; it is not legal sign-off and does not make the contract executable.
 
 ## Phase 5: Tables and Charts
 
@@ -613,26 +810,44 @@ for completing translations, source evidence, or readiness requirements.
    artifacts.
 7. Use preview/draft modes only for authoring. Require a clean binding or
    strict capability compilation at the final export boundary.
-8. Keep legal approval as a separate, auditable workflow. The current contract
-   data model has no legally approved lifecycle state.
+8. Keep legal approval as a separate, auditable workflow. The Phase 3
+   persistence API contains no approval, publication, or execution writer.
 9. Keep channel fallbacks explicit. Never drop a diagram, evidence block, or
    commercial entry merely because the selected writer cannot represent it.
 10. Re-run targeted tests, type checking, lint, the full test suite, and build
     after wiring a new route or template consumer.
 
+Phase 3 catalog-draft persistence requires the pending
+`20260725003000_contract_draft_persistence` migration. It adds catalog
+identity and request-id uniqueness, generation mode, diagnostic count, exact
+serialized byte count, and a summary-pagination index. Its
+compatibility-versioned checks force every new catalog-backed row to remain
+canonical, bounded to 4 MiB, unreviewed, counsel-required, non-executable, and
+draft-only.
+
 Phase 4 persistence requires the pending
 `20260724231500_proposal_structured_snapshot` migration. It adds the JSONB
 snapshot, canonical hash, monotonic revision, preset, updater, and timestamp,
-with database checks that require complete metadata. The migration has not
-been applied to the shared Neon database. Review and apply pending migrations
-through the controlled production release process before deploying code that
-uses these fields; do not run `prisma migrate` or `db push` as local setup.
+with database checks that require complete metadata. Final contract rendering
+also requires pending migration
+`20260725004000_contract_render_snapshot`, which adds the contract JSONB
+snapshot, canonical hash, monotonic revision, integrity check, and tenant hash
+index. These migrations have not been applied to the shared Neon database.
+Review and apply all pending migrations through the controlled production
+release process before deploying code that uses these fields; do not run
+`prisma migrate` or `db push` as local setup.
+Immutable knowledge evidence additionally requires the pending
+`20260725001000_knowledge_evidence_integrity` migration, which binds reviewed
+records to exact document-version checksums with restrictive foreign keys.
 
 ## Current Constraints
 
 - Contract templates and rendered artifacts remain draft-only and unreviewed.
   Qualified Saudi counsel must review the completed terms and official sources
   before signature, execution, or representation as legally approved.
+- Saved catalog drafts require the pending Phase 3 migration. Existing
+  generation-schema version `0` contract rows remain legacy records and are
+  not returned by the canonical draft API.
 - The jurisdiction label in a template is not evidence of infrastructure,
   processing, or storage residency.
 - Structured proposal HTML, PDF, and PPTX are wired to the authenticated active
@@ -664,11 +879,26 @@ Run the focused Phase 3–6 suite:
 bun test \
   src/lib/__tests__/contract-templates.test.ts \
   src/lib/__tests__/contract-template-renderer.test.ts \
+  src/lib/__tests__/contract-template-persistence.test.ts \
+  src/lib/__tests__/contract-template-persistence-db.test.ts \
+  src/lib/__tests__/contract-draft-route.test.ts \
+  src/lib/__tests__/contract-draft-admission.test.ts \
+  src/lib/__tests__/contract-template-catalog-ui.test.ts \
+  src/lib/__tests__/contract-draft-migration.test.ts \
   src/lib/__tests__/proposal-layouts.test.ts \
   src/lib/__tests__/proposal-layout-export.test.ts \
   src/lib/__tests__/proposal-snapshot-persistence.test.ts \
   src/lib/__tests__/proposal-snapshot-evidence.test.ts \
   src/lib/__tests__/proposal-snapshot-route.test.ts \
+  src/lib/__tests__/proposal-snapshot-hydration.test.ts \
+  src/lib/__tests__/proposal-snapshot-identity.test.ts \
+  src/lib/__tests__/proposal-submit-client.test.ts \
+  src/lib/__tests__/proposal-edit-precondition.test.ts \
+  src/lib/__tests__/proposal-final-export.test.ts \
+  src/lib/__tests__/contract-render-snapshot.test.ts \
+  src/lib/__tests__/contract-render-snapshot-migration.test.ts \
+  src/lib/__tests__/proposal-download-format.test.ts \
+  src/lib/__tests__/proposal-workflow-integrity.test.ts \
   src/lib/__tests__/document-visualizations.test.ts \
   src/lib/__tests__/capability-statement.test.ts \
   src/lib/__tests__/business-profile-bilingual.test.ts \
@@ -689,12 +919,24 @@ route; Bun's aggregate also includes transitively imported application code:
 bun test --coverage \
   src/lib/__tests__/contract-templates.test.ts \
   src/lib/__tests__/contract-template-renderer.test.ts \
+  src/lib/__tests__/contract-template-persistence.test.ts \
+  src/lib/__tests__/contract-template-persistence-db.test.ts \
+  src/lib/__tests__/contract-draft-route.test.ts \
+  src/lib/__tests__/contract-draft-admission.test.ts \
   src/lib/__tests__/proposal-layouts.test.ts \
   src/lib/__tests__/document-visualizations.test.ts \
   src/lib/__tests__/capability-statement.test.ts \
   src/lib/__tests__/business-profile-bilingual.test.ts \
   src/lib/__tests__/business-profile-export-route.test.ts
 ```
+
+The document-quality gate includes the pure Phase 4 snapshot, evidence,
+identity, hydration, immutable review-binding, final-export, and contract
+render-snapshot modules. The transactional `proposal-review-service.ts` remains
+an integration boundary because it owns serializable Prisma mutations rather
+than a pure policy API; the focused workflow tests assert that both HTTP and
+agent decisions use that shared service, while the pure review-binding and
+final-export policies are covered directly.
 
 Run repository-wide static and build gates:
 

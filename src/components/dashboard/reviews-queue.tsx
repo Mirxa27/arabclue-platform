@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useLocale, useUI } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { EmptyState, Panel, QueryState } from "@/components/patterns";
@@ -243,7 +245,7 @@ export function ReviewsQueue() {
                           setContractId(r.proposal?.id ?? null);
                         } else {
                           setEditId(r.proposal?.id ?? null);
-                          setView("proposals");
+                          startTransition(() => setView("proposals"));
                         }
                       }}
                     >

@@ -3,7 +3,10 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { verifyMfaToken } from "@/lib/mfa";
 import { audit } from "@/lib/audit";
-import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
+import {
+  describeRateLimitDenial,
+  rateLimitAsync as rateLimit,
+} from "@/lib/rate-limit";
 import { parseJsonBody, mfaDisableSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +25,14 @@ export async function POST(req: NextRequest) {
       windowMs: 15 * 60 * 1000,
     });
     if (!rl.ok) {
-      return NextResponse.json({ error: "rate_limited_try_later" }, { status: 429 });
+      const denial = describeRateLimitDenial(rl);
+      return NextResponse.json(
+        { error: denial.error },
+        {
+          status: denial.status,
+          headers: { "Retry-After": String(denial.retryAfterSeconds) },
+        }
+      );
     }
 
     const parsed = await parseJsonBody(req, mfaDisableSchema);

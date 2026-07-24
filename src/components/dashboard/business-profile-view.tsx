@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -208,7 +210,7 @@ export function BusinessProfileView() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setView("account")}
+              onClick={() => startTransition(() => setView("account"))}
             >
               {ar ? "إعداد الحساب" : "Account setup"}
             </Button>
@@ -339,7 +341,7 @@ export function BusinessProfileView() {
             <Button
               variant="secondary"
               className="shrink-0"
-              onClick={() => setView("account")}
+              onClick={() => startTransition(() => setView("account"))}
             >
               {ar ? "أكمل الإعداد" : "Complete setup"}
               <ArrowRight className="size-4" />
@@ -393,7 +395,7 @@ export function BusinessProfileView() {
         </h3>
         <div className="grid md:grid-cols-2 gap-3">
           {profile.highlights.pastProjects.length === 0 ? (
-            <EmptyHint ar={ar} onSetup={() => setView("account")} />
+            <EmptyHint ar={ar} onSetup={() => startTransition(() => setView("account"))} />
           ) : (
             profile.highlights.pastProjects.map((p) => (
               <article
@@ -420,7 +422,7 @@ export function BusinessProfileView() {
           title={ar ? "الفريق" : "Team"}
           empty={profile.highlights.staff.length === 0}
           ar={ar}
-          onSetup={() => setView("account")}
+          onSetup={() => startTransition(() => setView("account"))}
           items={profile.highlights.staff.map((s) => {
             const n = ar ? s.nameAr || s.name : s.name;
             const role = ar ? s.titleAr || s.title : s.title;
@@ -431,7 +433,7 @@ export function BusinessProfileView() {
           title={ar ? "الشهادات" : "Certificates"}
           empty={profile.highlights.certificates.length === 0}
           ar={ar}
-          onSetup={() => setView("account")}
+          onSetup={() => startTransition(() => setView("account"))}
           items={profile.highlights.certificates.map((c) =>
             c.issuer ? `${c.name} (${c.issuer})` : c.name
           )}
@@ -440,7 +442,7 @@ export function BusinessProfileView() {
           title={ar ? "الشراكات" : "Partnerships"}
           empty={profile.highlights.partnerships.length === 0}
           ar={ar}
-          onSetup={() => setView("account")}
+          onSetup={() => startTransition(() => setView("account"))}
           items={profile.highlights.partnerships.map((p) =>
             p.kind ? `${p.name} · ${p.kind}` : p.name
           )}
@@ -453,7 +455,7 @@ export function BusinessProfileView() {
             0
           }
           ar={ar}
-          onSetup={() => setView("account")}
+          onSetup={() => startTransition(() => setView("account"))}
           items={[
             ...profile.highlights.sectors.map((s) => s.name),
             ...profile.highlights.methodologies.map((m) =>

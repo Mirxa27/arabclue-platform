@@ -2,11 +2,11 @@
 
 ## Current release status
 
-**Blocked as of 2026-07-24.** A sensitive `.env` file is tracked in the current
-Git index and occurs in three historical commits. The deployment guide also
-contained five generated role credential rows; those rows have been removed,
-but deletion from the current checkout does not revoke credentials or erase Git
-history.
+**Blocked as of 2026-07-24.** The sensitive `.env` file has been removed from
+the current Git index but remains in three public historical commits. A fixed
+development administrator identity and five generated role credential rows
+also appeared in public history. Their current-tree removal does not revoke the
+live credentials or erase Git history.
 
 Do not create a Preview or Production deployment until the external remediation
 owner has completed every item in the incident checklist and
@@ -40,7 +40,10 @@ not performed by the code change that introduced this runbook.
    roles, authentication and encryption secrets, administrator passwords, blob
    storage, email, billing, and model-provider keys where configured.
 4. Revoke active application sessions after rotating authentication material.
-   Reset generated administrator credentials and require MFA.
+   Disable every reserved development identity, reset all generated
+   SUPER_ADMIN/ADMIN/BIDDER/REVIEWER/FINANCE credentials, revoke their active
+   sessions, audit activity from first exposure, and require MFA before any
+   account is re-enabled.
 5. Review Neon, Vercel, GitHub, authentication, billing, storage, and email
    audit logs from the earliest exposed commit onward. Escalate to the security
    and legal owners if unauthorized access or personal-data exposure is

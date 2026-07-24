@@ -3,6 +3,8 @@
  * Only approved and currently valid knowledge may be used unless explicitly overridden.
  */
 
+import { knowledgeProvenanceSchema } from "./knowledge-approval";
+
 export type KnowledgeEligibility = {
   eligible: boolean;
   reason?: string;
@@ -12,6 +14,9 @@ export type KnowledgeReviewFields = {
   approved?: boolean | null;
   reviewStatus?: string | null;
   evidenceRef?: string | null;
+  evidenceDocumentId?: string | null;
+  evidenceVersion?: number | null;
+  evidenceChecksum?: string | null;
   provenanceJson?: string | null;
   reviewedById?: string | null;
   approvedAt?: Date | string | null;
@@ -29,12 +34,38 @@ export function isKnowledgeReviewApproved(
   if (item.revokedAt) return { eligible: false, reason: "revoked" };
   if (
     !item.evidenceRef?.trim() ||
+    !item.evidenceDocumentId?.trim() ||
+    !Number.isSafeInteger(item.evidenceVersion) ||
+    (item.evidenceVersion ?? 0) < 1 ||
+    !item.evidenceChecksum?.match(/^[a-f0-9]{64}$/i) ||
     !item.provenanceJson?.trim() ||
     !item.reviewedById?.trim() ||
     !item.approvedAt ||
     !item.contentHash?.trim()
   ) {
     return { eligible: false, reason: "incomplete_review" };
+  }
+  let provenance: unknown;
+  try {
+    provenance = JSON.parse(item.provenanceJson);
+  } catch {
+    return { eligible: false, reason: "invalid_provenance" };
+  }
+  const parsedProvenance = knowledgeProvenanceSchema.safeParse(provenance);
+  if (!parsedProvenance.success) {
+    return { eligible: false, reason: "invalid_provenance" };
+  }
+  const checksum = item.evidenceChecksum.toLowerCase();
+  const expectedEvidenceRef =
+    `uploaded-document:${item.evidenceDocumentId}:v${item.evidenceVersion}` +
+    `:sha256:${checksum}`;
+  if (
+    parsedProvenance.data.sourceId !== item.evidenceDocumentId ||
+    parsedProvenance.data.version !== item.evidenceVersion ||
+    parsedProvenance.data.checksum.toLowerCase() !== checksum ||
+    item.evidenceRef !== expectedEvidenceRef
+  ) {
+    return { eligible: false, reason: "evidence_mismatch" };
   }
   if (
     expectedContentHash !== undefined &&

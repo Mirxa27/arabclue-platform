@@ -306,6 +306,9 @@ export async function PUT(req: NextRequest) {
     approved?: boolean;
     reviewStatus?: "UNREVIEWED" | "APPROVED" | "REVOKED";
     evidenceRef?: string | null;
+    evidenceDocumentId?: string | null;
+    evidenceVersion?: number | null;
+    evidenceChecksum?: string | null;
     provenanceJson?: string | null;
     reviewedById?: string | null;
     approvedAt?: Date | null;

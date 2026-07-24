@@ -1,5 +1,7 @@
 "use client";
 
+import { startTransition } from "react";
+
 import { useState, useCallback, useRef } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -131,7 +133,7 @@ export function FileIngestion() {
         setPreviewDoc(document);
         return;
       }
-      setView("documents");
+      startTransition(() => setView("documents"));
     },
     [setView]
   );
@@ -147,7 +149,7 @@ export function FileIngestion() {
               : "Create or select a project before uploading",
           variant: "destructive",
         });
-        setView("projects");
+        startTransition(() => setView("projects"));
         return;
       }
       const arr = Array.from(fileList);
@@ -290,7 +292,7 @@ export function FileIngestion() {
               size="sm"
               variant="outline"
               className="h-7 text-[11px] shrink-0"
-              onClick={() => setView("projects")}
+              onClick={() => startTransition(() => setView("projects"))}
             >
               {locale === "ar" ? "المشاريع" : "Projects"}
             </Button>

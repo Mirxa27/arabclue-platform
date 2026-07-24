@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { startTransition } from "react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -27,9 +28,9 @@ import {
   Loader2,
   Scale,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ArabclueLogo } from "@/components/brand/arabclue-logo";
 
@@ -60,16 +61,11 @@ const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboar
   { view: "admin_audit", key: "nav_admin_audit", icon: ScrollText },
 ];
 
-export function DashboardSidebar({
-  variant = "desktop",
-}: {
-  variant?: "desktop" | "drawer";
-}) {
+export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" | "drawer" }) {
   const { locale } = useLocale();
   const { view, setView, sidebarCollapsed, toggleSidebar } = useUI();
   const { data: session } = useSession();
-  const isAdmin =
-    session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
+  const isAdmin = session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
   const collapsed = variant === "drawer" ? false : sidebarCollapsed;
   const isDrawer = variant === "drawer";
 
@@ -89,95 +85,99 @@ export function DashboardSidebar({
     <aside
       dir={locale === "ar" ? "rtl" : "ltr"}
       className={cn(
-        "relative shrink-0 bg-sidebar text-sidebar-foreground flex flex-col border-e border-sidebar-border transition-[width] duration-300",
-        isDrawer ? "h-full w-full border-e-0" : collapsed ? "w-[68px]" : "w-64"
+        "relative shrink-0 flex flex-col border-e transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "bg-[var(--surface-0)] text-white selection:bg-white/10",
+        "border-[var(--hairline)]",
+        isDrawer ? "h-full w-full border-e-0" : collapsed ? "w-[72px]" : "w-[272px]"
       )}
     >
-      {/* Brand */}
-      <div className="h-16 flex items-center gap-3 px-4 border-b border-sidebar-border shrink-0">
-        <ArabclueLogo className="size-9 rounded-lg shadow-lg shadow-chart-1/20 ring-1 ring-white/10" />
+      {/* Brand — premium: tight tracking, optical */}
+      <div className="h-[64px] flex items-center gap-3 px-4 border-b border-[var(--hairline)] shrink-0">
+        <div className="relative shrink-0">
+          <ArabclueLogo className="size-[36px] rounded-[10px] shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_16px_rgba(0,0,0,0.24)]" />
+          <span className="pointer-events-none absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
+        </div>
         {!collapsed && (
           <div className="min-w-0">
-            <div className="text-sm font-bold text-sidebar-foreground truncate">
-              {tr("appName", locale)}
-            </div>
-            <div className="text-[10px] text-sidebar-foreground/60 truncate uppercase tracking-wider">
+            <div className="text-[14px] font-[650] tracking-[-0.02em] text-white truncate leading-[1.1]">{tr("appName", locale)}</div>
+            <div className="text-[11px] font-[500] tracking-[-0.01em] text-white/45 truncate flex items-center gap-1">
               {locale === "ar" ? "منصة سعودية" : "Saudi Platform"}
+              <span className="inline-flex h-1 w-1 rounded-full bg-white/20" />
+              <span className="text-emerald-300/70">PDPL</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Workspace selector */}
+      {/* Workspace */}
       {!collapsed && (
-        <WorkspaceSwitcher
-          locale={locale}
-          memberships={data?.memberships}
-          workspaceName={workspaceName}
-          plan={plan}
-        />
+        <WorkspaceSwitcher locale={locale} memberships={data?.memberships} workspaceName={workspaceName} plan={plan} />
       )}
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto scrollbar-thin px-2 py-3 space-y-0.5">
+      {/* Nav — Linear: 6 microstates crafted */}
+      <nav className="flex-1 overflow-y-auto scrollbar-thin px-2.5 py-3 space-y-0.5">
         {NAV.map((item) => {
           const Icon = item.icon;
           const active = view === item.view;
           return (
             <button
               key={item.view}
-              onClick={() => setView(item.view)}
+              onClick={() => startTransition(() => setView(item.view))}
               title={tr(item.key, locale)}
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group relative",
+                "group relative w-full flex items-center gap-2.5 px-2.5 h-[34px] rounded-[8px] text-[13px] font-[450] tracking-[-0.01em] transition-all duration-[140ms] outline-none",
+                "focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.12_195)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--surface-0)]",
+                "active:scale-[0.98]",
                 active
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-sidebar-primary/20"
-                  : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                collapsed && "justify-center"
+                  ? "bg-white/[0.08] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_1px_0_0_rgba(255,255,255,0.06)]"
+                  : "text-white/55 hover:text-white/85 hover:bg-white/[0.06] active:bg-white/[0.08]",
+                collapsed && "justify-center px-2"
               )}
             >
-              <Icon className="size-[18px] shrink-0" />
+              <Icon className={cn("size-[18px] shrink-0 transition-colors", active ? "text-white" : "text-white/45 group-hover:text-white/75")} />
               {!collapsed && <span className="truncate">{tr(item.key, locale)}</span>}
               {active && !collapsed && (
-                <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-sidebar-primary-foreground rounded-s-full" />
+                <span className="ml-auto flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#5e6ad2] shadow-[0_0_6px_#5e6ad2]" />
+                </span>
+              )}
+              {active && collapsed && (
+                <span className="absolute end-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-[#5e6ad2] rounded-full shadow-[0_0_8px_#5e6ad2]" />
               )}
             </button>
           );
         })}
 
-        {/* Admin section — SUPER_ADMIN / ADMIN only */}
         {isAdmin && (
           <>
-            {!collapsed && (
-              <div className="pt-4 pb-1 px-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sidebar-foreground/40">
-                <Lock className="size-2.5" />
+            {!collapsed ? (
+              <div className="pt-5 pb-2 px-2.5 flex items-center gap-2 text-[11px] font-[650] uppercase tracking-[0.08em] text-white/25">
+                <Lock className="size-3" />
                 {tr("nav_admin", locale)}
+                <div className="h-px flex-1 bg-[var(--hairline)]" />
               </div>
+            ) : (
+              <div className="my-3 mx-2 h-px bg-[var(--hairline)]" />
             )}
-            {collapsed && <div className="my-2 border-t border-sidebar-border" />}
             {ADMIN_NAV.map((item) => {
               const Icon = item.icon;
               const active = view === item.view;
               return (
                 <button
                   key={item.view}
-                  onClick={() => setView(item.view)}
+                  onClick={() => startTransition(() => setView(item.view))}
                   title={tr(item.key, locale)}
                   className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group relative",
+                    "group w-full flex items-center gap-2.5 px-2.5 h-[32px] rounded-[8px] text-[13px] font-[450] tracking-[-0.01em] transition-all duration-150 outline-none",
+                    "focus-visible:ring-2 focus-visible:ring-amber-300",
                     active
-                      ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      ? "bg-amber-500/10 text-amber-100 border border-amber-500/15 shadow-[0_0_0_1px_rgba(245,158,11,0.12)_inset]"
+                      : "text-white/50 hover:text-white/80 hover:bg-white/[0.06]",
                     collapsed && "justify-center"
                   )}
                 >
-                  <Icon className="size-[18px] shrink-0" />
-                  {!collapsed && (
-                    <span className="truncate text-[13px]">{tr(item.key, locale)}</span>
-                  )}
-                  {active && !collapsed && (
-                    <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-white rounded-s-full shadow" />
-                  )}
+                  <Icon className="size-[16px] shrink-0" />
+                  {!collapsed && <span className="truncate text-[12.5px]">{tr(item.key, locale)}</span>}
                 </button>
               );
             })}
@@ -185,38 +185,36 @@ export function DashboardSidebar({
         )}
       </nav>
 
-      {/* Vision 2030 badge */}
+      {/* Vision badge — subtle */}
       {!collapsed && (
-        <div className="p-3 border-t border-sidebar-border">
-          <div className="rounded-lg bg-gradient-to-br from-emerald-600/20 to-chart-1/20 border border-emerald-500/20 p-3">
+        <div className="p-3 border-t border-[var(--hairline)]">
+          <div className="rounded-[12px] bg-gradient-to-br from-emerald-500/[0.08] to-cyan-400/[0.06] border border-emerald-500/15 p-3 backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-1.5">
-              <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
-                Vision 2030
-              </span>
+              <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
+              <span className="text-[11px] font-[700] uppercase tracking-[0.08em] text-emerald-200/80">Vision 2030</span>
+              <Zap className="size-3 text-emerald-300/50 ml-auto" />
             </div>
-            <p className="text-[11px] text-sidebar-foreground/70 leading-relaxed">
-              {locale === "ar"
-                ? "متوافق مع رؤية المملكة 2030 — الالتزام بمستوى C1"
-                : "Aligned with Vision 2030 — C1 Compliance enforced"}
+            <p className="text-[11px] leading-[1.5] text-white/50">
+              {locale === "ar" ? "متوافق مع رؤية 2030 — C1 • PDPL • NCA" : "Vision 2030 aligned — C1 • PDPL • NCA essentials"}
             </p>
           </div>
         </div>
       )}
 
-      {/* Collapse toggle (desktop only) */}
-      {!isDrawer ? (
+      {/* Collapse toggle */}
+      {!isDrawer && (
         <button
           onClick={toggleSidebar}
           className={cn(
-            "absolute top-1/2 -translate-y-1/2 z-20 size-6 rounded-full bg-sidebar-accent border border-sidebar-border flex items-center justify-center text-sidebar-foreground/70 hover:text-white hover:bg-sidebar-primary transition-colors",
+            "absolute top-1/2 -translate-y-1/2 z-20 size-6 rounded-full bg-[var(--surface-2)] border border-[var(--hairline)] flex items-center justify-center text-white/50 hover:text-white hover:bg-[var(--surface-3)] hover:border-[var(--hairline-light)] transition-all active:scale-[0.92]",
+            "shadow-[0_2px_8px_rgba(0,0,0,0.24)]",
             locale === "ar" ? "-start-3" : "-end-3"
           )}
           title={collapsed ? "Expand" : "Collapse"}
         >
-          <ChevronLeft className={cn("size-3.5 transition-transform", collapsed && "rotate-180", locale === "ar" && "rotate-180", collapsed && locale === "ar" && "rotate-0")} />
+          <ChevronLeft className={cn("size-3.5 transition-transform duration-200", collapsed && "rotate-180", locale === "ar" && "rotate-180", collapsed && locale === "ar" && "rotate-0")} />
         </button>
-      ) : null}
+      )}
     </aside>
   );
 }
@@ -231,12 +229,7 @@ function WorkspaceSwitcher({
   memberships?: Array<{
     role: string;
     active: boolean;
-    workspace: {
-      id: string;
-      name: string;
-      nameAr?: string | null;
-      plan: string;
-    };
+    workspace: { id: string; name: string; nameAr?: string | null; plan: string };
   }>;
   workspaceName?: string;
   plan?: string;
@@ -261,28 +254,23 @@ function WorkspaceSwitcher({
   const list = memberships ?? [];
 
   return (
-    <div className="px-3 py-3 border-b border-sidebar-border space-y-2">
-      <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-sidebar-accent/60">
-        <div className="size-8 rounded-md bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0">
-          {switchMutation.isPending ? (
-            <Loader2 className="size-4 text-white animate-spin" />
-          ) : (
-            <Building2 className="size-4 text-white" />
-          )}
+    <div className="px-3 py-3 border-b border-[var(--hairline)] space-y-2.5">
+      <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-[10px] bg-white/[0.05] border border-white/[0.06] hover:bg-white/[0.07] transition-colors group">
+        <div className="size-8 rounded-[8px] bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 shadow-[0_0_0_1px_rgba(255,255,255,0.15)_inset]">
+          {switchMutation.isPending ? <Loader2 className="size-4 text-white animate-spin" /> : <Building2 className="size-4 text-white" />}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-sidebar-foreground truncate">
-            {workspaceName ?? "..."}
-          </div>
-          <div className="text-[10px] text-sidebar-foreground/60 flex items-center gap-1">
-            <CircleDot className="size-2.5 text-emerald-400" />
-            <span className="uppercase tracking-wider">{plan ?? "—"}</span>
+          <div className="text-[13px] font-[600] tracking-[-0.01em] text-white truncate leading-[1.2]">{workspaceName ?? "…"}</div>
+          <div className="text-[11px] text-white/45 flex items-center gap-1 mt-0.5">
+            <CircleDot className="size-3 text-emerald-400" />
+            <span className="uppercase tracking-[0.06em] font-[500]">{plan ?? "—"}</span>
           </div>
         </div>
+        <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
       </div>
       {list.length > 1 && (
         <select
-          className="w-full text-[11px] rounded-md bg-sidebar-accent/40 border border-sidebar-border text-sidebar-foreground px-2 py-1.5"
+          className="w-full text-[12px] rounded-[8px] bg-[var(--surface-1)] border border-[var(--hairline)] text-white/80 px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-[#5e6ad2] transition-all"
           value={list.find((m) => m.active)?.workspace.id ?? ""}
           disabled={switchMutation.isPending}
           onChange={(e) => {
@@ -290,11 +278,8 @@ function WorkspaceSwitcher({
           }}
         >
           {list.map((m) => (
-            <option key={m.workspace.id} value={m.workspace.id}>
-              {locale === "ar"
-                ? m.workspace.nameAr ?? m.workspace.name
-                : m.workspace.name}{" "}
-              ({m.role})
+            <option key={m.workspace.id} value={m.workspace.id} className="bg-[#0f1011]">
+              {locale === "ar" ? m.workspace.nameAr ?? m.workspace.name : m.workspace.name} ({m.role})
             </option>
           ))}
         </select>
@@ -302,4 +287,3 @@ function WorkspaceSwitcher({
     </div>
   );
 }
-

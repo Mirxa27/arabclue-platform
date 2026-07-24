@@ -15,6 +15,8 @@ const PUBLIC_PATHS = new Set<string>([
 function isPublicPath(path: string): boolean {
   if (PUBLIC_PATHS.has(path)) return true;
   if (path.startsWith("/api/auth")) return true;
+  // Cron routes authenticate via CRON_SECRET inside the handler.
+  if (path.startsWith("/api/cron")) return true;
   if (path.startsWith("/_next")) return true;
   if (path.startsWith("/favicon")) return true;
   // Demo EN|AR sample tender/contract PDFs (public/samples)

@@ -1,8 +1,13 @@
-# Arabclue (أراب كلاو) — Futuristic SaaS
+# Arabclue (أراب كلاو) — Bilingual procurement document platform
 
-**B2B SaaS for Saudi Etimad tender proposal generation** — Next.js 16 App Router, Prisma, NextAuth, multi-agent drafting pipeline, futuristic glassmorphism UI with full AR/EN.
+Arabclue is a Next.js 16 B2B SaaS application for preparing structured Arabic
+and English procurement documents. It combines tenant-scoped source evidence,
+human review workflows, bilingual HTML/PDF generation, proposal exports, and
+auditable artifact manifests.
 
-> Turn 400+ page RFP bundles into **Technical + Financial Structure + Compliance Matrix** — Arabic & English, branded, auditable — in **hours, not weeks**.
+Generated content remains a draft until the configured reviewers approve the
+exact immutable snapshot. Contract templates are explicitly unreviewed,
+non-executable starting points and require qualified legal review.
 
 ---
 
@@ -15,41 +20,37 @@
 - **Design system** — `aurora`, `grid-bg`, `dot-bg`, `glass`, `gradient-mesh`, `text-gradient`, `glow-ring`, futuristic animations in `globals.css`.
 - **Marketing shell** — sticky blurred header, locale toggle persisting to `arabclue-marketing-locale`, bilingual `dir/lang` sync, footer with badges.
 - **Local DX** — `proxy.ts` (not deprecated `middleware.ts`), `turbopack.root` to silence warning, portable `start-dev.sh`, `db:ensure` script, improved `.env.example`.
+- **Document engine** — synchronized AR/EN HTML and PDF, local embedded Arabic
+  fonts, proposal layouts and PPTX export, data tables/charts, contract draft
+  persistence, and capability statements.
 
 ---
 
 ## Stack
 
 - **Next.js 16** (App Router, Turbopack) + TypeScript + Tailwind v4 + shadcn/ui + Framer Motion
-- **Prisma** — SQLite local/dev; Postgres-ready for prod
+- **Prisma** — PostgreSQL; managed checkouts currently use Neon
 - **NextAuth** credentials + JWT + server-side `UserSession` revocation + optional TOTP MFA
 - **Multi-agent** — in-process pipeline: `ingestion → compliance → technical RAG → financial → drafting` with cancel & single active run per project
-- **Artifacts** — PDF (Playwright), ExcelJS, ZIP bid packages, branded exports
+- **Artifacts** — bilingual HTML/PDF, PPTX, ExcelJS, ZIP bid packages, and
+  integrity manifests
 
 ---
 
-## Quick start (local) — 2 minutes
+## Quick start
 
 ```bash
-# 1) clone & install
+# The repository is locked and tested with Bun.
 bun install
-# or npm install
 
-# 2) env — copy and fill at least 3 secrets
-cp .env.example .env
-# Edit .env:
-#   DATABASE_URL="file:../db/custom.db"  # relative to prisma/ => root/db
-#   NEXTAUTH_SECRET=openssl rand -base64 32
-#   ARABCLUE_ENC_KEY=openssl rand -base64 32
-#   BOOTSTRAP_ADMIN_PASSWORD=StrongPass123!
+# Preserve an existing managed .env. For a new checkout, copy the template and
+# configure an isolated PostgreSQL/Neon branch plus local-only secrets.
+test -f .env || cp .env.example .env
+# Stop here and configure .env if the template was just copied.
 
-# 3) one-time setup (creates db, uploads folders, prisma client, pushes schema)
+# Creates local folders and generates Prisma Client. It never changes schema.
 bun run dev:setup
-# → mkdir -p db uploads
-# → prisma generate
-# → prisma db push
 
-# 4) dev
 bun run dev
 # http://localhost:3000
 
@@ -59,9 +60,12 @@ bun run dev
 ```
 
 **First login**
+
 - Open `http://localhost:3000/login`
-- Bootstrap admin = `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` from `.env`
-- On first login `mustChangePassword=true` — you’ll be asked to set a new 10+ char password.
+- Use an account provisioned for the selected isolated environment.
+- Bootstrap credentials are read from environment variables only when the
+  initial workspace/user does not already exist; setup does not reset an
+  existing password.
 - Then `/app` dashboard.
 
 **Health**: `GET http://localhost:3000/api/health` → `{ ok: true, service: "arabclue" }`
@@ -74,14 +78,17 @@ bun run dev
 |--------|---------|
 | `bun run dev` | Next dev (ensures db/uploads exist via `db:ensure`) |
 | `bun run dev:log` | Dev + tee to `dev.log` |
-| `bun run dev:setup` | Full local bootstrap: ensure folders + generate + push |
-| `bun run dev:clean` | Nuke `.next` & `db/custom.db`, recreate |
-| `bun run build` | `prisma generate && next build` |
+| `bun run dev:setup` | Ensure local folders and generate Prisma Client; no schema mutation |
+| `bun run dev:clean` | Remove local Next/log output and regenerate Prisma Client |
+| `bun run build` | Pack extension, generate Prisma Client, build Next.js, and verify PDF font traces |
 | `bun run build:standalone` | Standalone output for Docker/VPS |
 | `bun run start` | Start standalone prod |
 | `bun run lint` | ESLint |
 | `bun run test` | `bun test src/lib/__tests__` |
-| `bun run db:generate / db:push:dev / db:migrate / db:studio` | Prisma helpers |
+| `bun run quality:documents` | Document-generation TypeScript, lint, tests, and coverage gate |
+| `bun run deploy:safety` | Fail-closed secret-history and production-infrastructure gate |
+| `bun run db:generate / db:studio` | Read-safe Prisma client and inspection helpers |
+| `bun run db:push:dev / db:migrate / db:migrate:deploy` | Explicit schema-changing commands; isolated/approved environments only |
 
 ---
 
@@ -89,13 +96,15 @@ bun run dev
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `DATABASE_URL` | yes | `file:../db/custom.db` (prisma-relative) for local SQLite; Postgres URL prod |
+| `DATABASE_URL` | yes | PostgreSQL URL; use a separate Neon branch/database for each environment |
 | `NEXTAUTH_SECRET` | yes | `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | yes | `http://localhost:3000` local; `https://arabclue.com` production |
 | `NEXT_PUBLIC_APP_URL` | no | canonical URL for SEO (`https://arabclue.com`) |
 | `BOOTSTRAP_ADMIN_PASSWORD` | yes (first seed) | min 10 chars; never commit |
-| `BOOTSTRAP_ADMIN_EMAIL` | no | default `admin@arabclue.sa` |
+| `BOOTSTRAP_ADMIN_EMAIL` | yes (first seed) | environment-specific; never hard-code a development identity in Production |
 | `ARABCLUE_ENC_KEY` | yes (prod) | encrypts admin EnvSettings (AES-256-GCM) |
+| `REDIS_URL` | yes (prod) | shared rate limiting and export admission; Production fails closed without it |
+| `CRON_SECRET` | yes (prod) | random secret of at least 16 characters for cron endpoints |
 
 Optional LLM / Billing:
 
@@ -110,13 +119,16 @@ See `.env.example` for full catalog.
 
 ## Local troubleshooting
 
-- **Port 3000 busy**: `lsof -i :3000 -t | xargs kill -9` or `bun run dev` kills automatically via `start-dev.sh`
-- **DB not found**: `bun run db:ensure && bun run db:push:dev`
-- **Old .env absolute path**: Ensure `DATABASE_URL="file:../db/custom.db"` (relative to prisma/) not `/Users/.../workspace-...`. Fixed to relative.
+- **Port 3000 busy**: stop the owning process explicitly; `start-dev.sh`
+  refuses to kill unrelated processes.
+- **Database connection fails**: verify the environment-specific PostgreSQL
+  URL and branch. Do not repair a shared database with `db push`.
 - **Turbopack warning about workspace root**: Fixed via `next.config.ts` → `turbopack.root = __dirname`
 - **Middleware deprecated warning**: Migrated to `src/proxy.ts` (Next 16 style), removed `middleware.ts`
 - **Prisma client not generated**: `bun run db:generate`
-- **Login fails after seed**: Check `BOOTSTRAP_ADMIN_PASSWORD` length (≥10) and `db/custom.db` exists; try `bun run dev:clean`
+- **Login fails after seed**: bootstrap does not reset existing passwords. Use
+  the environment's account-recovery process or provision a separate local
+  identity.
 
 ---
 

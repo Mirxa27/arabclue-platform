@@ -4,7 +4,10 @@ import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import { saveUpload } from "@/lib/storage";
 import { audit } from "@/lib/audit";
-import { rateLimitAsync as rateLimit } from "@/lib/rate-limit";
+import {
+  describeRateLimitDenial,
+  rateLimitAsync as rateLimit,
+} from "@/lib/rate-limit";
 import { validateAndNormalizeLogoImage } from "@/lib/brand-logo";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +33,14 @@ export async function POST(req: NextRequest) {
       windowMs: 15 * 60 * 1000,
     });
     if (!rl.ok) {
-      return NextResponse.json({ error: "Too many attempts" }, { status: 429 });
+      const denial = describeRateLimitDenial(rl);
+      return NextResponse.json(
+        { error: denial.error },
+        {
+          status: denial.status,
+          headers: { "Retry-After": String(denial.retryAfterSeconds) },
+        }
+      );
     }
 
     const form = await req.formData();

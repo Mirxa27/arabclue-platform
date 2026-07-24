@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -50,6 +51,7 @@ import {
   ExportReadinessChecklist,
   ErrorState,
 } from "@/components/patterns";
+import { submitProposalWithStructuredSnapshot } from "@/lib/proposal-submit-client";
 
 type StudioMode =
   | "edit"
@@ -58,7 +60,8 @@ type StudioMode =
   | "split"
   | "financial"
   | "versions"
-  | "validation";
+  | "validation"
+  | "bilingual";
 
 type ProposalSkill =
   | "rewrite"
@@ -108,6 +111,7 @@ export function ProposalEditorDialog({
   const [compareA, setCompareA] = useState<string>("");
   const [compareB, setCompareB] = useState<string>("");
   const [diffLines, setDiffLines] = useState<string[]>([]);
+  const [counterpartMd, setCounterpartMd] = useState("");
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["proposal", proposalId],
@@ -162,11 +166,13 @@ export function ProposalEditorDialog({
     setInstruction("");
     setBoqRows([]);
     setDiffLines([]);
+    setCounterpartMd("");
   }
   if (!open && activeId) {
     setActiveId(null);
     setDraftMd(null);
     setDraftLocale(null);
+    setCounterpartMd("");
   }
 
   useEffect(() => {
@@ -201,6 +207,14 @@ export function ProposalEditorDialog({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const expectedVersion = data?.proposal?.version;
+      const expectedUpdatedAt = data?.proposal?.updatedAt;
+      if (
+        typeof expectedVersion !== "number" ||
+        typeof expectedUpdatedAt !== "string"
+      ) {
+        throw new Error("Reload the proposal before saving");
+      }
       const res = await fetch(`/api/proposals/${proposalId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -208,6 +222,8 @@ export function ProposalEditorDialog({
           contentMd: markdown,
           locale: propLocale,
           changeLog: "Editor save",
+          expectedVersion,
+          expectedUpdatedAt,
         }),
       });
       if (!res.ok) {
@@ -270,14 +286,32 @@ export function ProposalEditorDialog({
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/proposals/${proposalId}/submit`, {
-        method: "POST",
+      if (!proposalId) throw new Error("Missing proposal");
+      const persistedVersion = data?.proposal?.version;
+      const persistedUpdatedAt = data?.proposal?.updatedAt;
+      if (
+        typeof persistedVersion !== "number" ||
+        typeof persistedUpdatedAt !== "string"
+      ) {
+        throw new Error("Reload the proposal before submitting");
+      }
+      return submitProposalWithStructuredSnapshot({
+        proposalId,
+        currentContentMd: markdown,
+        currentLocale: propLocale,
+        persistedContentMd: data?.proposal?.contentMd ?? "",
+        persistedLocale:
+          data?.proposal?.locale === "en" ? "en" : "ar",
+        persistedVersion,
+        persistedUpdatedAt,
+        hasStructuredSnapshot:
+          data?.proposal?.structuredSnapshot != null,
+        counterpartContentMd: counterpartMd,
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Submit failed");
-      return json;
     },
     onSuccess: (json) => {
+      setDraftMd(null);
+      setDraftLocale(null);
       qc.invalidateQueries({ queryKey: ["proposals"] });
       qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
       refetchValidation();
@@ -337,7 +371,12 @@ export function ProposalEditorDialog({
               : undefined,
       });
     },
-    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
+    onError: (err: Error) => {
+      if (err.message.toLowerCase().includes("counterpart-language")) {
+        setMode("bilingual");
+      }
+      toast({ title: err.message, variant: "destructive" });
+    },
   });
 
   const saveFinancialMutation = useMutation({
@@ -557,6 +596,11 @@ export function ProposalEditorDialog({
                       ShieldCheck,
                       locale === "ar" ? "التحقق" : "Validation",
                     ],
+                    [
+                      "bilingual",
+                      FileText,
+                      locale === "ar" ? "ثنائي اللغة" : "Bilingual",
+                    ],
                   ] as const
                 ).map(([key, Icon, label]) => (
                   <Button
@@ -732,7 +776,73 @@ export function ProposalEditorDialog({
               </Button>
             </div>
 
-            {mode === "financial" ? (
+            {mode === "bilingual" ? (
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                  <p className="text-sm font-medium">
+                    {locale === "ar"
+                      ? "إعداد اللقطة الثنائية للمراجعة"
+                      : "Prepare the bilingual review snapshot"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {propLocale === "ar"
+                      ? locale === "ar"
+                        ? "المسودة العربية في المحرر هي الجانب الأول. أدخل النسخة الإنجليزية الصريحة أدناه؛ لا ينشئ النظام ترجمة تلقائية."
+                        : "The Arabic editor draft is the first side. Enter the explicit English counterpart below; the system does not synthesize a translation."
+                      : locale === "ar"
+                        ? "المسودة الإنجليزية في المحرر هي الجانب الأول. أدخل النسخة العربية الصريحة أدناه؛ لا ينشئ النظام ترجمة تلقائية."
+                        : "The English editor draft is the first side. Enter the explicit Arabic counterpart below; the system does not synthesize a translation."}
+                  </p>
+                  {data?.proposal?.structuredSnapshot != null && (
+                    <Badge variant="outline" className="mt-2">
+                      {locale === "ar"
+                        ? "لقطة منظمة موجودة"
+                        : "Structured snapshot prepared"}
+                    </Badge>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium">
+                    {propLocale === "ar"
+                      ? locale === "ar"
+                        ? "المحتوى الإنجليزي المقابل"
+                        : "English counterpart"
+                      : locale === "ar"
+                        ? "المحتوى العربي المقابل"
+                        : "Arabic counterpart"}
+                  </label>
+                  <Textarea
+                    value={counterpartMd}
+                    onChange={(event) =>
+                      setCounterpartMd(event.target.value)
+                    }
+                    dir={propLocale === "ar" ? "ltr" : "rtl"}
+                    className="min-h-[320px] font-mono text-xs leading-6"
+                    placeholder={
+                      propLocale === "ar"
+                        ? "# English proposal\n\nEnter the complete reviewed counterpart…"
+                        : "# العرض العربي\n\nأدخل النسخة المقابلة الكاملة للمراجعة…"
+                    }
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  disabled={
+                    submitMutation.isPending || !counterpartMd.trim()
+                  }
+                  onClick={() => submitMutation.mutate()}
+                >
+                  {submitMutation.isPending ? (
+                    <Loader2 className="size-3 animate-spin me-1" />
+                  ) : (
+                    <ShieldCheck className="size-3 me-1" />
+                  )}
+                  {locale === "ar"
+                    ? "إنشاء اللقطة والإرسال للمراجعة"
+                    : "Build snapshot and submit for review"}
+                </Button>
+              </div>
+            ) : mode === "financial" ? (
               <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
                 <p className="text-xs text-muted-foreground">
                   {locale === "ar"

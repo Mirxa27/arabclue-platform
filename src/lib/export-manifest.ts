@@ -12,6 +12,14 @@ export type ManifestArtifact = {
   sizeBytes: number;
 };
 
+export const CONTRACT_EXPORT_SAFETY = Object.freeze({
+  legalReviewStatus: "UNREVIEWED" as const,
+  counselReviewRequired: true as const,
+  isExecutable: false as const,
+});
+
+export type ContractExportSafety = typeof CONTRACT_EXPORT_SAFETY;
+
 export type ExportManifest = {
   manifestVersion: "1.0";
   generatorVersion: string;
@@ -36,6 +44,7 @@ export type ExportManifest = {
     issueCodes: string[];
     checkedAt: string;
   };
+  contractSafety?: ContractExportSafety;
   artifacts: ManifestArtifact[];
   humanAuthorityNotice: string;
 };
@@ -65,6 +74,8 @@ export function buildExportManifest(opts: {
   };
   validation: ValidationReport;
   artifacts: { name: string; type: string; bytes: Buffer }[];
+  generatedAt?: Date | string;
+  contractSafety?: ContractExportSafety;
 }): ExportManifest {
   const issueCodes = opts.validation.issues.map((i) => i.code);
   const hasWarn = opts.validation.issues.some((i) => i.severity === "warning");
@@ -74,7 +85,12 @@ export function buildExportManifest(opts: {
   return {
     manifestVersion: "1.0",
     generatorVersion: GENERATOR_VERSION,
-    generatedAt: new Date().toISOString(),
+    generatedAt:
+      opts.generatedAt instanceof Date
+        ? opts.generatedAt.toISOString()
+        : typeof opts.generatedAt === "string"
+          ? new Date(opts.generatedAt).toISOString()
+          : new Date().toISOString(),
     tender: {
       projectId: opts.project.id,
       title: opts.project.title,
@@ -101,6 +117,16 @@ export function buildExportManifest(opts: {
       issueCodes,
       checkedAt: opts.validation.checkedAt,
     },
+    ...(opts.contractSafety === undefined
+      ? {}
+      : {
+          contractSafety: {
+            legalReviewStatus: opts.contractSafety.legalReviewStatus,
+            counselReviewRequired:
+              opts.contractSafety.counselReviewRequired,
+            isExecutable: opts.contractSafety.isExecutable,
+          },
+        }),
     artifacts: opts.artifacts.map((a) => ({
       name: a.name,
       type: a.type,
