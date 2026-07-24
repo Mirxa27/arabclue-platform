@@ -1,62 +1,55 @@
-# Task 6 Report: Autopilot project enrichment from tender facts
+# Task 6 Report: Qualification dossier CTAs + onboarding CRUD polish
 
 ## Status
 
-Implemented and verified on branch `cursor/saudi-contract-remaining-ab64`.
+Implemented and verified on branch `cursor/remaining-gaps-sdd-ab64`.
 
 ## Summary
 
-Autopilot project creation now reads parsed tender entities from the ingested `UploadedDocument.extractedEntities` JSON before creating a new `TenderProject`. When high-confidence RFP ingest creates a project, the payload is enriched with available structured tender facts instead of only using filename/date title and hard-coded `IT`.
+Account onboarding now turns Saudi qualification dossier gaps into direct CTAs, improves CRUD feedback for onboarding data entry, and allows approval-chain steps to be reordered or deleted through the existing approval policy API.
 
 ## Changes
 
-- Extended `IngestionEntities` with optional `project` metadata:
-  - `title`
-  - `titleAr`
-  - `etimadRef`
-  - `category`
-  - `budget`
-  - `currency`
-  - `submissionDeadline`
-  - `saudizationTarget`
-  - `localContentTarget`
-- Added deterministic tender-fact extraction in `parseTenderText()` for labeled RFP fields:
-  - title/project/tender name labels
-  - Etimad/reference labels
-  - category/sector labels and strong category cues
-  - budget/value labels with SAR/USD/EUR handling
-  - submission deadline/closing date labels
-  - Saudization target
-  - tender-stated local-content preference via the existing local-content parser
-- Updated `maybeAutopilotAfterIngest()` to load ingested entities for the document when creating a new project.
-- Added `buildAutopilotProjectCreateData()` as the tested payload builder used by actual autopilot project creation.
-- Preserved fallback behavior:
-  - title falls back to classifier suggested title, then `Tender YYYY-MM-DD`
-  - category falls back to `IT`
-  - missing Etimad/deadline/budget/targets stay null/undefined instead of being invented
+- Added a `QualificationGap.key` to CTA map for:
+  - CR
+  - ZATCA VAT
+  - GOSI
+  - NCA
+  - LCGPA
+  - ISO
+- Dossier gap CTAs now:
+  - preselect the matching certificate type when relevant
+  - scroll to the matching legal/certificate form section
+  - focus the matching CR, VAT, or certificate-name input
+- Added success/error toasts for:
+  - legal workspace save failures
+  - certificate add/delete
+  - staff add/delete
+  - methodology/library/partnership add/delete through `SimpleCrudPanel`
+  - approval-chain updates
+- Added `EmptyState` rendering for empty certificate, staff, generic CRUD, and approval-chain lists.
+- Added approval-chain Up, Down, and Delete controls.
+- Approval-chain add/reorder/delete actions all rewrite the steps array and persist via `PUT /api/approval-policy`.
+
+## Files Changed
+
+- `src/components/dashboard/account-onboarding.tsx`
+- `.superpowers/sdd/task-6-report.md`
 
 ## Tests Added
 
-- `src/lib/__tests__/autopilot.test.ts`
-  - RFP text with Etimad-like fields parses into an enriched `TenderProject` create payload.
-  - Missing parsed facts fall back to suggested title and `IT`.
+No new tests were added. The change is a client UI behavior update with no new pure helper exported for unit testing.
 
 ## Verification
 
-- `bun test src/lib/__tests__/autopilot.test.ts`
-  - 4 pass, 0 fail
-- `bun run test`
-  - 187 pass, 0 fail
 - `bunx tsc --noEmit`
   - pass
-- `bun run lint`
-  - pass with 0 errors and 6 existing warnings in unrelated UI files:
-    - `src/components/admin/ai-providers.tsx`
-    - `src/components/dashboard/agent-workflow.tsx`
-    - `src/components/dashboard/business-profile-view.tsx`
-    - `src/components/dashboard/settings-panel.tsx`
+- `bunx eslint "src/components/dashboard/account-onboarding.tsx"`
+  - pass
+- `bun run test`
+  - 201 pass, 0 fail
 
 ## Concerns / Notes
 
-- `TenderProject` has no SLA-specific columns, so tender SLA remains preserved in parsed ingestion entities and downstream agent context rather than being copied onto the project row.
-- Budget extraction is intentionally label-driven to avoid treating arbitrary monetary amounts in RFP prose as project budgets.
+- No browser walkthrough was recorded because this subagent environment does not expose a computer-use/browser interaction tool. Verification was completed with TypeScript, focused ESLint, and the existing Bun test suite.
+- `src/components/dashboard/platform-agent-console.tsx` was not modified.

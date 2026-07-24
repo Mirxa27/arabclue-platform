@@ -5,6 +5,8 @@ import { useLocale, useUI } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
+  ArrowDown,
+  ArrowUp,
   Building2,
   CheckCircle2,
   Circle,
@@ -28,10 +30,12 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { BrandSetup } from "./brand-setup";
-import { Panel } from "@/components/patterns";
+import { EmptyState, Panel } from "@/components/patterns";
 import {
   CERTIFICATE_TYPES,
   assessQualificationDossier,
+  type CertificateType,
+  type QualificationDocKey,
 } from "@/lib/qualification";
 
 type StepKey =
@@ -58,6 +62,89 @@ const STEPS: { key: StepKey; icon: typeof Building2; en: string; ar: string }[] 
   { key: "approvalChain", icon: GitBranch, en: "Approvals", ar: "الاعتماد" },
   { key: "restrictions", icon: AlertTriangle, en: "Restrictions", ar: "القيود" },
 ];
+
+type GapAction = {
+  viewHint: StepKey;
+  certType?: CertificateType;
+  scrollId: string;
+  focusId: string;
+  ctaEn: string;
+  ctaAr: string;
+};
+
+const QUALIFICATION_GAP_ACTIONS: Record<QualificationDocKey, GapAction> = {
+  cr: {
+    viewHint: "legal",
+    certType: "CR",
+    scrollId: "legal-cr-number",
+    focusId: "legal-cr-number",
+    ctaEn: "Add CR",
+    ctaAr: "إضافة السجل",
+  },
+  zatca_vat: {
+    viewHint: "legal",
+    certType: "ZATCA_VAT",
+    scrollId: "legal-vat-number",
+    focusId: "legal-vat-number",
+    ctaEn: "Add VAT",
+    ctaAr: "إضافة الضريبة",
+  },
+  gosi: {
+    viewHint: "legal",
+    certType: "GOSI",
+    scrollId: "certificate-form",
+    focusId: "certificate-name",
+    ctaEn: "Add GOSI",
+    ctaAr: "إضافة GOSI",
+  },
+  nca: {
+    viewHint: "legal",
+    certType: "NCA",
+    scrollId: "certificate-form",
+    focusId: "certificate-name",
+    ctaEn: "Add NCA",
+    ctaAr: "إضافة NCA",
+  },
+  lcgpa: {
+    viewHint: "legal",
+    certType: "LCGPA",
+    scrollId: "certificate-form",
+    focusId: "certificate-name",
+    ctaEn: "Add LCGPA",
+    ctaAr: "إضافة LCGPA",
+  },
+  iso: {
+    viewHint: "legal",
+    certType: "ISO",
+    scrollId: "certificate-form",
+    focusId: "certificate-name",
+    ctaEn: "Add ISO",
+    ctaAr: "إضافة ISO",
+  },
+};
+
+function apiErrorMessage(err: unknown, fallback: string) {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
+async function assertOk(res: Response) {
+  if (res.ok) return;
+  const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+  throw new Error(payload?.error ?? "Request failed");
+}
+
+function scrollAndFocus(scrollId: string, focusId: string) {
+  window.setTimeout(() => {
+    document.getElementById(scrollId)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    const focusEl = document.getElementById(focusId);
+    if (focusEl instanceof HTMLElement) {
+      focusEl.focus({ preventScroll: true });
+    }
+  }, 0);
+}
 
 export function AccountOnboarding() {
   const { locale } = useLocale();
@@ -214,11 +301,17 @@ function LegalPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ crNumber: cr || null, vatNumber: vat || null }),
       });
-      if (!res.ok) throw new Error((await res.json()).error);
+      await assertOk(res);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["onboarding"] });
       toast({ title: locale === "ar" ? "تم الحفظ" : "Saved" });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(err, locale === "ar" ? "تعذر الحفظ" : "Save failed"),
+        variant: "destructive",
+      });
     },
   });
 
@@ -233,22 +326,48 @@ function LegalPanel({
           expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).error);
+      await assertOk(res);
     },
     onSuccess: () => {
       setCertName("");
+      setExpiresAt("");
       qc.invalidateQueries({ queryKey: ["certificates"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      toast({
+        title: locale === "ar" ? "تمت إضافة الشهادة" : "Certificate added",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذرت إضافة الشهادة" : "Could not add certificate"
+        ),
+        variant: "destructive",
+      });
     },
   });
 
   const delCert = useMutation({
     mutationFn: async (id: string) => {
-      await fetch(`/api/certificates?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/certificates?id=${id}`, { method: "DELETE" });
+      await assertOk(res);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["certificates"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      toast({
+        title: locale === "ar" ? "تم حذف الشهادة" : "Certificate deleted",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذر حذف الشهادة" : "Could not delete certificate"
+        ),
+        variant: "destructive",
+      });
     },
   });
 
@@ -262,17 +381,31 @@ function LegalPanel({
     }>,
   });
 
+  const certificates = (data?.items ?? []) as Array<{
+    id: string;
+    name: string;
+    certType: string;
+    expiresAt?: string;
+  }>;
+
+  const handleGapAction = (key: QualificationDocKey) => {
+    const action = QUALIFICATION_GAP_ACTIONS[key];
+    if (action.viewHint !== "legal") return;
+    if (action.certType) setCertType(action.certType);
+    scrollAndFocus(action.scrollId, action.focusId);
+  };
+
   return (
     <div className="grid lg:grid-cols-2 gap-4">
       <Panel icon={Shield} title={locale === "ar" ? "السجل التجاري والضريبة" : "CR & VAT"}>
         <div className="space-y-3 p-4">
           <div>
             <Label>CR</Label>
-            <Input value={cr} onChange={(e) => setCr(e.target.value)} />
+            <Input id="legal-cr-number" value={cr} onChange={(e) => setCr(e.target.value)} />
           </div>
           <div>
             <Label>{locale === "ar" ? "ضريبة زاتكا / VAT" : "ZATCA VAT"}</Label>
-            <Input value={vat} onChange={(e) => setVat(e.target.value)} />
+            <Input id="legal-vat-number" value={vat} onChange={(e) => setVat(e.target.value)} />
           </div>
           <Button onClick={() => saveLegal.mutate()} disabled={saveLegal.isPending}>
             {locale === "ar" ? "حفظ" : "Save"}
@@ -281,9 +414,15 @@ function LegalPanel({
       </Panel>
       <Panel icon={Shield} title={locale === "ar" ? "الشهادات والتراخيص" : "Certificates & licenses"}>
         <div className="space-y-3 p-4">
-          <div className="grid grid-cols-2 gap-2">
-            <Input placeholder="Name" value={certName} onChange={(e) => setCertName(e.target.value)} />
+          <div id="certificate-form" className="grid grid-cols-2 gap-2">
+            <Input
+              id="certificate-name"
+              placeholder={locale === "ar" ? "اسم الشهادة" : "Name"}
+              value={certName}
+              onChange={(e) => setCertName(e.target.value)}
+            />
             <select
+              id="certificate-type"
               className="border rounded-md h-9 px-2 text-sm bg-background"
               value={certType}
               onChange={(e) => setCertType(e.target.value)}
@@ -298,24 +437,42 @@ function LegalPanel({
             </Button>
           </div>
           <Separator />
-          <ul className="space-y-2">
-            {(data?.items ?? []).map((c: { id: string; name: string; certType: string; expiresAt?: string }) => (
-              <li key={c.id} className="flex items-center justify-between text-sm gap-2">
-                <span>
-                  <Badge variant="outline" className="me-2">{c.certType}</Badge>
-                  {c.name}
-                  {c.expiresAt && (
-                    <span className="text-muted-foreground ms-2">
-                      {new Date(c.expiresAt).toLocaleDateString()}
-                    </span>
-                  )}
-                </span>
-                <Button size="icon" variant="ghost" onClick={() => delCert.mutate(c.id)}>
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </li>
-            ))}
-          </ul>
+          {certificates.length === 0 ? (
+            <EmptyState
+              icon={Shield}
+              title={locale === "ar" ? "لا توجد شهادات بعد" : "No certificates yet"}
+              description={
+                locale === "ar"
+                  ? "أضف السجل أو شهادات GOSI وNCA وLCGPA عند توفرها."
+                  : "Add CR or GOSI, NCA, and LCGPA certificates when available."
+              }
+              className="rounded-md border border-dashed"
+            />
+          ) : (
+            <ul className="space-y-2">
+              {certificates.map((c) => (
+                <li key={c.id} className="flex items-center justify-between text-sm gap-2">
+                  <span>
+                    <Badge variant="outline" className="me-2">{c.certType}</Badge>
+                    {c.name}
+                    {c.expiresAt && (
+                      <span className="text-muted-foreground ms-2">
+                        {new Date(c.expiresAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => delCert.mutate(c.id)}
+                    disabled={delCert.isPending}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </Panel>
       <Panel
@@ -356,21 +513,35 @@ function LegalPanel({
             </p>
           ) : (
             <ul className="space-y-1.5">
-              {dossier.gaps.map((g) => (
-                <li key={g.key} className="flex items-start gap-2 text-xs">
-                  <Badge variant="outline" className="shrink-0 text-[10px]">
-                    {g.reason}
-                  </Badge>
-                  <span>
-                    {locale === "ar" ? g.labelAr : g.labelEn}
-                    {g.requiredForStrongBid
-                      ? locale === "ar"
-                        ? " · أساسي"
-                        : " · core"
-                      : ""}
-                  </span>
-                </li>
-              ))}
+              {dossier.gaps.map((g) => {
+                const action = QUALIFICATION_GAP_ACTIONS[g.key];
+                return (
+                  <li key={g.key} className="flex items-start gap-2 text-xs">
+                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                      {g.reason}
+                    </Badge>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <span className="block">
+                        {locale === "ar" ? g.labelAr : g.labelEn}
+                        {g.requiredForStrongBid
+                          ? locale === "ar"
+                            ? " · أساسي"
+                            : " · core"
+                          : ""}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 px-2 text-[11px]"
+                        onClick={() => handleGapAction(g.key)}
+                      >
+                        {locale === "ar" ? action.ctaAr : action.ctaEn}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -382,6 +553,7 @@ function LegalPanel({
 function StaffPanel() {
   const { locale } = useLocale();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [name, setName] = useState("");
   const [roleTitle, setRoleTitle] = useState("");
   const [tags, setTags] = useState("");
@@ -402,7 +574,7 @@ function StaffPanel() {
           requirementTags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).error);
+      await assertOk(res);
     },
     onSuccess: () => {
       setName("");
@@ -410,18 +582,45 @@ function StaffPanel() {
       setTags("");
       qc.invalidateQueries({ queryKey: ["staff"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      toast({ title: locale === "ar" ? "تمت إضافة عضو الفريق" : "Staff member added" });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذرت إضافة عضو الفريق" : "Could not add staff member"
+        ),
+        variant: "destructive",
+      });
     },
   });
 
   const del = useMutation({
     mutationFn: async (id: string) => {
-      await fetch(`/api/staff?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/staff?id=${id}`, { method: "DELETE" });
+      await assertOk(res);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      toast({ title: locale === "ar" ? "تم حذف عضو الفريق" : "Staff member deleted" });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذر حذف عضو الفريق" : "Could not delete staff member"
+        ),
+        variant: "destructive",
+      });
     },
   });
+
+  const staff = (data?.items ?? []) as Array<{
+    id: string;
+    name: string;
+    roleTitle: string;
+  }>;
 
   return (
     <Panel icon={Users} title={locale === "ar" ? "رأس المال البشري" : "Human capital"}>
@@ -435,16 +634,34 @@ function StaffPanel() {
           <Plus className="size-4 me-1" />
           {locale === "ar" ? "إضافة" : "Add"}
         </Button>
-        <ul className="space-y-2">
-          {(data?.items ?? []).map((s: { id: string; name: string; roleTitle: string }) => (
-            <li key={s.id} className="flex justify-between text-sm">
-              <span>{s.name} — {s.roleTitle}</span>
-              <Button size="icon" variant="ghost" onClick={() => del.mutate(s.id)}>
-                <Trash2 className="size-3.5" />
-              </Button>
-            </li>
-          ))}
-        </ul>
+        {staff.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title={locale === "ar" ? "لا يوجد أعضاء فريق بعد" : "No staff yet"}
+            description={
+              locale === "ar"
+                ? "أضف الخبراء والأدوار لتقوية ملف التأهيل."
+                : "Add experts and roles to strengthen the qualification profile."
+            }
+            className="rounded-md border border-dashed"
+          />
+        ) : (
+          <ul className="space-y-2">
+            {staff.map((s) => (
+              <li key={s.id} className="flex justify-between text-sm">
+                <span>{s.name} — {s.roleTitle}</span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => del.mutate(s.id)}
+                  disabled={del.isPending}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </Panel>
   );
@@ -465,6 +682,7 @@ function SimpleCrudPanel({
 }) {
   const { locale } = useLocale();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [form, setForm] = useState<Record<string, string>>({});
 
   const { data } = useQuery({
@@ -481,24 +699,61 @@ function SimpleCrudPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await res.json()).error);
+      await assertOk(res);
     },
     onSuccess: () => {
       setForm({});
       qc.invalidateQueries({ queryKey: [queryKey] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      toast({
+        title:
+          locale === "ar"
+            ? `تمت إضافة ${titleAr}`
+            : `${titleEn} item added`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? `تعذرت إضافة ${titleAr}` : `Could not add ${titleEn} item`
+        ),
+        variant: "destructive",
+      });
     },
   });
 
   const del = useMutation({
     mutationFn: async (id: string) => {
-      await fetch(`${endpoint}?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`${endpoint}?id=${id}`, { method: "DELETE" });
+      await assertOk(res);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [queryKey] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      toast({
+        title:
+          locale === "ar"
+            ? `تم حذف ${titleAr}`
+            : `${titleEn} item deleted`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? `تعذر حذف ${titleAr}` : `Could not delete ${titleEn} item`
+        ),
+        variant: "destructive",
+      });
     },
   });
+
+  const items = (data?.items ?? []) as Array<{
+    id: string;
+    title?: string;
+    name?: string;
+  }>;
 
   return (
     <Panel icon={Library} title={locale === "ar" ? titleAr : titleEn}>
@@ -535,16 +790,38 @@ function SimpleCrudPanel({
           <Plus className="size-4 me-1" />
           {locale === "ar" ? "إضافة" : "Add"}
         </Button>
-        <ul className="space-y-2">
-          {(data?.items ?? []).map((item: { id: string; title?: string; name?: string }) => (
-            <li key={item.id} className="flex justify-between text-sm">
-              <span>{item.title ?? item.name}</span>
-              <Button size="icon" variant="ghost" onClick={() => del.mutate(item.id)}>
-                <Trash2 className="size-3.5" />
-              </Button>
-            </li>
-          ))}
-        </ul>
+        {items.length === 0 ? (
+          <EmptyState
+            icon={Library}
+            title={
+              locale === "ar"
+                ? `لا توجد عناصر في ${titleAr}`
+                : `No ${titleEn.toLowerCase()} items yet`
+            }
+            description={
+              locale === "ar"
+                ? "أضف أول عنصر لاستخدامه في تجهيز العطاءات."
+                : "Add the first item so it can support proposal preparation."
+            }
+            className="rounded-md border border-dashed"
+          />
+        ) : (
+          <ul className="space-y-2">
+            {items.map((item) => (
+              <li key={item.id} className="flex justify-between text-sm">
+                <span>{item.title ?? item.name}</span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => del.mutate(item.id)}
+                  disabled={del.isPending}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </Panel>
   );
@@ -643,25 +920,137 @@ function SectorsPanel() {
 function ApprovalPanel() {
   const { locale } = useLocale();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const { data } = useQuery({
     queryKey: ["approval-policy"],
     queryFn: async () => (await fetch("/api/approval-policy")).json(),
   });
   const [reviewerId, setReviewerId] = useState("");
 
-  const members = data?.members ?? [];
-  const steps = data?.policy?.steps ?? [];
+  const members = (data?.members ?? []) as Array<{
+    userId: string;
+    user: { name: string | null; email: string };
+  }>;
+  const steps = (data?.policy?.steps ?? []) as Array<{
+    id: string;
+    stepIndex: number;
+    stepRole: "TECHNICAL" | "FINAL";
+    reviewer: { id: string; name: string | null; email: string };
+  }>;
+
+  const savePolicy = useMutation({
+    mutationFn: async (
+      nextSteps: Array<{ reviewerId: string; stepRole: "TECHNICAL" | "FINAL" }>
+    ) => {
+      const res = await fetch("/api/approval-policy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ steps: nextSteps }),
+      });
+      await assertOk(res);
+    },
+    onSuccess: () => {
+      setReviewerId("");
+      qc.invalidateQueries({ queryKey: ["approval-policy"] });
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+      toast({
+        title: locale === "ar" ? "تم تحديث سلسلة الاعتماد" : "Approval chain updated",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذر تحديث سلسلة الاعتماد" : "Could not update approval chain"
+        ),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const persistReviewerIds = (reviewerIds: string[]) => {
+    savePolicy.mutate(
+      reviewerIds.map((id, i, arr) => ({
+        reviewerId: id,
+        stepRole: i === arr.length - 1 ? "FINAL" : "TECHNICAL",
+      }))
+    );
+  };
 
   return (
     <Panel icon={GitBranch} title={locale === "ar" ? "سلسلة الاعتماد" : "Approval chain"}>
       <div className="p-4 space-y-3">
-        <ol className="space-y-2 text-sm">
-          {steps.map((s: { id: string; stepIndex: number; stepRole: string; reviewer: { name: string; email: string } }) => (
-            <li key={s.id}>
-              {s.stepIndex + 1}. {s.reviewer.name} ({s.stepRole}) — {s.reviewer.email}
-            </li>
-          ))}
-        </ol>
+        {steps.length === 0 ? (
+          <EmptyState
+            icon={GitBranch}
+            title={locale === "ar" ? "لا توجد خطوات اعتماد" : "No approval steps"}
+            description={
+              locale === "ar"
+                ? "اختر مراجعاً لإضافة أول خطوة في السلسلة."
+                : "Select a reviewer to add the first step in the chain."
+            }
+            className="rounded-md border border-dashed"
+          />
+        ) : (
+          <ol className="space-y-2 text-sm">
+            {steps.map((s, index) => {
+              const reviewerIds = steps.map((step) => step.reviewer.id);
+              return (
+                <li
+                  key={s.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2"
+                >
+                  <span>
+                    {index + 1}. {s.reviewer.name ?? s.reviewer.email} ({s.stepRole}) —{" "}
+                    {s.reviewer.email}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        const next = [...reviewerIds];
+                        [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                        persistReviewerIds(next);
+                      }}
+                      disabled={index === 0 || savePolicy.isPending}
+                      aria-label={locale === "ar" ? "تحريك للأعلى" : "Move up"}
+                    >
+                      <ArrowUp className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        const next = [...reviewerIds];
+                        [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                        persistReviewerIds(next);
+                      }}
+                      disabled={index === steps.length - 1 || savePolicy.isPending}
+                      aria-label={locale === "ar" ? "تحريك للأسفل" : "Move down"}
+                    >
+                      <ArrowDown className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() =>
+                        persistReviewerIds(reviewerIds.filter((_, i) => i !== index))
+                      }
+                      disabled={savePolicy.isPending}
+                      aria-label={locale === "ar" ? "حذف الخطوة" : "Delete step"}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
         <div className="flex gap-2">
           <select
             className="border rounded-md h-9 px-2 text-sm bg-background flex-1"
@@ -669,38 +1058,18 @@ function ApprovalPanel() {
             onChange={(e) => setReviewerId(e.target.value)}
           >
             <option value="">{locale === "ar" ? "اختر مراجعاً" : "Select reviewer"}</option>
-            {members.map((m: { userId: string; user: { name: string; email: string } }) => (
+            {members.map((m) => (
               <option key={m.userId} value={m.userId}>
-                {m.user.name} ({m.user.email})
+                {m.user.name ?? m.user.email} ({m.user.email})
               </option>
             ))}
           </select>
           <Button
-            onClick={async () => {
+            onClick={() => {
               if (!reviewerId) return;
-              const payload = {
-                steps: [
-                  ...steps.map((s: { reviewer: { id: string } }) => ({
-                    reviewerId: s.reviewer.id,
-                    stepRole: "TECHNICAL" as const,
-                  })),
-                  { reviewerId, stepRole: "FINAL" as const },
-                ].map((s, i, arr) => ({
-                  ...s,
-                  stepRole: (i === arr.length - 1 ? "FINAL" : "TECHNICAL") as
-                    | "FINAL"
-                    | "TECHNICAL",
-                })),
-              };
-              await fetch("/api/approval-policy", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-              });
-              setReviewerId("");
-              qc.invalidateQueries({ queryKey: ["approval-policy"] });
-              qc.invalidateQueries({ queryKey: ["onboarding"] });
+              persistReviewerIds([...steps.map((s) => s.reviewer.id), reviewerId]);
             }}
+            disabled={!reviewerId || savePolicy.isPending}
           >
             <Plus className="size-4" />
           </Button>
