@@ -26,6 +26,7 @@ import { apiJson } from "@/lib/api-client";
 import type { ApiProposal } from "@/lib/api-types";
 import { BilingualContractStudio } from "./contract-studio";
 import { DocumentPreviewFrame } from "./document-preview-frame";
+import { EmptyState, QueryState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import type { ContractArticle } from "@/lib/contract-format";
@@ -61,7 +62,7 @@ export function ContractsPanel() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["proposals", activeProjectId],
     queryFn: () =>
       apiJson<{ proposals: ApiProposal[] }>(
@@ -142,35 +143,47 @@ export function ContractsPanel() {
         </div>
       </Card>
 
-      {isLoading ? (
-        <ListSkeleton rows={3} />
-      ) : isError ? (
-        <Card className="p-6 text-center space-y-2">
-          <p className="text-sm text-destructive">
-            {ar ? "تعذّر تحميل العقود" : "Could not load contracts"}
-          </p>
-          <Button size="sm" variant="outline" onClick={() => void refetch()}>
-            {ar ? "إعادة المحاولة" : "Retry"}
-          </Button>
-        </Card>
-      ) : contracts.length === 0 ? (
-        <Card className="p-10 text-center border-dashed">
-          <FileText className="size-8 mx-auto text-muted-foreground/50" />
-          <p className="mt-3 text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-            {ar
-              ? "لا مسودات عقود بعد. 1) أنشئ مناقصة 2) ارفع الكراسة 3) شغّل الوكلاء — المرحلة 6 تصوغ العقد."
-              : "No contract drafts yet. 1) Set up a tender 2) Upload the RFP 3) Run agents — stage 6 drafts the contract."}
-          </p>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setView("projects")}>
-              {ar ? "المشاريع" : "Projects"}
-            </Button>
-            <Button size="sm" onClick={() => setView("agents")}>
-              {ar ? "الوكلاء" : "Agents"}
-            </Button>
-          </div>
-        </Card>
-      ) : (
+      <QueryState
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={
+          error instanceof Error
+            ? error.message
+            : ar
+              ? "تعذّر تحميل العقود"
+              : "Could not load contracts"
+        }
+        isEmpty={contracts.length === 0}
+        onRetry={() => void refetch()}
+        locale={locale}
+        loading={<ListSkeleton rows={3} />}
+        empty={
+          <Card className="border-dashed">
+            <EmptyState
+              icon={FileText}
+              title={
+                ar ? "لا مسودات عقود بعد" : "No contract drafts yet"
+              }
+              description={
+                ar
+                  ? "1) أنشئ مناقصة 2) ارفع الكراسة 3) شغّل الوكلاء — المرحلة 6 تصوغ العقد."
+                  : "1) Set up a tender 2) Upload the RFP 3) Run agents — stage 6 drafts the contract."
+              }
+              action={
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setView("projects")}>
+                    {ar ? "المشاريع" : "Projects"}
+                  </Button>
+                  <Button size="sm" onClick={() => setView("agents")}>
+                    {ar ? "الوكلاء" : "Agents"}
+                  </Button>
+                </div>
+              }
+              className="max-w-md mx-auto"
+            />
+          </Card>
+        }
+      >
         <div className="grid gap-3">
           {contracts.map((c) => {
             const canSubmit = ![
@@ -275,7 +288,7 @@ export function ContractsPanel() {
             );
           })}
         </div>
-      )}
+      </QueryState>
 
       <Dialog open={Boolean(openId)} onOpenChange={(o) => !o && setOpenId(null)}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0">

@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { DocCategory } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
+import { EmptyState, QueryState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
 
 function fileIcon(name: string, mime: string) {
@@ -149,24 +150,21 @@ export function DocumentMatrix() {
       </div>
 
       <div className="max-h-96 overflow-y-auto scrollbar-thin">
-        {isLoading ? (
-          <ListSkeleton rows={4} />
-        ) : isError ? (
-          <div className="p-8 text-center space-y-2">
-            <AlertCircle className="size-8 text-destructive/50 mx-auto" />
-            <p className="text-xs text-destructive">
-              {error instanceof Error ? error.message : "Error"}
-            </p>
-            <Button size="sm" variant="outline" onClick={() => refetch()}>
-              {locale === "ar" ? "إعادة المحاولة" : "Retry"}
-            </Button>
-          </div>
-        ) : docs.length === 0 ? (
-          <div className="p-8 text-center">
-            <FileText className="size-8 text-muted-foreground/40 mx-auto mb-2" />
-            <p className="text-xs text-muted-foreground">{tr("no_data", locale)}</p>
-          </div>
-        ) : (
+        <QueryState
+          isLoading={isLoading}
+          isError={isError}
+          errorMessage={error instanceof Error ? error.message : undefined}
+          isEmpty={docs.length === 0}
+          onRetry={() => refetch()}
+          locale={locale}
+          loading={<ListSkeleton rows={3} />}
+          empty={
+            <EmptyState
+              icon={FileText}
+              title={tr("no_data", locale)}
+            />
+          }
+        >
           <Table>
             <TableHeader className="sticky top-0 bg-card z-10">
               <TableRow className="hover:bg-transparent">
@@ -289,7 +287,7 @@ export function DocumentMatrix() {
               })}
             </TableBody>
           </Table>
-        )}
+        </QueryState>
       </div>
     </Card>
   );

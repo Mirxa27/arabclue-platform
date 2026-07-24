@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { ApiDocument, ApiDocumentVersion } from "@/lib/api-types";
+import { EmptyState, QueryState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
 
 function fileIcon(name: string) {
@@ -54,7 +55,7 @@ export function VersionHistory() {
     b: number;
   } | null>(null);
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["documents"],
     queryFn: async () => {
       const res = await fetch("/api/documents");
@@ -155,21 +156,27 @@ export function VersionHistory() {
       )}
 
       <ScrollArea className="max-h-96">
-        {isLoading ? (
-          <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-            <Loader2 className="size-4 animate-spin" />
-            {tr("loading", locale)}
-          </div>
-        ) : isError ? (
-          <div className="p-8 text-center text-xs text-destructive">
-            {locale === "ar" ? "تعذر تحميل الإصدارات" : "Failed to load versions"}
-          </div>
-        ) : docs.length === 0 ? (
-          <div className="p-8 text-center">
-            <History className="size-8 text-muted-foreground/40 mx-auto mb-2" />
-            <p className="text-xs text-muted-foreground">{tr("no_data", locale)}</p>
-          </div>
-        ) : (
+        <QueryState
+          isLoading={isLoading}
+          isError={isError}
+          errorMessage={
+            error instanceof Error
+              ? error.message
+              : locale === "ar"
+                ? "تعذر تحميل الإصدارات"
+                : "Failed to load versions"
+          }
+          isEmpty={docs.length === 0}
+          onRetry={() => refetch()}
+          locale={locale}
+          loading={<ListSkeleton rows={3} />}
+          empty={
+            <EmptyState
+              icon={History}
+              title={tr("no_data", locale)}
+            />
+          }
+        >
           <div className="p-4 space-y-4">
             {docs.map((d) => {
               const Icon = fileIcon(d.originalName);
@@ -274,7 +281,7 @@ export function VersionHistory() {
               );
             })}
           </div>
-        )}
+        </QueryState>
       </ScrollArea>
 
       <Dialog open={!!compare} onOpenChange={(o) => !o && setCompare(null)}>
