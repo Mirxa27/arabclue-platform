@@ -50,6 +50,14 @@ export const t: Dict = {
   stat_proposals_generated: { ar: "العطاءات المُنشأة", en: "Proposals Generated" },
   stat_compliance_score: { ar: "متوسط الامتثال", en: "Avg Compliance" },
   stat_documents_processed: { ar: "المستندات المعالجة", en: "Documents Processed" },
+  stat_trend_vs_prior_7d: {
+    ar: "مقارنة بآخر 7 أيام (نشاط جديد)",
+    en: "vs prior 7 days (new activity)",
+  },
+  stat_trend_tooltip: {
+    ar: "نسبة التغيّر في النشاط الجديد خلال آخر 7 أيام مقارنة بالـ 7 أيام السابقة — لا تعكس الرقم الإجمالي أعلاه",
+    en: "Change in new activity over the last 7 days vs the prior 7 days — not the total shown above",
+  },
 
   // File ingestion
   ingest_title: { ar: "أسحب وأفلت ملفات المناقصة هنا", en: "Drag & drop tender files here" },

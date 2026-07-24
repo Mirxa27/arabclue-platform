@@ -4,3 +4,8 @@ export function trendPct(current: number, previous: number): number | null {
 
   return Math.round(((current - previous) / previous) * 100);
 }
+
+/** Coerce missing/undefined API trend values to null so UI never fabricates arrows. */
+export function resolveTrend(value: number | null | undefined): number | null {
+  return value ?? null;
+}

@@ -51,3 +51,27 @@ Status: DONE
 - Notification dismissals are intentionally local to the browser via localStorage. There is no server-side read state, per the task scope.
 - Billing retry uses the active subscription plan when present. For failed records without an active subscription, it falls back to checkout metadata from the failed billing record when available.
 - `account-onboarding.tsx` was not edited.
+
+## Follow-up fix (KPI trend semantics)
+
+Status: DONE
+
+### Problem
+
+Stat card primary values (e.g. `activeProjects`, `avgCompliance`, lifetime totals) did not match what `trends.*` measures (new counts / period scores for last 7d vs prior 7d), so trend arrows could mislead.
+
+### Fix
+
+- Chose **approach 1**: clarify trend copy instead of hiding trends on mismatched cards.
+- Added bilingual i18n keys:
+  - `stat_trend_vs_prior_7d` — visible subtitle when a trend badge is shown.
+  - `stat_trend_tooltip` — full explanation on hover over the trend badge.
+- Updated `StatCards` to show subtitle + tooltip whenever a non-null trend is present.
+- Added `resolveTrend()` in `src/lib/stats-trends.ts` and wired stat cards through `data?.trends?.…` so missing/null/undefined trends never render fabricated arrows.
+- Extended `stats-trends.test.ts` with `resolveTrend` coverage.
+
+### Verification
+
+- `bun test src/lib/__tests__/stats-trends.test.ts` → 5 pass, 0 fail.
+- `bunx tsc --noEmit` → pass.
+- Commit: `fix(stats): clarify KPI trend semantics vs prior 7d`
