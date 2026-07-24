@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -46,8 +46,37 @@ const FONT_OPTIONS = [
   "Inter",
 ];
 
+const DEFAULT_FONT_FAMILY = FONT_OPTIONS[0];
+
+interface BrandDraft {
+  id: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  fontFamily: string;
+  tagline: string;
+  taglineAr: string;
+  vision2030Alignment: string;
+  logoUrl: string;
+}
+
+function createBrandDraft(brand: BrandData): BrandDraft {
+  return {
+    id: brand.id,
+    primaryColor: brand.primaryColor,
+    secondaryColor: brand.secondaryColor,
+    accentColor: brand.accentColor,
+    fontFamily: brand.fontFamily ?? DEFAULT_FONT_FAMILY,
+    tagline: brand.tagline ?? "",
+    taglineAr: brand.taglineAr ?? "",
+    vision2030Alignment: brand.vision2030Alignment ?? "thriving-economy",
+    logoUrl: brand.logoUrl ?? "",
+  };
+}
+
 export function BrandSetup() {
   const { locale } = useLocale();
+  const [draft, setDraft] = useState<BrandDraft | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["brand"],
@@ -60,6 +89,28 @@ export function BrandSetup() {
   const brand = data?.brandProfile as BrandData | undefined;
   const pastProjects = data?.pastProjects ?? [];
 
+  useEffect(() => {
+    setDraft((current) => {
+      if (!brand) return null;
+      if (current?.id === brand.id) return current;
+      return createBrandDraft(brand);
+    });
+  }, [brand]);
+
+  const brandDraft = brand
+    ? draft?.id === brand.id
+      ? draft
+      : createBrandDraft(brand)
+    : null;
+
+  const updateDraft = (updater: (current: BrandDraft) => BrandDraft) => {
+    setDraft((current) => {
+      if (current && brand && current.id === brand.id) return updater(current);
+      if (brand) return updater(createBrandDraft(brand));
+      return current;
+    });
+  };
+
   if (isLoading) {
     return (
       <Card className="p-8 flex items-center justify-center">
@@ -70,8 +121,8 @@ export function BrandSetup() {
 
   return (
     <div className="grid lg:grid-cols-3 gap-4">
-      {brand && <BrandForm key={brand.id} brand={brand} />}
-      {brand && <LetterheadPreview brand={brand} locale={locale} />}
+      {brandDraft && <BrandForm brand={brandDraft} onBrandChange={updateDraft} />}
+      {brandDraft && <LetterheadPreview brand={brandDraft} locale={locale} />}
       <div className="lg:col-span-3">
         <PastProjectsPanel pastProjects={pastProjects} />
       </div>
@@ -79,29 +130,33 @@ export function BrandSetup() {
   );
 }
 
-function BrandForm({ brand }: { brand: BrandData }) {
+function BrandForm({
+  brand,
+  onBrandChange,
+}: {
+  brand: BrandDraft;
+  onBrandChange: (updater: (current: BrandDraft) => BrandDraft) => void;
+}) {
   const { locale } = useLocale();
   const qc = useQueryClient();
   const { toast } = useToast();
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  const [form, setForm] = useState({
-    primaryColor: brand.primaryColor,
-    secondaryColor: brand.secondaryColor,
-    accentColor: brand.accentColor,
-    fontFamily: brand.fontFamily ?? "IBM Plex Sans Arabic",
-    tagline: brand.tagline ?? "",
-    taglineAr: brand.taglineAr ?? "",
-    vision2030Alignment: brand.vision2030Alignment ?? "thriving-economy",
-    logoUrl: brand.logoUrl ?? "",
-  });
-
   const saveBrand = useMutation({
-    mutationFn: async (payload: typeof form) => {
+    mutationFn: async (payload: BrandDraft) => {
       const res = await fetch("/api/brand", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          primaryColor: payload.primaryColor,
+          secondaryColor: payload.secondaryColor,
+          accentColor: payload.accentColor,
+          fontFamily: payload.fontFamily,
+          tagline: payload.tagline,
+          taglineAr: payload.taglineAr,
+          vision2030Alignment: payload.vision2030Alignment,
+          logoUrl: payload.logoUrl,
+        }),
       });
       if (!res.ok) throw new Error("save failed");
       return res.json();
@@ -113,6 +168,10 @@ function BrandForm({ brand }: { brand: BrandData }) {
       toast({ title: locale === "ar" ? "تم حفظ الهوية" : "Brand saved" });
     },
   });
+
+  const updateBrand = (updates: Partial<BrandDraft>) => {
+    onBrandChange((current) => ({ ...current, ...updates }));
+  };
 
   return (
     <Card className="p-0 overflow-hidden border-border/60 lg:col-span-1">
@@ -137,9 +196,9 @@ function BrandForm({ brand }: { brand: BrandData }) {
             className="mt-1.5 rounded-lg border-2 border-dashed border-border p-4 text-center cursor-pointer hover:border-primary/40 transition-colors"
             onClick={() => logoInputRef.current?.click()}
           >
-            {form.logoUrl ? (
+            {brand.logoUrl ? (
               <img
-                src={form.logoUrl}
+                src={brand.logoUrl}
                 alt="logo"
                 className="mx-auto size-12 rounded-lg object-contain mb-2 bg-muted"
               />
@@ -147,7 +206,7 @@ function BrandForm({ brand }: { brand: BrandData }) {
               <div
                 className="mx-auto size-12 rounded-lg flex items-center justify-center mb-2"
                 style={{
-                  background: `linear-gradient(135deg, ${form.primaryColor}, ${form.accentColor})`,
+                  background: `linear-gradient(135deg, ${brand.primaryColor}, ${brand.accentColor})`,
                 }}
               >
                 <Building2 className="size-5 text-white" />
@@ -166,7 +225,7 @@ function BrandForm({ brand }: { brand: BrandData }) {
                 const res = await fetch("/api/brand/logo", { method: "POST", body: fd });
                 const data = await res.json();
                 if (res.ok) {
-                  setForm((f) => ({ ...f, logoUrl: data.logoUrl }));
+                  updateBrand({ logoUrl: data.logoUrl });
                   qc.invalidateQueries({ queryKey: ["brand"] });
                   toast({
                     title: locale === "ar" ? "تم رفع الشعار" : "Logo uploaded",
@@ -189,9 +248,9 @@ function BrandForm({ brand }: { brand: BrandData }) {
 
         {/* Colors */}
         <div className="grid grid-cols-3 gap-2">
-          <ColorField label={tr("brand_primary_color", locale)} value={form.primaryColor} onChange={(v) => setForm({ ...form, primaryColor: v })} />
-          <ColorField label={tr("brand_secondary_color", locale)} value={form.secondaryColor} onChange={(v) => setForm({ ...form, secondaryColor: v })} />
-          <ColorField label={tr("brand_accent_color", locale)} value={form.accentColor} onChange={(v) => setForm({ ...form, accentColor: v })} />
+          <ColorField label={tr("brand_primary_color", locale)} value={brand.primaryColor} onChange={(v) => updateBrand({ primaryColor: v })} />
+          <ColorField label={tr("brand_secondary_color", locale)} value={brand.secondaryColor} onChange={(v) => updateBrand({ secondaryColor: v })} />
+          <ColorField label={tr("brand_accent_color", locale)} value={brand.accentColor} onChange={(v) => updateBrand({ accentColor: v })} />
         </div>
 
         <div>
@@ -200,8 +259,8 @@ function BrandForm({ brand }: { brand: BrandData }) {
           </Label>
           <select
             className="mt-1.5 w-full h-9 rounded-md border border-input bg-background px-2 text-xs"
-            value={form.fontFamily}
-            onChange={(e) => setForm({ ...form, fontFamily: e.target.value })}
+            value={brand.fontFamily}
+            onChange={(e) => updateBrand({ fontFamily: e.target.value })}
           >
             {FONT_OPTIONS.map((f) => (
               <option key={f} value={f}>
@@ -215,14 +274,14 @@ function BrandForm({ brand }: { brand: BrandData }) {
         <div>
           <Label className="text-xs">{tr("brand_tagline", locale)}</Label>
           <Input
-            value={form.tagline}
-            onChange={(e) => setForm({ ...form, tagline: e.target.value })}
+            value={brand.tagline}
+            onChange={(e) => updateBrand({ tagline: e.target.value })}
             placeholder="Engineering Saudi Arabia's Digital Future"
             className="mt-1 h-9 text-xs"
           />
           <Input
-            value={form.taglineAr}
-            onChange={(e) => setForm({ ...form, taglineAr: e.target.value })}
+            value={brand.taglineAr}
+            onChange={(e) => updateBrand({ taglineAr: e.target.value })}
             placeholder="نبني المستقبل الرقمي للمملكة"
             className="mt-1 h-9 text-xs"
             dir="rtl"
@@ -236,16 +295,16 @@ function BrandForm({ brand }: { brand: BrandData }) {
             {VISION_2030_PILLARS.map((p) => (
               <button
                 key={p.id}
-                onClick={() => setForm({ ...form, vision2030Alignment: p.id })}
+                onClick={() => updateBrand({ vision2030Alignment: p.id })}
                 className={`w-full flex items-center gap-2 p-2 rounded-md border text-xs transition-colors ${
-                  form.vision2030Alignment === p.id
+                  brand.vision2030Alignment === p.id
                     ? "border-primary bg-primary/5"
                     : "border-border hover:border-primary/40"
                 }`}
               >
                 <div className="size-3 rounded-full" style={{ backgroundColor: p.color }} />
                 <span className="flex-1 text-start">{locale === "ar" ? p.nameAr : p.name}</span>
-                {form.vision2030Alignment === p.id && <CheckCircle2 className="size-3.5 text-primary" />}
+                {brand.vision2030Alignment === p.id && <CheckCircle2 className="size-3.5 text-primary" />}
               </button>
             ))}
           </div>
@@ -253,7 +312,7 @@ function BrandForm({ brand }: { brand: BrandData }) {
 
         <Button
           className="w-full gap-1.5"
-          onClick={() => saveBrand.mutate(form)}
+          onClick={() => saveBrand.mutate(brand)}
           disabled={saveBrand.isPending}
         >
           {saveBrand.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
@@ -268,7 +327,7 @@ function LetterheadPreview({
   brand,
   locale,
 }: {
-  brand: BrandData;
+  brand: BrandDraft;
   locale: "ar" | "en";
 }) {
   const ar = locale === "ar";
@@ -293,7 +352,7 @@ function LetterheadPreview({
           style={{
             background: `linear-gradient(90deg, ${brand.primaryColor}, ${brand.secondaryColor})`,
             borderBottom: `3px solid ${brand.accentColor}`,
-            fontFamily: brand.fontFamily || "IBM Plex Sans Arabic",
+            fontFamily: brand.fontFamily || DEFAULT_FONT_FAMILY,
           }}
         >
           {brand.logoUrl ? (
@@ -314,7 +373,7 @@ function LetterheadPreview({
         </div>
         <div
           className="rounded-md border p-3 text-xs space-y-2"
-          style={{ fontFamily: brand.fontFamily || undefined }}
+          style={{ fontFamily: brand.fontFamily || DEFAULT_FONT_FAMILY }}
         >
           <p
             className="font-semibold"
