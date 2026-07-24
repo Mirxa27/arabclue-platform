@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Scale,
@@ -22,7 +22,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/store";
@@ -37,6 +36,7 @@ import {
 import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import type { ApiProposal, ApiProposalVersion } from "@/lib/api-types";
+import { MarkdownStudioEditor } from "./markdown-studio-editor";
 
 export type ContractStudioMode = "preview" | "edit" | "versions" | "obligations";
 
@@ -54,6 +54,14 @@ type Props = {
   initialMode?: ContractStudioMode;
   className?: string;
   onSaved?: (proposal: ApiProposal) => void;
+};
+
+type BrandProfile = {
+  logoUrl?: string | null;
+  primaryColor?: string | null;
+  accentColor?: string | null;
+  tagline?: string | null;
+  taglineAr?: string | null;
 };
 
 export function BilingualContractStudio({
@@ -84,6 +92,15 @@ export function BilingualContractStudio({
     () => new Set()
   );
 
+  const { data: brandData } = useQuery<{ brandProfile: BrandProfile | null }>({
+    queryKey: ["brand"],
+    queryFn: async () => {
+      const res = await fetch("/api/brand");
+      if (!res.ok) return { brandProfile: null };
+      return res.json();
+    },
+  });
+
   useEffect(() => {
     setDraftMd(contentMd);
     setDiffLines([]);
@@ -96,6 +113,22 @@ export function BilingualContractStudio({
   const currentVersion = version ?? versions[0]?.version ?? 1;
   const locked = isProposalEditLocked(status);
   const isDirty = draftMd !== contentMd;
+  const brandProfile = brandData?.brandProfile ?? null;
+  const brandColors = useMemo(
+    () => ({
+      primaryColor: brandProfile?.primaryColor ?? undefined,
+      accentColor: brandProfile?.accentColor ?? undefined,
+    }),
+    [brandProfile?.primaryColor, brandProfile?.accentColor]
+  );
+  const mastheadBrandLabel = useMemo(() => {
+    const en = brandProfile?.tagline?.trim();
+    const arLabel = brandProfile?.taglineAr?.trim();
+    if (en && arLabel && en !== arLabel) return `${en} · ${arLabel}`;
+    if (ar && arLabel) return arLabel;
+    if (!ar && en) return en;
+    return en || arLabel || "Client brand · هوية العميل";
+  }, [ar, brandProfile?.tagline, brandProfile?.taglineAr]);
   const obligationsStorageKey = proposalId
     ? `arabclue-obligations:${proposalId}`
     : null;
@@ -243,10 +276,13 @@ export function BilingualContractStudio({
         />
         <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-[oklch(0.78_0.1_195)]">
+            <div
+              className="flex items-center gap-2 text-[oklch(0.78_0.1_195)]"
+              style={{ color: brandColors.accentColor }}
+            >
               <Scale className="size-5" />
               <span className="text-[11px] font-bold tracking-[0.22em] uppercase">
-                ArabClue · أراب كلاو
+                {mastheadBrandLabel}
               </span>
             </div>
             <h2 className="mt-3 font-[family-name:var(--font-ibm-arabic)] text-2xl sm:text-3xl font-bold text-white leading-tight">
@@ -419,16 +455,15 @@ export function BilingualContractStudio({
 
       {studioMode === "edit" ? (
         <div className="h-[min(70vh,720px)] p-4 sm:p-6">
-          <Textarea
-            value={draftMd}
-            disabled={locked}
-            onChange={(e) => setDraftMd(e.target.value)}
-            dir="ltr"
-            spellCheck
-            className="h-full min-h-[520px] resize-none border-white/10 bg-black/25 font-mono text-xs leading-relaxed text-white placeholder:text-white/30"
-            placeholder={
-              ar ? "حرر نص العقد بصيغة Markdown..." : "Edit contract markdown..."
-            }
+          <MarkdownStudioEditor
+            markdown={draftMd}
+            onChange={setDraftMd}
+            locale={locale}
+            dir={ar ? "rtl" : "ltr"}
+            splitPreview
+            brand={brandColors}
+            readOnly={locked}
+            className="h-full min-h-[520px] border-white/10 bg-background text-foreground"
           />
         </div>
       ) : studioMode === "versions" ? (

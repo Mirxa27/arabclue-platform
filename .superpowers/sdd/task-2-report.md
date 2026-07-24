@@ -1,82 +1,41 @@
-# Task 2 Report: Agent ops center — workspace run history
+# Task 2 Report: Contract studio MDX + branded masthead
 
 **Status:** DONE  
-**Branch:** `cursor/remaining-gaps-sdd-ab64`  
-**Commit message:** `feat(agents): workspace-wide run history ops center`
+**Branch:** `cursor/docs-generation-complete-ab64`  
+**Commit message:** `feat(contracts): MDX studio with client branded masthead`
 
 ## Summary
 
-Added workspace-wide AgentRun history for the agents dashboard. The new API lists recent runs for the caller's workspace, the serializer provides the required DTO shape, and the dashboard can select an older run to rehydrate the existing status polling flow.
+Replaced the contract studio raw textarea edit mode with the shared MDX studio editor and removed the hardcoded ArabClue masthead label from the user-facing contract studio chrome.
 
 ## Changes
 
-### `src/lib/agent-runs.ts`
+### `src/components/dashboard/contract-studio.tsx`
 
-- Added `serializeAgentRun(run)` returning `{ id, projectId, projectTitle, status, progress, currentAgent, errorMessage, createdAt, completedAt }`.
-- Extracts `currentAgent` from the running entry in `agentStates`.
-- Serializes dates to ISO strings for the API DTO.
-
-### `src/lib/__tests__/agent-runs-list.test.ts`
-
-- Added TDD coverage for the serializer using a fixture with project context, failed status, active agent state, error text, and timestamps.
-- Verified red first: test initially failed because `../agent-runs` did not exist.
-
-### `src/app/api/agents/runs/route.ts`
-
-- Added `GET /api/agents/runs?limit=50`.
-- Uses `withTenant("session")`.
-- Filters runs by `where: { project: { workspaceId: workspace.id } }`.
-- Orders by newest first and caps `limit` to `1..100`.
-
-### `src/components/dashboard/agent-workflow.tsx`
-
-- Added a bilingual "Run history" list above the live progress gauges.
-- Fetches `/api/agents/runs?limit=50` with React Query.
-- Clicking a run sets `activeProjectId`, sets `runId`, and fetches `/api/agents/status?runId=...` to hydrate the existing pipeline UI.
-- Shows failed run `errorMessage` inline in history and preserves the existing cancel flow for running runs.
-- Invalidates run history when runs start, complete, fail, or cancel.
+- Added a `/api/brand` query using the same React Query pattern as the proposal editor.
+- Passed `primaryColor` and `accentColor` from `BrandProfile` into `MarkdownStudioEditor`.
+- Replaced the edit-mode `Textarea` with `MarkdownStudioEditor` using split preview and read-only handling for locked contracts.
+- Replaced `ArabClue · أراب كلاو` in the masthead with the workspace brand tagline:
+  - Uses both English and Arabic taglines when both exist and differ.
+  - Uses the localized tagline when only one locale is needed.
+  - Falls back to neutral bilingual copy: `Client brand · هوية العميل`.
+- Applied the brand accent color to the masthead brand mark when available.
 
 ## Verification
 
 | Check | Result |
 |-------|--------|
-| `bun test src/lib/__tests__/agent-runs-list.test.ts` before helper | Failed as expected: missing `../agent-runs` |
-| `bun test src/lib/__tests__/agent-runs-list.test.ts` | Pass: 1 pass, 0 fail |
-| `bunx tsc --noEmit` | Pass (exit 0) |
+| `rg "ArabClue\|أراب كلاو\|Textarea\|MarkdownStudioEditor" src/components/dashboard/contract-studio.tsx` | Pass: no hardcoded ArabClue masthead or Textarea remains; `MarkdownStudioEditor` is present |
 | `bun run lint` | Pass (exit 0) |
+| `bunx tsc --noEmit` | Pass (exit 0) |
+| `git diff --check` | Pass (exit 0) |
 
 ## Constraints
 
-- No schema migrations.
+- Did not implement Tasks 3-5.
+- No schema changes.
 - No dependency changes.
-- Tenant scoping is through `withTenant("session")` and the related project's `workspaceId`.
 
 ## Concerns
 
 None.
-
----
-
-## Fix: Bilingual project titles in run history (Task 2 review)
-
-**Status:** DONE  
-**Commit:** `fix(agents): bilingual project titles in run history`
-
-### Finding
-
-`projectTitle` in AgentRun history was not locale-aware — the API only selected `title`, so Arabic UI showed English project names.
-
-### Changes
-
-- **`src/lib/agent-runs.ts`**: Extended `AgentRunDto` with `projectTitleAr: string | null`; serializer maps `project.titleAr ?? null`.
-- **`src/app/api/agents/runs/route.ts`**: Project select now includes `titleAr`.
-- **`src/lib/__tests__/agent-runs-list.test.ts`**: Fixture and assertion cover `projectTitleAr`.
-- **`src/components/dashboard/agent-workflow.tsx`**: `AgentRunHistoryItem` includes `projectTitleAr`; `runProjectTitle()` picks `projectTitleAr ?? projectTitle` when `locale === "ar"`.
-
-### Verification
-
-| Check | Result |
-|-------|--------|
-| `bun test src/lib/__tests__/agent-runs-list.test.ts` | Pass: 1 pass, 0 fail |
-| `bunx tsc --noEmit` | Pass (exit 0) |
-
