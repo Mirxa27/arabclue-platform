@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
+  AlertCircle,
   Loader2,
   Mic,
   MicOff,
@@ -16,8 +17,8 @@ import {
   Square,
   Volume2,
   VolumeX,
-  Radio,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
 import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
 import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
@@ -66,6 +67,8 @@ function partText(message: PlatformAgentUIMessage): string {
 
 export function PlatformAgentConsole() {
   const { locale } = useLocale();
+  const ar = locale === "ar";
+  const { toast } = useToast();
   const { setView, setActiveProjectId, activeProjectId } = useUI();
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
@@ -78,6 +81,9 @@ export function PlatformAgentConsole() {
   );
   const [mode, setMode] = useState<"live" | "classic">("live");
   const [missionId, setMissionId] = useState<string | null>(null);
+  const [missionError, setMissionError] = useState<string | null>(null);
+  const [missionCreating, setMissionCreating] = useState(false);
+  const [missionRetryKey, setMissionRetryKey] = useState(0);
   const [attachments, setAttachments] = useState<
     Array<{
       id: string;
@@ -136,15 +142,31 @@ export function PlatformAgentConsole() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/platform-agent/missions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ activeProjectId }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled || !data?.mission?.id) return;
+    const defaultError = ar
+      ? "تعذّر بدء المهمة. أعد المحاولة."
+      : "Could not start the mission. Please retry.";
+
+    async function createMission() {
+      setMissionCreating(true);
+      setMissionError(null);
+      try {
+        const res = await fetch("/api/platform-agent/missions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ activeProjectId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof data?.error === "string" ? data.error : defaultError
+          );
+        }
+        if (!data?.mission?.id) {
+          throw new Error(defaultError);
+        }
+        if (cancelled) return;
         setMissionId(data.mission.id);
+        setMissionError(null);
         setAttachments(data.mission.attachments ?? []);
         setFeedItems(
           (data.mission.actions ?? []).map(
@@ -209,16 +231,33 @@ export function PlatformAgentConsole() {
             )
             .filter(Boolean);
           setMessages(hydrated);
+        } else {
+          setMessages([]);
         }
-      })
-      .catch(() => undefined);
+      } catch (err) {
+        if (cancelled) return;
+        const message =
+          err instanceof Error && err.message ? err.message : defaultError;
+        setMissionId(null);
+        setMissionError(message);
+        toast({
+          title: ar ? "فشل تجهيز المهمة" : "Mission setup failed",
+          description: message,
+          variant: "destructive",
+          duration: 4000,
+        });
+      } finally {
+        if (!cancelled) setMissionCreating(false);
+      }
+    }
+
+    void createMission();
     return () => {
       cancelled = true;
     };
-  }, [activeProjectId, setMessages]);
+  }, [activeProjectId, ar, missionRetryKey, setMessages, toast]);
 
   const busy = status === "submitted" || status === "streaming";
-  const ar = locale === "ar";
 
   const theaterTools = useMemo(() => {
     const fromMessages = extractTheaterTools(
@@ -329,14 +368,37 @@ export function PlatformAgentConsole() {
     setInterim("");
   }, []);
 
+  const cancelListening = useCallback(() => {
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    setListening(false);
+    setInterim("");
+  }, []);
+
+  const stopMissionRun = useCallback(() => {
+    cancelListening();
+    window.speechSynthesis?.cancel();
+    stop();
+    toast({
+      title: ar ? "تم الإيقاف" : "Stopped",
+      description: ar
+        ? "تم إيقاف الصوت والرد الجاري."
+        : "Voice input, speech output, and the running response were stopped.",
+      duration: 2500,
+    });
+  }, [ar, cancelListening, stop, toast]);
+
   const startListening = useCallback(() => {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) {
-      alert(
-        ar
+      toast({
+        title: ar ? "الإدخال الصوتي غير متاح" : "Voice input unavailable",
+        description: ar
           ? "المتصفح لا يدعم التعرف على الصوت. استخدم الإدخال النصي."
-          : "Speech recognition is not supported in this browser. Use text input."
-      );
+          : "Speech recognition is not supported in this browser. Use text input.",
+        variant: "destructive",
+        duration: 4000,
+      });
       return;
     }
     window.speechSynthesis?.cancel();
@@ -367,7 +429,7 @@ export function PlatformAgentConsole() {
     recognitionRef.current = rec;
     rec.start();
     setListening(true);
-  }, [ar, stopListening]);
+  }, [ar, stopListening, toast]);
 
   const submit = useCallback(async () => {
     const text = (input || interim).trim();
@@ -469,6 +531,34 @@ export function PlatformAgentConsole() {
       }
       kit={
         <>
+          {missionError ? (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">
+                    {ar ? "فشل تجهيز المهمة" : "Mission setup failed"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-destructive/80">
+                    {missionError}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => setMissionRetryKey((key) => key + 1)}
+                  disabled={missionCreating}
+                >
+                  {missionCreating ? (
+                    <Loader2 className="size-3 me-1 animate-spin" />
+                  ) : null}
+                  {ar ? "إعادة المحاولة" : "Retry"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <MissionAttachmentTray
             locale={locale}
             missionId={missionId}
@@ -610,7 +700,7 @@ export function PlatformAgentConsole() {
                 type="button"
                 size="lg"
                 className={cn("min-w-[9.5rem]", listening && "animate-pulse")}
-                onClick={() => (listening ? stopListening() : speakAndSend())}
+                onClick={() => (listening ? stopMissionRun() : speakAndSend())}
                 disabled={busy && !listening}
               >
                 {listening ? (
@@ -637,7 +727,7 @@ export function PlatformAgentConsole() {
                 {ar ? "إرسال" : "Send"}
               </Button>
               {busy ? (
-                <Button type="button" variant="outline" onClick={() => stop()}>
+                <Button type="button" variant="outline" onClick={stopMissionRun}>
                   <Square className="size-4 me-2" />
                   {ar ? "إيقاف التنفيذ" : "Stop run"}
                 </Button>
