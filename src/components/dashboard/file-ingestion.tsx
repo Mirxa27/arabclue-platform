@@ -82,7 +82,7 @@ export function FileIngestion() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data: docsData, isLoading: docsLoading, isError: docsError, error: docsErr } = useQuery({
+  const { data: docsData, isLoading: docsLoading, isError: docsError, error: docsErr, refetch: refetchDocs } = useQuery({
     queryKey: ["documents", activeProjectId],
     queryFn: async () => {
       const url = activeProjectId
@@ -268,8 +268,18 @@ export function FileIngestion() {
       )}
 
       {docsError && (
-        <div className="mx-5 mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
-          {docsErr instanceof Error ? docsErr.message : "Failed to load documents"}
+        <div className="mx-5 mt-4 flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+          <span>
+            {docsErr instanceof Error ? docsErr.message : "Failed to load documents"}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 shrink-0 text-[11px]"
+            onClick={() => refetchDocs()}
+          >
+            {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+          </Button>
         </div>
       )}
 

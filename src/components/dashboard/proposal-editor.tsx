@@ -281,14 +281,60 @@ export function ProposalEditorDialog({
       qc.invalidateQueries({ queryKey: ["proposals"] });
       qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
       refetchValidation();
+      const checklist = json.checklist as
+        | {
+            missingRequirements?: number;
+            nonCompliantControls?: number;
+            pricesEntered?: boolean;
+            hasFinancialStructure?: boolean;
+            qualification?: {
+              strongBidReady?: boolean;
+              gaps?: Array<{ labelEn: string; labelAr: string }>;
+            };
+          }
+        | undefined;
+      const warnings: string[] = [];
+      if ((checklist?.missingRequirements ?? 0) > 0) {
+        warnings.push(
+          locale === "ar"
+            ? `${checklist!.missingRequirements} متطلبات ناقصة`
+            : `${checklist!.missingRequirements} missing requirements`
+        );
+      }
+      if ((checklist?.nonCompliantControls ?? 0) > 0) {
+        warnings.push(
+          locale === "ar"
+            ? `${checklist!.nonCompliantControls} ضوابط غير مطابقة`
+            : `${checklist!.nonCompliantControls} non-compliant controls`
+        );
+      }
+      if (checklist?.hasFinancialStructure && checklist.pricesEntered === false) {
+        warnings.push(
+          locale === "ar" ? "أسعار البنود غير مكتملة" : "BoQ prices not entered"
+        );
+      }
+      const gaps = checklist?.qualification?.gaps ?? [];
+      if (gaps.length > 0) {
+        const labels = gaps
+          .slice(0, 3)
+          .map((g) => (locale === "ar" ? g.labelAr : g.labelEn))
+          .join(locale === "ar" ? "، " : ", ");
+        warnings.push(
+          locale === "ar"
+            ? `فجوات التأهيل: ${labels}${gaps.length > 3 ? "…" : ""}`
+            : `Qualification gaps: ${labels}${gaps.length > 3 ? "…" : ""}`
+        );
+      }
       toast({
         title: locale === "ar" ? "أُرسل للمراجعة" : "Submitted for review",
         description:
-          json.checklist?.missingRequirements > 0
-            ? locale === "ar"
-              ? `تحذير: ${json.checklist.missingRequirements} متطلبات ناقصة`
-              : `Warning: ${json.checklist.missingRequirements} missing requirements`
-            : undefined,
+          warnings.length > 0
+            ? `${locale === "ar" ? "تحذير إرشادي" : "Advisory"}: ${warnings.join(locale === "ar" ? " · " : " · ")}`
+            : checklist?.qualification?.strongBidReady
+              ? locale === "ar"
+                ? "ملف التأهيل جاهز للمنافسة القوية"
+                : "Qualification dossier looks strong-bid ready"
+              : undefined,
       });
     },
     onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),

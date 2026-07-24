@@ -22,6 +22,14 @@ Route states, mobile shell, proposal export readiness, requirements evidence, co
 | Notification dismiss | localStorage; onboarding id fingerprints missing steps |
 | Real KPI trends | 7d vs prior 7d; no fake arrows |
 
+### Docs generation + preview — `cursor/docs-generation-complete-ab64` / `cursor/fix-pdf-iframe-preview-ab64`
+
+Branded export chrome, contract MDX + masthead, live letterhead draft, letterhead-aware proposal preview, post-upload viewer, PDF iframe SAMEORIGIN + blob.
+
+### Production UX follow-up — `cursor/ship-remaining-ux-ab64`
+
+Compliance remediation text, charts error/retry, submit advisory checklist toast, file-ingestion docs Retry, proposal HTML blob preview.
+
 ## Explicitly out of scope
 
 - Etimad portal submission API

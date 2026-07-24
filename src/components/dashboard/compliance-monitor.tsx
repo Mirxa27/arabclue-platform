@@ -197,10 +197,12 @@ export function ComplianceMonitor() {
                   <div className="text-muted-foreground font-mono text-[10px]">
                     {c.controlId} · {c.status}
                   </div>
-                  <p className="text-muted-foreground mt-0.5">
-                    {locale === "ar"
-                      ? "اربط شهادة أو سياسة أو إثبات محتوى محلي من إعداد الحساب، ثم أعد تشغيل وكيل الامتثال."
-                      : "Attach a certificate, policy, or local-content proof from Account, then re-run the compliance agent."}
+                  <p className="text-muted-foreground mt-0.5 whitespace-pre-wrap">
+                    {c.remediation?.trim()
+                      ? c.remediation
+                      : locale === "ar"
+                        ? "اربط شهادة أو سياسة أو إثبات محتوى محلي من إعداد الحساب، ثم أعد تشغيل وكيل الامتثال."
+                        : "Attach a certificate, policy, or local-content proof from Account, then re-run the compliance agent."}
                   </p>
                 </div>
                 <Button

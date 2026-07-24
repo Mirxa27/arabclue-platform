@@ -63,8 +63,17 @@ export function DocumentPreviewFrame({
       setPdfSrc(null);
       try {
         if (mode === "html") {
-          // iframe can load authenticated same-origin URL directly
-          if (!cancelled) setHtmlSrc(htmlUrl);
+          // Fetch as blob so preview works even if framing headers change.
+          const res = await fetch(htmlUrl, { credentials: "include" });
+          if (!res.ok) {
+            const data = (await res.json().catch(() => ({}))) as {
+              error?: string;
+            };
+            throw new Error(data.error || `HTML failed (${res.status})`);
+          }
+          const blob = await res.blob();
+          objectUrl = URL.createObjectURL(blob);
+          if (!cancelled) setHtmlSrc(objectUrl);
           return;
         }
         const res = await fetch(

@@ -20,6 +20,7 @@ import { Card } from "@/components/ui/card";
 import { Activity, PieChart as PieIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ChartSkeleton } from "./loading-skeletons";
+import { ErrorState } from "@/components/patterns";
 import type { StatsResponse } from "@/lib/api-types";
 
 const COLORS = ["#1E3A8A", "#0EA5E9", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"];
@@ -28,7 +29,7 @@ type ChartDatum = { name: string; value: number; status?: string };
 
 export function ChartsPanel() {
   const { locale } = useLocale();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["stats"],
     queryFn: async () => {
       const res = await fetch("/api/stats");
@@ -77,6 +78,16 @@ export function ChartsPanel() {
         <div className="p-4 h-56">
           {isLoading ? (
             <ChartSkeleton className="p-0 h-full" />
+          ) : isError ? (
+            <ErrorState
+              message={
+                locale === "ar"
+                  ? "تعذر تحميل إحصاءات المشاريع"
+                  : "Failed to load project stats"
+              }
+              onRetry={() => refetch()}
+              retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+            />
           ) : statusData.length === 0 ? (
             <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
               {tr("no_data", locale)}
@@ -140,6 +151,16 @@ export function ChartsPanel() {
         <div className="p-4 h-56">
           {isLoading ? (
             <ChartSkeleton className="p-0 h-full" />
+          ) : isError ? (
+            <ErrorState
+              message={
+                locale === "ar"
+                  ? "تعذر تحميل فئات المستندات"
+                  : "Failed to load document categories"
+              }
+              onRetry={() => refetch()}
+              retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+            />
           ) : catData.length === 0 ? (
             <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
               {tr("no_data", locale)}

@@ -1,30 +1,34 @@
 # Implementation Status
 
-**Branch:** `cursor/docs-generation-complete-ab64`
+**Branch:** `cursor/ship-remaining-ux-ab64` → `main`
 **Verified:** 2026-07-24
 
-## Latest closures — complete document generation
+## Latest closures — production follow-up
+
+| Gap | Status | Evidence |
+| --- | --- | --- |
+| PDF preview “refused to connect” | Closed | `X-Frame-Options: SAMEORIGIN` + blob embed in `DocumentFileViewer` |
+| Proposal HTML preview framing | Closed | `DocumentPreviewFrame` HTML also uses blob fetch |
+| Compliance remediation copy | Closed | Open actions show agent `remediation` when present |
+| Charts silent failure | Closed | `ChartsPanel` ErrorState + Retry |
+| Submit advisory checklist | Closed | Submit toast surfaces missing reqs, non-compliant controls, BoQ prices, qualification gaps |
+| Docs list error recovery | Closed | File ingestion Retry on documents query failure |
+
+## Document generation (complete)
 
 Plan: `docs/superpowers/plans/2026-07-24-docs-generation-complete.md`
 
-| Gap | Status | Evidence |
-| --- | --- | --- |
-| Branded Excel / PPTX / slides / ZIP chrome | Closed | `generators.ts` + `brandArgb` / locale-aware `exportCompanyName`; tests in `generators-brand.test.ts` |
-| Contract MDX studio + client masthead | Closed | `contract-studio.tsx` uses `MarkdownStudioEditor` + `letterheadCompanyName` |
-| Live BrandSetup letterhead draft | Closed | Parent-owned draft drives `LetterheadPreview` before Save |
-| Proposal preview matches export letterhead | Closed | Preview/Print → `DocumentPreviewFrame`; split strip reuses `letterheadBarHtml`; paper chrome |
-| Post-upload document preview | Closed | `file-ingestion.tsx` opens `DocumentFileViewer` on upload + recent rows |
+| Gap | Status |
+| --- | --- |
+| Branded Excel / PPTX / slides / ZIP chrome | Closed |
+| Contract MDX studio + client masthead | Closed |
+| Live BrandSetup letterhead draft | Closed |
+| Proposal preview matches export letterhead | Closed |
+| Post-upload document preview | Closed |
 
 ## Previously closed
 
-| Gap | Status | Evidence |
-| --- | --- | --- |
-| Uploaded doc view layout | Closed | `DocumentFileViewer` in document matrix |
-| Seamless proposal editing | Closed | MDXEditor studio + skills |
-| Client letterhead on HTML/PDF export | Closed | `letterhead.ts` on proposal + contract exports |
-| Brand typeface + saved preview | Closed | `fontFamily` in BrandSetup |
-
-Remaining product gaps SDD Tasks 1–7, Voice Mission UX, qualification accuracy — see git history.
+Pass A P0 UX, Pass B remaining product gaps (QueryState, agent runs, reviews redline, obligations, Mission recovery, qualification CTAs, billing alerts, notification dismiss, KPI trends), Saudi contract remaining, Voice Mission core, qualification backend.
 
 ## Explicitly out of scope
 
@@ -32,4 +36,4 @@ Remaining product gaps SDD Tasks 1–7, Voice Mission UX, qualification accuracy
 - SSO / OIDC
 - Live MyFatoorah without merchant credentials
 - AI bid pricing
-- New Prisma BrandProfile per government client (workspace BrandProfile remains the bidder letterhead)
+- New Prisma BrandProfile per government client
