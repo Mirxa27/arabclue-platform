@@ -6,6 +6,7 @@ import {
   Scale,
   FileText,
   Sparkles,
+  ClipboardCheck,
   Download,
   FileDown,
   Eye,
@@ -24,29 +25,57 @@ import {
 import { useLocale, useUI } from "@/lib/store";
 import { apiJson } from "@/lib/api-client";
 import type { ApiProposal } from "@/lib/api-types";
-import { BilingualContractStudio } from "./contract-studio";
+import {
+  BilingualContractStudio,
+  type ContractStudioMode,
+} from "./contract-studio";
 import { DocumentPreviewFrame } from "./document-preview-frame";
 import { EmptyState, QueryState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import type { ContractArticle } from "@/lib/contract-format";
+import type { ObligationMilestone } from "@/lib/contract-obligations";
 import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseMilestones(obj: Record<string, unknown>): ObligationMilestone[] | undefined {
+  const entities = isRecord(obj.entities) ? obj.entities : null;
+  const raw = Array.isArray(obj.milestones)
+    ? obj.milestones
+    : Array.isArray(entities?.milestones)
+      ? entities.milestones
+      : null;
+  if (!raw) return undefined;
+
+  return raw.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const name = typeof item.name === "string" ? item.name : undefined;
+    const title = typeof item.title === "string" ? item.title : undefined;
+    const weeks = typeof item.weeks === "number" ? item.weeks : undefined;
+    if (!name && !title) return [];
+    return [{ name, title, weeks }];
+  });
+}
+
 function parseArtifacts(raw: string | null | undefined): {
   research?: SaudiLawResearchBrief;
   articles?: ContractArticle[];
+  milestones?: ObligationMilestone[];
 } {
   if (!raw) return {};
   try {
     const arr = JSON.parse(raw) as unknown;
     const first = Array.isArray(arr) ? arr[0] : arr;
-    if (!first || typeof first !== "object") return {};
-    const obj = first as Record<string, unknown>;
+    if (!isRecord(first)) return {};
     return {
-      research: obj.research as SaudiLawResearchBrief | undefined,
-      articles: obj.articles as ContractArticle[] | undefined,
+      research: first.research as SaudiLawResearchBrief | undefined,
+      articles: first.articles as ContractArticle[] | undefined,
+      milestones: parseMilestones(first),
     };
   } catch {
     return {};
@@ -58,6 +87,8 @@ export function ContractsPanel() {
   const ar = locale === "ar";
   const { activeProjectId, setView } = useUI();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openStudioMode, setOpenStudioMode] =
+    useState<ContractStudioMode>("preview");
   const { download, busyFormat } = useArtifactDownload();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -226,10 +257,25 @@ export function ContractsPanel() {
                     size="sm"
                     variant="outline"
                     className="gap-1"
-                    onClick={() => setOpenId(c.id)}
+                    onClick={() => {
+                      setOpenStudioMode("preview");
+                      setOpenId(c.id);
+                    }}
                   >
                     <Eye className="size-3.5" />
                     {ar ? "معاينة" : "Preview"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    onClick={() => {
+                      setOpenStudioMode("obligations");
+                      setOpenId(c.id);
+                    }}
+                  >
+                    <ClipboardCheck className="size-3.5" />
+                    {ar ? "الالتزامات" : "Obligations"}
                   </Button>
                   {canSubmit ? (
                     <Button
@@ -326,6 +372,8 @@ export function ContractsPanel() {
                   versions={active.versions ?? []}
                   research={artifacts.research}
                   articles={artifacts.articles}
+                  milestones={artifacts.milestones}
+                  initialMode={openStudioMode}
                   onSaved={() => void refetch()}
                 />
               </TabsContent>

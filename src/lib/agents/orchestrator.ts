@@ -914,6 +914,7 @@ export async function runAgentPipeline(opts: {
         format: "bilingual_legal_v1",
         research: lawDraft.research,
         articles: lawDraft.articles,
+        entities,
         provider: lawDraft.provider,
         model: lawDraft.model,
         fallback: lawDraft.fallback,

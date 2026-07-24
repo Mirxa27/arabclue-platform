@@ -9,6 +9,8 @@ import {
   BookOpen,
   Columns2,
   AlignLeft,
+  ClipboardCheck,
+  CheckCircle2,
   Loader2,
   Eye,
   GitCompare,
@@ -28,9 +30,15 @@ import {
   parseContractArticles,
   type ContractArticle,
 } from "@/lib/contract-format";
+import {
+  extractObligations,
+  type ObligationMilestone,
+} from "@/lib/contract-obligations";
 import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import type { ApiProposal, ApiProposalVersion } from "@/lib/api-types";
+
+export type ContractStudioMode = "preview" | "edit" | "versions" | "obligations";
 
 type Props = {
   title: string;
@@ -42,6 +50,8 @@ type Props = {
   versions?: ApiProposalVersion[];
   research?: SaudiLawResearchBrief | null;
   articles?: ContractArticle[] | null;
+  milestones?: ObligationMilestone[] | null;
+  initialMode?: ContractStudioMode;
   className?: string;
   onSaved?: (proposal: ApiProposal) => void;
 };
@@ -56,6 +66,8 @@ export function BilingualContractStudio({
   versions = [],
   research,
   articles: articlesProp,
+  milestones,
+  initialMode = "preview",
   className,
   onSaved,
 }: Props) {
@@ -64,21 +76,29 @@ export function BilingualContractStudio({
   const qc = useQueryClient();
   const ar = locale === "ar";
   const [mode, setMode] = useState<"split" | "en" | "ar">("split");
-  const [studioMode, setStudioMode] = useState<"preview" | "edit" | "versions">(
-    "preview"
-  );
+  const [studioMode, setStudioMode] = useState<ContractStudioMode>(initialMode);
   const [showResearch, setShowResearch] = useState(true);
   const [draftMd, setDraftMd] = useState(contentMd);
   const [diffLines, setDiffLines] = useState<string[]>([]);
+  const [doneObligationIds, setDoneObligationIds] = useState<Set<string>>(
+    () => new Set()
+  );
 
   useEffect(() => {
     setDraftMd(contentMd);
     setDiffLines([]);
   }, [contentMd, proposalId]);
 
+  useEffect(() => {
+    setStudioMode(initialMode);
+  }, [initialMode, proposalId]);
+
   const currentVersion = version ?? versions[0]?.version ?? 1;
   const locked = isProposalEditLocked(status);
   const isDirty = draftMd !== contentMd;
+  const obligationsStorageKey = proposalId
+    ? `arabclue-obligations:${proposalId}`
+    : null;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -158,6 +178,51 @@ export function BilingualContractStudio({
     if (!isDirty && articlesProp?.length) return articlesProp;
     return parseContractArticles(draftMd);
   }, [articlesProp, draftMd, isDirty]);
+
+  useEffect(() => {
+    if (!obligationsStorageKey || typeof window === "undefined") {
+      setDoneObligationIds(new Set());
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(
+        window.localStorage.getItem(obligationsStorageKey) ?? "[]"
+      );
+      setDoneObligationIds(
+        new Set(Array.isArray(parsed) ? parsed.filter(Boolean) : [])
+      );
+    } catch {
+      setDoneObligationIds(new Set());
+    }
+  }, [obligationsStorageKey]);
+
+  const obligationRows = useMemo(
+    () =>
+      extractObligations(articles, milestones).map((row) => ({
+        ...row,
+        status: doneObligationIds.has(row.id) ? "done" : row.status,
+      })),
+    [articles, doneObligationIds, milestones]
+  );
+
+  const toggleObligation = (id: string) => {
+    setDoneObligationIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      if (obligationsStorageKey && typeof window !== "undefined") {
+        window.localStorage.setItem(
+          obligationsStorageKey,
+          JSON.stringify(Array.from(next))
+        );
+      }
+      return next;
+    });
+  };
 
   return (
     <div
@@ -258,6 +323,11 @@ export function BilingualContractStudio({
             {(
               [
                 ["preview", Eye, ar ? "معاينة" : "Preview"],
+                [
+                  "obligations",
+                  ClipboardCheck,
+                  ar ? "الالتزامات" : "Obligations",
+                ],
                 ["edit", Pencil, ar ? "تحرير" : "Edit"],
                 ["versions", History, ar ? "الإصدارات" : "Versions"],
               ] as const
@@ -441,37 +511,139 @@ export function BilingualContractStudio({
             ) : null}
           </div>
         </ScrollArea>
-      ) : (
-      <ScrollArea className="h-[min(70vh,720px)]">
-        <div className="px-4 sm:px-8 py-8 space-y-6">
-          {articles.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-white/40 text-sm">
-              <Loader2 className="size-4 animate-spin" />
-              {ar ? "لا بنود قابلة للعرض" : "No parseable articles"}
+      ) : studioMode === "obligations" ? (
+        <ScrollArea className="h-[min(70vh,720px)]">
+          <div className="px-4 sm:px-8 py-8 space-y-4">
+            <div className="rounded-xl border border-[oklch(0.72_0.12_195)]/20 bg-[oklch(0.72_0.12_195)]/10 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    {ar
+                      ? "سجل الالتزامات المستنتج"
+                      : "Derived obligation register"}
+                  </p>
+                  <p className="mt-1 text-xs text-white/55 leading-relaxed max-w-2xl">
+                    {ar
+                      ? "مستخرج من البنود والمعالم لأغراض المتابعة. حالات الإنجاز محفوظة محلياً لهذا العقد."
+                      : "Extracted from contract articles and milestones for follow-up. Done status is saved locally for this contract."}
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="border-white/15 text-white/60"
+                >
+                  {obligationRows.filter((row) => row.status === "done").length}/
+                  {obligationRows.length} {ar ? "منجز" : "done"}
+                </Badge>
+              </div>
             </div>
-          ) : (
-            articles.map((article, i) => (
-              <motion.article
-                key={article.number}
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-20px" }}
-                transition={{ delay: Math.min(i * 0.03, 0.2) }}
-                className="rounded-xl border border-white/10 bg-white/[0.025] overflow-hidden"
-              >
-                <div className="flex items-center gap-3 px-5 py-3 border-b border-white/10 bg-white/[0.03]">
-                  <span className="flex size-8 items-center justify-center rounded-full bg-[oklch(0.72_0.12_195)]/15 text-[oklch(0.82_0.1_195)] text-xs font-bold font-mono">
-                    {String(article.number).padStart(2, "0")}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">
-                      {ar ? article.titleAr : article.titleEn}
-                    </p>
-                    <p className="text-[11px] text-white/40 truncate">
-                      {ar ? article.titleEn : article.titleAr}
-                    </p>
+
+            {obligationRows.length === 0 ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-white/40 text-sm">
+                <ClipboardCheck className="size-4" />
+                {ar
+                  ? "لم يتم العثور على التزامات مستنتجة"
+                  : "No derived obligations found"}
+              </div>
+            ) : (
+              obligationRows.map((row) => (
+                <div
+                  key={row.id}
+                  className={cn(
+                    "rounded-xl border p-4 transition-colors",
+                    row.status === "done"
+                      ? "border-emerald-400/25 bg-emerald-500/10"
+                      : "border-white/10 bg-white/[0.025]"
+                  )}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className="border-white/15 text-white/55 text-[10px]"
+                        >
+                          {row.source}
+                        </Badge>
+                        <Badge
+                          className={cn(
+                            "text-[10px]",
+                            row.status === "done"
+                              ? "bg-emerald-500/20 text-emerald-100 border-emerald-400/25"
+                              : "bg-amber-500/15 text-amber-100 border-amber-400/25"
+                          )}
+                        >
+                          {row.status === "done"
+                            ? ar
+                              ? "منجز"
+                              : "Done"
+                            : ar
+                              ? "مفتوح"
+                              : "Open"}
+                        </Badge>
+                      </div>
+                      <p className="mt-3 text-sm text-white/75 leading-relaxed whitespace-pre-wrap">
+                        {row.text}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className={cn(
+                        "h-8 rounded-full text-[11px] gap-1.5 border",
+                        row.status === "done"
+                          ? "border-emerald-400/30 text-emerald-100 hover:bg-emerald-500/15"
+                          : "border-white/15 text-white/60 hover:text-white hover:bg-white/10"
+                      )}
+                      aria-pressed={row.status === "done"}
+                      onClick={() => toggleObligation(row.id)}
+                    >
+                      <CheckCircle2 className="size-3.5" />
+                      {row.status === "done"
+                        ? ar
+                          ? "إعادة فتح"
+                          : "Reopen"
+                        : ar
+                          ? "وضع كمنجز"
+                          : "Mark done"}
+                    </Button>
                   </div>
                 </div>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+      ) : (
+        <ScrollArea className="h-[min(70vh,720px)]">
+          <div className="px-4 sm:px-8 py-8 space-y-6">
+            {articles.length === 0 ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-white/40 text-sm">
+                <Loader2 className="size-4 animate-spin" />
+                {ar ? "لا بنود قابلة للعرض" : "No parseable articles"}
+              </div>
+            ) : (
+              articles.map((article, i) => (
+                <motion.article
+                  key={article.number}
+                  initial={{ opacity: 0, y: 12 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-20px" }}
+                  transition={{ delay: Math.min(i * 0.03, 0.2) }}
+                  className="rounded-xl border border-white/10 bg-white/[0.025] overflow-hidden"
+                >
+                  <div className="flex items-center gap-3 px-5 py-3 border-b border-white/10 bg-white/[0.03]">
+                    <span className="flex size-8 items-center justify-center rounded-full bg-[oklch(0.72_0.12_195)]/15 text-[oklch(0.82_0.1_195)] text-xs font-bold font-mono">
+                      {String(article.number).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">
+                        {ar ? article.titleAr : article.titleEn}
+                      </p>
+                      <p className="text-[11px] text-white/40 truncate">
+                        {ar ? article.titleEn : article.titleAr}
+                      </p>
+                    </div>
+                  </div>
 
                 {mode === "split" ? (
                   <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10 rtl:md:divide-x-reverse">
