@@ -19,8 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiJson } from "@/lib/api-client";
 import type { ApiProposal, ApiProposalReview } from "@/lib/api-types";
-import type { ContractArticle } from "@/lib/contract-format";
-import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
+import { parseContractArtifacts } from "@/lib/contract-artifacts";
 
 const REDLINE_LINE_LIMIT = 200;
 
@@ -40,25 +39,6 @@ type RedlineEntry = {
   message?: string;
   isError?: boolean;
 };
-
-function parseContractArtifacts(raw: string | null | undefined): {
-  research?: SaudiLawResearchBrief;
-  articles?: ContractArticle[];
-} {
-  if (!raw) return {};
-  try {
-    const arr = JSON.parse(raw) as unknown;
-    const first = Array.isArray(arr) ? arr[0] : arr;
-    if (!first || typeof first !== "object") return {};
-    const obj = first as Record<string, unknown>;
-    return {
-      research: obj.research as SaudiLawResearchBrief | undefined,
-      articles: obj.articles as ContractArticle[] | undefined,
-    };
-  } catch {
-    return {};
-  }
-}
 
 export function ReviewsQueue() {
   const { locale } = useLocale();
@@ -421,6 +401,7 @@ export function ReviewsQueue() {
                 versions={activeContract.versions ?? []}
                 research={contractArtifacts.research}
                 articles={contractArtifacts.articles}
+                milestones={contractArtifacts.milestones}
                 onSaved={() => {
                   qc.invalidateQueries({ queryKey: ["proposals"] });
                   qc.invalidateQueries({ queryKey: ["proposal", contractId] });

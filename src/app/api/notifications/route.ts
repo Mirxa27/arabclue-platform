@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { withTenant, jsonOk } from "@/lib/api-controller";
 import { computeOnboardingSteps } from "@/lib/onboarding";
+import { onboardingNotificationId } from "@/lib/notification-ids";
 import type { ApiNotification } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
@@ -74,7 +75,7 @@ export async function GET() {
 
     if (!onboarding.readyForProposals) {
       items.push({
-        id: "onboarding",
+        id: onboardingNotificationId(onboarding.missing),
         type: "ONBOARDING",
         severity: "WARN",
         title: "Complete account onboarding",

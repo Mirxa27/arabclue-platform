@@ -75,3 +75,29 @@ Stat card primary values (e.g. `activeProjects`, `avgCompliance`, lifetime total
 - `bun test src/lib/__tests__/stats-trends.test.ts` → 5 pass, 0 fail.
 - `bunx tsc --noEmit` → pass.
 - Commit: `fix(stats): clarify KPI trend semantics vs prior 7d`
+
+## Follow-up fix (whole-branch review findings)
+
+Status: DONE
+
+### Problems
+
+- Onboarding notifications used the static `onboarding` ID, so localStorage dismissal hid future onboarding gap changes forever.
+- `ReviewsQueue` opened `BilingualContractStudio` without passing parsed obligation milestones, while `ContractsPanel` did pass them.
+
+### Fix
+
+- Added `onboardingNotificationId()` to fingerprint onboarding notifications from `missing.join(",")`, leaving `CERT_EXPIRY` and `PENDING_REVIEW` IDs/dismissal unchanged.
+- Moved contract artifact parsing into `src/lib/contract-artifacts.ts`.
+- Updated both `ContractsPanel` and `ReviewsQueue` to use the same parser.
+- Passed `milestones` from review-opened contracts into `BilingualContractStudio`.
+- Added focused coverage for onboarding notification IDs and contract artifact milestone parsing.
+
+### Verification
+
+- `bun test src/lib/__tests__/notification-ids.test.ts src/lib/__tests__/contract-artifacts.test.ts` -> 3 pass, 0 fail.
+- `bunx tsc --noEmit` -> pass.
+- `bun test src/lib/__tests__/contract-obligations.test.ts` -> 2 pass, 0 fail.
+- `bun run test` -> 209 pass, 0 fail.
+- `bun run lint` -> pass.
+- `git diff --check` -> pass.
