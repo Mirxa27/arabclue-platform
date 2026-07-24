@@ -1,36 +1,33 @@
 # Implementation Status
 
-**Branch:** `cursor/product-gaps-ux-ab64`
+**Branch:** `cursor/remaining-gaps-sdd-ab64`
 **Verified:** 2026-07-24
 
-## Quality gates (executed)
+## Quality gates
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Unit tests | `bun test src/lib/__tests__` | **see latest gate** |
-| Typecheck | `bunx tsc --noEmit` | **see latest gate** |
-| Lint | `bun run lint` | **see latest gate** |
-| Build | `bun run build` | **see latest gate** |
+| Unit tests | `bun test` | **209 pass** |
+| Typecheck | `bunx tsc --noEmit` | **pass** |
+| Lint | `bun run lint` | **pass** |
 
-## Latest closures (product gaps UX)
+## Remaining product gaps (SDD Tasks 1–7)
 
 | Gap | Status | Evidence |
 | --- | --- | --- |
-| App Router route states | Closed | `not-found` / `error` / `global-error` / app `loading`+`error` |
-| Mobile shell | Closed | Sheet drawer nav + topbar menu; sidebar hidden `<md` |
-| Proposal export readiness UX | Closed | Checklist, gated ZIP/PDF, load error, empty BoQ |
-| Requirements evidence link | Closed | CERTIFICATE / STAFF / LIBRARY selectors in matrix |
-| Compliance remediation | Closed | Next-action list + Account/Agents CTAs |
-| Etimad manual cockpit | Closed | Deadline + bond/envelope checklist on overview |
-| Mission Control mobile height | Closed | Responsive `min-h` + `100dvh` |
-| Gap register | Closed | `docs/product-gaps-2026-07-24.md` |
+| QueryState on docs/contracts/history | Closed | Task 1 |
+| Agent ops workspace run history | Closed | `GET /api/agents/runs` + UI |
+| Reviews errors + redline | Closed | QueryState + compare panel |
+| Contract obligation register | Closed | derived extractor + studio tab |
+| Mission Control alert/recovery | Closed | toast + mission Retry + Stop teardown |
+| Qualification CTAs + onboarding CRUD | Closed | gap actions, EmptyState, approval reorder |
+| Billing failure UX | Closed | PAST_DUE/FAILED Alert + Retry |
+| Notification dismiss | Closed | localStorage + fingerprinted onboarding id |
+| Real KPI trends | Closed | 7d vs prior 7d + clarified copy |
 
-## Still open (see product-gaps doc)
-
-Agent ops center, reviews error/redline timeline, contract obligation register, Mission speech/`alert` polish, onboarding CRUD polish, billing failed-payment (needs merchant credentials), persisted notification read-state, live KPI trends.
-
-## Explicitly out of scope
+## Still deferred / external
 
 - Etimad portal submission API
 - SSO / OIDC
 - Live MyFatoorah without merchant credentials
+- Persisted server-side notification read-state (client dismiss is enough for v1)
