@@ -30,6 +30,15 @@ type BrandColors = {
   accentColor?: string;
 };
 
+type LetterheadPreview = {
+  companyName: string;
+  logoUrl?: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
+  accentColor?: string | null;
+  tagline?: string | null;
+};
+
 type Props = {
   markdown: string;
   onChange: (md: string) => void;
@@ -38,6 +47,7 @@ type Props = {
   className?: string;
   splitPreview?: boolean;
   brand?: BrandColors;
+  letterhead?: LetterheadPreview;
   readOnly?: boolean;
 };
 
@@ -53,6 +63,7 @@ export function MarkdownStudioEditorInner({
   className,
   splitPreview = true,
   brand,
+  letterhead,
   readOnly,
 }: Props) {
   const ar = locale === "ar";
@@ -126,10 +137,48 @@ export function MarkdownStudioEditorInner({
       </div>
       {splitPreview ? (
         <div
-          className="min-h-[420px] overflow-y-auto p-4 text-sm bg-muted/20"
+          className="min-h-[420px] overflow-y-auto bg-muted/20"
           dir={resolvedDir}
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
-        />
+        >
+          <div className="p-4">
+            {letterhead ? (
+              <div
+                className="mb-[18px] flex items-center justify-between gap-3 rounded-lg px-3.5 py-2.5 text-white"
+                style={{
+                  background: `linear-gradient(90deg, ${letterhead.primaryColor ?? "#1E3A8A"}, ${letterhead.secondaryColor ?? "#0F172A"})`,
+                  borderBottom: `3px solid ${letterhead.accentColor ?? "#0EA5E9"}`,
+                }}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {letterhead.logoUrl ? (
+                    <img
+                      src={letterhead.logoUrl}
+                      alt=""
+                      className="h-7 max-w-[120px] rounded bg-white/15 px-1.5 py-0.5 object-contain"
+                    />
+                  ) : null}
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-bold">
+                      {letterhead.companyName}
+                    </div>
+                    {letterhead.tagline ? (
+                      <div className="truncate text-[10px] opacity-90">
+                        {letterhead.tagline}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="shrink-0 text-[9px] uppercase tracking-[0.04em] opacity-85">
+                  {ar ? "ورق رسمي" : "Official letterhead"}
+                </div>
+              </div>
+            ) : null}
+            <div
+              className="text-sm"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   );

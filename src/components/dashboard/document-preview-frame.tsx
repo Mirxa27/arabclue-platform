@@ -188,7 +188,7 @@ export function DocumentPreviewFrame({
 
       <div
         className={cn(
-          "relative bg-[radial-gradient(ellipse_at_top,_rgba(15,23,42,0.04),_transparent_55%)]",
+          "relative overflow-auto bg-slate-100/80 p-3 sm:p-5 dark:bg-slate-950/30",
           compact ? "h-[420px]" : "h-[min(70vh,760px)]"
         )}
       >
@@ -217,20 +217,24 @@ export function DocumentPreviewFrame({
           </div>
         ) : null}
         {!loading && !error && mode === "html" && htmlSrc ? (
-          <iframe
-            id={`doc-preview-${proposalId}`}
-            title={title || "Document preview"}
-            src={htmlSrc}
-            className="size-full border-0 bg-white"
-            sandbox="allow-same-origin allow-scripts allow-modals allow-popups"
-          />
+          <div className="mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-sm border border-slate-200/90 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.18)] ring-1 ring-black/5">
+            <iframe
+              id={`doc-preview-${proposalId}`}
+              title={title || "Document preview"}
+              src={htmlSrc}
+              className="size-full border-0 bg-white"
+              sandbox="allow-same-origin allow-scripts allow-modals allow-popups"
+            />
+          </div>
         ) : null}
         {!loading && !error && mode === "pdf" && pdfSrc ? (
-          <iframe
-            title={title || "PDF preview"}
-            src={pdfSrc}
-            className="size-full border-0 bg-muted/30"
-          />
+          <div className="mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-sm border border-slate-200/90 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.18)] ring-1 ring-black/5">
+            <iframe
+              title={title || "PDF preview"}
+              src={pdfSrc}
+              className="size-full border-0 bg-muted/30"
+            />
+          </div>
         ) : null}
         {!loading && !error && !htmlSrc && !pdfSrc ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground gap-2">

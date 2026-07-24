@@ -27,6 +27,14 @@ export type MarkdownStudioEditorProps = {
   className?: string;
   splitPreview?: boolean;
   brand?: { primaryColor?: string; accentColor?: string };
+  letterhead?: {
+    companyName: string;
+    logoUrl?: string | null;
+    primaryColor?: string | null;
+    secondaryColor?: string | null;
+    accentColor?: string | null;
+    tagline?: string | null;
+  };
   readOnly?: boolean;
 };
 

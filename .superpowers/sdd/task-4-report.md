@@ -1,32 +1,37 @@
-# Task 4 Report: Contract obligation register (derived)
+# Task 4 Report: Proposal preview matches export letterhead
 
-Status: DONE
+**Status:** DONE
+**Branch:** `cursor/docs-generation-complete-ab64`
+**Commit message:** `fix(studio): letterhead-aware proposal preview layout`
 
 ## Summary
 
-- Added `src/lib/contract-obligations.ts` with `extractObligations(articles, milestones?)`.
-- Added `ObligationRow` rows with stable `article-*` / `milestone-*` ids, source labels, extracted text, and default `open` status.
-- Covered English and Arabic obligation heuristics: `obligation`, `shall`, `SLA`, `milestone`, `يجب`, `التزام`, and related Arabic forms.
-- Added a contract studio "Obligations" mode that lists derived rows and persists done/reopen toggles to `localStorage["arabclue-obligations:${proposalId}"]`.
-- Added a contracts panel "Obligations" action that opens the contract studio directly on the register.
-- Added extracted entities to newly generated contract artifacts so future contracts can surface milestone obligations without schema changes.
+- Mapped proposal Preview mode to `DocumentPreviewFrame`, matching Print mode and the HTML/PDF export preview path.
+- Added optional React-rendered letterhead metadata to `MarkdownStudioEditor` split previews.
+- Wired proposal split preview letterhead from `/api/brand` BrandProfile and workspace company data.
+- Added subtle paper chrome around the `DocumentPreviewFrame` iframe area.
 
-## TDD evidence
+## Files changed
 
-- Wrote `src/lib/__tests__/contract-obligations.test.ts` before the extractor implementation.
-- First red run failed on the missing module.
-- Added a skeletal export and reran red; it failed on the expected empty extraction.
-- Implemented the heuristic extractor and reran to green.
+- `src/components/dashboard/proposal-editor.tsx`
+- `src/components/dashboard/markdown-studio-editor.tsx`
+- `src/components/dashboard/markdown-studio-editor-inner.tsx`
+- `src/components/dashboard/document-preview-frame.tsx`
+- `.superpowers/sdd/task-4-report.md`
 
 ## Verification
 
-- `bun test src/lib/__tests__/contract-obligations.test.ts` — pass.
-- `bunx tsc --noEmit` — pass.
-- `bun run test` — pass, 201 tests.
-- `bun run lint` — pass.
-- `bun run build` — pass.
+| Check | Result |
+|-------|--------|
+| `bunx tsc --noEmit` | Pass (exit 0) |
+| `bun run lint` | Pass (exit 0) |
+
+## Constraints
+
+- Did not implement Task 5.
+- No schema changes.
+- No dependency changes.
 
 ## Concerns
 
-- No new Prisma models were added.
-- GUI/browser manual testing was not performed because this tool environment does not expose a computer-use browser executor; the UI path was verified through TypeScript, lint, and production build.
+- No browser/manual UI walkthrough was performed because this subagent environment does not expose a computer-use executor.

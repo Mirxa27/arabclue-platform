@@ -36,8 +36,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { markdownToHtml } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
+import {
+  letterheadCompanyName,
+  type LetterheadBrand,
+  type LetterheadCompany,
+} from "@/lib/letterhead";
 import { DocumentPreviewFrame } from "./document-preview-frame";
 import { MarkdownStudioEditor } from "./markdown-studio-editor";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
@@ -63,6 +67,11 @@ type ProposalSkill =
   | "translate"
   | "redesign"
   | "section";
+
+type BrandResponse = {
+  brandProfile: LetterheadBrand | null;
+  company?: LetterheadCompany | null;
+};
 
 const SKILLS: { id: ProposalSkill; en: string; ar: string }[] = [
   { id: "rewrite", en: "Rewrite", ar: "إعادة صياغة" },
@@ -129,19 +138,23 @@ export function ProposalEditorDialog({
     },
   });
 
-  const { data: brandData } = useQuery({
+  const { data: brandData } = useQuery<BrandResponse>({
     queryKey: ["brand"],
     enabled: open,
     queryFn: async () => {
       const res = await fetch("/api/brand");
-      if (!res.ok) return { brandProfile: null };
+      if (!res.ok) return { brandProfile: null, company: null };
       return res.json();
     },
   });
-  const brandColors = {
-    primaryColor: brandData?.brandProfile?.primaryColor as string | undefined,
-    accentColor: brandData?.brandProfile?.accentColor as string | undefined,
-  };
+  const brandProfile = brandData?.brandProfile ?? null;
+  const brandColors = useMemo(
+    () => ({
+      primaryColor: brandProfile?.primaryColor ?? undefined,
+      accentColor: brandProfile?.accentColor ?? undefined,
+    }),
+    [brandProfile?.primaryColor, brandProfile?.accentColor]
+  );
   if (open && proposalId && proposalId !== activeId) {
     setActiveId(proposalId);
     setDraftMd(null);
@@ -174,14 +187,24 @@ export function ProposalEditorDialog({
     createdAt: string;
   }[] = data?.proposal?.versions ?? [];
 
-  const previewHtml = useMemo(
-    () =>
-      markdownToHtml(markdown, {
-        headingColor: brandColors.primaryColor ?? "#1E3A8A",
-        accentColor: brandColors.accentColor ?? "#0EA5E9",
-      }),
-    [markdown, brandColors.primaryColor, brandColors.accentColor]
-  );
+  const splitLetterhead = useMemo(() => {
+    const companyName = letterheadCompanyName(
+      propLocale,
+      brandProfile,
+      brandData?.company
+    );
+    return {
+      companyName,
+      logoUrl: brandProfile?.logoUrl,
+      primaryColor: brandProfile?.primaryColor,
+      secondaryColor: brandProfile?.secondaryColor,
+      accentColor: brandProfile?.accentColor,
+      tagline:
+        propLocale === "ar"
+          ? brandProfile?.taglineAr || brandProfile?.tagline
+          : brandProfile?.tagline || brandProfile?.taglineAr,
+    };
+  }, [brandData?.company, brandProfile, propLocale]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -414,7 +437,7 @@ export function ProposalEditorDialog({
 
   const version = data?.proposal?.version ?? 1;
   const status = data?.proposal?.status ?? "DRAFT";
-  const showPrint = mode === "print";
+  const showDocumentPreview = mode === "print" || mode === "preview";
   const issues = validationData?.validation?.issues ?? [];
   const exportBlocked = validationData != null && !validationData.exportReady;
 
@@ -965,7 +988,7 @@ export function ProposalEditorDialog({
                   </p>
                 )}
               </div>
-            ) : showPrint && proposalId ? (
+            ) : showDocumentPreview && proposalId ? (
               <div className="flex-1 min-h-0 overflow-auto">
                 <DocumentPreviewFrame
                   locale={propLocale}
@@ -985,14 +1008,8 @@ export function ProposalEditorDialog({
                     dir={propLocale === "ar" ? "rtl" : "ltr"}
                     splitPreview={mode === "split"}
                     brand={brandColors}
+                    letterhead={splitLetterhead}
                     className="flex-1 min-h-0"
-                  />
-                )}
-                {mode === "preview" && (
-                  <div
-                    className="flex-1 min-h-0 overflow-y-auto rounded-md border p-4 text-sm bg-muted/20"
-                    dir={propLocale === "ar" ? "rtl" : "ltr"}
-                    dangerouslySetInnerHTML={{ __html: previewHtml }}
                   />
                 )}
               </div>
