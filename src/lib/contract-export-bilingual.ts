@@ -23,6 +23,7 @@ import {
   type LetterheadBrand,
   type LetterheadCompany,
 } from "./letterhead";
+import { normalizeBrandForDocument } from "./brand-policy";
 
 export type ContractLayoutMode =
   | BilingualLayoutMode
@@ -236,6 +237,7 @@ function resolveColumnRatio(
 export function buildContractBilingualDocument(
   opts: EnhancedContractExportOpts
 ): ContractDocumentBuildResult {
+  const brand = normalizeBrandForDocument(opts.brand ?? null);
   const canonicalArticles = parseContractArticles(opts.contentMd);
   const legacyArticles =
     canonicalArticles.length === 0
@@ -306,8 +308,8 @@ export function buildContractBilingualDocument(
   const layout = resolveLayout(opts);
   const projectTitle = opts.projectTitle?.trim() || "Not provided";
   const reference = opts.etimadRef?.trim() || "N/A";
-  const companyEn = letterheadCompanyName("en", opts.brand, opts.company);
-  const companyAr = letterheadCompanyName("ar", opts.brand, opts.company);
+  const companyEn = letterheadCompanyName("en", brand, opts.company);
+  const companyAr = letterheadCompanyName("ar", brand, opts.company);
 
   const document: BilingualDocumentSpec = {
     id: "contract-bilingual",
@@ -440,7 +442,8 @@ export async function generateEnhancedBilingualContractPDF(
   opts: Omit<EnhancedContractExportOpts, "forPrint">
 ): Promise<Buffer> {
   const compiled = buildContractBilingualDocument(opts);
-  const companyLabel = letterheadCompanyName("en", opts.brand, opts.company);
+  const brand = normalizeBrandForDocument(opts.brand ?? null);
+  const companyLabel = letterheadCompanyName("en", brand, opts.company);
   const result = await generateBilingualPdf(compiled.document, {
     pdf: {
       format: "A4",
@@ -449,11 +452,11 @@ export async function generateEnhancedBilingualContractPDF(
       headerTemplate: pdfHeaderTemplate({
         companyName: companyLabel,
         etimadRef: opts.etimadRef,
-        primaryColor: opts.brand?.primaryColor ?? "#0f766e",
+        primaryColor: brand?.primaryColor ?? "#0f766e",
       }),
       footerTemplate: pdfFooterTemplate({
         companyName: companyLabel,
-        primaryColor: opts.brand?.primaryColor ?? "#0f766e",
+        primaryColor: brand?.primaryColor ?? "#0f766e",
       }),
       margin: {
         top: "18mm",

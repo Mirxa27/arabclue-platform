@@ -24,6 +24,8 @@ Health: call the `/api/health` route on your local app port.
 3. Set the Production `DATABASE_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`,
    `ARABCLUE_ENC_KEY`, bootstrap administrator values, and
    `BLOB_READ_WRITE_TOKEN` through Vercel's sensitive environment settings.
+   Set `REDIS_URL` to a production Redis service as well; authenticated
+   document-export limits must be shared across serverless instances.
 4. Validate a committed migration on an isolated Neon branch, then run
    `bun run db:migrate:deploy` once as a separately approved Production release
    step.

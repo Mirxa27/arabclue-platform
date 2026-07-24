@@ -11,7 +11,10 @@ import {
 describe("letterhead helpers", () => {
   test("resolves known font stacks and falls back safely", () => {
     expect(resolveBrandFontStack("Cairo")).toContain("Cairo");
-    expect(resolveBrandFontStack("Weird Font")).toContain("Weird Font");
+    expect(resolveBrandFontStack("Weird Font")).toContain(
+      "IBM Plex Sans Arabic"
+    );
+    expect(resolveBrandFontStack("Weird Font")).not.toContain("Weird Font");
     expect(resolveBrandFontStack(null)).toContain("IBM Plex Sans Arabic");
   });
 
@@ -58,6 +61,7 @@ describe("letterhead helpers", () => {
       locale: "en",
       companyName: "Acme Co",
       brand: {
+        workspaceId: "x",
         logoUrl: "/api/files?path=uploads/x/logo.png",
         primaryColor: "#1E3A8A",
         secondaryColor: "#0F172A",
@@ -69,5 +73,25 @@ describe("letterhead helpers", () => {
     expect(html).toContain("Official letterhead");
     expect(html).toContain("logo.png");
     expect(googleFontsHref("Tajawal")).toContain("Tajawal");
+  });
+
+  test("normalizes legacy style payloads and omits untrusted logos", () => {
+    const payload = `red}</style><script>alert(1)</script>`;
+    const html = letterheadBarHtml({
+      locale: "en",
+      companyName: "Acme Co",
+      brand: {
+        workspaceId: "workspace-1",
+        logoUrl: "https://attacker.example/tracker.svg",
+        primaryColor: payload,
+        secondaryColor: "url(https://attacker.example)",
+        accentColor: "#0EA5E9",
+      },
+    });
+
+    expect(html).not.toContain(payload);
+    expect(html).not.toContain("attacker.example");
+    expect(html).not.toContain("<script");
+    expect(html).toContain("#0D9488");
   });
 });

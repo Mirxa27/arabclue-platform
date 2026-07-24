@@ -7,6 +7,7 @@
  */
 
 import { designTokens } from "./design-tokens";
+import { findUnsafeBidiControls } from "./bilingual-typography";
 
 export type DocumentVisualizationLocale = "ar" | "en";
 export type DocumentDirection = "rtl" | "ltr";
@@ -326,6 +327,9 @@ function normalizeLabel(value: unknown, path: string): BilingualLabel {
 
 function normalizeLabelText(value: unknown, path: string): string {
   if (typeof value !== "string") invalid(path, "must be a string");
+  if (findUnsafeBidiControls(value).length > 0) {
+    invalid(path, "must not contain Unicode bidirectional control characters");
+  }
   const normalized = value.trim();
   if (!normalized) invalid(path, "must not be blank");
   if (normalized.length > DOCUMENT_VISUALIZATION_LIMITS.maxLabelLength) {
@@ -604,6 +608,12 @@ function normalizeCell(
   switch (column.kind) {
     case "text":
       if (typeof value !== "string") invalid(path, "must be a string or null");
+      if (findUnsafeBidiControls(value).length > 0) {
+        invalid(
+          path,
+          "must not contain Unicode bidirectional control characters"
+        );
+      }
       if (value.length > DOCUMENT_VISUALIZATION_LIMITS.maxLabelLength) {
         limit(
           path,

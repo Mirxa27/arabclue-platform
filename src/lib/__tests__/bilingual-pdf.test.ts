@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import sharp from "sharp";
 import type {
   BilingualDocumentSpec,
   BilingualInlineNode,
@@ -10,6 +11,7 @@ import {
   generateBilingualPdf,
   getEmbeddedBilingualFontCss,
   inspectBilingualHtml,
+  prepareBilingualPdfDocument,
   renderBilingualArtifact,
 } from "../bilingual-pdf";
 
@@ -44,6 +46,30 @@ const fixture: BilingualDocumentSpec = {
     },
   ],
 };
+
+function fixtureWithImage(
+  source:
+    | { readonly kind: "public"; readonly path: string }
+    | { readonly kind: "data"; readonly uri: string }
+): BilingualDocumentSpec {
+  return {
+    ...fixture,
+    sections: [
+      {
+        ...fixture.sections[0],
+        blocks: [
+          ...fixture.sections[0].blocks,
+          {
+            type: "image",
+            id: "verified-image",
+            source,
+            alt: { en: "Verified image", ar: "صورة موثقة" },
+          },
+        ],
+      },
+    ],
+  };
+}
 
 describe("bilingual PDF font embedding", () => {
   test("embeds every IBM Arabic/Latin weight without a network URL", async () => {
@@ -134,6 +160,118 @@ describe("canonical bilingual render artifact", () => {
     expect(error.message).toContain(issues[1].message);
     expect(error.issues).toEqual(issues);
   });
+});
+
+describe("bilingual PDF image preflight", () => {
+  test("blocks public images unless a trusted resolver supplies bytes", async () => {
+    const input = fixtureWithImage({
+      kind: "public",
+      path: "/documents/logo.png",
+    });
+
+    await expect(prepareBilingualPdfDocument(input)).rejects.toMatchObject({
+      name: "BilingualPdfQualityError",
+      issues: [{ code: "UNRESOLVED_PUBLIC_IMAGE" }],
+    });
+  });
+
+  test("resolver output is decoded, normalized and embedded", async () => {
+    const png = await sharp({
+      create: {
+        width: 8,
+        height: 5,
+        channels: 4,
+        background: "#0D9488",
+      },
+    })
+      .png()
+      .toBuffer();
+    const prepared = await prepareBilingualPdfDocument(
+      fixtureWithImage({
+        kind: "public",
+        path: "/documents/logo.png",
+      }),
+      {
+        resolvePublicImage: async (assetPath) => {
+          expect(assetPath).toBe("/documents/logo.png");
+          return png;
+        },
+      }
+    );
+    const image = prepared.sections[0].blocks.find(
+      (block) => block.type === "image"
+    );
+
+    expect(image?.type).toBe("image");
+    if (image?.type === "image") {
+      expect(image.source.kind).toBe("data");
+      if (image.source.kind === "data") {
+        expect(image.source.uri).toStartWith("data:image/png;base64,");
+      }
+    }
+  });
+
+  test("rejects corrupt and MIME-spoofed embedded image data", async () => {
+    const png = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 3,
+        background: "#ffffff",
+      },
+    })
+      .png()
+      .toBuffer();
+
+    await expect(
+      prepareBilingualPdfDocument(
+        fixtureWithImage({
+          kind: "data",
+          uri: "data:image/png;base64,AAAA",
+        })
+      )
+    ).rejects.toMatchObject({
+      issues: [{ code: "INVALID_IMAGE_ASSET" }],
+    });
+    await expect(
+      prepareBilingualPdfDocument(
+        fixtureWithImage({
+          kind: "data",
+          uri: `data:image/jpeg;base64,${png.toString("base64")}`,
+        })
+      )
+    ).rejects.toMatchObject({
+      issues: [{ code: "INVALID_IMAGE_ASSET" }],
+    });
+  });
+
+  test(
+    "rejects a valid compressed image above the decoded pixel limit",
+    async () => {
+      const oversized = await sharp({
+        create: {
+          width: 5_001,
+          height: 5_000,
+          channels: 3,
+          background: "#ffffff",
+        },
+      })
+        .png({ compressionLevel: 9 })
+        .toBuffer();
+
+      await expect(
+        prepareBilingualPdfDocument(
+          fixtureWithImage({
+            kind: "data",
+            uri: `data:image/png;base64,${oversized.toString("base64")}`,
+          })
+        )
+      ).rejects.toMatchObject({
+        issues: [{ code: "INVALID_IMAGE_ASSET" }],
+      });
+    },
+    30_000
+  );
 });
 
 test.skipIf(process.env.PLAYWRIGHT_CHROMIUM !== "1")(

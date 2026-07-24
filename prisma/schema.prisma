@@ -13,58 +13,68 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum KnowledgeReviewStatus {
+  UNREVIEWED
+  APPROVED
+  REVOKED
+}
+
 // ─── Identity & Access (RBAC + MFA) ──────────────────────────────────────────
 
 model User {
-  id              String   @id @default(cuid())
-  email           String   @unique
-  name            String
-  passwordHash    String
-  role            String   @default("BIDDER") // SUPER_ADMIN | ADMIN | BIDDER | REVIEWER | FINANCE
-  mfaEnabled      Boolean  @default(false)
-  mfaSecret       String?
-  avatarUrl       String?
-  locale          String   @default("ar") // ar | en
-  active          Boolean  @default(true)
-  mustChangePassword Boolean @default(false)
-  activeWorkspaceId String?
-  lastLoginAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  name               String
+  passwordHash       String
+  role               String    @default("BIDDER") // SUPER_ADMIN | ADMIN | BIDDER | REVIEWER | FINANCE
+  mfaEnabled         Boolean   @default(false)
+  mfaSecret          String?
+  avatarUrl          String?
+  locale             String    @default("ar") // ar | en
+  active             Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  activeWorkspaceId  String?
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  workspaces      WorkspaceMember[]
-  projects        TenderProject[]
-  documents       UploadedDocument[]
-  proposals       GeneratedProposal[]
-  agentRuns       AgentRun[]
-  sessions        UserSession[]
-  auditLogs       AuditLog[]
-  billingRecords  BillingRecord[]
-  paymentCheckouts PaymentCheckout[]
-  subscription    Subscription?
-  approvalSteps   ApprovalStep[]
-  proposalReviews ProposalReview[]
-  copilotMissions CopilotMission[]
-  copilotMessages CopilotMessage[]
-  copilotAttachments CopilotAttachment[]
-  copilotActions  CopilotAction[]
+  workspaces             WorkspaceMember[]
+  projects               TenderProject[]
+  documents              UploadedDocument[]
+  proposals              GeneratedProposal[]
+  agentRuns              AgentRun[]
+  sessions               UserSession[]
+  auditLogs              AuditLog[]
+  billingRecords         BillingRecord[]
+  paymentCheckouts       PaymentCheckout[]
+  subscription           Subscription?
+  approvalSteps          ApprovalStep[]
+  proposalReviews        ProposalReview[]
+  copilotMissions        CopilotMission[]
+  copilotMessages        CopilotMessage[]
+  copilotAttachments     CopilotAttachment[]
+  copilotActions         CopilotAction[]
   notificationDismissals NotificationDismissal[]
-  obligationUpdates ContractObligationState[]
-  createdTemplates ContractTemplate[] @relation("TemplateCreator")
-  approvedTemplates ContractTemplate[] @relation("TemplateApprover")
-  templateVersions ContractTemplateVersion[]
-  generatedContracts GeneratedContract[]
+  obligationUpdates      ContractObligationState[]
+  createdTemplates       ContractTemplate[]        @relation("TemplateCreator")
+  approvedTemplates      ContractTemplate[]        @relation("TemplateApprover")
+  templateVersions       ContractTemplateVersion[]
+  generatedContracts     GeneratedContract[]
+  reviewedPastProjects   PastProject[]             @relation("PastProjectReviewer")
+  reviewedCertificates   Certificate[]             @relation("CertificateReviewer")
+  reviewedMethodologies  MethodologyAsset[]        @relation("MethodologyReviewer")
+  reviewedLibraryItems   ContentLibraryItem[]      @relation("LibraryItemReviewer")
 }
 
 model UserSession {
-  id           String   @id @default(cuid())
-  userId       String
-  token        String   @unique
-  userAgent    String?
-  ipAddress    String?
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -72,15 +82,15 @@ model UserSession {
 // ─── Workspaces (multi-tenant) ───────────────────────────────────────────────
 
 model Workspace {
-  id            String   @id @default(cuid())
-  name          String
-  nameAr        String?
-  slug          String   @unique
-  plan          String   @default("ENTERPRISE") // STARTER | PRO | ENTERPRISE
-  crNumber      String?  // Commercial Registration
-  vatNumber     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  nameAr    String?
+  slug      String   @unique
+  plan      String   @default("ENTERPRISE") // STARTER | PRO | ENTERPRISE
+  crNumber  String? // Commercial Registration
+  vatNumber String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   members            WorkspaceMember[]
   projects           TenderProject[]
@@ -106,13 +116,13 @@ model Workspace {
 }
 
 model WorkspaceMember {
-  id           String   @id @default(cuid())
-  workspaceId  String
-  userId       String
-  role         String   @default("MEMBER") // OWNER | ADMIN | MEMBER
-  createdAt    DateTime @default(now())
-  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String    @default("MEMBER") // OWNER | ADMIN | MEMBER
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
   @@index([userId])
@@ -121,29 +131,29 @@ model WorkspaceMember {
 // ─── Tender Projects ─────────────────────────────────────────────────────────
 
 model TenderProject {
-  id               String   @id @default(cuid())
-  workspaceId      String
-  createdById      String
-  etimadRef        String?  // Etimad tender reference number
-  title            String
-  titleAr          String?
-  category         String?  // IT | CONSULTING | CONSTRUCTION | MEDICAL | GENERAL
-  budget           Float?
-  currency         String   @default("SAR")
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  createdById        String
+  etimadRef          String? // Etimad tender reference number
+  title              String
+  titleAr            String?
+  category           String? // IT | CONSULTING | CONSTRUCTION | MEDICAL | GENERAL
+  budget             Float?
+  currency           String    @default("SAR")
   submissionDeadline DateTime?
-  status           String   @default("DRAFT") // DRAFT | PARSING | DRAFTING | REVIEW | SUBMITTED | ARCHIVED
-  saudizationTarget Float?  // percentage
+  status             String    @default("DRAFT") // DRAFT | PARSING | DRAFTING | REVIEW | SUBMITTED | ARCHIVED
+  saudizationTarget  Float? // percentage
   localContentTarget Float? // percentage
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy        User      @relation(fields: [createdById], references: [id])
-  documents        UploadedDocument[]
-  proposals        GeneratedProposal[]
-  agentRuns        AgentRun[]
-  complianceChecks ComplianceCheck[]
-  requirements     TenderRequirement[]
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy          User                @relation(fields: [createdById], references: [id])
+  documents          UploadedDocument[]
+  proposals          GeneratedProposal[]
+  agentRuns          AgentRun[]
+  complianceChecks   ComplianceCheck[]
+  requirements       TenderRequirement[]
   generatedContracts GeneratedContract[]
 
   @@index([workspaceId])
@@ -153,29 +163,29 @@ model TenderProject {
 // ─── Uploaded Documents (versioned) ──────────────────────────────────────────
 
 model UploadedDocument {
-  id              String   @id @default(cuid())
-  workspaceId     String
-  projectId       String?
-  uploadedById    String
-  originalName    String
-  storagePath     String
-  mimeType        String
-  sizeBytes       Int
-  docCategory     String   // RFP | TECHNICAL_SPECS | IT_CONTRACT | EA_COMPLIANCE | QUALIFICATION | FINANCIAL | BRAND_ASSET | OTHER
-  docTypeAr       String?
-  checksum        String?
-  currentVersion  Int      @default(1)
-  parseStatus     String   @default("PENDING") // PENDING | PARSING | PARSED | FAILED
-  parsedSummary   String?
+  id                String   @id @default(cuid())
+  workspaceId       String
+  projectId         String?
+  uploadedById      String
+  originalName      String
+  storagePath       String
+  mimeType          String
+  sizeBytes         Int
+  docCategory       String // RFP | TECHNICAL_SPECS | IT_CONTRACT | EA_COMPLIANCE | QUALIFICATION | FINANCIAL | BRAND_ASSET | OTHER
+  docTypeAr         String?
+  checksum          String?
+  currentVersion    Int      @default(1)
+  parseStatus       String   @default("PENDING") // PENDING | PARSING | PARSED | FAILED
+  parsedSummary     String?
   extractedEntities String? // JSON blob of extracted SOW/SLA/milestones
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project         TenderProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  uploadedBy      User      @relation(fields: [uploadedById], references: [id])
-  versions        DocumentVersion[]
-  chunks          DocumentChunk[]
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project            TenderProject?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  uploadedBy         User                @relation(fields: [uploadedById], references: [id])
+  versions           DocumentVersion[]
+  chunks             DocumentChunk[]
   copilotAttachments CopilotAttachment[]
 
   @@index([workspaceId])
@@ -186,19 +196,19 @@ model UploadedDocument {
 // ─── Voice Mission Control (durable Copilot sessions) ────────────────────────
 
 model CopilotMission {
-  id               String   @id @default(cuid())
-  workspaceId      String
-  userId           String
-  title            String   @default("Mission Control")
-  status           String   @default("ACTIVE") // ACTIVE | ARCHIVED
-  activeProjectId  String?
-  locale           String   @default("ar")
-  lastActivityAt   DateTime @default(now())
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default(cuid())
+  workspaceId     String
+  userId          String
+  title           String   @default("Mission Control")
+  status          String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  activeProjectId String?
+  locale          String   @default("ar")
+  lastActivityAt  DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages    CopilotMessage[]
   attachments CopilotAttachment[]
   actions     CopilotAction[]
@@ -211,8 +221,8 @@ model CopilotMessage {
   id        String   @id @default(cuid())
   missionId String
   userId    String?
-  role      String   // user | assistant | system
-  partsJson String   // JSON UIMessage parts / text payload
+  role      String // user | assistant | system
+  partsJson String // JSON UIMessage parts / text payload
   createdAt DateTime @default(now())
 
   mission CopilotMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
@@ -222,29 +232,29 @@ model CopilotMessage {
 }
 
 model CopilotAttachment {
-  id              String   @id @default(cuid())
-  missionId       String
-  workspaceId     String
-  userId          String
-  documentId      String?
-  projectId       String?
-  source          String   @default("upload") // upload | url | camera | browser | email | drive | paste
-  originalName    String
-  mimeType        String
-  sizeBytes       Int      @default(0)
-  storagePath     String?
-  textPreview     String?
-  docCategory     String   @default("OTHER")
-  confidence      Float    @default(0)
-  routeStatus     String   @default("STAGED") // STAGED | ROUTED | AUTOPILOT | NEEDS_CLARIFICATION | FAILED | UNDONE
+  id                 String   @id @default(cuid())
+  missionId          String
+  workspaceId        String
+  userId             String
+  documentId         String?
+  projectId          String?
+  source             String   @default("upload") // upload | url | camera | browser | email | drive | paste
+  originalName       String
+  mimeType           String
+  sizeBytes          Int      @default(0)
+  storagePath        String?
+  textPreview        String?
+  docCategory        String   @default("OTHER")
+  confidence         Float    @default(0)
+  routeStatus        String   @default("STAGED") // STAGED | ROUTED | AUTOPILOT | NEEDS_CLARIFICATION | FAILED | UNDONE
   classificationJson String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  mission  CopilotMission    @relation(fields: [missionId], references: [id], onDelete: Cascade)
-  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  document UploadedDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  mission   CopilotMission    @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document  UploadedDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
 
   @@index([missionId, createdAt])
   @@index([workspaceId])
@@ -252,18 +262,18 @@ model CopilotAttachment {
 }
 
 model CopilotAction {
-  id         String   @id @default(cuid())
-  missionId  String
+  id          String   @id @default(cuid())
+  missionId   String
   workspaceId String
-  userId     String
-  toolName   String
-  status     String   @default("RUNNING") // RUNNING | SUCCEEDED | FAILED | UNDONE
-  inputJson  String?
-  outputJson String?
-  errorText  String?
-  reversible Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  userId      String
+  toolName    String
+  status      String   @default("RUNNING") // RUNNING | SUCCEEDED | FAILED | UNDONE
+  inputJson   String?
+  outputJson  String?
+  errorText   String?
+  reversible  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   mission   CopilotMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
   workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -281,10 +291,10 @@ model DocumentChunk {
   projectId     String?
   chunkIndex    Int
   content       String
-  embeddingJson String?  // JSON number[] for dense retrieval
+  embeddingJson String? // JSON number[] for dense retrieval
   createdAt     DateTime @default(now())
 
-  document      UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, chunkIndex])
   @@index([workspaceId])
@@ -293,18 +303,18 @@ model DocumentChunk {
 }
 
 model DocumentVersion {
-  id                 String   @id @default(cuid())
-  documentId         String
-  version            Int
-  storagePath        String
-  sizeBytes          Int
-  changeLog          String?
-  parsedSummary      String?
-  extractedEntities  String?
-  checksum           String?
-  createdBy          String
-  createdAt          DateTime @default(now())
-  document           UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  id                String           @id @default(cuid())
+  documentId        String
+  version           Int
+  storagePath       String
+  sizeBytes         Int
+  changeLog         String?
+  parsedSummary     String?
+  extractedEntities String?
+  checksum          String?
+  createdBy         String
+  createdAt         DateTime         @default(now())
+  document          UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, version])
   @@index([documentId])
@@ -313,73 +323,81 @@ model DocumentVersion {
 // ─── Brand Profiles & Past Projects (RAG corpus) ────────────────────────────
 
 model BrandProfile {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  logoUrl       String?
-  primaryColor  String   @default("#1E3A8A")
-  secondaryColor String  @default("#0F172A")
-  accentColor   String   @default("#0EA5E9")
-  fontFamily    String   @default("IBM Plex Sans Arabic")
-  tagline       String?
-  taglineAr     String?
+  id                  String   @id @default(cuid())
+  workspaceId         String
+  logoUrl             String?
+  primaryColor        String   @default("#1E3A8A")
+  secondaryColor      String   @default("#0F172A")
+  accentColor         String   @default("#0EA5E9")
+  fontFamily          String   @default("IBM Plex Sans Arabic")
+  tagline             String?
+  taglineAr           String?
   vision2030Alignment String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  pastProjects  PastProject[]
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pastProjects PastProject[]
 }
 
 model PastProject {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   workspaceId    String
   brandProfileId String?
   title          String
   titleAr        String?
   clientName     String?
   clientNameAr   String?
-  sector         String?  // GOV | HEALTH | FINANCE | ENERGY | TELECOM | OTHER
+  sector         String? // GOV | HEALTH | FINANCE | ENERGY | TELECOM | OTHER
   contractValue  Float?
-  currency       String   @default("SAR")
+  currency       String    @default("SAR")
   startDate      DateTime?
   endDate        DateTime?
-  outcome        String?  // SUCCESSFUL | ONGOING | COMPLETED
-  summary        String   // rich text / vectorized for RAG
+  outcome        String? // SUCCESSFUL | ONGOING | COMPLETED
+  summary        String // rich text / vectorized for RAG
   summaryAr      String?
-  vectorId       String?  // optional external vector store id
-  embeddingJson  String?  // JSON number[] embedding for local RAG
-  tags           String?  // comma-separated
-  approved       Boolean  @default(true)
+  vectorId       String? // optional external vector store id
+  embeddingJson  String? // JSON number[] embedding for local RAG
+  tags           String? // comma-separated
+  approved       Boolean   @default(false)
+  reviewStatus   KnowledgeReviewStatus @default(UNREVIEWED)
+  evidenceRef    String?
+  provenanceJson String?   @db.Text
+  reviewedById   String?
+  approvedAt     DateTime?
+  contentHash    String?
   revokedAt      DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  brandProfile   BrandProfile? @relation(fields: [brandProfileId], references: [id], onDelete: SetNull)
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brandProfile BrandProfile? @relation(fields: [brandProfileId], references: [id], onDelete: SetNull)
+  reviewer     User?          @relation("PastProjectReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
 
   @@index([workspaceId])
   @@index([sector])
+  @@index([workspaceId, reviewStatus, approved])
 }
 
 // ─── Multi-Agent Workflow Runs ───────────────────────────────────────────────
 
 model AgentRun {
-  id            String   @id @default(cuid())
-  projectId     String
-  triggeredById String
-  status        String   @default("QUEUED") // QUEUED | RUNNING | COMPLETED | FAILED | CANCELLED
-  startedAt     DateTime?
-  completedAt   DateTime?
-  overallProgress Float  @default(0) // 0-100
-  agentStates   String?  // JSON: per-agent status/progress/output
-  finalArtifact String?  // JSON summary of generated artifacts
-  configJson    String?  // JSON: durable run config for resume (locale, workspace, regenerate mode)
-  errorMessage  String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String    @id @default(cuid())
+  projectId       String
+  triggeredById   String
+  status          String    @default("QUEUED") // QUEUED | RUNNING | COMPLETED | FAILED | CANCELLED
+  startedAt       DateTime?
+  completedAt     DateTime?
+  overallProgress Float     @default(0) // 0-100
+  agentStates     String? // JSON: per-agent status/progress/output
+  finalArtifact   String? // JSON summary of generated artifacts
+  configJson      String? // JSON: durable run config for resume (locale, workspace, regenerate mode)
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  triggeredBy   User          @relation(fields: [triggeredById], references: [id])
+  project     TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  triggeredBy User          @relation(fields: [triggeredById], references: [id])
 
   @@index([projectId])
   @@index([status])
@@ -388,21 +406,21 @@ model AgentRun {
 // ─── Compliance Checks (NCA / PDPL / EA) ────────────────────────────────────
 
 model ComplianceCheck {
-  id            String   @id @default(cuid())
-  projectId     String
-  framework     String   // NCA_ECC1 | NCA_CCC1 | PDPL | EA_TP1 | EA_SP1 | EA_SP2 | LOCAL_CONTENT
-  controlId     String   // e.g. ECC-1.3, PDPL-14, TP1-CloudFirst
-  title         String
-  titleAr       String?
-  requirement   String
-  status        String   @default("PENDING") // PENDING | COMPLIANT | PARTIAL | NON_COMPLIANT | NOT_APPLICABLE
+  id              String   @id @default(cuid())
+  projectId       String
+  framework       String // NCA_ECC1 | NCA_CCC1 | PDPL | EA_TP1 | EA_SP1 | EA_SP2 | LOCAL_CONTENT
+  controlId       String // e.g. ECC-1.3, PDPL-14, TP1-CloudFirst
+  title           String
+  titleAr         String?
+  requirement     String
+  status          String   @default("PENDING") // PENDING | COMPLIANT | PARTIAL | NON_COMPLIANT | NOT_APPLICABLE
   complianceLevel String? // C1 (Full) | C2 (Substantial) | C3 (Partial)
-  evidence      String?
-  remediation   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  evidence        String?
+  remediation     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([framework])
@@ -411,34 +429,34 @@ model ComplianceCheck {
 // ─── Generated Proposals ─────────────────────────────────────────────────────
 
 model GeneratedProposal {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  projectId     String
-  createdById   String
-  parentProposalId String? // lineage when forked from another proposal
-  title         String
-  titleAr       String?
-  type          String   // TECHNICAL | FINANCIAL | EA_MATRIX | BOQ | COMBINED
-  status        String   @default("DRAFT") // DRAFT | GENERATED | REVIEW | REVIEWED | APPROVED | REJECTED | EXPORTED
-  version       Int      @default(1)
-  contentMd     String?  // markdown content
-  locale        String   @default("ar") // ar | en — generation language
-  artifactsJson String?  // JSON: list of {type, filename, downloadPath}
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  projectId          String
+  createdById        String
+  parentProposalId   String? // lineage when forked from another proposal
+  title              String
+  titleAr            String?
+  type               String // TECHNICAL | FINANCIAL | EA_MATRIX | BOQ | COMBINED
+  status             String    @default("DRAFT") // DRAFT | GENERATED | REVIEW | REVIEWED | APPROVED | REJECTED | EXPORTED
+  version            Int       @default(1)
+  contentMd          String? // markdown content
+  locale             String    @default("ar") // ar | en — generation language
+  artifactsJson      String? // JSON: list of {type, filename, downloadPath}
   financialFormsJson String? // JSON: user-entered BoQ amounts (never AI-filled)
-  complianceScore Float? // 0-100
-  submittedAt   DateTime?
-  approvedAt    DateTime?
-  generatedAt   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  complianceScore    Float? // 0-100
+  submittedAt        DateTime?
+  approvedAt         DateTime?
+  generatedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project       TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy     User      @relation(fields: [createdById], references: [id])
-  parentProposal GeneratedProposal? @relation("ProposalLineage", fields: [parentProposalId], references: [id], onDelete: SetNull)
-  childProposals GeneratedProposal[] @relation("ProposalLineage")
-  versions      ProposalVersion[]
-  reviews       ProposalReview[]
+  workspace        Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project          TenderProject             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy        User                      @relation(fields: [createdById], references: [id])
+  parentProposal   GeneratedProposal?        @relation("ProposalLineage", fields: [parentProposalId], references: [id], onDelete: SetNull)
+  childProposals   GeneratedProposal[]       @relation("ProposalLineage")
+  versions         ProposalVersion[]
+  reviews          ProposalReview[]
   obligationStates ContractObligationState[]
 
   @@index([workspaceId])
@@ -447,15 +465,15 @@ model GeneratedProposal {
 }
 
 model ProposalVersion {
-  id          String   @id @default(cuid())
-  proposalId  String
-  version     Int
-  contentMd   String
-  changeLog   String?
-  locale      String   @default("ar")
-  createdBy   String
-  createdAt   DateTime @default(now())
-  proposal    GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  id         String            @id @default(cuid())
+  proposalId String
+  version    Int
+  contentMd  String
+  changeLog  String?
+  locale     String            @default("ar")
+  createdBy  String
+  createdAt  DateTime          @default(now())
+  proposal   GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
   @@unique([proposalId, version])
   @@index([proposalId])
@@ -464,46 +482,46 @@ model ProposalVersion {
 // ─── AI Provider & Model Configuration ───────────────────────────────────────
 
 model AIProviderConfig {
-  id              String   @id @default(cuid())
-  name            String   // display name for the connection (e.g. "OpenAI Production")
-  provider        String   // zai | openai | anthropic | mistral | openai_compatible | ollama | azure_openai
-  modelId         String   @default("") // selected from live /models fetch — never hardcoded
-  apiBase         String?  // OpenAI-compatible base URL ending in /v1 or host root
-  apiKeyEnvKey    String?  // EnvSetting / process.env key for the API token
+  id                  String    @id @default(cuid())
+  name                String // display name for the connection (e.g. "OpenAI Production")
+  provider            String // zai | openai | anthropic | mistral | openai_compatible | ollama | azure_openai
+  modelId             String    @default("") // selected from live /models fetch — never hardcoded
+  apiBase             String? // OpenAI-compatible base URL ending in /v1 or host root
+  apiKeyEnvKey        String? // EnvSetting / process.env key for the API token
   // Primary engine (first of enginesJson) — kept for indexes / backward compat
-  engine          String   @default("DEFAULT") // DEFAULT | INGESTION | COMPLIANCE | TECHNICAL | FINANCIAL | DRAFTING | EMBEDDING | REWRITE | LAW | VOICE
+  engine              String    @default("DEFAULT") // DEFAULT | INGESTION | COMPLIANCE | TECHNICAL | FINANCIAL | DRAFTING | EMBEDDING | REWRITE | LAW | VOICE
   // JSON string[] of agent engines this connection serves (multi-select)
-  enginesJson     String?
-  isActive        Boolean  @default(false)
-  isDefault       Boolean  @default(false)
-  priority        Int      @default(0)
+  enginesJson         String?
+  isActive            Boolean   @default(false)
+  isDefault           Boolean   @default(false)
+  priority            Int       @default(0)
   // Model capabilities (auto-filled from live model list / heuristics)
-  contextWindow   Int      @default(128000)
-  supportsVision  Boolean  @default(false)
-  supportsJsonMode Boolean @default(true)
-  supportsTools   Boolean  @default(false)
+  contextWindow       Int       @default(128000)
+  supportsVision      Boolean   @default(false)
+  supportsJsonMode    Boolean   @default(true)
+  supportsTools       Boolean   @default(false)
   // Tunable parameters
-  temperature     Float    @default(0.2)
-  maxTokens       Int      @default(4096)
-  topP            Float    @default(0.9)
-  frequencyPenalty Float   @default(0.0)
-  presencePenalty Float    @default(0.0)
+  temperature         Float     @default(0.2)
+  maxTokens           Int       @default(4096)
+  topP                Float     @default(0.9)
+  frequencyPenalty    Float     @default(0.0)
+  presencePenalty     Float     @default(0.0)
   // Safety guardrails
-  confidenceThreshold Float @default(0.85)
-  toxicityFilter  Boolean  @default(true)
-  piiFilter       Boolean  @default(true)
-  hallucinationGuard Boolean @default(true)
-  maxRetries      Int      @default(2)
-  timeoutMs       Int      @default(60000)
+  confidenceThreshold Float     @default(0.85)
+  toxicityFilter      Boolean   @default(true)
+  piiFilter           Boolean   @default(true)
+  hallucinationGuard  Boolean   @default(true)
+  maxRetries          Int       @default(2)
+  timeoutMs           Int       @default(60000)
   // Cost tracking
-  inputCostPer1k  Float    @default(0.0)
-  outputCostPer1k Float    @default(0.0)
+  inputCostPer1k      Float     @default(0.0)
+  outputCostPer1k     Float     @default(0.0)
   // Live model catalog cache (admin auto-fetch)
-  modelsCacheJson String?  // JSON: ModelCapability[]
-  modelsFetchedAt DateTime?
-  metadata        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  modelsCacheJson     String? // JSON: ModelCapability[]
+  modelsFetchedAt     DateTime?
+  metadata            String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([provider])
   @@index([isActive])
@@ -514,17 +532,17 @@ model AIProviderConfig {
 // ─── Encrypted Environment Settings (.env UI management) ─────────────────────
 
 model EnvSetting {
-  id            String   @id @default(cuid())
-  key           String   @unique // e.g. OPENAI_API_KEY, DATABASE_URL, WEBHOOK_URL
-  valueEncrypted String  // AES-256-GCM encrypted ciphertext (iv:authTag:ciphertext)
-  category      String   @default("GENERAL") // AI_PROVIDER | DATABASE | INTEGRATION | SECURITY | BILLING | GENERAL
-  description   String?
-  isSecret      Boolean  @default(true) // mask in UI
-  isRequired    Boolean  @default(false)
-  lastRotatedAt DateTime?
-  lastEditedBy  String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String    @id @default(cuid())
+  key            String    @unique // e.g. OPENAI_API_KEY, DATABASE_URL, WEBHOOK_URL
+  valueEncrypted String // AES-256-GCM encrypted ciphertext (iv:authTag:ciphertext)
+  category       String    @default("GENERAL") // AI_PROVIDER | DATABASE | INTEGRATION | SECURITY | BILLING | GENERAL
+  description    String?
+  isSecret       Boolean   @default(true) // mask in UI
+  isRequired     Boolean   @default(false)
+  lastRotatedAt  DateTime?
+  lastEditedBy   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([category])
 }
@@ -532,73 +550,73 @@ model EnvSetting {
 // ─── Subscriptions & Billing ─────────────────────────────────────────────────
 
 model SubscriptionPlan {
-  id              String   @id @default(cuid())
-  name            String   // STARTER | PRO | ENTERPRISE | PAY_AS_YOU_GO
-  nameAr          String?
-  description     String?
-  priceMonthly    Float    @default(0.0) // SAR
-  priceYearly     Float    @default(0.0) // SAR
-  currency        String   @default("SAR")
+  id                String   @id @default(cuid())
+  name              String // STARTER | PRO | ENTERPRISE | PAY_AS_YOU_GO
+  nameAr            String?
+  description       String?
+  priceMonthly      Float    @default(0.0) // SAR
+  priceYearly       Float    @default(0.0) // SAR
+  currency          String   @default("SAR")
   // Quotas
-  maxProposals    Int      @default(10) // per month; -1 = unlimited
-  maxDocuments    Int      @default(50)
-  maxWorkspaces   Int      @default(1)
-  maxTokensPerMonth Int    @default(500000) // LLM token budget
-  maxStorageGb    Int      @default(5)
+  maxProposals      Int      @default(10) // per month; -1 = unlimited
+  maxDocuments      Int      @default(50)
+  maxWorkspaces     Int      @default(1)
+  maxTokensPerMonth Int      @default(500000) // LLM token budget
+  maxStorageGb      Int      @default(5)
   // Features
-  featuresJson    String?  // JSON array of feature flags
-  isActive        Boolean  @default(true)
-  isPublic        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  featuresJson      String? // JSON array of feature flags
+  isActive          Boolean  @default(true)
+  isPublic          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  subscriptions   Subscription[]
+  subscriptions    Subscription[]
   paymentCheckouts PaymentCheckout[]
 }
 
 model Subscription {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  planId          String
-  status          String   @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELLED | TRIALING | EXPIRED
-  billingCycle    String   @default("MONTHLY") // MONTHLY | YEARLY
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  planId             String
+  status             String    @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELLED | TRIALING | EXPIRED
+  billingCycle       String    @default("MONTHLY") // MONTHLY | YEARLY
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   // Usage counters (reset each cycle)
-  proposalsUsed   Int      @default(0)
-  documentsUsed   Int      @default(0)
-  tokensUsed      Int      @default(0)
-  storageUsedBytes Float   @default(0)
-  trialEndsAt     DateTime?
-  cancelledAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  proposalsUsed      Int       @default(0)
+  documentsUsed      Int       @default(0)
+  tokensUsed         Int       @default(0)
+  storageUsedBytes   Float     @default(0)
+  trialEndsAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan            SubscriptionPlan @relation(fields: [planId], references: [id])
+  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan SubscriptionPlan @relation(fields: [planId], references: [id])
 
   @@index([status])
 }
 
 model BillingRecord {
-  id              String   @id @default(cuid())
-  userId          String
-  type            String   // SUBSCRIPTION | USAGE | TOPUP | REFUND | OVERAGE
-  amount          Float    // SAR
-  currency        String   @default("SAR")
-  description     String
-  tokensIncluded  Int      @default(0)
-  proposalsIncluded Int    @default(0)
-  status          String   @default("PAID") // PENDING | PAID | FAILED | REFUNDED
-  invoiceNumber   String?
-  paymentMethod   String?  // myfatoorah | mada | visa | mastercard | stc_pay | bank_transfer
+  id                String   @id @default(cuid())
+  userId            String
+  type              String // SUBSCRIPTION | USAGE | TOPUP | REFUND | OVERAGE
+  amount            Float // SAR
+  currency          String   @default("SAR")
+  description       String
+  tokensIncluded    Int      @default(0)
+  proposalsIncluded Int      @default(0)
+  status            String   @default("PAID") // PENDING | PAID | FAILED | REFUNDED
+  invoiceNumber     String?
+  paymentMethod     String? // myfatoorah | mada | visa | mastercard | stc_pay | bank_transfer
   externalInvoiceId String? // MyFatoorah InvoiceId
   externalPaymentId String?
-  metadata        String?  // JSON
-  createdAt       DateTime @default(now())
+  metadata          String? // JSON
+  createdAt         DateTime @default(now())
 
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  checkout        PaymentCheckout?
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkout PaymentCheckout?
 
   @@index([userId])
   @@index([status])
@@ -607,26 +625,26 @@ model BillingRecord {
 
 // MyFatoorah checkout sessions for self-serve plan purchase
 model PaymentCheckout {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   userId            String
   planId            String
-  billingCycle      String   // MONTHLY | YEARLY
+  billingCycle      String // MONTHLY | YEARLY
   amount            Float
-  currency          String   @default("SAR")
-  status            String   @default("PENDING") // PENDING | PAID | FAILED | EXPIRED | CANCELLED
-  customerReference String   @unique
-  invoiceId         String?  // MyFatoorah InvoiceId (stringified)
+  currency          String    @default("SAR")
+  status            String    @default("PENDING") // PENDING | PAID | FAILED | EXPIRED | CANCELLED
+  customerReference String    @unique
+  invoiceId         String? // MyFatoorah InvoiceId (stringified)
   paymentId         String?
   paymentUrl        String?
-  billingRecordId   String?  @unique
+  billingRecordId   String?   @unique
   errorMessage      String?
   paidAt            DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan              SubscriptionPlan @relation(fields: [planId], references: [id])
-  billingRecord     BillingRecord? @relation(fields: [billingRecordId], references: [id], onDelete: SetNull)
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan          SubscriptionPlan @relation(fields: [planId], references: [id])
+  billingRecord BillingRecord?   @relation(fields: [billingRecordId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([status])
@@ -635,8 +653,8 @@ model PaymentCheckout {
 
 // MyFatoorah Webhook V2 durable receipt + idempotency
 model PaymentWebhookEvent {
-  id                String   @id @default(cuid())
-  eventFingerprint  String   @unique
+  id                String    @id @default(cuid())
+  eventFingerprint  String    @unique
   eventName         String?
   eventCode         Int?
   eventReference    String?
@@ -644,13 +662,13 @@ model PaymentWebhookEvent {
   paymentId         String?
   recurringId       String?
   customerReference String?
-  signatureValid    Boolean  @default(false)
-  processingStatus  String   @default("RECEIVED") // RECEIVED | PROCESSED | FAILED | IGNORED | DUPLICATE
+  signatureValid    Boolean   @default(false)
+  processingStatus  String    @default("RECEIVED") // RECEIVED | PROCESSED | FAILED | IGNORED | DUPLICATE
   disposition       String?
-  attempts          Int      @default(0)
+  attempts          Int       @default(0)
   errorMessage      String?
-  payloadRedacted   String?  // JSON without secrets
-  createdAt         DateTime @default(now())
+  payloadRedacted   String? // JSON without secrets
+  createdAt         DateTime  @default(now())
   processedAt       DateTime?
 
   @@index([processingStatus])
@@ -661,19 +679,19 @@ model PaymentWebhookEvent {
 
 // MyFatoorah-managed recurring profiles (when merchant supports recurring)
 model MyFatoorahRecurringProfile {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   userId            String
   subscriptionId    String?
-  recurringId       String   @unique
-  status            String   @default("DRAFT") // DRAFT | ACTIVE | UNCOMPLETED | COMPLETED | CANCELED
+  recurringId       String    @unique
+  status            String    @default("DRAFT") // DRAFT | ACTIVE | UNCOMPLETED | COMPLETED | CANCELED
   recurringType     String?
   intervalDays      Int?
-  retryCount        Int      @default(3)
+  retryCount        Int       @default(3)
   customerReference String?
   initialInvoiceId  String?
   lastWebhookAt     DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([userId])
   @@index([status])
@@ -682,19 +700,19 @@ model MyFatoorahRecurringProfile {
 // ─── Immutable Audit Trail ───────────────────────────────────────────────────
 
 model AuditLog {
-  id              String   @id @default(cuid())
-  userId          String?
-  action          String   // LOGIN | LOGOUT | CONFIG_CHANGE | DOC_UPLOAD | PROPOSAL_GENERATE | ROLE_CHANGE | ENV_UPDATE | BILLING_CHANGE
-  resource        String?  // affected entity type
-  resourceId      String?  // affected entity id
-  details         String?  // JSON blob with before/after
-  ipAddress       String?
-  userAgent       String?
-  severity        String   @default("INFO") // INFO | WARN | ERROR | CRITICAL
-  success         Boolean  @default(true)
-  createdAt       DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String // LOGIN | LOGOUT | CONFIG_CHANGE | DOC_UPLOAD | PROPOSAL_GENERATE | ROLE_CHANGE | ENV_UPDATE | BILLING_CHANGE
+  resource   String? // affected entity type
+  resourceId String? // affected entity id
+  details    String? // JSON blob with before/after
+  ipAddress  String?
+  userAgent  String?
+  severity   String   @default("INFO") // INFO | WARN | ERROR | CRITICAL
+  success    Boolean  @default(true)
+  createdAt  DateTime @default(now())
 
-  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([action])
@@ -704,27 +722,34 @@ model AuditLog {
 // ─── Account Onboarding Corpus (Phase 1 knowledge base) ──────────────────────
 
 model Certificate {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  certType      String   // ISO | GOSI | VAT | ZAKAT | LICENSE | OTHER
-  name          String
-  number        String?
-  issuer        String?
-  issuedAt      DateTime?
-  expiresAt     DateTime?
-  filePath      String?
-  alertDays     Int      @default(30)
-  notes         String?
-  approved      Boolean  @default(true)
-  revokedAt     DateTime?
-  contentHash   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          String    @id @default(cuid())
+  workspaceId String
+  certType    String // ISO | GOSI | VAT | ZAKAT | LICENSE | OTHER
+  name        String
+  number      String?
+  issuer      String?
+  issuedAt    DateTime?
+  expiresAt   DateTime?
+  filePath    String?
+  alertDays   Int       @default(30)
+  notes       String?
+  approved    Boolean   @default(false)
+  reviewStatus KnowledgeReviewStatus @default(UNREVIEWED)
+  evidenceRef String?
+  provenanceJson String? @db.Text
+  reviewedById String?
+  approvedAt  DateTime?
+  revokedAt   DateTime?
+  contentHash String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reviewer  User?     @relation("CertificateReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
 
   @@index([workspaceId])
   @@index([expiresAt])
+  @@index([workspaceId, reviewStatus, approved])
 }
 
 model StaffMember {
@@ -736,13 +761,13 @@ model StaffMember {
   roleTitleAr     String?
   certifications  String?
   cvSummary       String?
-  requirementTags String?  // JSON string[] e.g. ["ISO_27001_LEAD"]
+  requirementTags String? // JSON string[] e.g. ["ISO_27001_LEAD"]
   embeddingJson   String?
   active          Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
 }
@@ -750,18 +775,27 @@ model StaffMember {
 model MethodologyAsset {
   id          String   @id @default(cuid())
   workspaceId String
-  category    String   // IMPLEMENTATION | QC | RISK | BCP | OTHER
+  category    String // IMPLEMENTATION | QC | RISK | BCP | OTHER
   title       String
   titleAr     String?
   bodyMd      String
-  approved    Boolean  @default(true)
+  approved    Boolean  @default(false)
+  reviewStatus KnowledgeReviewStatus @default(UNREVIEWED)
+  evidenceRef String?
+  provenanceJson String? @db.Text
+  reviewedById String?
+  approvedAt  DateTime?
+  revokedAt   DateTime?
+  contentHash String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reviewer  User?     @relation("MethodologyReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
 
   @@index([workspaceId])
   @@index([category])
+  @@index([workspaceId, reviewStatus, approved])
 }
 
 model ContentLibraryItem {
@@ -774,28 +808,37 @@ model ContentLibraryItem {
   tags          String?
   restricted    Boolean  @default(false)
   embeddingJson String?
-  approved      Boolean  @default(true)
+  approved      Boolean  @default(false)
+  reviewStatus  KnowledgeReviewStatus @default(UNREVIEWED)
+  evidenceRef   String?
+  provenanceJson String? @db.Text
+  reviewedById  String?
+  approvedAt    DateTime?
+  revokedAt     DateTime?
+  contentHash   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reviewer  User?     @relation("LibraryItemReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
 
   @@index([workspaceId])
   @@index([category])
+  @@index([workspaceId, reviewStatus, approved])
 }
 
 model Partnership {
   id          String   @id @default(cuid())
   workspaceId String
   name        String
-  partnerType String   // JV | SUBCONTRACTOR | OTHER
+  partnerType String // JV | SUBCONTRACTOR | OTHER
   scope       String?
   docsNote    String?
   filePath    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
 }
@@ -803,29 +846,29 @@ model Partnership {
 model TargetSector {
   id          String   @id @default(cuid())
   workspaceId String
-  sector      String   // GOV | HEALTH | FINANCE | ENERGY | TELECOM | OTHER
+  sector      String // GOV | HEALTH | FINANCE | ENERGY | TELECOM | OTHER
   notes       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, sector])
   @@index([workspaceId])
 }
 
 model BidHistoryNote {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   entityName  String
   sector      String?
-  outcome     String   // WIN | LOSS | WITHDRAWN
+  outcome     String // WIN | LOSS | WITHDRAWN
   notes       String?
   bidDate     DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
 }
@@ -836,8 +879,8 @@ model ApprovalPolicy {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  steps       ApprovalStep[]
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  steps     ApprovalStep[]
 }
 
 model ApprovalStep {
@@ -848,55 +891,55 @@ model ApprovalStep {
   stepRole   String   @default("TECHNICAL") // TECHNICAL | FINAL
   createdAt  DateTime @default(now())
 
-  policy     ApprovalPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  reviewer   User           @relation(fields: [reviewerId], references: [id])
+  policy   ApprovalPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  reviewer User           @relation(fields: [reviewerId], references: [id])
 
   @@unique([policyId, stepIndex])
   @@index([reviewerId])
 }
 
 model Restriction {
-  id          String   @id @default(cuid())
-  workspaceId String
+  id              String   @id @default(cuid())
+  workspaceId     String
   restrictionType String // CONFIDENTIAL_CLAUSE | COMPETITOR_NAME | OTHER
-  text        String
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  text            String
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
 }
 
 model OnboardingProgress {
-  id                String   @id @default(cuid())
-  workspaceId       String   @unique
-  completedSteps    String   @default("{}") // JSON record of step keys → true
-  restrictionsReviewed Boolean @default(false)
-  readyForProposals Boolean  @default(false)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  workspaceId          String   @unique
+  completedSteps       String   @default("{}") // JSON record of step keys → true
+  restrictionsReviewed Boolean  @default(false)
+  readyForProposals    Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 // ─── Tender Requirements Matrix ──────────────────────────────────────────────
 
 model TenderRequirement {
-  id               String   @id @default(cuid())
-  projectId        String
-  text             String
-  sectionRef       String?
-  pageRef          String?
-  status           String   @default("MISSING") // COVERED | IN_PROGRESS | MISSING
+  id                 String   @id @default(cuid())
+  projectId          String
+  text               String
+  sectionRef         String?
+  pageRef            String?
+  status             String   @default("MISSING") // COVERED | IN_PROGRESS | MISSING
   linkedResourceType String? // CERTIFICATE | STAFF | PAST_PROJECT | LIBRARY | METHODOLOGY
-  linkedResourceId String?
-  sortOrder        Int      @default(0)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  linkedResourceId   String?
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  project          TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([status])
@@ -905,19 +948,19 @@ model TenderRequirement {
 // ─── Proposal Review Workflow ────────────────────────────────────────────────
 
 model ProposalReview {
-  id          String   @id @default(cuid())
-  proposalId  String
-  stepIndex   Int
-  reviewerId  String
-  stepRole    String   @default("TECHNICAL") // TECHNICAL | FINAL
-  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
-  comment     String?
-  decidedAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String    @id @default(cuid())
+  proposalId String
+  stepIndex  Int
+  reviewerId String
+  stepRole   String    @default("TECHNICAL") // TECHNICAL | FINAL
+  status     String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  comment    String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  proposal    GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  reviewer    User              @relation(fields: [reviewerId], references: [id])
+  proposal GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  reviewer User              @relation(fields: [reviewerId], references: [id])
 
   @@unique([proposalId, stepIndex])
   @@index([reviewerId])
@@ -927,16 +970,16 @@ model ProposalReview {
 // ─── Contract obligation done-state (server-persisted) ───────────────────────
 
 model ContractObligationState {
-  id            String   @id @default(cuid())
-  proposalId    String
-  obligationId  String
-  status        String   @default("open") // open | done
-  updatedById   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  proposalId   String
+  obligationId String
+  status       String   @default("open") // open | done
+  updatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  proposal      GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  updatedBy     User?             @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  proposal  GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  updatedBy User?             @relation(fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@unique([proposalId, obligationId])
   @@index([proposalId])
@@ -945,12 +988,12 @@ model ContractObligationState {
 // ─── Notification dismissals (per-user, cross-device) ─────────────────────────
 
 model NotificationDismissal {
-  id              String   @id @default(cuid())
-  userId          String
-  notificationId  String
-  dismissedAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  userId         String
+  notificationId String
+  dismissedAt    DateTime @default(now())
 
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, notificationId])
   @@index([userId])
@@ -959,13 +1002,13 @@ model NotificationDismissal {
 // ─── Expiry notification dedupe log (cron emails) ────────────────────────────
 
 model ExpiryNotificationLog {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  kind          String   // CERT_EXPIRY | SUBSCRIPTION_EXPIRY
-  resourceId    String
-  channel       String   @default("email") // email | in_app
-  sentAt        DateTime @default(now())
-  metaJson      String?
+  id          String   @id @default(cuid())
+  workspaceId String
+  kind        String // CERT_EXPIRY | SUBSCRIPTION_EXPIRY
+  resourceId  String
+  channel     String   @default("email") // email | in_app
+  sentAt      DateTime @default(now())
+  metaJson    String?
 
   @@unique([workspaceId, kind, resourceId, channel])
   @@index([workspaceId])
@@ -975,94 +1018,126 @@ model ExpiryNotificationLog {
 // ─── Contract Template System (Phase 3) ──────────────────────────────────────
 
 model ContractTemplate {
-  id              String    @id @default(cuid())
-  workspaceId     String
-  type            String
-  nameEn          String
-  nameAr          String
-  descriptionEn   String?
-  descriptionAr   String?
-  version         String    @default("1.0")
-  status          String    @default("active")
-  sectionsJson    String    @db.Text
-  variablesJson   String    @db.Text
-  clausesJson     String    @db.Text
-  isSystem        Boolean   @default(false)
-  isApproved      Boolean   @default(false)
-  approvedBy      String?
-  approvedAt      DateTime?
-  createdBy       String
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  workspaceId           String
+  type                  String
+  nameEn                String
+  nameAr                String
+  descriptionEn         String?
+  descriptionAr         String?
+  version               String    @default("1.0")
+  schemaVersion         Int       @default(1)
+  canonicalHash         String?
+  lifecycle             String    @default("DRAFT") // DRAFT | PUBLISHED | RETIRED
+  legalReviewStatus     String    @default("UNREVIEWED") // UNREVIEWED | IN_REVIEW | APPROVED | REJECTED
+  counselReviewRequired Boolean   @default(true)
+  sourceStatus          String    @default("PENDING_OFFICIAL_SOURCE_REVIEW")
+  provenanceJson        String?   @db.Text
+  status                String    @default("draft") // Legacy compatibility; lifecycle is authoritative
+  sectionsJson          String    @db.Text
+  variablesJson         String    @db.Text
+  clausesJson           String    @db.Text
+  isSystem              Boolean   @default(false)
+  isApproved            Boolean   @default(false)
+  approvedBy            String?
+  approvedAt            DateTime?
+  createdBy             String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  workspace           Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  creator             User                        @relation("TemplateCreator", fields: [createdBy], references: [id])
-  approver            User?                       @relation("TemplateApprover", fields: [approvedBy], references: [id])
-  versions            ContractTemplateVersion[]
-  generatedContracts  GeneratedContract[]
+  workspace          Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator            User                      @relation("TemplateCreator", fields: [createdBy], references: [id])
+  approver           User?                     @relation("TemplateApprover", fields: [approvedBy], references: [id])
+  versions           ContractTemplateVersion[]
+  generatedContracts GeneratedContract[]
 
   @@index([workspaceId, type, status])
   @@index([workspaceId, isSystem])
+  @@index([workspaceId, lifecycle, legalReviewStatus])
 }
 
 model ContractTemplateVersion {
-  id            String   @id @default(cuid())
-  templateId    String
-  version       String
-  sectionsJson  String   @db.Text
-  variablesJson String   @db.Text
-  clausesJson   String   @db.Text
-  changeNote    String?
-  createdBy     String
-  createdAt     DateTime @default(now())
+  id                    String   @id @default(cuid())
+  templateId            String
+  version               String
+  schemaVersion         Int      @default(1)
+  canonicalHash         String?
+  lifecycle             String   @default("DRAFT")
+  legalReviewStatus     String   @default("UNREVIEWED")
+  counselReviewRequired Boolean  @default(true)
+  sourceStatus          String   @default("PENDING_OFFICIAL_SOURCE_REVIEW")
+  provenanceJson        String?  @db.Text
+  sectionsJson          String   @db.Text
+  variablesJson         String   @db.Text
+  clausesJson           String   @db.Text
+  changeNote            String?
+  createdBy             String
+  createdAt             DateTime @default(now())
 
-  template      ContractTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  creator       User             @relation(fields: [createdBy], references: [id])
+  template ContractTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  creator  User             @relation(fields: [createdBy], references: [id])
 
   @@index([templateId, version])
+  @@index([templateId, lifecycle, legalReviewStatus])
 }
 
 model StandardClause {
-  id                 String   @id @default(cuid())
-  category           String
-  nameEn             String
-  nameAr             String
-  contentEn          String   @db.Text
-  contentAr          String   @db.Text
-  mandatory          Boolean  @default(false)
-  customizable       Boolean  @default(true)
-  saudiLawReference  String?
-  order              Int      @default(0)
-  isSystem           Boolean  @default(true)
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  version               Int      @default(1)
+  canonicalHash         String?
+  lifecycle             String   @default("DRAFT")
+  legalReviewStatus     String   @default("UNREVIEWED")
+  counselReviewRequired Boolean  @default(true)
+  sourceStatus          String   @default("PENDING_OFFICIAL_SOURCE_REVIEW")
+  provenanceJson        String?  @db.Text
+  translationStatus     String   @default("DRAFT")
+  category              String
+  nameEn                String
+  nameAr                String
+  contentEn             String   @db.Text
+  contentAr             String   @db.Text
+  mandatory             Boolean  @default(false)
+  customizable          Boolean  @default(true)
+  saudiLawReference     String?
+  order                 Int      @default(0)
+  isSystem              Boolean  @default(true)
+  isActive              Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@index([category, isActive])
+  @@index([lifecycle, legalReviewStatus])
 }
 
 model GeneratedContract {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  templateId    String
-  projectId     String?
-  title         String
-  titleAr       String
-  dataJson      String   @db.Text
-  clausesJson   String   @db.Text
-  contentHtml   String   @db.Text
-  contentPdfPath String?
-  status        String   @default("draft")
-  createdBy     String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  workspaceId           String
+  templateId            String
+  projectId             String?
+  title                 String
+  titleAr               String
+  dataJson              String   @db.Text
+  clausesJson           String   @db.Text
+  contentHtml           String   @db.Text
+  documentSpecJson      String?  @db.Text
+  templateVersionId     String?
+  canonicalHash         String?
+  legalReviewStatus     String   @default("UNREVIEWED")
+  counselReviewRequired Boolean  @default(true)
+  isExecutable          Boolean  @default(false)
+  contentPdfPath        String?
+  status                String   @default("draft")
+  createdBy             String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  template      ContractTemplate  @relation(fields: [templateId], references: [id])
-  project       TenderProject?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  creator       User              @relation(fields: [createdBy], references: [id])
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  template  ContractTemplate @relation(fields: [templateId], references: [id])
+  project   TenderProject?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  creator   User             @relation(fields: [createdBy], references: [id])
 
   @@index([workspaceId, status])
   @@index([templateId])
   @@index([projectId])
+  @@index([workspaceId, legalReviewStatus, isExecutable])
 }

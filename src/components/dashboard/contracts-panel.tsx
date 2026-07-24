@@ -41,6 +41,7 @@ import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import { parseContractArtifacts } from "@/lib/contract-artifacts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { ContractTemplateCatalog } from "./contract-template-catalog";
 
 type ValidationResponse = {
   exportReady?: boolean;
@@ -200,6 +201,8 @@ export function ContractsPanel() {
           </Button>
         </div>
       </Card>
+
+      <ContractTemplateCatalog />
 
       <QueryState
         isLoading={isLoading}

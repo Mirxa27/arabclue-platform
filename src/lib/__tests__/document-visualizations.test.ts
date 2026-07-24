@@ -529,6 +529,46 @@ describe("prepareDocumentTable", () => {
       )
     ).toThrow("widthWeight");
   });
+
+  test("rejects bidi controls in every authored table text surface", () => {
+    const unsafe = "safe\u202Ehidden";
+    const base = makeTable();
+    const cases: readonly DocumentTableDefinition[] = [
+      makeTable({ title: labels(unsafe) }),
+      makeTable({ summary: labels(unsafe) }),
+      makeTable({
+        columns: base.columns.map((column, index) =>
+          index === 0 ? { ...column, label: labels(unsafe) } : column
+        ),
+      }),
+      makeTable({
+        columns: base.columns.map((column) =>
+          column.kind === "boolean"
+            ? { ...column, trueLabel: labels(unsafe) }
+            : column
+        ),
+      }),
+      makeTable({
+        rows: [
+          {
+            id: "unsafe-row",
+            cells: {
+              item: unsafe,
+              amount: 1,
+              ratio: 0.5,
+              approved: true,
+            },
+          },
+        ],
+      }),
+    ];
+
+    for (const definition of cases) {
+      expect(() => prepareDocumentTable(definition)).toThrow(
+        "bidirectional control"
+      );
+    }
+  });
 });
 
 describe("renderDocumentTable", () => {
@@ -1087,6 +1127,31 @@ describe("renderDocumentChart", () => {
     expect(() =>
       renderDocumentChart(makeChart(), { height: 1_201 })
     ).toThrow("options.height");
+  });
+
+  test("rejects bidi controls in chart titles, summaries, categories, and series", () => {
+    const unsafe = "safe\u2066hidden\u2069";
+    const base = makeChart();
+    const cases: readonly DocumentChartDefinition[] = [
+      makeChart({ title: labels(unsafe) }),
+      makeChart({ summary: labels(unsafe) }),
+      makeChart({
+        categories: base.categories.map((category, index) =>
+          index === 0 ? { ...category, label: labels(unsafe) } : category
+        ),
+      }),
+      makeChart({
+        series: base.series.map((series, index) =>
+          index === 0 ? { ...series, label: labels(unsafe) } : series
+        ),
+      }),
+    ];
+
+    for (const definition of cases) {
+      expect(() => renderDocumentChart(definition)).toThrow(
+        "bidirectional control"
+      );
+    }
   });
 
   test("assigns every allow-listed non-color pattern deterministically", () => {

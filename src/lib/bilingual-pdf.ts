@@ -13,6 +13,8 @@ import {
   parseBilingualDocument,
   renderBilingualHTML,
   type BilingualDocumentSpec,
+  type PairedBlock,
+  type PairedImageBlock,
 } from "./bilingual-layout";
 import {
   DEFAULT_BILINGUAL_FONT_PAIR_ID,
@@ -27,6 +29,8 @@ import {
   isPdfBuffer,
   type HtmlToPdfOptions,
 } from "./pdf/html-to-pdf";
+import { BILINGUAL_LAYOUT_READY_SELECTOR } from "./layout-sync";
+import { validateAndNormalizeLogoImage } from "./brand-logo";
 
 const requireFromHere = createRequire(import.meta.url);
 
@@ -251,10 +255,6 @@ function fontOverrideCss(fontPair: BilingualFontPairId): string {
 
 .bilingual-document bdi {
   unicode-bidi: isolate;
-}
-
-@page {
-  size: A4 portrait;
 }`;
 }
 
@@ -282,6 +282,9 @@ export type BilingualPdfQualityCode =
   | "INVALID_HEADING_COUNT"
   | "REMOTE_FONT_REQUEST"
   | "UNSAFE_BIDI_CONTROL"
+  | "UNRESOLVED_PUBLIC_IMAGE"
+  | "INVALID_IMAGE_ASSET"
+  | "IMAGE_PIXEL_LIMIT_EXCEEDED"
   | "PDF_SIGNATURE_INVALID";
 
 export interface BilingualPdfQualityIssue {
@@ -329,10 +332,17 @@ export function inspectBilingualHtml(html: string): BilingualHtmlQualityReport {
   );
   const embeddedFontFaceCount = matchCount(html, /@font-face\s*\{/g);
 
-  if (!html.includes('data-bilingual-layout-ready="true"')) {
+  const hasPendingLayoutMarker =
+    html.includes('data-bilingual-layout-state="pending"') &&
+    html.includes('data-bilingual-layout-ready="false"');
+  const hasReadyLayoutMarker =
+    html.includes('data-bilingual-layout-state="ready"') &&
+    html.includes('data-bilingual-layout-ready="true"');
+  if (!hasPendingLayoutMarker && !hasReadyLayoutMarker) {
     issues.push({
       code: "MISSING_LAYOUT_MARKER",
-      message: "The explicit bilingual layout readiness marker is missing.",
+      message:
+        "The explicit pending or synchronized bilingual layout marker is missing.",
     });
   }
   if (englishCellCount === 0 || arabicCellCount === 0) {
@@ -435,10 +445,134 @@ const DEFAULT_BILINGUAL_FOOTER = `<div style="box-sizing:border-box;width:100%;p
 
 export interface GenerateBilingualPdfOptions extends BilingualRenderOptions {
   readonly pdf?: HtmlToPdfOptions;
+  /**
+   * Optional trusted resolver for application-relative public image paths.
+   * Returned bytes are still magic-checked, decoded, dimension-bounded and
+   * re-encoded before Chromium receives them.
+   */
+  readonly resolvePublicImage?: (path: string) => Promise<Buffer>;
 }
 
 export interface BilingualPdfArtifact extends BilingualRenderArtifact {
   readonly pdf: Buffer;
+}
+
+const PDF_DATA_IMAGE_PATTERN =
+  /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
+const MAX_TOTAL_IMAGE_PIXELS = 30_000_000;
+
+function imageExtension(mime: string): string {
+  return mime === "image/jpeg"
+    ? ".jpg"
+    : mime === "image/webp"
+      ? ".webp"
+      : ".png";
+}
+
+function imageQualityError(
+  code:
+    | "UNRESOLVED_PUBLIC_IMAGE"
+    | "INVALID_IMAGE_ASSET"
+    | "IMAGE_PIXEL_LIMIT_EXCEEDED",
+  message: string
+): BilingualPdfQualityError {
+  return new BilingualPdfQualityError([{ code, message }]);
+}
+
+/**
+ * Produce a PDF-only document whose images are entirely self-contained and
+ * decoder-verified. Screen HTML can still use safe application-relative paths,
+ * but `page.setContent()` has no trusted origin and therefore must not.
+ */
+export async function prepareBilingualPdfDocument(
+  input: unknown,
+  options: Pick<GenerateBilingualPdfOptions, "resolvePublicImage"> = {}
+): Promise<BilingualDocumentSpec> {
+  const document = parseBilingualDocument(input);
+  let totalPixels = 0;
+
+  const normalizeImage = async (
+    block: PairedImageBlock
+  ): Promise<PairedImageBlock> => {
+    let bytes: Buffer;
+    let sourceName: string;
+
+    if (block.source.kind === "public") {
+      if (!options.resolvePublicImage) {
+        throw imageQualityError(
+          "UNRESOLVED_PUBLIC_IMAGE",
+          `Public image "${block.id}" requires a trusted PDF asset resolver.`
+        );
+      }
+      try {
+        bytes = await options.resolvePublicImage(block.source.path);
+      } catch {
+        throw imageQualityError(
+          "INVALID_IMAGE_ASSET",
+          `Public image "${block.id}" could not be resolved.`
+        );
+      }
+      sourceName = new URL(
+        block.source.path,
+        "https://arabclue.invalid"
+      ).pathname;
+    } else {
+      const match = block.source.uri.match(PDF_DATA_IMAGE_PATTERN);
+      if (!match || match[2].length % 4 !== 0) {
+        throw imageQualityError(
+          "INVALID_IMAGE_ASSET",
+          `Embedded image "${block.id}" has invalid base64 data.`
+        );
+      }
+      bytes = Buffer.from(match[2], "base64");
+      sourceName = `embedded${imageExtension(`image/${match[1]}`)}`;
+    }
+
+    let validated: Awaited<
+      ReturnType<typeof validateAndNormalizeLogoImage>
+    >;
+    try {
+      validated = await validateAndNormalizeLogoImage(bytes, sourceName);
+    } catch {
+      throw imageQualityError(
+        "INVALID_IMAGE_ASSET",
+        `Image "${block.id}" failed MIME, magic-byte, dimension, or decode validation.`
+      );
+    }
+
+    totalPixels += validated.width * validated.height;
+    if (totalPixels > MAX_TOTAL_IMAGE_PIXELS) {
+      throw imageQualityError(
+        "IMAGE_PIXEL_LIMIT_EXCEEDED",
+        `PDF images exceed the ${String(
+          MAX_TOTAL_IMAGE_PIXELS
+        )}-pixel aggregate limit.`
+      );
+    }
+
+    return {
+      ...block,
+      source: {
+        kind: "data",
+        uri: `data:${validated.mimeType};base64,${validated.bytes.toString(
+          "base64"
+        )}`,
+      },
+    };
+  };
+
+  const sections: BilingualDocumentSpec["sections"][number][] = [];
+  for (const section of document.sections) {
+    const blocks: PairedBlock[] = [];
+    for (const block of section.blocks) {
+      blocks.push(
+        block.type === "image" ? await normalizeImage(block) : block
+      );
+    }
+    sections.push({ ...section, blocks });
+  }
+
+  return parseBilingualDocument({ ...document, sections });
 }
 
 /**
@@ -448,7 +582,10 @@ export async function generateBilingualPdf(
   input: unknown,
   options: GenerateBilingualPdfOptions = {}
 ): Promise<BilingualPdfArtifact> {
-  const artifact = await renderBilingualArtifact(input, {
+  const document = await prepareBilingualPdfDocument(input, {
+    resolvePublicImage: options.resolvePublicImage,
+  });
+  const artifact = await renderBilingualArtifact(document, {
     target: "print",
     fontPair: options.fontPair,
   });
@@ -465,9 +602,10 @@ export async function generateBilingualPdf(
       right: "14mm",
     },
     waitMs: 0,
-    readySelector: "[data-bilingual-layout-ready]",
     readinessTimeoutMs: 10_000,
     ...options.pdf,
+    synchronizeBilingualLayout: true,
+    readySelector: BILINGUAL_LAYOUT_READY_SELECTOR,
   });
   if (!isPdfBuffer(pdf)) {
     throw new BilingualPdfQualityError([

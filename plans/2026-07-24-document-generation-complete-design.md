@@ -1,5 +1,10 @@
 # Arabclue Document Generation Systems: Complete Architectural Design
 
+> **Superseded planning record.** The checkmarks and projected metrics in this
+> historical design do not certify implementation, legal compliance,
+> performance, or deployment. Current behavior is defined by tested code and
+> the documentation under `docs/`.
+
 **Project**: Production-Grade Document Generation Enhancement  
 **Date**: 2026-07-24  
 **Status**: ✅ Design Complete - Ready for Implementation  
@@ -528,4 +533,3 @@ This comprehensive architectural design provides a **production-ready blueprint*
 The design is **implementation-ready**, with detailed specifications, database schemas, API interfaces, UI mockups, testing strategies, and rollout plans.
 
 **Let's build the future of Saudi procurement document generation! 🚀**
-

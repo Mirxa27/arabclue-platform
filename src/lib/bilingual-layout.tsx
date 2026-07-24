@@ -288,13 +288,18 @@ export const DEFAULT_BILINGUAL_CONFIG: BilingualLayoutConfig = Object.freeze({
   }),
 });
 
-const LIMITS = Object.freeze({
+export const BILINGUAL_LAYOUT_LIMITS = Object.freeze({
   maxSections: 500,
   maxBlocks: 5_000,
   maxTextCharacters: 500_000,
   maxListDepth: 8,
+  maxInlineDepth: 16,
+  maxInlineNodes: 50_000,
   maxDataImageBytes: 8 * 1024 * 1024,
+  maxTotalDataImageBytes: 24 * 1024 * 1024,
 });
+
+const LIMITS = BILINGUAL_LAYOUT_LIMITS;
 
 const STABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SAFE_DATA_IMAGE_PATTERN =
@@ -451,7 +456,8 @@ function validateInlineNodes(
   value: unknown,
   path: string,
   issues: BilingualValidationIssue[],
-  stats: ValidationStats
+  stats: ValidationStats,
+  depth = 1
 ): value is readonly BilingualInlineNode[] {
   if (!Array.isArray(value) || value.length === 0) {
     addIssue(
@@ -459,6 +465,27 @@ function validateInlineNodes(
       "MISSING_CONTENT",
       path,
       "Inline content must contain at least one node."
+    );
+    return false;
+  }
+
+  if (depth > LIMITS.maxInlineDepth) {
+    addIssue(
+      issues,
+      "DOCUMENT_LIMIT_EXCEEDED",
+      path,
+      `Inline-node nesting cannot exceed ${LIMITS.maxInlineDepth} levels.`
+    );
+    return false;
+  }
+
+  stats.inlineNodeCount += value.length;
+  if (stats.inlineNodeCount > LIMITS.maxInlineNodes) {
+    addIssue(
+      issues,
+      "DOCUMENT_LIMIT_EXCEEDED",
+      path,
+      `Documents cannot exceed ${LIMITS.maxInlineNodes} inline nodes.`
     );
     return false;
   }
@@ -495,7 +522,13 @@ function validateInlineNodes(
         break;
       case "strong":
       case "emphasis":
-        validateInlineNodes(node.children, `${nodePath}.children`, issues, stats);
+        validateInlineNodes(
+          node.children,
+          `${nodePath}.children`,
+          issues,
+          stats,
+          depth + 1
+        );
         break;
       case "link":
         if (typeof node.href !== "string" || !isSafeHref(node.href)) {
@@ -506,7 +539,13 @@ function validateInlineNodes(
             "Links must be HTTPS, mailto, tel, a fragment, or a safe application-relative path."
           );
         }
-        validateInlineNodes(node.children, `${nodePath}.children`, issues, stats);
+        validateInlineNodes(
+          node.children,
+          `${nodePath}.children`,
+          issues,
+          stats,
+          depth + 1
+        );
         break;
       case "line-break":
         break;
@@ -594,7 +633,8 @@ function validateListItems(
 function validateSafeImageSource(
   value: unknown,
   path: string,
-  issues: BilingualValidationIssue[]
+  issues: BilingualValidationIssue[],
+  stats: ValidationStats
 ): value is SafeImageSource {
   if (!isRecord(value) || typeof value.kind !== "string") {
     addIssue(issues, "INVALID_IMAGE", path, "Image source must be structured.");
@@ -626,7 +666,7 @@ function validateSafeImageSource(
       return false;
     }
     const match = value.uri.match(SAFE_DATA_IMAGE_PATTERN);
-    if (!match) {
+    if (!match || match[1].length % 4 !== 0) {
       addIssue(
         issues,
         "INVALID_IMAGE",
@@ -635,8 +675,18 @@ function validateSafeImageSource(
       );
       return false;
     }
-    const approximateBytes = Math.floor((match[1].length * 3) / 4);
-    if (approximateBytes > LIMITS.maxDataImageBytes) {
+    const encoded = match[1];
+    const paddingBytes = encoded.endsWith("==")
+      ? 2
+      : encoded.endsWith("=")
+        ? 1
+        : 0;
+    const decodedBytes = Math.max(
+      0,
+      Math.floor((encoded.length * 3) / 4) - paddingBytes
+    );
+    stats.dataImageBytes += decodedBytes;
+    if (decodedBytes > LIMITS.maxDataImageBytes) {
       addIssue(
         issues,
         "DOCUMENT_LIMIT_EXCEEDED",
@@ -655,6 +705,8 @@ function validateSafeImageSource(
 interface ValidationStats {
   blockCount: number;
   textCharacters: number;
+  inlineNodeCount: number;
+  dataImageBytes: number;
 }
 
 function validateBlock(
@@ -940,7 +992,7 @@ function validateImage(
   issues: BilingualValidationIssue[],
   stats: ValidationStats
 ): void {
-  validateSafeImageSource(image.source, `${path}.source`, issues);
+  validateSafeImageSource(image.source, `${path}.source`, issues, stats);
   const decorative = image.decorative === true;
   if (!isRecord(image.alt)) {
     addIssue(
@@ -1114,7 +1166,12 @@ export function validateBilingualDocument(
   const issues: BilingualValidationIssue[] = [];
   const ids = new Set<string>();
   const alignmentKeys = new Set<string>();
-  const stats: ValidationStats = { blockCount: 0, textCharacters: 0 };
+  const stats: ValidationStats = {
+    blockCount: 0,
+    textCharacters: 0,
+    inlineNodeCount: 0,
+    dataImageBytes: 0,
+  };
 
   if (!isRecord(document)) {
     return {
@@ -1217,6 +1274,14 @@ export function validateBilingualDocument(
       "DOCUMENT_LIMIT_EXCEEDED",
       "$",
       `Documents cannot exceed ${LIMITS.maxTextCharacters} text characters.`
+    );
+  }
+  if (stats.dataImageBytes > LIMITS.maxTotalDataImageBytes) {
+    addIssue(
+      issues,
+      "DOCUMENT_LIMIT_EXCEEDED",
+      "$",
+      `Embedded images cannot exceed ${LIMITS.maxTotalDataImageBytes} decoded bytes in total.`
     );
   }
 
@@ -1515,6 +1580,237 @@ function renderBlockForLanguage(
   }
 }
 
+const MAX_PARAGRAPH_FRAGMENT_CHARACTERS = 360;
+const MAX_LIST_ITEMS_PER_FRAGMENT = 4;
+const MAX_TABLE_ROWS_PER_FRAGMENT = 4;
+
+function splitTextAtSemanticBoundary(
+  value: string,
+  maximumCharacters: number
+): readonly string[] {
+  const parts: string[] = [];
+  let remaining = value;
+  while (remaining.length > maximumCharacters) {
+    const window = remaining.slice(0, maximumCharacters + 1);
+    const candidates = [
+      window.lastIndexOf(". "),
+      window.lastIndexOf("؟ "),
+      window.lastIndexOf("! "),
+      window.lastIndexOf("; "),
+      window.lastIndexOf("، "),
+      window.lastIndexOf(", "),
+      window.lastIndexOf(" "),
+    ];
+    const preferred = Math.max(...candidates);
+    const splitAt =
+      preferred >= Math.floor(maximumCharacters * 0.5)
+        ? preferred + 1
+        : maximumCharacters;
+    const part = remaining.slice(0, splitAt).trimEnd();
+    if (part.length > 0) parts.push(part);
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  if (remaining.length > 0) parts.push(remaining);
+  return parts.length > 0 ? parts : [value];
+}
+
+function splitOversizedInlineNode(
+  node: BilingualInlineNode,
+  maximumCharacters: number
+): readonly BilingualInlineNode[] {
+  if (inlineText([node]).length <= maximumCharacters) return [node];
+  switch (node.type) {
+    case "text":
+      return splitTextAtSemanticBoundary(
+        node.text,
+        maximumCharacters
+      ).map((text): TextInlineNode => ({ type: "text", text }));
+    case "code":
+      return splitTextAtSemanticBoundary(
+        node.text,
+        maximumCharacters
+      ).map((text): CodeInlineNode => ({ type: "code", text }));
+    case "value":
+      return splitTextAtSemanticBoundary(
+        node.value.text,
+        maximumCharacters
+      ).map(
+        (text): ValueInlineNode => ({
+          ...node,
+          value: { ...node.value, text },
+        })
+      );
+    case "strong":
+    case "emphasis":
+    case "link": {
+      const childChunks = splitInlineContent(
+        node.children,
+        maximumCharacters
+      );
+      return childChunks.map((children) => ({ ...node, children }));
+    }
+    case "line-break":
+      return [node];
+    default:
+      return assertNever(node);
+  }
+}
+
+function splitInlineContent(
+  nodes: readonly BilingualInlineNode[],
+  maximumCharacters = MAX_PARAGRAPH_FRAGMENT_CHARACTERS
+): readonly (readonly BilingualInlineNode[])[] {
+  const atoms = nodes.flatMap((node) =>
+    splitOversizedInlineNode(node, maximumCharacters)
+  );
+  const chunks: BilingualInlineNode[][] = [];
+  let current: BilingualInlineNode[] = [];
+  let currentCharacters = 0;
+
+  for (const atom of atoms) {
+    const atomCharacters = Math.max(1, inlineText([atom]).length);
+    if (
+      current.length > 0 &&
+      currentCharacters + atomCharacters > maximumCharacters
+    ) {
+      chunks.push(current);
+      current = [];
+      currentCharacters = 0;
+    }
+    current.push(atom);
+    currentCharacters += atomCharacters;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks.length > 0 ? chunks : [nodes];
+}
+
+function chunkArray<T>(
+  values: readonly T[],
+  size: number
+): readonly (readonly T[])[] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+interface CompiledRenderFragment {
+  readonly id: string;
+  readonly kind: PairedBlock["type"];
+  readonly content: Localized<string>;
+  readonly keepTogether: boolean;
+  readonly keepWithNext: boolean;
+}
+
+function renderParagraphFragment(
+  block: PairedParagraphBlock,
+  language: DocumentLanguage,
+  content: readonly BilingualInlineNode[] | undefined
+): string {
+  if (!content || content.length === 0) {
+    return '<p class="bilingual-fragment-placeholder" aria-hidden="true"></p>';
+  }
+  const direction = resolvedDirection(
+    content,
+    language,
+    block.direction ?? "auto"
+  );
+  return `<p dir="${direction}">${renderSafeInline(content)}</p>`;
+}
+
+function compileBlockRenderFragments(
+  block: PairedBlock
+): readonly CompiledRenderFragment[] {
+  if (block.type === "paragraph") {
+    const enChunks = splitInlineContent(block.content.en);
+    const arChunks = splitInlineContent(block.content.ar);
+    const fragmentCount = Math.max(enChunks.length, arChunks.length);
+    return Array.from({ length: fragmentCount }, (_, index) => ({
+      id:
+        fragmentCount === 1
+          ? block.id
+          : `${block.id}--part-${String(index + 1)}`,
+      kind: block.type,
+      content: {
+        en: renderParagraphFragment(block, "en", enChunks[index]),
+        ar: renderParagraphFragment(block, "ar", arChunks[index]),
+      },
+      keepTogether: true,
+      keepWithNext: false,
+    }));
+  }
+
+  if (block.type === "list") {
+    const chunks = chunkArray(block.items, MAX_LIST_ITEMS_PER_FRAGMENT);
+    return chunks.map((items, index) => ({
+      id:
+        chunks.length === 1
+          ? block.id
+          : `${block.id}--part-${String(index + 1)}`,
+      kind: block.type,
+      content: {
+        en: renderListItems(
+          items,
+          "en",
+          block.ordered,
+          block.ordered
+            ? (block.start ?? 1) + index * MAX_LIST_ITEMS_PER_FRAGMENT
+            : undefined
+        ),
+        ar: renderListItems(
+          items,
+          "ar",
+          block.ordered,
+          block.ordered
+            ? (block.start ?? 1) + index * MAX_LIST_ITEMS_PER_FRAGMENT
+            : undefined
+        ),
+      },
+      keepTogether: true,
+      keepWithNext: false,
+    }));
+  }
+
+  if (block.type === "table") {
+    const chunks = chunkArray(block.rows, MAX_TABLE_ROWS_PER_FRAGMENT);
+    return chunks.map((rows, index) => {
+      const table: PairedTableBlock = {
+        ...block,
+        rows,
+        caption: index === 0 ? block.caption : undefined,
+      };
+      return {
+        id:
+          chunks.length === 1
+            ? block.id
+            : `${block.id}--part-${String(index + 1)}`,
+        kind: block.type,
+        content: {
+          en: renderTable(table, "en"),
+          ar: renderTable(table, "ar"),
+        },
+        keepTogether: true,
+        keepWithNext: false,
+      };
+    });
+  }
+
+  return [
+    {
+      id: block.id,
+      kind: block.type,
+      content: {
+        en: renderBlockForLanguage(block, "en"),
+        ar: renderBlockForLanguage(block, "ar"),
+      },
+      keepTogether: true,
+      keepWithNext:
+        block.type === "heading" && block.keepWithNext === true,
+    },
+  ];
+}
+
 function renderLanguageCell(
   html: string,
   language: DocumentLanguage,
@@ -1585,8 +1881,11 @@ function renderSection(
   section: PairedSection,
   config: BilingualLayoutConfig
 ): string {
+  const compiledBlocks = section.blocks.flatMap(
+    compileBlockRenderFragments
+  );
   const headingOffset = section.title ? 1 : 0;
-  const fragmentCount = section.blocks.length + headingOffset;
+  const fragmentCount = compiledBlocks.length + headingOffset;
   const sectionHeading = section.title
     ? renderPairedFragment({
         section,
@@ -1606,23 +1905,16 @@ function renderSection(
       })
     : "";
 
-  const blocks = section.blocks
-    .map((block, blockIndex) =>
+  const blocks = compiledBlocks
+    .map((fragment, blockIndex) =>
       renderPairedFragment({
         section,
-        fragmentId: `${section.alignmentKey}--${block.id}`,
-        content: {
-          en: renderBlockForLanguage(block, "en"),
-          ar: renderBlockForLanguage(block, "ar"),
-        },
+        fragmentId: `${section.alignmentKey}--${fragment.id}`,
+        content: fragment.content,
         config,
-        kind: block.type,
-        keepTogether:
-          block.type === "image" ||
-          block.type === "chart" ||
-          (block.type === "heading" && block.keepWithNext === true),
-        keepWithNext:
-          block.type === "heading" && block.keepWithNext === true,
+        kind: fragment.kind,
+        keepTogether: fragment.keepTogether,
+        keepWithNext: fragment.keepWithNext,
         fragmentIndex: blockIndex + headingOffset,
         fragmentCount,
       })
@@ -1758,8 +2050,32 @@ body {
 }
 
 .bilingual-pair {
+  position: relative;
   inline-size: 100%;
   margin-block-end: ${designTokens.spacing[4]};
+  break-inside: avoid-page;
+  page-break-inside: avoid;
+}
+
+.bilingual-pair[data-sync-continued-from-previous="true"]::before,
+.bilingual-pair[data-sync-continues-on-next="true"]::after {
+  position: absolute;
+  z-index: 1;
+  inset-inline: ${designTokens.spacing[2]};
+  color: var(--bilingual-muted);
+  font-size: ${designTokens.typography.fontSizes.xs};
+  line-height: 1;
+  pointer-events: none;
+}
+
+.bilingual-pair[data-sync-continued-from-previous="true"]::before {
+  content: attr(data-sync-before-label-en) " / " attr(data-sync-before-label-ar);
+  inset-block-start: 0;
+}
+
+.bilingual-pair[data-sync-continues-on-next="true"]::after {
+  content: attr(data-sync-after-label-en) " / " attr(data-sync-after-label-ar);
+  inset-block-end: 0;
 }
 
 .bilingual-pair--parallel {
@@ -1854,6 +2170,10 @@ body {
 .bilingual-section thead {
   display: table-header-group;
   background: var(--bilingual-surface);
+}
+
+.bilingual-section table[data-repeat-header="false"] thead {
+  display: table-row-group;
 }
 
 .bilingual-table-cell--center { text-align: center !important; }
@@ -1956,6 +2276,22 @@ body {
     padding: 0;
   }
 
+  .bilingual-document-header,
+  .bilingual-section {
+    display: contents;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .bilingual-document-header h1 {
+    box-shadow: inset 0 -2px var(--bilingual-primary);
+  }
+
+  .bilingual-section--new-page {
+    break-before: auto;
+  }
+
   .bilingual-viewer-tabs {
     display: none !important;
   }
@@ -2020,7 +2356,7 @@ export class BilingualLayoutEngine {
       document.id
     )}" data-layout-mode="${config.mode}" data-viewer-mode="${effectiveViewerMode}" data-viewer-language="${
       config.viewer.defaultLanguage
-    }" data-render-target="${target}" data-bilingual-layout-ready="true">
+    }" data-render-target="${target}" data-bilingual-layout-state="pending" data-bilingual-layout-ready="false">
 ${renderViewerMetadata(document.id, config, target)}
 ${renderDocumentTitle(document, config)}
 ${document.sections.map((section) => renderSection(section, config)).join("\n")}

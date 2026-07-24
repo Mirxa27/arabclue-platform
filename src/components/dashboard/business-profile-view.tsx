@@ -74,7 +74,9 @@ export function BusinessProfileView() {
   const ar = locale === "ar";
   const { setView } = useUI();
   const { toast } = useToast();
-  const [exporting, setExporting] = useState<"pdf" | "html" | null>(null);
+  const [exporting, setExporting] = useState<
+    "pdf" | "html" | "bilingual-pdf" | "bilingual-html" | null
+  >(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["business-profile"],
@@ -100,11 +102,22 @@ export function BusinessProfileView() {
     ? profile?.brand?.taglineAr || profile?.brand?.tagline
     : profile?.brand?.tagline || profile?.brand?.taglineAr;
 
-  async function exportProfile(format: "pdf" | "html") {
-    setExporting(format);
+  async function exportProfile(
+    format: "pdf" | "html",
+    exportLocale: "ar" | "en" | "bilingual" = locale
+  ) {
+    const exportKey =
+      exportLocale === "bilingual"
+        ? format === "pdf"
+          ? "bilingual-pdf"
+          : "bilingual-html"
+        : format;
+    setExporting(exportKey);
     try {
       const res = await fetch(
-        `/api/business-profile/export?format=${format}&locale=${locale}`,
+        `/api/business-profile/export?format=${format}&locale=${exportLocale}${
+          exportLocale === "bilingual" ? "&quality=strict" : ""
+        }`,
         { credentials: "include" }
       );
       if (!res.ok) {
@@ -206,6 +219,31 @@ export function BusinessProfileView() {
               )}
               PDF
             </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={exporting != null}
+              onClick={() => exportProfile("html", "bilingual")}
+            >
+              {exporting === "bilingual-html" ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              {ar ? "HTML ثنائي اللغة" : "Bilingual HTML"}
+            </Button>
+            <Button
+              size="sm"
+              disabled={exporting != null}
+              onClick={() => exportProfile("pdf", "bilingual")}
+            >
+              {exporting === "bilingual-pdf" ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              {ar ? "PDF ثنائي اللغة" : "Bilingual PDF"}
+            </Button>
           </div>
         }
       />
@@ -248,8 +286,8 @@ export function BusinessProfileView() {
                 <p className="mt-2 text-sm sm:text-base text-white/85 max-w-2xl">
                   {tagline ||
                     (ar
-                      ? "بيان قدرات لمنافسات اعتماد — مبني من معرفتك المؤسسية."
-                      : "Etimad-ready capability statement built from your institutional knowledge.")}
+                      ? "مسودة بيان قدرات مبنية من السجلات المؤسسية المعتمدة."
+                      : "Draft capability statement built from approved institutional records.")}
                 </p>
               </div>
             </div>

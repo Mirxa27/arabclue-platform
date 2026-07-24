@@ -4,6 +4,7 @@ import { saveUpload } from "@/lib/storage";
 import { requireWriter } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { getTenantContext } from "@/lib/workspace-context";
+import { validateAndNormalizeLogoImage } from "@/lib/brand-logo";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +24,41 @@ export async function POST(req: NextRequest) {
   if (!file || !(file instanceof File)) {
     return NextResponse.json({ error: "file required" }, { status: 400 });
   }
-  if (!file.type.startsWith("image/")) {
-    return NextResponse.json({ error: "image file required" }, { status: 400 });
+  const allowedMimeTypes = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+  ]);
+  if (!allowedMimeTypes.has(file.type) || file.size < 1 || file.size > 8 * 1024 * 1024) {
+    return NextResponse.json(
+      { error: "PNG, JPEG, or WebP image up to 8 MiB required" },
+      { status: 400 }
+    );
   }
 
-  const bytes = Buffer.from(await file.arrayBuffer());
+  let image: Awaited<ReturnType<typeof validateAndNormalizeLogoImage>>;
+  try {
+    image = await validateAndNormalizeLogoImage(
+      Buffer.from(await file.arrayBuffer()),
+      file.name
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid or undecodable logo image" },
+      { status: 400 }
+    );
+  }
+  if (image.mimeType !== file.type) {
+    return NextResponse.json(
+      { error: "Logo MIME type does not match its contents" },
+      { status: 400 }
+    );
+  }
+
   const stored = await saveUpload({
     workspaceId: workspace.id,
     originalName: file.name,
-    bytes,
+    bytes: image.bytes,
   });
 
   const logoUrl = `/api/files?path=${encodeURIComponent(stored.storagePath)}`;

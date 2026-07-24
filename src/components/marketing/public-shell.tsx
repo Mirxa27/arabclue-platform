@@ -290,7 +290,7 @@ export function PublicShell({
                     )}
                   >
                     <Shield className="size-3.5 flex-shrink-0" />
-                    <span>{locale === "ar" ? "PDPL • NCA • Etimad جاهز" : "PDPL • NCA • Etimad Ready"}</span>
+                    <span>{locale === "ar" ? "ضوابط تراعي PDPL وNCA • سير عمل اعتماد" : "PDPL/NCA-aware controls • Etimad workflow"}</span>
                   </div>
                 </div>
               </motion.div>

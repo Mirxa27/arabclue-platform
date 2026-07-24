@@ -1,5 +1,10 @@
 # Arabclue Document Generation Architecture
 
+> **Superseded planning record.** This file is not an implementation,
+> compliance, legal-approval, or deployment source of truth. Use
+> `docs/bilingual-layout-engine.md`, `docs/document-generation-phases-3-6.md`,
+> and the tested public APIs under `src/lib/` for current behavior.
+
 **Status:** Proposed architecture
 
 **Date:** 2026-07-24

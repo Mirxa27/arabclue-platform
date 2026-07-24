@@ -56,11 +56,13 @@ renderBilingualHTML     renderBilingualArtifact
                        Playwright Chromium PDF
 ```
 
-`layout-sync.ts` is adjacent to this pipeline rather than called implicitly by
-it. A compiler or preview adapter must segment content, measure each fragment,
-call `synchronizeLayout`, and apply the returned page/spacing instructions.
-The base AST renderer instead relies on semantic paired grid rows, which gives
-the two cells of one row the same browser layout height.
+`layout-sync.ts` contains both the pure synchronization algorithm and its
+trusted renderer bridge. Generated HTML starts with a pending marker. Client
+previews call `synchronizeCurrentBilingualDocument` after fonts and images
+settle. PDF generation disables document-authored JavaScript and network
+requests, measures through trusted `page.evaluate`, calls `synchronizeLayout`
+in Node, applies the resulting spacing and pagination instructions, and only
+then changes the exact readiness marker to true.
 
 The React component library is also separate. It accepts `ReactNode` values for
 trusted application composition and does not automatically run the AST
@@ -271,6 +273,7 @@ Validation exports:
 | `validateBilingualDocument(input)` | Non-throwing validation report |
 | `parseBilingualDocument(input)` | Throws on errors and deeply freezes valid input |
 | `BilingualLayoutValidationError` | Error with an `issues` collection |
+| `BILINGUAL_LAYOUT_LIMITS` | Section/block/text, inline depth/node, and per-image/aggregate image-byte limits |
 
 Rendering exports:
 
@@ -283,15 +286,17 @@ Rendering exports:
 | `renderBilingualHTML(document, options?)` | Convenience validation and render entry point |
 
 `BilingualLayoutEngine.render` emits
-`data-bilingual-layout-ready="true"`. Screen tab mode emits declarative buttons
-and data attributes; the host application is responsible for tab interaction.
-Print target always includes both languages. Rendered pairs also expose
-fragment index/count and keep-with-next metadata for measurement adapters; the
-renderer still does not call `synchronizeLayout` itself.
+`data-bilingual-layout-state="pending"` and
+`data-bilingual-layout-ready="false"`. Screen tab mode emits declarative
+buttons and data attributes; the host application is responsible for tab
+interaction and must call the trusted synchronization bridge after assets
+settle. Print target always includes both languages. Rendered pairs expose
+fragment index/count and keep-with-next metadata for measured synchronization.
 
 ### `src/lib/layout-sync.ts`
 
-The synchronization API is pure and DOM-free. All heights must use the same
+The synchronization core is pure and DOM-free. Its browser/PDF bridge keeps DOM
+measurement and application at the boundary. All heights must use the same
 unit, and `pageContentHeight` must already exclude page margins, headers, and
 footers.
 
@@ -316,6 +321,10 @@ footers.
 | `LayoutSyncMetrics` | Input rows, pages, overflow rows, and continuation breaks |
 | `LAYOUT_SYNC_ERROR_CODES` / `LayoutSyncErrorCode` | Stable malformed-input codes |
 | `LayoutSyncError` | Domain error with code and optional row index |
+| `BILINGUAL_LAYOUT_PENDING_SELECTOR` / `BILINGUAL_LAYOUT_READY_SELECTOR` | Exact lifecycle selectors |
+| `measureBilingualLayoutInPage` / `applyBilingualLayoutInPage` | Self-contained trusted renderer callables |
+| `synchronizeCurrentBilingualDocument(options?)` | Measures and synchronizes an already-loaded client preview |
+| `synchronizeBilingualLayoutPage(page, options?)` | Trusted Playwright bridge used by PDF generation |
 
 Dynamic spacing is distributed only across `adjustableGaps`; text line spacing
 is not altered. Each fragment remains atomic. Split long content at paragraphs,
@@ -437,9 +446,10 @@ types.
 | `generateBilingualPdf(input, options?)` | Generates canonical print HTML and a Chromium PDF |
 
 `generateBilingualPdf` defaults to A4, print backgrounds, bilingual footer,
-14 mm inline margins, no fixed wait, and the explicit
-`[data-bilingual-layout-ready]` readiness selector. The shared PDF utility also
-waits for `document.fonts.ready` within a bounded timeout.
+14 mm inline margins, no fixed wait, and the exact
+`[data-bilingual-document][data-bilingual-layout-ready="true"]` readiness
+selector. The shared PDF utility fails closed if fonts or images do not settle
+within the bounded timeout.
 
 This module uses Node.js filesystem, crypto, module resolution, and `Buffer`.
 Run it in a Node runtime, not a browser component or Edge runtime.
@@ -639,7 +649,9 @@ const serviceLevels: PairedTableBlock = {
 
 For very long tables, create compiler fragments at row boundaries and use
 `layout-sync`. The AST `repeatHeader` flag defaults to true in rendered markup,
-but actual page-break behavior still depends on the print engine and row sizes.
+while `repeatHeader: false` emits `data-repeat-header="false"` and changes the
+`thead` print display to `table-row-group`. Actual page-break behavior still
+depends on the print engine and row sizes.
 
 ### Images
 
@@ -854,8 +866,9 @@ For large documents:
    `synchronizeLayout`.
 5. Inspect every `LayoutSyncWarning`; do not hide residual imbalance or
    oversized-fragment warnings.
-6. Avoid large repeated base64 images. Public bundled assets reduce duplicated
-   HTML size, while data images remain capped at 8 MiB each.
+6. Avoid large repeated base64 images. Data images are capped at 8 MiB each and
+   24 MiB decoded bytes in aggregate; PDF rendering also fails closed when an
+   image cannot be decoded before layout.
 7. Reuse a font pair within a process so the embedded-font promise cache avoids
    repeated disk reads.
 8. Use explicit page starts only when required. Fifty forced page breaks are a
@@ -947,7 +960,7 @@ residual column imbalance; it is not limited to physical page overflow.
 | Font module cannot resolve | Dependencies or lockfile install is incomplete | Run `bun install`; verify the pinned font packages and local license files |
 | Remote-font quality error | HTML includes Google Fonts URLs | Remove remote font imports and use `getEmbeddedBilingualFontCss` |
 | Arabic falls back or shapes poorly | Wrong pair/weight, fonts not loaded, or unsupported glyph | Use an allow-listed pair/weight and await `document.fonts.ready`; inspect the actual text |
-| PDF readiness times out | Marker selector was overridden/missing or layout never settled | Keep `[data-bilingual-layout-ready]`, inspect HTML, and review bounded timeout settings |
+| PDF readiness times out | Marker selector was overridden/missing or measured layout never settled | Keep the exact `[data-bilingual-document][data-bilingual-layout-ready="true"]` selector, inspect the pending state, and review bounded timeout settings |
 | Structural quality error | Missing pair/language cell, readiness marker, or exactly one `h1` | Inspect `quality.issues` and fix the canonical renderer input |
 | Valid signature but bad layout | Signature checks only `%PDF-` | Run visual QA; inspect fonts, overflow, and page geometry |
 

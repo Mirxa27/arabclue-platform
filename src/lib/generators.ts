@@ -15,6 +15,12 @@ import {
   resolveOfficeFontFace,
   resolveBrandFontStack,
 } from "./letterhead";
+import {
+  DEFAULT_DOCUMENT_BRAND_COLORS,
+  inlineBrandLogoForPdf,
+  normalizeDocumentBrandColor,
+  safeBrandLogoUrlForDocument,
+} from "./brand-logo";
 
 export type PdfLocale = "ar" | "en";
 
@@ -66,11 +72,21 @@ function buildProposalHTML(
     forPrint?: boolean;
     locale?: PdfLocale;
     company?: ProposalCompanyLetterhead | null;
+    trustedEmbeddedLogo?: boolean;
   }
 ): string {
-  const primary = brand?.primaryColor ?? "#1E3A8A";
-  const secondary = brand?.secondaryColor ?? "#0F172A";
-  const accent = brand?.accentColor ?? "#0EA5E9";
+  const primary = normalizeDocumentBrandColor(
+    brand?.primaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+  );
+  const secondary = normalizeDocumentBrandColor(
+    brand?.secondaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.secondaryColor
+  );
+  const accent = normalizeDocumentBrandColor(
+    brand?.accentColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
+  );
   const fontStack = resolveBrandFontStack(brand?.fontFamily);
   const fontsHref = googleFontsHref(brand?.fontFamily);
   const tenderType = getTenderType(project.category);
@@ -101,7 +117,8 @@ function buildProposalHTML(
           vat: "الرقم الضريبي",
           disclaimer:
             "مصفوفات الامتثال والتعليقات التنظيمية أدوات صياغة مساعدة وليست استشارة قانونية. يلزم مراجعة واعتماد قانوني بشري قبل التقديم.",
-          footer: "أُنشئ بواسطة أراب كلاو · محتوى الامتثال ليس استشارة قانونية · إقامة البيانات في المملكة · رؤية 2030",
+          footer:
+            "أُنشئ بواسطة أراب كلاو · محتوى الامتثال ليس استشارة قانونية · مواءمة رؤية 2030 عند وجود سند",
           techFin: `فني ${tenderType.evaluationSplit.technical}% / مالي ${tenderType.evaluationSplit.financial}%`,
           slaVal: `${tenderType.slaPerWeek}% أسبوعياً (حد أقصى ${tenderType.slaMaxPenalty}%)`,
         }
@@ -124,8 +141,13 @@ function buildProposalHTML(
           slaVal: `${tenderType.slaPerWeek}%/week (max ${tenderType.slaMaxPenalty}%)`,
         };
 
-  const logoBlock = brand?.logoUrl
-    ? `<img src="${escapeHtml(brand.logoUrl)}" alt="logo" style="height:56px;max-width:180px;object-fit:contain;margin-bottom:16px;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:8px" />`
+  const logoUrl = safeBrandLogoUrlForDocument(
+    brand?.logoUrl,
+    proposal.workspaceId,
+    { allowEmbedded: opts?.trustedEmbeddedLogo }
+  );
+  const logoBlock = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="logo" style="height:56px;max-width:180px;object-fit:contain;margin-bottom:16px;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:8px" />`
     : "";
 
   const titleDisplay =
@@ -134,9 +156,10 @@ function buildProposalHTML(
       : escapeHtml(project.title);
 
   const letterhead = letterheadBarHtml({
-    brand,
+    brand: brand ? { ...brand, workspaceId: proposal.workspaceId } : null,
     companyName,
     locale,
+    trustedEmbeddedLogo: opts?.trustedEmbeddedLogo,
   });
 
   return `<!DOCTYPE html>
@@ -225,8 +248,10 @@ export async function generateProposalPDF(
   locale?: PdfLocale,
   company?: ProposalCompanyLetterhead | null
 ): Promise<Buffer> {
-  const { inlineBrandLogoForPdf } = await import("./brand-logo");
-  const logo = await inlineBrandLogoForPdf(brand);
+  const logo = await inlineBrandLogoForPdf(
+    brand,
+    proposal.workspaceId
+  );
   if (logo.warning) {
     console.warn("[generateProposalPDF]", logo.warning);
   }
@@ -236,6 +261,7 @@ export async function generateProposalPDF(
     forPrint: true,
     locale,
     company,
+    trustedEmbeddedLogo: true,
   });
   const { htmlToPdf, PdfGenerationError } = await import("./pdf/html-to-pdf");
   try {
@@ -491,8 +517,14 @@ export function generateSlidesHTML(
   company?: ProposalCompanyLetterhead | null,
   locale?: PdfLocale
 ): string {
-  const primary = brand?.primaryColor ?? "#1E3A8A";
-  const accent = brand?.accentColor ?? "#0EA5E9";
+  const primary = normalizeDocumentBrandColor(
+    brand?.primaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+  );
+  const accent = normalizeDocumentBrandColor(
+    brand?.accentColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
+  );
   const fontStack = resolveBrandFontStack(brand?.fontFamily);
   const fontsHref = googleFontsHref(brand?.fontFamily);
   const companyName = exportCompanyName(brand, company, resolveLocale(proposal, locale));

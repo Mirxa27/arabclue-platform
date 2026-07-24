@@ -1,5 +1,9 @@
 # Arabclue Document Generation Systems: Architecture Design (Part 2)
 
+> **Superseded planning record.** Examples below are historical design
+> sketches and may contain APIs or raw-template patterns that were deliberately
+> not implemented. They are not safe production examples or compliance claims.
+
 ## 4. Enhanced Proposal Layout Specifications (Continued)
 
 ### 4.1 Visual Design System (Continued)

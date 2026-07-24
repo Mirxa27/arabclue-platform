@@ -13,6 +13,10 @@ import {
 } from "@/lib/business-profile";
 import type { CapabilityStatementBuildResult } from "@/lib/capability-statement";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import {
+  documentExportGate,
+  type DocumentExportAdmission,
+} from "@/lib/document-export-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -70,6 +74,11 @@ export interface BusinessProfileExportDependencies {
   readonly buildBilingualPdf: (
     compilation: CapabilityStatementBuildResult
   ) => Promise<Buffer>;
+  readonly acquirePdfPermit: (input: {
+    readonly userId: string;
+    readonly workspaceId: string;
+    readonly sourceCharacters: number;
+  }) => Promise<DocumentExportAdmission>;
   readonly recordDownload: (
     event: BusinessProfileDownloadAuditEvent
   ) => Promise<void>;
@@ -94,6 +103,8 @@ const productionDependencies: BusinessProfileExportDependencies = {
   compileBilingual: compileBilingualBusinessProfile,
   renderBilingualHtml: renderBilingualBusinessProfileHTML,
   buildBilingualPdf: generateBilingualBusinessProfilePDF,
+  acquirePdfPermit: (input) =>
+    documentExportGate.acquire({ ...input, kind: "capability-pdf" }),
   recordDownload: async (event) => {
     const details =
       event.locale === "bilingual"
@@ -167,6 +178,21 @@ function blockedBilingualExportResponse(
   );
 }
 
+function exportAdmissionDeniedResponse(
+  denial: Exclude<DocumentExportAdmission, { ok: true }>
+): NextResponse {
+  return NextResponse.json(
+    { error: denial.message, code: denial.code },
+    {
+      status: denial.status,
+      headers:
+        denial.retryAfterSeconds === null
+          ? undefined
+          : { "Retry-After": String(denial.retryAfterSeconds) },
+    }
+  );
+}
+
 async function recordSuccessfulDownload(
   dependencies: BusinessProfileExportDependencies,
   event: BusinessProfileDownloadAuditEvent
@@ -203,6 +229,7 @@ export async function handleBusinessProfileExport(
   );
   const profile = await dependencies.loadProfile(workspace.id);
   const slug = workspace.slug || "company";
+  const sourceCharacters = JSON.stringify(profile).length;
 
   if (locale === "bilingual") {
     const compilation = dependencies.compileBilingual(profile, quality);
@@ -225,6 +252,12 @@ export async function handleBusinessProfileExport(
       );
     }
 
+    const admission = await dependencies.acquirePdfPermit({
+      userId: session.userId,
+      workspaceId: workspace.id,
+      sourceCharacters,
+    });
+    if (!admission.ok) return exportAdmissionDeniedResponse(admission);
     try {
       const pdf = await dependencies.buildBilingualPdf(compilation);
       await recordSuccessfulDownload(dependencies, {
@@ -248,6 +281,8 @@ export async function handleBusinessProfileExport(
         },
         { status: 503 }
       );
+    } finally {
+      await admission.permit.release();
     }
   }
 
@@ -262,6 +297,12 @@ export async function handleBusinessProfileExport(
     return htmlResponse(html, `${slug}-business-profile.html`);
   }
 
+  const admission = await dependencies.acquirePdfPermit({
+    userId: session.userId,
+    workspaceId: workspace.id,
+    sourceCharacters,
+  });
+  if (!admission.ok) return exportAdmissionDeniedResponse(admission);
   try {
     const pdf = await dependencies.buildLegacyPdf(profile, locale);
     await recordSuccessfulDownload(dependencies, {
@@ -281,6 +322,8 @@ export async function handleBusinessProfileExport(
       },
       { status: 503 }
     );
+  } finally {
+    await admission.permit.release();
   }
 }
 

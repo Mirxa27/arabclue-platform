@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   BilingualLayoutEngine,
   BilingualLayoutValidationError,
+  BILINGUAL_LAYOUT_LIMITS,
   DEFAULT_BILINGUAL_CONFIG,
   createColumnRatio,
   generateBilingualCSS,
@@ -311,6 +312,7 @@ describe("safe HTML rendering", () => {
     expect(html).toContain("<table");
     expect(html).toContain("<caption>Fees</caption>");
     expect(html).toContain("<thead>");
+    expect(html).toContain('data-repeat-header="true"');
     expect(html).toContain('data-table-row-id="fee-1"');
     expect(html).toContain('src="/documents/process-arrow.png"');
     expect(html).toContain('alt="عملية التسليم"');
@@ -472,11 +474,27 @@ describe("layout modes and stable synchronization contract", () => {
       'data-fragment-id="contract.scope--scope-paragraph"'
     );
     expect(html).toContain("data-bilingual-pair");
-    expect(html).toContain('data-bilingual-layout-ready="true"');
+    expect(html).toContain('data-bilingual-layout-state="pending"');
+    expect(html).toContain('data-bilingual-layout-ready="false"');
     expect(html).toContain('data-fragment-keep-with-next="true"');
     expect(html).toContain('data-fragment-index="1"');
     expect(html).toContain('data-fragment-count="6"');
     expect(html).toContain("break-after: avoid-page");
+  });
+
+  test("disables browser header repetition when repeatHeader is false", () => {
+    const document = structuredClone(sampleDocument);
+    const table = document.sections[0]?.blocks[3];
+    if (!table || table.type !== "table") {
+      throw new Error("fixture table missing");
+    }
+    (table as { repeatHeader?: boolean }).repeatHeader = false;
+
+    const html = renderBilingualHTML(document);
+    expect(html).toContain('data-repeat-header="false"');
+    expect(html).toContain(
+      'table[data-repeat-header="false"] thead {\n  display: table-row-group;'
+    );
   });
 
   test("emits viewer-tab metadata without hiding either language in print", () => {
@@ -583,6 +601,71 @@ describe("production validation", () => {
     expect(
       result.issues.some((issue) => issue.code === "UNSAFE_BIDI_CONTROL")
     ).toBe(true);
+  });
+
+  test("rejects excessive inline-node depth and aggregate node count", () => {
+    let nested: BilingualInlineNode = { type: "text", text: "Nested" };
+    for (
+      let depth = 0;
+      depth <= BILINGUAL_LAYOUT_LIMITS.maxInlineDepth;
+      depth += 1
+    ) {
+      nested = { type: "strong", children: [nested] };
+    }
+    const tooDeep: BilingualDocumentSpec = {
+      ...sampleDocument,
+      title: { en: [nested], ar: text("متداخل") },
+    };
+    expect(validateBilingualDocument(tooDeep).issues).toContainEqual(
+      expect.objectContaining({ code: "DOCUMENT_LIMIT_EXCEEDED" })
+    );
+
+    const tooManyNodes = Array.from(
+      { length: BILINGUAL_LAYOUT_LIMITS.maxInlineNodes + 1 },
+      (): BilingualInlineNode => ({ type: "text", text: "x" })
+    );
+    const tooLarge: BilingualDocumentSpec = {
+      ...sampleDocument,
+      title: { en: tooManyNodes, ar: text("كبير") },
+    };
+    expect(validateBilingualDocument(tooLarge).issues).toContainEqual(
+      expect.objectContaining({ code: "DOCUMENT_LIMIT_EXCEEDED" })
+    );
+  });
+
+  test("enforces an aggregate decoded-byte budget for embedded images", () => {
+    const bytesPerImage = 7 * 1024 * 1024;
+    const source = {
+      kind: "data" as const,
+      uri: `data:image/png;base64,${Buffer.alloc(bytesPerImage).toString(
+        "base64"
+      )}`,
+    };
+    const blocks = Array.from({ length: 4 }, (_, index): PairedImageBlock => ({
+      type: "image",
+      id: `aggregate-image-${String(index)}`,
+      source,
+      alt: { en: `Image ${String(index)}`, ar: `صورة ${String(index)}` },
+    }));
+    const invalid: BilingualDocumentSpec = {
+      ...sampleDocument,
+      sections: [
+        {
+          id: "aggregate-images",
+          alignmentKey: "aggregate.images",
+          blocks,
+        },
+      ],
+    };
+
+    const result = validateBilingualDocument(invalid);
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        code: "DOCUMENT_LIMIT_EXCEEDED",
+        message: expect.stringContaining("decoded bytes in total"),
+      })
+    );
   });
 
   test("rejects unsafe link protocols before rendering", () => {

@@ -31,9 +31,49 @@ import {
 import type { FinancialExtract } from "@/lib/types";
 import { letterheadCompanyName } from "@/lib/letterhead";
 import { sanitizeFilename } from "@/lib/storage";
+import {
+  documentExportGate,
+  type DocumentExportPermit,
+} from "@/lib/document-export-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+
+export type ProposalDownloadFormat =
+  | "zip"
+  | "pdf"
+  | "html"
+  | "xlsx-matrix"
+  | "xlsx-boq"
+  | "slides"
+  | "pptx"
+  | "manifest";
+
+export function resolveProposalDownloadFormat(
+  value: string | null
+): ProposalDownloadFormat | null {
+  const candidate =
+    value === null
+      ? "zip"
+      : value === "ea-matrix"
+        ? "xlsx-matrix"
+        : value === "boq"
+          ? "xlsx-boq"
+          : value;
+  switch (candidate) {
+    case "zip":
+    case "pdf":
+    case "html":
+    case "xlsx-matrix":
+    case "xlsx-boq":
+    case "slides":
+    case "pptx":
+    case "manifest":
+      return candidate;
+    default:
+      return null;
+  }
+}
 
 // GET /api/proposals/[id]/download?format=zip|pdf|html|xlsx-matrix|ea-matrix|xlsx-boq|boq|slides|pptx
 export async function GET(
@@ -46,10 +86,19 @@ export async function GET(
   }
   const { workspace } = await getTenantContext(session.user.id);
   const { id } = await params;
-  let format = req.nextUrl.searchParams.get("format") ?? "zip";
-  // Aliases from artifact JSON
-  if (format === "ea-matrix") format = "xlsx-matrix";
-  if (format === "boq") format = "xlsx-boq";
+  let format = resolveProposalDownloadFormat(
+    req.nextUrl.searchParams.get("format")
+  );
+  if (format === null) {
+    return NextResponse.json(
+      {
+        error:
+          "Unsupported format. Expected zip, pdf, html, xlsx-matrix, xlsx-boq, slides, pptx, or manifest.",
+        code: "UNSUPPORTED_EXPORT_FORMAT",
+      },
+      { status: 400 }
+    );
+  }
   const localeParam = req.nextUrl.searchParams.get("locale");
   const pdfLocale =
     localeParam === "ar" || localeParam === "en"
@@ -230,6 +279,36 @@ export async function GET(
     }
   }
 
+  let exportPermit: DocumentExportPermit | null = null;
+  if (format === "pdf" || format === "zip") {
+    const sourceCharacters = JSON.stringify({
+      contentMd: proposal.contentMd,
+      artifactsJson: proposal.artifactsJson,
+      financialFormsJson: proposal.financialFormsJson,
+      checks: checksForGate,
+      boqItems,
+    }).length;
+    const admission = await documentExportGate.acquire({
+      userId: session.user.id,
+      workspaceId: workspace.id,
+      sourceCharacters,
+      kind: format === "zip" ? "proposal-package" : "proposal-pdf",
+    });
+    if (!admission.ok) {
+      return NextResponse.json(
+        { error: admission.message, code: admission.code },
+        {
+          status: admission.status,
+          headers:
+            admission.retryAfterSeconds === null
+              ? undefined
+              : { "Retry-After": String(admission.retryAfterSeconds) },
+        }
+      );
+    }
+    exportPermit = admission.permit;
+  }
+
   try {
     let buffer: Buffer;
     let contentType: string;
@@ -373,7 +452,6 @@ export async function GET(
         break;
       }
       case "zip":
-      default:
         if (isContract) {
           const { generateContractPackageZIP } = await import(
             "@/lib/contract-export"
@@ -467,6 +545,8 @@ export async function GET(
           }
         }
         break;
+      default:
+        throw new Error(`Unsupported normalized export format: ${format}`);
     }
 
     await audit({
@@ -509,5 +589,7 @@ export async function GET(
       { error: err instanceof Error ? err.message : "download failed" },
       { status: 500 }
     );
+  } finally {
+    await exportPermit?.release();
   }
 }

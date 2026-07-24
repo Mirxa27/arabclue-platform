@@ -3,6 +3,12 @@ import {
   resolveBidderDisplayName,
 } from "@/lib/text-quality";
 import { designTokens } from "./design-tokens";
+import {
+  DEFAULT_DOCUMENT_BRAND_COLORS,
+  normalizeDocumentBrandColor,
+  normalizeDocumentBrandFont,
+  safeBrandLogoUrlForDocument,
+} from "./brand-policy";
 
 /**
  * Client letterhead helpers — apply workspace BrandProfile to HTML/PDF chrome.
@@ -13,6 +19,7 @@ import { designTokens } from "./design-tokens";
  */
 
 export type LetterheadBrand = {
+  workspaceId?: string | null;
   logoUrl?: string | null;
   primaryColor?: string | null;
   secondaryColor?: string | null;
@@ -42,12 +49,12 @@ const FONT_STACKS: Record<string, string> = {
 };
 
 export function resolveBrandFontStack(fontFamily?: string | null): string {
-  const key = (fontFamily || "IBM Plex Sans Arabic").trim();
-  return FONT_STACKS[key] ?? `'${key.replace(/'/g, "")}', 'IBM Plex Sans Arabic', Arial, sans-serif`;
+  const key = normalizeDocumentBrandFont(fontFamily);
+  return FONT_STACKS[key];
 }
 
 export function googleFontsHref(fontFamily?: string | null): string {
-  const key = (fontFamily || "IBM Plex Sans Arabic").trim();
+  const key = normalizeDocumentBrandFont(fontFamily);
   const families = new Set([
     "IBM+Plex+Sans+Arabic:wght@400;500;600;700",
     "IBM+Plex+Sans:wght@400;500;600;700",
@@ -62,16 +69,21 @@ export function googleFontsHref(fontFamily?: string | null): string {
 }
 
 export function brandArgb(hex: string): string {
-  return `FF${hex.replace(/^#/, "").toUpperCase()}`;
+  const candidate = /^[0-9A-Fa-f]{6}$/.test(hex.trim())
+    ? `#${hex.trim()}`
+    : hex;
+  return `FF${normalizeDocumentBrandColor(
+    candidate,
+    DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+  ).slice(1)}`;
 }
 
 export function officeColor(hex?: string | null, fallback = "#1E3A8A"): string {
-  return (hex ?? fallback).replace(/^#/, "").toUpperCase();
+  return normalizeDocumentBrandColor(hex, fallback).slice(1);
 }
 
 export function resolveOfficeFontFace(fontFamily?: string | null): string {
-  const key = (fontFamily || "IBM Plex Sans Arabic").trim();
-  return FONT_STACKS[key] ? key : "Arial";
+  return normalizeDocumentBrandFont(fontFamily);
 }
 
 export function letterheadCompanyName(
@@ -100,7 +112,10 @@ export function pdfHeaderTemplate(opts: {
   etimadRef?: string | null;
   primaryColor?: string | null;
 }): string {
-  const color = opts.primaryColor || designTokens.colors.primary[600];
+  const color = normalizeDocumentBrandColor(
+    opts.primaryColor,
+    designTokens.colors.primary[600]
+  );
   const ref = opts.etimadRef ? ` · ${escapeAttr(opts.etimadRef)}` : "";
   return `<div style="font-size:8px;width:100%;padding:0 12mm;color:${escapeAttr(color)};font-family:Arial,sans-serif;display:flex;justify-content:space-between;"><span>${escapeAttr(opts.companyName)}${ref}</span><span style="color:${designTokens.colors.secondary[400]}">Letterhead</span></div>`;
 }
@@ -109,7 +124,10 @@ export function pdfFooterTemplate(opts: {
   companyName: string;
   primaryColor?: string | null;
 }): string {
-  const color = opts.primaryColor || designTokens.colors.secondary[500];
+  const color = normalizeDocumentBrandColor(
+    opts.primaryColor,
+    designTokens.colors.secondary[500]
+  );
   return `<div style="font-size:8px;width:100%;padding:0 12mm;color:${escapeAttr(color)};font-family:Arial,sans-serif;display:flex;justify-content:space-between;"><span>${escapeAttr(opts.companyName)}</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`;
 }
 
@@ -125,12 +143,27 @@ export function letterheadBarHtml(opts: {
   brand: LetterheadBrand | null | undefined;
   companyName: string;
   locale: "ar" | "en";
+  trustedEmbeddedLogo?: boolean;
 }): string {
-  const primary = opts.brand?.primaryColor ?? designTokens.colors.primary[600];
-  const secondary = opts.brand?.secondaryColor ?? designTokens.colors.secondary[900];
-  const accent = opts.brand?.accentColor ?? designTokens.colors.accent[600];
-  const logo = opts.brand?.logoUrl
-    ? `<img src="${escapeAttr(opts.brand.logoUrl)}" alt="" style="height:28px;max-width:120px;object-fit:contain;background:rgba(255,255,255,.15);padding:2px 6px;border-radius:4px" />`
+  const primary = normalizeDocumentBrandColor(
+    opts.brand?.primaryColor,
+    designTokens.colors.primary[600]
+  );
+  const secondary = normalizeDocumentBrandColor(
+    opts.brand?.secondaryColor,
+    designTokens.colors.secondary[900]
+  );
+  const accent = normalizeDocumentBrandColor(
+    opts.brand?.accentColor,
+    designTokens.colors.accent[600]
+  );
+  const logoUrl = safeBrandLogoUrlForDocument(
+    opts.brand?.logoUrl,
+    opts.brand?.workspaceId ?? "invalid-workspace",
+    { allowEmbedded: opts.trustedEmbeddedLogo }
+  );
+  const logo = logoUrl
+    ? `<img src="${escapeAttr(logoUrl)}" alt="" style="height:28px;max-width:120px;object-fit:contain;background:rgba(255,255,255,.15);padding:2px 6px;border-radius:4px" />`
     : "";
   const tagRaw =
     opts.locale === "ar"

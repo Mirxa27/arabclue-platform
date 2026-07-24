@@ -10,11 +10,22 @@ import { z } from "zod";
  * @see https://github.com/Sparticuz/chromium
  */
 
+const pdfCssLengthSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^(?:0|(?:\d+(?:\.\d+)?|\.\d+)(?:px|in|cm|mm))$/,
+    "Expected a non-negative px, in, cm, or mm length"
+  )
+  .refine((value) => cssLengthToPixels(value) <= 2_000, {
+    message: "PDF length exceeds the supported bound",
+  });
+
 export const pdfMarginSchema = z.object({
-  top: z.string().default("16mm"),
-  bottom: z.string().default("18mm"),
-  left: z.string().default("12mm"),
-  right: z.string().default("12mm"),
+  top: pdfCssLengthSchema.default("16mm"),
+  bottom: pdfCssLengthSchema.default("18mm"),
+  left: pdfCssLengthSchema.default("12mm"),
+  right: pdfCssLengthSchema.default("12mm"),
 });
 
 export const htmlToPdfOptionsSchema = z.object({
@@ -35,9 +46,101 @@ export const htmlToPdfOptionsSchema = z.object({
     .min(100)
     .max(30_000)
     .default(5_000),
+  synchronizeBilingualLayout: z.boolean().default(false),
 });
 
 export type HtmlToPdfOptions = z.input<typeof htmlToPdfOptionsSchema>;
+type ParsedHtmlToPdfOptions = z.output<typeof htmlToPdfOptionsSchema>;
+
+const PAPER_HEIGHT_PX: Readonly<
+  Record<ParsedHtmlToPdfOptions["format"], number>
+> = Object.freeze({
+  A3: (420 * 96) / 25.4,
+  A4: (297 * 96) / 25.4,
+  A5: (210 * 96) / 25.4,
+  Letter: 11 * 96,
+  Legal: 14 * 96,
+  Tabloid: 17 * 96,
+  Ledger: 11 * 96,
+});
+const PAPER_WIDTH_PX: Readonly<
+  Record<ParsedHtmlToPdfOptions["format"], number>
+> = Object.freeze({
+  A3: (297 * 96) / 25.4,
+  A4: (210 * 96) / 25.4,
+  A5: (148 * 96) / 25.4,
+  Letter: 8.5 * 96,
+  Legal: 8.5 * 96,
+  Tabloid: 11 * 96,
+  Ledger: 17 * 96,
+});
+
+export function cssLengthToPixels(value: string): number {
+  const match = value.trim().match(
+    /^(0|(?:\d+(?:\.\d+)?|\.\d+))(px|in|cm|mm)?$/
+  );
+  if (!match) throw new RangeError("Unsupported PDF CSS length");
+  const numeric = Number(match[1]);
+  switch (match[2] ?? "px") {
+    case "in":
+      return numeric * 96;
+    case "cm":
+      return (numeric * 96) / 2.54;
+    case "mm":
+      return (numeric * 96) / 25.4;
+    default:
+      return numeric;
+  }
+}
+
+/** Exact printable block height supplied to the trusted sync engine. */
+export function resolvePdfContentHeight(
+  options: Pick<ParsedHtmlToPdfOptions, "format" | "margin">
+): number {
+  return resolvePdfContentDimensions(options).height;
+}
+
+export type PdfContentDimensions = {
+  readonly width: number;
+  readonly height: number;
+};
+
+/** Exact printable dimensions after resolving format and all four margins. */
+export function resolvePdfContentDimensions(
+  options: Pick<ParsedHtmlToPdfOptions, "format" | "margin">
+): PdfContentDimensions {
+  const margin = options.margin ?? pdfMarginSchema.parse({});
+  const height =
+    PAPER_HEIGHT_PX[options.format] -
+    cssLengthToPixels(margin.top) -
+    cssLengthToPixels(margin.bottom);
+  const width =
+    PAPER_WIDTH_PX[options.format] -
+    cssLengthToPixels(margin.left) -
+    cssLengthToPixels(margin.right);
+  if (!Number.isFinite(height) || height < 96) {
+    throw new RangeError("PDF vertical margins leave insufficient page content");
+  }
+  if (!Number.isFinite(width) || width < 96) {
+    throw new RangeError(
+      "PDF horizontal margins leave insufficient page content"
+    );
+  }
+  return { width, height };
+}
+
+export function resolvePdfLayoutSyncOptions(
+  options: Pick<ParsedHtmlToPdfOptions, "format" | "margin">
+): {
+  readonly pageContentWidth: number;
+  readonly pageContentHeight: number;
+} {
+  const dimensions = resolvePdfContentDimensions(options);
+  return {
+    pageContentWidth: dimensions.width,
+    pageContentHeight: dimensions.height,
+  };
+}
 
 export class PdfGenerationError extends Error {
   readonly code = "PDF_UNAVAILABLE" as const;
@@ -61,7 +164,22 @@ export type PdfReadinessPage = {
   ) => Promise<unknown>;
 };
 
-type LaunchablePage = PdfReadinessPage & {
+type LaunchablePage = Omit<PdfReadinessPage, "evaluate"> & {
+  evaluate: {
+    <Result>(
+      pageFunction: () => Result | Promise<Result>
+    ): Promise<Result>;
+    <Result, Argument>(
+      pageFunction: (argument: Argument) => Result | Promise<Result>,
+      argument: Argument
+    ): Promise<Result>;
+  };
+  route: (
+    url: "**/*",
+    handler: (route: {
+      abort: (errorCode: "blockedbyclient") => Promise<void>;
+    }) => void | Promise<void>
+  ) => Promise<unknown>;
   emulateMedia: (opts: { media: "print" }) => Promise<void>;
   setContent: (
     html: string,
@@ -71,7 +189,14 @@ type LaunchablePage = PdfReadinessPage & {
 };
 
 type LaunchableBrowser = {
-  newPage: () => Promise<LaunchablePage>;
+  newContext: (opts: {
+    javaScriptEnabled: false;
+    serviceWorkers: "block";
+    acceptDownloads: false;
+  }) => Promise<{
+    newPage: () => Promise<LaunchablePage>;
+    close: () => Promise<void>;
+  }>;
   close: () => Promise<void>;
 };
 
@@ -124,6 +249,63 @@ async function waitForDocumentFonts(
   });
 }
 
+/** Abort every subresource request before untrusted HTML is installed. */
+export async function isolatePdfPageNetwork(
+  page: Pick<LaunchablePage, "route">
+): Promise<void> {
+  await page.route("**/*", async (route) => {
+    await route.abort("blockedbyclient");
+  });
+}
+
+type PdfImageReadiness = {
+  readonly total: number;
+  readonly failed: readonly string[];
+};
+
+async function waitForDocumentImages(
+  page: LaunchablePage,
+  timeoutMs: number
+): Promise<PdfImageReadiness> {
+  const operation = page.evaluate(async () => {
+    const images = Array.from(document.images);
+    await Promise.allSettled(images.map((image) => image.decode()));
+    return {
+      total: images.length,
+      failed: images
+        .filter(
+          (image) =>
+            !image.complete ||
+            image.naturalWidth < 1 ||
+            image.naturalHeight < 1
+        )
+        .map((image) => image.getAttribute("src")?.slice(0, 120) || "[empty]"),
+    };
+  });
+
+  return new Promise<PdfImageReadiness>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(new Error("PDF image readiness timed out"));
+    }, timeoutMs);
+    operation.then(
+      (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      },
+      (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 /**
  * Wait for browser-owned font shaping and optional application layout readiness.
  *
@@ -155,19 +337,19 @@ export async function waitForPdfReadiness(
   }
 
   try {
-    const fontsReadyPromise = waitForDocumentFonts(
+    const fontsReady = await waitForDocumentFonts(
       page,
       options.readinessTimeoutMs
     );
+    if (!fontsReady) {
+      throw new Error("PDF font readiness timed out");
+    }
 
     if (options.readySelector) {
-      const [fontsReady] = await Promise.all([
-        fontsReadyPromise,
-        page.waitForSelector(options.readySelector, {
-          state: "attached",
-          timeout: options.readinessTimeoutMs,
-        }),
-      ]);
+      await page.waitForSelector(options.readySelector, {
+        state: "attached",
+        timeout: options.readinessTimeoutMs,
+      });
       return {
         fontsReady,
         selectorReady: true,
@@ -175,7 +357,6 @@ export async function waitForPdfReadiness(
       };
     }
 
-    const fontsReady = await fontsReadyPromise;
     if (options.fallbackWaitMs > 0) {
       await delay(options.fallbackWaitMs);
     }
@@ -208,14 +389,14 @@ async function launchBrowser(): Promise<LaunchableBrowser> {
       args: Sparticuz.args,
       executablePath,
       headless: true,
-    }) as Promise<LaunchableBrowser>;
+    }) as unknown as Promise<LaunchableBrowser>;
   }
 
   const { chromium } = await import("playwright");
   return chromium.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  }) as Promise<LaunchableBrowser>;
+  }) as unknown as Promise<LaunchableBrowser>;
 }
 
 /**
@@ -231,39 +412,83 @@ export async function htmlToPdf(
   }
 
   const options = htmlToPdfOptionsSchema.parse(opts);
+  const layoutSyncOptions = resolvePdfLayoutSyncOptions(options);
 
   try {
     const browser = await launchBrowser();
     try {
-      const page = await browser.newPage();
-      await page.emulateMedia({ media: "print" });
-      await page.setContent(html, {
-        waitUntil: "networkidle",
-        timeout: options.timeoutMs,
+      const context = await browser.newContext({
+        javaScriptEnabled: false,
+        serviceWorkers: "block",
+        acceptDownloads: false,
       });
-      await waitForPdfReadiness(page, {
-        readySelector: options.readySelector,
-        readinessTimeoutMs: options.readinessTimeoutMs,
-        fallbackWaitMs: options.waitMs,
-      });
-      const pdf = await page.pdf({
-        format: options.format,
-        printBackground: options.printBackground,
-        displayHeaderFooter: options.displayHeaderFooter,
-        headerTemplate:
-          options.headerTemplate ??
-          `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;">ArabClue</div>`,
-        footerTemplate:
-          options.footerTemplate ??
-          `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
-        margin: options.margin ?? {
-          top: "16mm",
-          bottom: "18mm",
-          left: "12mm",
-          right: "12mm",
-        },
-      });
-      return Buffer.from(pdf);
+      try {
+        const page = await context.newPage();
+        await isolatePdfPageNetwork(page);
+        await page.emulateMedia({ media: "print" });
+        await page.setContent(html, {
+          waitUntil: "networkidle",
+          timeout: options.timeoutMs,
+        });
+        const fontsReady = await waitForDocumentFonts(
+          page,
+          options.readinessTimeoutMs
+        );
+        if (!fontsReady) {
+          throw new PdfGenerationError("PDF font readiness timed out");
+        }
+        const images = await waitForDocumentImages(
+          page,
+          options.readinessTimeoutMs
+        );
+        if (images.failed.length > 0) {
+          throw new PdfGenerationError(
+            `PDF contains ${images.failed.length} undecoded image${
+              images.failed.length === 1 ? "" : "s"
+            }`
+          );
+        }
+        if (options.synchronizeBilingualLayout) {
+          const {
+            BILINGUAL_LAYOUT_READY_SELECTOR,
+            synchronizeBilingualLayoutPage,
+          } = await import("../layout-sync");
+          if (options.readySelector !== BILINGUAL_LAYOUT_READY_SELECTOR) {
+            throw new PdfGenerationError(
+              "Bilingual PDF synchronization requires the exact ready selector"
+            );
+          }
+          await synchronizeBilingualLayoutPage(page, layoutSyncOptions);
+        }
+        if (options.readySelector) {
+          await page.waitForSelector(options.readySelector, {
+            state: "attached",
+            timeout: options.readinessTimeoutMs,
+          });
+        } else if (options.waitMs > 0) {
+          await delay(options.waitMs);
+        }
+        const pdf = await page.pdf({
+          format: options.format,
+          printBackground: options.printBackground,
+          displayHeaderFooter: options.displayHeaderFooter,
+          headerTemplate:
+            options.headerTemplate ??
+            `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;">ArabClue</div>`,
+          footerTemplate:
+            options.footerTemplate ??
+            `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
+          margin: options.margin ?? {
+            top: "16mm",
+            bottom: "18mm",
+            left: "12mm",
+            right: "12mm",
+          },
+        });
+        return Buffer.from(pdf);
+      } finally {
+        await context.close();
+      }
     } finally {
       await browser.close();
     }

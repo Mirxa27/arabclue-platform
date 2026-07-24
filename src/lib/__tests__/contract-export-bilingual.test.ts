@@ -63,7 +63,7 @@ describe("structured contract adapter", () => {
     expect(result.diagnostics[0]?.code).toBe("LEGACY_MARKER_ADAPTED");
     expect(html).toContain("Contractor obligations");
     expect(html).toContain("التزامات المقاول");
-    expect(html).toContain('data-bilingual-layout-ready="true"');
+    expect(html).toContain('data-bilingual-layout-state="pending"');
     expect(html).not.toContain("dangerouslySetInnerHTML");
   });
 

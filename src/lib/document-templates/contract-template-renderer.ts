@@ -112,7 +112,7 @@ function formatNumber(value: number, language: "en" | "ar"): string {
       maximumFractionDigits: 20,
     }
   ).format(value);
-  return sanitizeBidiText(formatted).text;
+  return sanitizeBidiText(formatted).sanitizedText;
 }
 
 function valueKindFor(
@@ -443,4 +443,3 @@ export async function generateContractTemplateDocumentPdf(
 ): Promise<BilingualPdfArtifact> {
   return generateBilingualPdf(requireCompiledDocument(compilation), options);
 }
-

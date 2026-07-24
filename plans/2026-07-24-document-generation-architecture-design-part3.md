@@ -1,5 +1,9 @@
 # Arabclue Document Generation Systems: Architecture Design (Part 3)
 
+> **Superseded planning record.** This roadmap does not describe current
+> completion, migration state, legal approval, or deployment readiness. Follow
+> the tested code and current documentation instead.
+
 ## 7. Implementation Roadmap
 
 ### 7.1 Development Phases
@@ -1038,4 +1042,3 @@ This architectural design provides a comprehensive blueprint for enhancing Arabc
 **Last Updated:** 2026-07-24  
 **Status:** Ready for Implementation  
 **Estimated Total Effort:** 18-24 weeks (4.5-6 months)
-

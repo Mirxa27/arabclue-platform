@@ -27,6 +27,9 @@ export const DOCUMENT_QUALITY_TEST_FILES = Object.freeze([
   "src/lib/__tests__/document-quality-gate.test.ts",
 ] as const);
 
+export const DOCUMENT_BROWSER_TEST_FILE =
+  "src/lib/__tests__/bilingual-browser-compatibility.test.ts";
+
 export const DOCUMENT_COVERAGE_THRESHOLDS = Object.freeze({
   lines: 85,
   functions: 85,
@@ -320,7 +323,9 @@ async function main(): Promise<void> {
   const lintFiles = [
     ...PHASE_TWO_PUBLIC_SOURCES,
     ...DOCUMENT_QUALITY_TEST_FILES,
+    DOCUMENT_BROWSER_TEST_FILE,
     "scripts/check-document-quality.ts",
+    "scripts/run-bilingual-browser-matrix.ts",
   ];
 
   await runCommand(

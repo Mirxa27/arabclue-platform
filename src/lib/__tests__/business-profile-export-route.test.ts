@@ -140,6 +140,10 @@ function routeHarness(): {
       state.bilingualPdfCount += 1;
       return Buffer.from("%PDF-bilingual");
     },
+    acquirePdfPermit: async () => ({
+      ok: true,
+      permit: { release: () => {} },
+    }),
     recordDownload: async (event) => {
       state.audits.push(event);
     },
@@ -242,7 +246,7 @@ describe("business-profile export route", () => {
     const html = await response.text();
 
     expect(response.status).toBe(200);
-    expect(html).toContain('data-bilingual-layout-ready="true"');
+    expect(html).toContain('data-bilingual-layout-state="pending"');
     expect(html).toContain("Route Company");
     expect(html).toContain("شركة المسار");
     expect(response.headers.get("content-disposition")).toBe(
@@ -323,6 +327,34 @@ describe("business-profile export route", () => {
       error: "PDF generation failed: Chromium unavailable",
       code: "PDF_UNAVAILABLE",
     });
+  });
+
+  test("returns 429 before starting a PDF renderer when admission is denied", async () => {
+    const { dependencies, state } = routeHarness();
+    const limitedDependencies: BusinessProfileExportDependencies = {
+      ...dependencies,
+      acquirePdfPermit: async () => ({
+        ok: false,
+        code: "EXPORT_RATE_LIMITED",
+        status: 429,
+        retryAfterSeconds: 17,
+        message: "Document export rate limit exceeded. Try again later.",
+      }),
+    };
+
+    const response = await handleBusinessProfileExport(
+      request("?format=pdf&locale=bilingual&quality=draft"),
+      limitedDependencies
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("17");
+    expect(await response.json()).toEqual({
+      error: "Document export rate limit exceeded. Try again later.",
+      code: "EXPORT_RATE_LIMITED",
+    });
+    expect(state.bilingualPdfCount).toBe(0);
+    expect(state.audits).toHaveLength(0);
   });
 
   test("preserves the stable 503 shape for legacy PDF failures", async () => {

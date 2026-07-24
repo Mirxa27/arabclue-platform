@@ -77,6 +77,12 @@ export function runDeploymentSafetyCheck() {
     );
   }
 
+  if (!String(process.env.REDIS_URL ?? "").trim()) {
+    failures.push(
+      "REDIS_URL is required for distributed authentication and document-export rate limiting",
+    );
+  }
+
   const vercelConfiguration = JSON.parse(readRepositoryFile("vercel.json"));
   const vercelBuildCommand = String(vercelConfiguration.buildCommand ?? "");
 
@@ -105,7 +111,7 @@ export function runDeploymentSafetyCheck() {
   }
 
   console.log(
-    "Deployment safety gate passed: environment files are protected, no role credentials are embedded, and Vercel builds are database-read-only.",
+    "Deployment safety gate passed: environment files are protected, distributed rate limiting is configured, no role credentials are embedded, and Vercel builds are database-read-only.",
   );
   return 0;
 }

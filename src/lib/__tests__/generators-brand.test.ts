@@ -8,6 +8,7 @@ import {
   generateBoQXLSX,
   generateComplianceMatrixXLSX,
   generateProposalPPTX,
+  generateProposalHTMLPreview,
   generateSlidesHTML,
 } from "../generators";
 
@@ -137,6 +138,41 @@ describe("export brand chrome", () => {
       '<div class="slide-subtitle">&lt;script&gt;alert(1)&lt;/script&gt;</div>'
     );
     expect(html).not.toContain("<script>alert(1)</script>");
+  });
+
+  test("HTML renderers normalize legacy CSS values and omit remote logos", () => {
+    const payload = `red}</style><script>alert(1)</script>`;
+    const unsafeBrand = {
+      ...brand,
+      logoUrl: "https://attacker.example/tracker.svg",
+      primaryColor: payload,
+      secondaryColor: "url(https://attacker.example)",
+      accentColor: "#F59E0B",
+      fontFamily: `x';</style><script>alert(2)</script>`,
+    } satisfies BrandProfile;
+
+    const proposalHtml = generateProposalHTMLPreview(
+      proposal,
+      project,
+      unsafeBrand,
+      "en",
+      company
+    ).toString("utf8");
+    const slidesHtml = generateSlidesHTML(
+      proposal,
+      project,
+      unsafeBrand,
+      undefined,
+      company,
+      "en"
+    );
+
+    for (const html of [proposalHtml, slidesHtml]) {
+      expect(html).not.toContain(payload);
+      expect(html).not.toContain("attacker.example");
+      expect(html).not.toContain("<script");
+      expect(html).toContain("#1E3A8A");
+    }
   });
 
   test("PPTX uses client company author, title slide, font, and brand colors", async () => {

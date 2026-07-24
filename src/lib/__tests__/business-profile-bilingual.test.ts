@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import sharp from "sharp";
 import {
   BILINGUAL_BUSINESS_PROFILE_DRAFT_POLICY,
   buildBusinessProfileHTML,
   compileBilingualBusinessProfile,
+  isCertificateEligibleForBusinessProfile,
+  isMethodologyEligibleForBusinessProfile,
+  resolveBusinessProfilePdfDocument,
   renderBilingualBusinessProfileHTML,
   type BusinessProfileSnapshot,
 } from "../business-profile";
@@ -97,7 +101,7 @@ describe("business-profile bilingual export library", () => {
     expect(validateBilingualDocument(draft.document).valid).toBe(true);
 
     const html = renderBilingualBusinessProfileHTML(draft);
-    expect(html).toContain('data-bilingual-layout-ready="true"');
+    expect(html).toContain('data-bilingual-layout-state="pending"');
     expect(html).toContain("Export Company");
     expect(html).toContain("شركة التصدير");
     expect(html).not.toContain("<script");
@@ -138,5 +142,128 @@ describe("business-profile bilingual export library", () => {
     );
     expect(english).not.toMatch(/KSA data residency|data residency/i);
     expect(arabic).not.toContain("إقامة البيانات");
+  });
+
+  test("normalizes persisted CSS payloads and omits remote logos at render time", () => {
+    const profile = profileFixture();
+    profile.brand = {
+      ...profile.brand!,
+      logoUrl: "https://attacker.example/tracker.svg",
+      primaryColor: `red}</style><script>alert(1)</script>`,
+      secondaryColor: "url(https://attacker.example)",
+      accentColor: "#38BDF8",
+    };
+
+    const html = buildBusinessProfileHTML(profile, {
+      locale: "en",
+      forPrint: true,
+    });
+
+    expect(html).not.toContain("attacker.example");
+    expect(html).not.toContain("<script");
+    expect(html).toContain("--p:#1E3A8A");
+    expect(html).toContain("--s:#0F172A");
+  });
+
+  test("inlines a decoded workspace logo before bilingual PDF rendering", async () => {
+    const profile = profileFixture();
+    profile.workspace.id = "workspace-export-logo-test";
+    const bytes = await sharp({
+      create: {
+        width: 6,
+        height: 4,
+        channels: 4,
+        background: "#0D9488",
+      },
+    })
+      .png()
+      .toBuffer();
+
+    profile.brand!.logoUrl =
+      "/api/files?path=uploads%2Fworkspace-export-logo-test%2Flogo.png";
+    const compilation = compileBilingualBusinessProfile(profile, "draft");
+    const document = await resolveBusinessProfilePdfDocument(compilation, {
+      inlineLogo: async (_brand, workspaceId) => {
+        expect(workspaceId).toBe(profile.workspace.id);
+        return {
+          inlined: true,
+          brand: {
+            logoUrl: `data:image/png;base64,${bytes.toString("base64")}`,
+          },
+        };
+      },
+    });
+    const logo = document.sections
+      .flatMap((section) => section.blocks)
+      .find((block) => block.type === "image");
+
+    expect(logo?.type).toBe("image");
+    if (logo?.type === "image") {
+      expect(logo.source.kind).toBe("data");
+      if (logo.source.kind === "data") {
+        expect(logo.source.uri).toStartWith("data:image/png;base64,");
+      }
+    }
+  });
+
+  test("blocks unresolved public images without workspace asset context", async () => {
+    const compilation = compileBilingualBusinessProfile(
+      profileFixture(),
+      "draft"
+    );
+    const withoutContext = {
+      document: compilation.document,
+      diagnostics: compilation.diagnostics,
+      blockingDiagnostics: compilation.blockingDiagnostics,
+      policy: compilation.policy,
+      status: "exportable" as const,
+      canExport: true as const,
+    };
+
+    await expect(
+      resolveBusinessProfilePdfDocument(withoutContext)
+    ).rejects.toThrow("asset context");
+  });
+
+  test("excludes unapproved, revoked and expired credential evidence", () => {
+    const asOf = new Date("2026-07-24T12:00:00.000Z");
+    expect(
+      isCertificateEligibleForBusinessProfile(
+        { approved: true, revokedAt: null, expiresAt: null },
+        asOf
+      )
+    ).toBe(true);
+    expect(
+      isCertificateEligibleForBusinessProfile(
+        { approved: false, revokedAt: null, expiresAt: null },
+        asOf
+      )
+    ).toBe(false);
+    expect(
+      isCertificateEligibleForBusinessProfile(
+        {
+          approved: true,
+          revokedAt: new Date("2026-07-01T00:00:00.000Z"),
+          expiresAt: null,
+        },
+        asOf
+      )
+    ).toBe(false);
+    expect(
+      isCertificateEligibleForBusinessProfile(
+        {
+          approved: true,
+          revokedAt: null,
+          expiresAt: new Date("2026-07-23T23:59:59.000Z"),
+        },
+        asOf
+      )
+    ).toBe(false);
+    expect(isMethodologyEligibleForBusinessProfile({ approved: true })).toBe(
+      true
+    );
+    expect(isMethodologyEligibleForBusinessProfile({ approved: false })).toBe(
+      false
+    );
   });
 });

@@ -29,6 +29,27 @@ bun run test:bilingual:visual
 bun run benchmark:bilingual
 ```
 
+The latest Playwright Chromium, Firefox, and WebKit engines can be exercised
+before a document release without adding their downloads to the normal CI path:
+
+```bash
+bun run setup:bilingual:browsers
+bun run test:bilingual:browsers
+```
+
+The browser matrix renders the same font-embedded artifact at desktop and
+mobile widths in every engine. It verifies paired geometry, RTL/LTR direction,
+logical CSS support, embedded Arabic and English font availability, overflow,
+heading semantics, and the mobile Arabic-first order. Each engine runs in a
+separate bounded child process so a browser shutdown fault cannot starve the
+next engine. Each browser lifecycle operation reports its engine, viewport,
+and operation when it fails. Set `PLAYWRIGHT_BROWSER_DIAGNOSTICS=1` to print
+per-operation timings.
+
+The `Document quality` GitHub workflow exposes this matrix as an opt-in
+`browser_matrix` manual input. Pull requests and pushes run the offline gate
+without downloading Firefox or WebKit.
+
 ## Suites
 
 | Suite | Coverage |

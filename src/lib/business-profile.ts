@@ -22,7 +22,19 @@ import {
   type CapabilityStatementBuildResult,
   type CapabilityStatementExportPolicy,
 } from "./capability-statement";
-import { renderBilingualHTML } from "./bilingual-layout";
+import {
+  renderBilingualHTML,
+  type BilingualDocumentSpec,
+  type PairedBlock,
+  type PairedImageBlock,
+} from "./bilingual-layout";
+import {
+  DEFAULT_DOCUMENT_BRAND_COLORS,
+  inlineBrandLogoForPdf,
+  normalizeBrandForDocument,
+  normalizeDocumentBrandColor,
+  safeBrandLogoUrlForDocument,
+} from "./brand-logo";
 
 export type BusinessProfileSnapshot = {
   workspace: {
@@ -97,6 +109,13 @@ export const BUSINESS_PROFILE_BILINGUAL_EXPORT_QUALITIES = [
 export type BusinessProfileBilingualExportQuality =
   (typeof BUSINESS_PROFILE_BILINGUAL_EXPORT_QUALITIES)[number];
 
+export type BusinessProfileCapabilityCompilation =
+  CapabilityStatementBuildResult & {
+    readonly assetContext: {
+      readonly workspaceId: string;
+    };
+  };
+
 /**
  * Drafts retain every diagnostic placeholder but do not cross the strict final
  * export gate. The route must require an explicit `quality=draft` opt-in.
@@ -115,13 +134,17 @@ export const BILINGUAL_BUSINESS_PROFILE_DRAFT_POLICY: CapabilityStatementExportP
 export function compileBilingualBusinessProfile(
   profile: BusinessProfileSnapshot,
   quality: BusinessProfileBilingualExportQuality = "strict"
-): CapabilityStatementBuildResult {
-  return buildCapabilityStatement(
+): BusinessProfileCapabilityCompilation {
+  const compilation = buildCapabilityStatement(
     profile,
     quality === "draft"
       ? { exportPolicy: BILINGUAL_BUSINESS_PROFILE_DRAFT_POLICY }
       : undefined
   );
+  return Object.freeze({
+    ...compilation,
+    assetContext: Object.freeze({ workspaceId: profile.workspace.id }),
+  });
 }
 
 /** Render a previously compiled and exportable bilingual HTML artifact. */
@@ -145,11 +168,74 @@ export async function generateBilingualBusinessProfilePDF(
   compilation: CapabilityStatementBuildResult
 ): Promise<Buffer> {
   assertCapabilityStatementExportable(compilation);
+  const document = await resolveBusinessProfilePdfDocument(compilation);
   const { generateBilingualPdf } = await import("./bilingual-pdf");
-  const artifact = await generateBilingualPdf(compilation.document, {
+  const artifact = await generateBilingualPdf(document, {
     fontPair: "ibm-plex-sans",
   });
   return artifact.pdf;
+}
+
+/**
+ * Inline every non-decorative capability image before `about:blank` rendering.
+ * A missing workspace context or invalid file blocks export rather than
+ * producing a silently broken logo.
+ */
+export async function resolveBusinessProfilePdfDocument(
+  compilation: CapabilityStatementBuildResult,
+  options: {
+    readonly inlineLogo?: (
+      brand: { readonly logoUrl: string },
+      workspaceId: string
+    ) => Promise<{
+      readonly inlined: boolean;
+      readonly brand: { readonly logoUrl?: string | null } | null;
+    }>;
+  } = {}
+): Promise<BilingualDocumentSpec> {
+  type PublicImageBlock = PairedImageBlock & {
+    readonly source: { readonly kind: "public"; readonly path: string };
+  };
+  const publicImageBlocks = compilation.document.sections.flatMap((section) =>
+    section.blocks.filter(
+      (block): block is PublicImageBlock =>
+        block.type === "image" && block.source.kind === "public"
+    )
+  );
+  if (publicImageBlocks.length === 0) return compilation.document;
+
+  const context = (
+    compilation as Partial<BusinessProfileCapabilityCompilation>
+  ).assetContext;
+  if (!context?.workspaceId) {
+    throw new Error("Bilingual PDF asset context is missing");
+  }
+
+  const replacements = new Map<string, PairedBlock>();
+  const inlineLogo = options.inlineLogo ?? inlineBrandLogoForPdf;
+  for (const block of publicImageBlocks) {
+    const logo = await inlineLogo(
+      { logoUrl: block.source.path },
+      context.workspaceId
+    );
+    if (!logo.inlined || !logo.brand?.logoUrl) {
+      throw new Error("Bilingual PDF logo is unavailable or invalid");
+    }
+    replacements.set(block.id, {
+      ...block,
+      source: { kind: "data", uri: logo.brand.logoUrl },
+    });
+  }
+
+  return {
+    ...compilation.document,
+    sections: compilation.document.sections.map((section) => ({
+      ...section,
+      blocks: section.blocks.map(
+        (block) => replacements.get(block.id) ?? block
+      ),
+    })),
+  };
 }
 
 type WorkspacePack = Workspace & {
@@ -162,9 +248,30 @@ type WorkspacePack = Workspace & {
   methodologyAssets: MethodologyAsset[];
 };
 
+export function isCertificateEligibleForBusinessProfile(
+  certificate: Pick<
+    Certificate,
+    "approved" | "revokedAt" | "expiresAt"
+  >,
+  asOf: Date
+): boolean {
+  return (
+    certificate.approved === true &&
+    certificate.revokedAt === null &&
+    (certificate.expiresAt === null || certificate.expiresAt >= asOf)
+  );
+}
+
+export function isMethodologyEligibleForBusinessProfile(
+  methodology: Pick<MethodologyAsset, "approved">
+): boolean {
+  return methodology.approved === true;
+}
+
 export async function loadBusinessProfile(
   workspaceId: string
 ): Promise<BusinessProfileSnapshot> {
+  const snapshotTime = new Date();
   const [workspaceRaw, onboarding] = await Promise.all([
     db.workspace.findUniqueOrThrow({
       where: { id: workspaceId },
@@ -180,10 +287,25 @@ export async function loadBusinessProfile(
           orderBy: { updatedAt: "desc" },
           take: 8,
         },
-        certificates: { orderBy: { updatedAt: "desc" }, take: 8 },
+        certificates: {
+          where: {
+            approved: true,
+            revokedAt: null,
+            OR: [
+              { expiresAt: null },
+              { expiresAt: { gte: snapshotTime } },
+            ],
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 8,
+        },
         partnerships: { orderBy: { updatedAt: "desc" }, take: 6 },
         targetSectors: { orderBy: { updatedAt: "desc" }, take: 8 },
-        methodologyAssets: { orderBy: { updatedAt: "desc" }, take: 6 },
+        methodologyAssets: {
+          where: { approved: true },
+          orderBy: { updatedAt: "desc" },
+          take: 6,
+        },
       },
     }),
     computeOnboardingSteps(workspaceId),
@@ -191,6 +313,12 @@ export async function loadBusinessProfile(
   const workspace = workspaceRaw as WorkspacePack;
 
   const brand = workspace.brandProfiles[0] ?? null;
+  const eligibleCertificates = workspace.certificates.filter((certificate) =>
+    isCertificateEligibleForBusinessProfile(certificate, snapshotTime)
+  );
+  const eligibleMethodologies = workspace.methodologyAssets.filter(
+    isMethodologyEligibleForBusinessProfile
+  );
   const requiredTotal = 5;
   const completedRequired = requiredTotal - onboarding.missing.length;
   const score = Math.round((completedRequired / requiredTotal) * 100);
@@ -226,10 +354,10 @@ export async function loadBusinessProfile(
     stats: {
       pastProjects: workspace.pastProjects.length,
       staff: workspace.staffMembers.length,
-      certificates: workspace.certificates.length,
+      certificates: eligibleCertificates.length,
       partnerships: workspace.partnerships.length,
       sectors: workspace.targetSectors.length,
-      methodologies: workspace.methodologyAssets.length,
+      methodologies: eligibleMethodologies.length,
     },
     highlights: {
       pastProjects: workspace.pastProjects.map((p) => ({
@@ -246,7 +374,7 @@ export async function loadBusinessProfile(
         title: s.roleTitle,
         titleAr: s.roleTitleAr,
       })),
-      certificates: workspace.certificates.map((c) => ({
+      certificates: eligibleCertificates.map((c) => ({
         name: c.name,
         nameAr: null,
         issuer: c.issuer,
@@ -260,33 +388,48 @@ export async function loadBusinessProfile(
         name: s.sector,
         nameAr: null,
       })),
-      methodologies: workspace.methodologyAssets.map((m) => ({
+      methodologies: eligibleMethodologies.map((m) => ({
         title: m.title,
         titleAr: m.titleAr,
       })),
     },
-    generatedAt: new Date().toISOString(),
+    generatedAt: snapshotTime.toISOString(),
   };
 }
 
 export function buildBusinessProfileHTML(
   profile: BusinessProfileSnapshot,
-  opts?: { locale?: "ar" | "en"; forPrint?: boolean }
+  opts?: {
+    locale?: "ar" | "en";
+    forPrint?: boolean;
+    /** Reserved for output from inlineBrandLogoForPdf. */
+    trustedEmbeddedLogo?: boolean;
+  }
 ): string {
   const locale = opts?.locale ?? "ar";
   const rtl = locale === "ar";
   const forPrint = opts?.forPrint ?? true;
-  const primary = profile.brand?.primaryColor ?? "#1E3A8A";
-  const accent = profile.brand?.accentColor ?? "#0EA5E9";
-  const secondary = profile.brand?.secondaryColor ?? "#0F172A";
+  const brand = normalizeBrandForDocument(profile.brand);
+  const primary = normalizeDocumentBrandColor(
+    brand?.primaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+  );
+  const accent = normalizeDocumentBrandColor(
+    brand?.accentColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
+  );
+  const secondary = normalizeDocumentBrandColor(
+    brand?.secondaryColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.secondaryColor
+  );
   const name =
     locale === "ar"
       ? profile.workspace.nameAr || profile.workspace.name
       : profile.workspace.name;
   const tagline =
     locale === "ar"
-      ? profile.brand?.taglineAr || profile.brand?.tagline || ""
-      : profile.brand?.tagline || profile.brand?.taglineAr || "";
+      ? brand?.taglineAr || brand?.tagline || ""
+      : brand?.tagline || brand?.taglineAr || "";
 
   const t =
     locale === "ar"
@@ -329,8 +472,13 @@ export function buildBusinessProfileHTML(
           empty: "Add data in Account Setup to enrich this section",
         };
 
-  const logo = profile.brand?.logoUrl
-    ? `<img src="${escapeHtml(profile.brand.logoUrl)}" alt="logo" style="height:64px;max-width:200px;object-fit:contain;background:rgba(255,255,255,.14);padding:8px 12px;border-radius:12px" />`
+  const logoUrl = safeBrandLogoUrlForDocument(
+    brand?.logoUrl,
+    profile.workspace.id,
+    { allowEmbedded: opts?.trustedEmbeddedLogo }
+  );
+  const logo = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="logo" style="height:64px;max-width:200px;object-fit:contain;background:rgba(255,255,255,.14);padding:8px 12px;border-radius:12px" />`
     : "";
 
   const listOrEmpty = (items: string[]) =>
@@ -446,7 +594,7 @@ export function buildBusinessProfileHTML(
         <span class="pill">${t.score}: ${profile.readiness.score}%</span>
         ${profile.workspace.crNumber ? `<span class="pill">${t.cr}: ${escapeHtml(profile.workspace.crNumber)}</span>` : ""}
         ${profile.workspace.vatNumber ? `<span class="pill">${t.vat}: ${escapeHtml(profile.workspace.vatNumber)}</span>` : ""}
-        ${profile.brand?.vision2030Alignment ? `<span class="pill">${t.vision}</span>` : ""}
+        ${brand?.vision2030Alignment ? `<span class="pill">${t.vision}</span>` : ""}
       </div>
     </header>
 
@@ -460,8 +608,8 @@ export function buildBusinessProfileHTML(
     </section>
 
     ${
-      profile.brand?.vision2030Alignment
-        ? `<div class="panel"><strong>${escapeHtml(t.vision)}</strong><p>${escapeHtml(profile.brand.vision2030Alignment)}</p></div>`
+      brand?.vision2030Alignment
+        ? `<div class="panel"><strong>${escapeHtml(t.vision)}</strong><p>${escapeHtml(brand.vision2030Alignment)}</p></div>`
         : ""
     }
 
@@ -493,41 +641,19 @@ export async function generateBusinessProfilePDF(
   profile: BusinessProfileSnapshot,
   locale: "ar" | "en" = "ar"
 ): Promise<Buffer> {
-  let htmlProfile = profile;
-  if (profile.brand?.logoUrl?.startsWith("/")) {
-    try {
-      const { readStoredFile, fileExists } = await import("./storage");
-      const pathMatch = profile.brand.logoUrl.match(/path=([^&]+)/);
-      if (pathMatch) {
-        const storagePath = decodeURIComponent(pathMatch[1]);
-        if (await fileExists(storagePath)) {
-          const bytes = await readStoredFile(storagePath);
-          const ext = storagePath.split(".").pop()?.toLowerCase() ?? "png";
-          const mime =
-            ext === "jpg" || ext === "jpeg"
-              ? "image/jpeg"
-              : ext === "webp"
-                ? "image/webp"
-                : ext === "svg"
-                  ? "image/svg+xml"
-                  : "image/png";
-          htmlProfile = {
-            ...profile,
-            brand: {
-              ...profile.brand,
-              logoUrl: `data:${mime};base64,${bytes.toString("base64")}`,
-            },
-          };
-        }
-      }
-    } catch {
-      /* keep relative */
-    }
+  const logo = await inlineBrandLogoForPdf(
+    profile.brand,
+    profile.workspace.id
+  );
+  if (logo.warning) {
+    console.warn("[generateBusinessProfilePDF]", logo.warning);
   }
+  const htmlProfile = { ...profile, brand: logo.brand };
 
   const html = buildBusinessProfileHTML(htmlProfile, {
     locale,
     forPrint: true,
+    trustedEmbeddedLogo: true,
   });
   const { htmlToPdf } = await import("./pdf/html-to-pdf");
   return htmlToPdf(html, {

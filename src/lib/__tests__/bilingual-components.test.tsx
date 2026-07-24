@@ -27,6 +27,8 @@ describe("bilingual document components", () => {
     expect(html).toContain("--bilingual-ar-ratio:3");
     expect(html).toContain("Safe &lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).not.toContain("<script>");
+    expect(html.match(/<h1/g)).toBeNull();
+    expect(html.match(/<h2/g)).toHaveLength(2);
   });
 
   test("BilingualSection normalizes unsafe ratios and exposes continuation data", () => {

@@ -938,3 +938,529 @@ function isFiniteNumber(value: number): boolean {
 function normalizeZero(value: number): number {
   return Math.abs(value) < Number.EPSILON ? 0 : value;
 }
+
+// ============================================================================
+// Trusted renderer bridge
+// ============================================================================
+
+/**
+ * The generated document starts pending and becomes ready only after a trusted
+ * renderer has measured, synchronized, and applied every paired row.
+ */
+export const BILINGUAL_LAYOUT_PENDING_SELECTOR =
+  '[data-bilingual-document][data-bilingual-layout-state="pending"]';
+export const BILINGUAL_LAYOUT_READY_SELECTOR =
+  '[data-bilingual-document][data-bilingual-layout-ready="true"]';
+
+export const DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS = Object.freeze({
+  /**
+   * A4 body width after the default 14mm inline PDF margins, in CSS pixels
+   * (96 per inch).
+   */
+  pageContentWidth: ((210 - 14 - 14) * 96) / 25.4,
+  /**
+   * A4 body height after the default 16mm/18mm PDF margins, in CSS pixels
+   * (96 per inch).
+   */
+  pageContentHeight: ((297 - 16 - 18) * 96) / 25.4,
+  maxRows: 6_000,
+  maxSpacingPerGap: DEFAULT_SYNC_SETTINGS.maxSpacingPerGap,
+  maxDynamicSpacingPerRow: DEFAULT_SYNC_SETTINGS.maxDynamicSpacingPerRow,
+  balanceTolerance: DEFAULT_SYNC_SETTINGS.balanceTolerance,
+} as const);
+
+export interface BilingualRendererSyncOptions {
+  readonly pageContentWidth?: number;
+  readonly pageContentHeight?: number;
+  readonly maxRows?: number;
+  readonly maxSpacingPerGap?: number;
+  readonly maxDynamicSpacingPerRow?: number;
+  readonly balanceTolerance?: number;
+  readonly continuationLabels?: ContinuationLabels;
+}
+
+export interface BrowserMeasuredPairedRow {
+  readonly alignmentKey: string;
+  readonly fragmentIndex: number;
+  readonly fragmentCount: number;
+  readonly kind: PairedFragmentKind;
+  readonly en: ColumnMeasurement;
+  readonly ar: ColumnMeasurement;
+  readonly keepWithNext: boolean;
+  readonly breakBefore: boolean;
+}
+
+export interface BrowserLayoutMeasurement {
+  readonly rows: readonly BrowserMeasuredPairedRow[];
+  readonly rowGap: number;
+}
+
+export interface AppliedBilingualLayout {
+  readonly rowCount: number;
+  readonly pageCount: number;
+  readonly warningCount: number;
+}
+
+/**
+ * Minimal structural contract implemented by Playwright's Page. The generic
+ * keeps this module free of a runtime Playwright dependency.
+ */
+export interface BilingualLayoutEvaluationPage {
+  evaluate<Result, Argument>(
+    pageFunction: (argument: Argument) => Result | Promise<Result>,
+    argument: Argument
+  ): Promise<Result>;
+}
+
+interface BrowserMeasurementOptions {
+  readonly maxRows: number;
+  readonly pageContentWidth: number;
+}
+
+/**
+ * Trusted browser-context measurement callable. It is deliberately
+ * self-contained so Playwright can serialize it into a JavaScript-disabled
+ * page via `page.evaluate`; document-authored scripts remain disabled.
+ */
+export function measureBilingualLayoutInPage(
+  options: BrowserMeasurementOptions
+): BrowserLayoutMeasurement {
+  const root = document.querySelector<HTMLElement>(
+    "[data-bilingual-document]"
+  );
+  if (!root) {
+    throw new Error("Bilingual layout root was not found.");
+  }
+  if (
+    !Number.isFinite(options.pageContentWidth) ||
+    options.pageContentWidth <= 0
+  ) {
+    throw new Error("Bilingual printable content width is invalid.");
+  }
+  root.style.inlineSize = `${String(options.pageContentWidth)}px`;
+  root.style.maxInlineSize = `${String(options.pageContentWidth)}px`;
+  // Force layout after constraining the root to the exact PDF content width.
+  root.getBoundingClientRect();
+
+  const pairs = Array.from(
+    root.querySelectorAll<HTMLElement>("[data-bilingual-pair]")
+  );
+  if (pairs.length === 0) {
+    throw new Error("Bilingual layout contains no paired rows.");
+  }
+  if (pairs.length > options.maxRows) {
+    throw new Error(
+      `Bilingual layout exceeds the trusted renderer limit of ${String(
+        options.maxRows
+      )} rows.`
+    );
+  }
+
+  const finiteCssNumber = (value: string): number => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  };
+  const approvedGapElements = (cell: HTMLElement): HTMLElement[] => {
+    const targets = new Set<HTMLElement>();
+    Array.from(cell.children)
+      .slice(1)
+      .forEach((element) => {
+        if (element instanceof HTMLElement) targets.add(element);
+      });
+    cell
+      .querySelectorAll<HTMLElement>(
+        ":scope > ul > li:not(:first-child), :scope > ol > li:not(:first-child)"
+      )
+      .forEach((element) => targets.add(element));
+    return [...targets];
+  };
+  const measureIntrinsicHeight = (cell: HTMLElement): number => {
+    const cellStyle = getComputedStyle(cell);
+    const padding =
+      finiteCssNumber(cellStyle.paddingBlockStart) +
+      finiteCssNumber(cellStyle.paddingBlockEnd);
+    const children = Array.from(cell.children).filter(
+      (element): element is HTMLElement => element instanceof HTMLElement
+    );
+    const childHeight = children.reduce((total, child) => {
+      const style = getComputedStyle(child);
+      return (
+        total +
+        child.getBoundingClientRect().height +
+        finiteCssNumber(style.marginBlockStart) +
+        finiteCssNumber(style.marginBlockEnd)
+      );
+    }, 0);
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    const rangeHeight = range.getBoundingClientRect().height;
+    range.detach();
+    return Math.max(0, padding + Math.max(childHeight, rangeHeight));
+  };
+  const readPositiveInteger = (
+    element: HTMLElement,
+    attribute: string
+  ): number => {
+    const parsed = Number.parseInt(element.getAttribute(attribute) ?? "", 10);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new Error(`Invalid bilingual fragment metadata: ${attribute}.`);
+    }
+    return parsed;
+  };
+  const normalizeKind = (value: string | null): PairedFragmentKind => {
+    switch (value) {
+      case "heading":
+      case "paragraph":
+      case "image":
+        return value;
+      case "list":
+        return "list-item";
+      case "table":
+        return "table-row";
+      case "section-heading":
+      case "document-title":
+        return "heading";
+      default:
+        return "other";
+    }
+  };
+
+  root
+    .querySelectorAll<HTMLElement>("[data-bilingual-sync-gap]")
+    .forEach((element) => {
+      element.style.removeProperty("padding-block-start");
+      element.removeAttribute("data-bilingual-sync-gap");
+    });
+  pairs.forEach((pair) => {
+    pair.style.removeProperty("min-block-size");
+    pair.style.removeProperty("break-before");
+    pair.removeAttribute("data-sync-page");
+    pair
+      .querySelectorAll<HTMLElement>("[data-language]")
+      .forEach((cell) => cell.style.removeProperty("min-block-size"));
+  });
+
+  const measuredRows = pairs.map((pair): BrowserMeasuredPairedRow => {
+    const enCell = pair.querySelector<HTMLElement>(
+      ':scope > [data-language="en"]'
+    );
+    const arCell = pair.querySelector<HTMLElement>(
+      ':scope > [data-language="ar"]'
+    );
+    if (!enCell || !arCell) {
+      throw new Error(
+        "Every bilingual pair must contain one English and one Arabic cell."
+      );
+    }
+    const alignmentKey = pair.getAttribute("data-alignment-key");
+    if (!alignmentKey) {
+      throw new Error("A bilingual pair is missing its alignment key.");
+    }
+    const fragmentIndex = readPositiveInteger(
+      pair,
+      "data-fragment-index"
+    );
+    const fragmentCount = readPositiveInteger(
+      pair,
+      "data-fragment-count"
+    );
+    if (fragmentCount < 1 || fragmentIndex >= fragmentCount) {
+      throw new Error("Bilingual fragment sequence metadata is invalid.");
+    }
+    const section = pair.closest<HTMLElement>(".bilingual-section");
+    const firstSectionPair =
+      section?.querySelector<HTMLElement>("[data-bilingual-pair]") ?? null;
+    const enContentHeight = measureIntrinsicHeight(enCell);
+    const arContentHeight = measureIntrinsicHeight(arCell);
+    const pairChromeHeight = Math.max(
+      0,
+      pair.getBoundingClientRect().height -
+        Math.max(enContentHeight, arContentHeight)
+    );
+
+    return {
+      alignmentKey,
+      fragmentIndex,
+      fragmentCount,
+      kind: normalizeKind(pair.getAttribute("data-fragment-kind")),
+      en: {
+        contentHeight: enContentHeight + pairChromeHeight,
+        adjustableGaps: approvedGapElements(enCell).length,
+      },
+      ar: {
+        contentHeight: arContentHeight + pairChromeHeight,
+        adjustableGaps: approvedGapElements(arCell).length,
+      },
+      keepWithNext:
+        pair.getAttribute("data-fragment-keep-with-next") === "true",
+      breakBefore:
+        section?.classList.contains("bilingual-section--new-page") === true &&
+        firstSectionPair === pair,
+    };
+  });
+
+  const rowGap = pairs.reduce(
+    (maximum, pair) =>
+      Math.max(
+        maximum,
+        finiteCssNumber(getComputedStyle(pair).marginBlockEnd)
+      ),
+    0
+  );
+  return { rows: measuredRows, rowGap };
+}
+
+/**
+ * Trusted browser-context application callable. Only numeric instructions
+ * produced by `synchronizeLayout` are accepted by the orchestrator below.
+ */
+export function applyBilingualLayoutInPage(
+  result: LayoutSyncResult
+): AppliedBilingualLayout {
+  const root = document.querySelector<HTMLElement>(
+    "[data-bilingual-document]"
+  );
+  if (!root) {
+    throw new Error("Bilingual layout root was not found.");
+  }
+  const pairs = Array.from(
+    root.querySelectorAll<HTMLElement>("[data-bilingual-pair]")
+  );
+  if (pairs.length !== result.rows.length) {
+    throw new Error("Measured bilingual rows changed before synchronization.");
+  }
+
+  const approvedGapElements = (cell: HTMLElement): HTMLElement[] => {
+    const targets = new Set<HTMLElement>();
+    Array.from(cell.children)
+      .slice(1)
+      .forEach((element) => {
+        if (element instanceof HTMLElement) targets.add(element);
+      });
+    cell
+      .querySelectorAll<HTMLElement>(
+        ":scope > ul > li:not(:first-child), :scope > ol > li:not(:first-child)"
+      )
+      .forEach((element) => targets.add(element));
+    return [...targets];
+  };
+  const applyColumn = (
+    pair: HTMLElement,
+    language: "en" | "ar",
+    column: SynchronizedColumn
+  ): void => {
+    const cell = pair.querySelector<HTMLElement>(
+      `:scope > [data-language="${language}"]`
+    );
+    if (!cell) {
+      throw new Error(`Missing ${language.toUpperCase()} synchronized cell.`);
+    }
+    cell.style.minBlockSize = `${String(column.contentHeight + column.addedSpacing + column.trailingSpace)}px`;
+    cell.setAttribute(
+      "data-sync-added-spacing",
+      String(column.addedSpacing)
+    );
+    cell.setAttribute(
+      "data-sync-trailing-space",
+      String(column.trailingSpace)
+    );
+    const gaps = approvedGapElements(cell);
+    if (gaps.length !== column.adjustableGaps) {
+      throw new Error(
+        `The ${language.toUpperCase()} adjustable-gap count changed before synchronization.`
+      );
+    }
+    gaps.forEach((element) => {
+      element.setAttribute("data-bilingual-sync-gap", "true");
+      if (column.spacingPerGap > 0) {
+        element.style.paddingBlockStart = `${String(
+          column.spacingPerGap
+        )}px`;
+      }
+    });
+  };
+
+  result.rows.forEach((row, index) => {
+    const pair = pairs[row.sourceIndex];
+    if (!pair || row.sourceIndex !== index) {
+      throw new Error("Bilingual synchronization source order changed.");
+    }
+    const previous = result.rows[index - 1];
+    pair.style.minBlockSize = `${String(row.rowHeight)}px`;
+    pair.style.breakBefore =
+      previous && previous.pageNumber !== row.pageNumber ? "page" : "";
+    pair.setAttribute("data-sync-page", String(row.pageNumber));
+    pair.setAttribute("data-sync-index-on-page", String(row.indexOnPage));
+    pair.setAttribute("data-sync-offset-top", String(row.offsetTop));
+    pair.setAttribute("data-sync-row-height", String(row.rowHeight));
+    pair.setAttribute("data-sync-overflow", row.overflow.kind);
+    pair.setAttribute(
+      "data-sync-continued-from-previous",
+      String(row.continuation.continuedFromPreviousPage)
+    );
+    pair.setAttribute(
+      "data-sync-continues-on-next",
+      String(row.continuation.continuesOnNextPage)
+    );
+    if (row.continuation.beforeLabel) {
+      pair.setAttribute(
+        "data-sync-before-label-en",
+        row.continuation.beforeLabel.en
+      );
+      pair.setAttribute(
+        "data-sync-before-label-ar",
+        row.continuation.beforeLabel.ar
+      );
+    }
+    if (row.continuation.afterLabel) {
+      pair.setAttribute(
+        "data-sync-after-label-en",
+        row.continuation.afterLabel.en
+      );
+      pair.setAttribute(
+        "data-sync-after-label-ar",
+        row.continuation.afterLabel.ar
+      );
+    }
+    applyColumn(pair, "en", row.en);
+    applyColumn(pair, "ar", row.ar);
+  });
+
+  root.setAttribute("data-bilingual-layout-state", "ready");
+  root.setAttribute("data-bilingual-layout-ready", "true");
+  root.setAttribute("data-bilingual-layout-pages", String(result.metrics.pageCount));
+  root.setAttribute(
+    "data-bilingual-layout-warnings",
+    String(result.warnings.length)
+  );
+  return {
+    rowCount: result.metrics.inputRowCount,
+    pageCount: result.metrics.pageCount,
+    warningCount: result.warnings.length,
+  };
+}
+
+function resolveRendererSyncOptions(
+  options: BilingualRendererSyncOptions
+): Required<
+  Omit<BilingualRendererSyncOptions, "continuationLabels">
+> & {
+  readonly continuationLabels?: ContinuationLabels;
+} {
+  const resolved = {
+    pageContentWidth:
+      options.pageContentWidth ??
+      DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.pageContentWidth,
+    pageContentHeight:
+      options.pageContentHeight ??
+      DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.pageContentHeight,
+    maxRows: options.maxRows ?? DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.maxRows,
+    maxSpacingPerGap:
+      options.maxSpacingPerGap ??
+      DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.maxSpacingPerGap,
+    maxDynamicSpacingPerRow:
+      options.maxDynamicSpacingPerRow ??
+      DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.maxDynamicSpacingPerRow,
+    balanceTolerance:
+      options.balanceTolerance ??
+      DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.balanceTolerance,
+    ...(options.continuationLabels
+      ? { continuationLabels: options.continuationLabels }
+      : {}),
+  };
+  if (
+    !Number.isFinite(resolved.pageContentWidth) ||
+    resolved.pageContentWidth <= 0 ||
+    resolved.pageContentWidth > 10_000
+  ) {
+    throw new LayoutSyncError(
+      "INVALID_OPTIONS",
+      "Trusted renderer pageContentWidth must be finite and between 0 and 10000 CSS pixels."
+    );
+  }
+  if (
+    !Number.isInteger(resolved.maxRows) ||
+    resolved.maxRows < 1 ||
+    resolved.maxRows > DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.maxRows
+  ) {
+    throw new LayoutSyncError(
+      "INVALID_OPTIONS",
+      `Trusted renderer maxRows must be between 1 and ${String(
+        DEFAULT_BILINGUAL_RENDER_SYNC_OPTIONS.maxRows
+      )}.`
+    );
+  }
+  return resolved;
+}
+
+function synchronizeBrowserMeasurement(
+  measurement: BrowserLayoutMeasurement,
+  options: ReturnType<typeof resolveRendererSyncOptions>
+): LayoutSyncResult {
+  if (
+    !measurement ||
+    !Array.isArray(measurement.rows) ||
+    measurement.rows.length > options.maxRows
+  ) {
+    throw new LayoutSyncError(
+      "INVALID_FRAGMENT",
+      "Trusted renderer returned an invalid bilingual row measurement."
+    );
+  }
+  const rows: PairedRowInput[] = measurement.rows.map((row) => ({
+    ...row,
+    alignmentKey: createAlignmentKey(row.alignmentKey),
+  }));
+  return synchronizeLayout(rows, {
+    pageContentHeight: options.pageContentHeight,
+    rowGap: measurement.rowGap,
+    maxSpacingPerGap: options.maxSpacingPerGap,
+    maxDynamicSpacingPerRow: options.maxDynamicSpacingPerRow,
+    balanceTolerance: options.balanceTolerance,
+    ...(options.continuationLabels
+      ? { continuationLabels: options.continuationLabels }
+      : {}),
+  });
+}
+
+/**
+ * Measure and synchronize the current browser document using the shared pure
+ * engine. Client previews may call this after their fonts and images settle.
+ */
+export function synchronizeCurrentBilingualDocument(
+  options: BilingualRendererSyncOptions = {}
+): LayoutSyncResult {
+  if (typeof document === "undefined") {
+    throw new LayoutSyncError(
+      "INVALID_OPTIONS",
+      "Bilingual DOM synchronization requires a browser document."
+    );
+  }
+  const resolved = resolveRendererSyncOptions(options);
+  const measurement = measureBilingualLayoutInPage({
+    maxRows: resolved.maxRows,
+    pageContentWidth: resolved.pageContentWidth,
+  });
+  const result = synchronizeBrowserMeasurement(measurement, resolved);
+  applyBilingualLayoutInPage(result);
+  return result;
+}
+
+/**
+ * Playwright adapter used by PDF generation. Measurements cross the browser
+ * boundary as data, synchronization runs in trusted Node code, and only the
+ * resulting numeric layout instructions are applied back to the page.
+ */
+export async function synchronizeBilingualLayoutPage(
+  page: BilingualLayoutEvaluationPage,
+  options: BilingualRendererSyncOptions = {}
+): Promise<LayoutSyncResult> {
+  const resolved = resolveRendererSyncOptions(options);
+  const measurement = await page.evaluate(measureBilingualLayoutInPage, {
+    maxRows: resolved.maxRows,
+    pageContentWidth: resolved.pageContentWidth,
+  });
+  const result = synchronizeBrowserMeasurement(measurement, resolved);
+  await page.evaluate(applyBilingualLayoutInPage, result);
+  return result;
+}

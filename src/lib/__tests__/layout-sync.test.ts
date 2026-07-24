@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
   LayoutSyncError,
+  applyBilingualLayoutInPage,
   createAlignmentKey,
+  measureBilingualLayoutInPage,
+  synchronizeBilingualLayoutPage,
   synchronizeLayout,
+  type AppliedBilingualLayout,
+  type BilingualLayoutEvaluationPage,
+  type BrowserLayoutMeasurement,
   type LayoutSyncOptions,
+  type LayoutSyncResult,
   type PairedRowInput,
 } from "../layout-sync";
 
@@ -616,4 +623,127 @@ describe("synchronizeLayout validation and determinism", () => {
       continuationBreakCount: 0,
     });
   });
+});
+
+describe("trusted bilingual renderer bridge", () => {
+  test("measures in-page, runs the shared engine, and applies the result", async () => {
+    const measurement: BrowserLayoutMeasurement = {
+      rowGap: 4,
+      rows: [
+        {
+          alignmentKey: "bridge.scope",
+          fragmentIndex: 0,
+          fragmentCount: 2,
+          kind: "heading",
+          en: { contentHeight: 30, adjustableGaps: 2 },
+          ar: { contentHeight: 38, adjustableGaps: 0 },
+          keepWithNext: true,
+          breakBefore: false,
+        },
+        {
+          alignmentKey: "bridge.scope",
+          fragmentIndex: 1,
+          fragmentCount: 2,
+          kind: "paragraph",
+          en: { contentHeight: 70, adjustableGaps: 0 },
+          ar: { contentHeight: 70, adjustableGaps: 0 },
+          keepWithNext: false,
+          breakBefore: false,
+        },
+      ],
+    };
+    let applied: LayoutSyncResult | null = null;
+    const page: BilingualLayoutEvaluationPage = {
+      async evaluate<Result, Argument>(
+        pageFunction: (
+          argument: Argument
+        ) => Result | Promise<Result>,
+        argument: Argument
+      ): Promise<Result> {
+        if (pageFunction === (measureBilingualLayoutInPage as unknown)) {
+          return measurement as Result;
+        }
+        if (pageFunction === (applyBilingualLayoutInPage as unknown)) {
+          applied = argument as LayoutSyncResult;
+          return {
+            rowCount: applied.metrics.inputRowCount,
+            pageCount: applied.metrics.pageCount,
+            warningCount: applied.warnings.length,
+          } as AppliedBilingualLayout as Result;
+        }
+        throw new Error("Unexpected page evaluation callable.");
+      },
+    };
+
+    const result = await synchronizeBilingualLayoutPage(page, {
+      pageContentHeight: 100,
+    });
+
+    expect(applied).toEqual(result);
+    expect(result.rows[0]?.en.addedSpacing).toBe(8);
+    expect(result.rows[0]?.rowHeight).toBe(38);
+    expect(result.pages).toHaveLength(2);
+    expect(result.rows[1]?.pageNumber).toBe(2);
+  });
+
+  test.skipIf(process.env.PLAYWRIGHT_CHROMIUM !== "1")(
+    "applies measured spacing and readiness in JavaScript-disabled Chromium",
+    async () => {
+      const { chromium } = await import("playwright");
+      const browser = await chromium.launch({ headless: true });
+      try {
+        const context = await browser.newContext({
+          javaScriptEnabled: false,
+        });
+        try {
+          const page = await context.newPage();
+          await page.setContent(`<!doctype html>
+<html><head><style>
+* { box-sizing: border-box; }
+.bilingual-pair { display:grid; grid-template-columns:1fr 1fr; width:500px; gap:16px; margin-block-end:4px; align-items:stretch; }
+.bilingual-cell { min-width:0; padding:8px; }
+li { margin-block:2px; }
+</style></head><body>
+<main data-bilingual-document data-bilingual-layout-state="pending" data-bilingual-layout-ready="false">
+  <div class="bilingual-pair" data-bilingual-pair data-alignment-key="live.scope" data-fragment-kind="list" data-fragment-index="0" data-fragment-count="1" data-fragment-keep-with-next="false">
+    <div class="bilingual-cell" data-language="en"><ul><li>One</li><li>Two</li></ul></div>
+    <div class="bilingual-cell" data-language="ar" dir="rtl"><ul><li>هذا نص عربي طويل جدا لاختبار القياس الحقيقي والتفاف الأسطر داخل العمود المتزامن</li><li>وهذا سطر عربي طويل آخر يضمن اختلاف الارتفاع بين العمودين</li></ul></div>
+  </div>
+</main>
+</body></html>`);
+
+          const result = await synchronizeBilingualLayoutPage(
+            page as unknown as BilingualLayoutEvaluationPage,
+            { pageContentHeight: 900 }
+          );
+          const snapshot = await page.evaluate(() => {
+            const root = document.querySelector("[data-bilingual-document]");
+            const row = document.querySelector("[data-bilingual-pair]");
+            const en = document.querySelector('[data-language="en"]');
+            return {
+              state: root?.getAttribute("data-bilingual-layout-state"),
+              ready: root?.getAttribute("data-bilingual-layout-ready"),
+              page: row?.getAttribute("data-sync-page"),
+              rowHeight: Number(row?.getAttribute("data-sync-row-height")),
+              addedSpacing: Number(
+                en?.getAttribute("data-sync-added-spacing")
+              ),
+            };
+          });
+
+          expect(result.rows).toHaveLength(1);
+          expect(snapshot.state).toBe("ready");
+          expect(snapshot.ready).toBe("true");
+          expect(snapshot.page).toBe("1");
+          expect(snapshot.rowHeight).toBeGreaterThan(0);
+          expect(snapshot.addedSpacing).toBeGreaterThan(0);
+        } finally {
+          await context.close();
+        }
+      } finally {
+        await browser.close();
+      }
+    },
+    120_000
+  );
 });
