@@ -17,6 +17,7 @@ import {
   Command,
   LogOut,
   Menu,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { ApiDocument, ApiProject, ApiNotification } from "@/lib/api-types";
+import { useDismissedNotifications } from "@/hooks/use-dismissed-notifications";
 
 export function DashboardTopbar() {
   const { locale, toggle } = useLocale();
@@ -46,6 +48,7 @@ export function DashboardTopbar() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const { dismiss, dismissAll, isDismissed } = useDismissedNotifications();
 
   const { data } = useQuery({
     queryKey: ["workspace"],
@@ -131,6 +134,10 @@ export function DashboardTopbar() {
   }, [q, projectsData, docsData]);
 
   const notifications = (notifData?.items ?? []) as ApiNotification[];
+  const visibleNotifications = useMemo(
+    () => notifications.filter((n) => !isDismissed(n.id)),
+    [notifications, isDismissed]
+  );
 
   return (
     <header className="h-14 sm:h-16 shrink-0 border-b border-border bg-card/80 glass backdrop-blur-xl flex items-center gap-2 sm:gap-3 px-3 sm:px-4 lg:px-6 z-30">
@@ -224,40 +231,69 @@ export function DashboardTopbar() {
         <PopoverTrigger asChild>
           <Button variant="outline" size="icon" className="h-10 w-10 relative">
             <Bell className="size-4" />
-            {notifications.length > 0 && (
+            {visibleNotifications.length > 0 && (
               <span className="absolute top-1.5 end-1.5 size-2 rounded-full bg-destructive ring-2 ring-card" />
             )}
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-80 p-0">
-          <div className="px-3 py-2 border-b text-xs font-semibold">
-            {locale === "ar" ? "الإشعارات" : "Notifications"}
+          <div className="px-3 py-2 border-b flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold">
+              {locale === "ar" ? "الإشعارات" : "Notifications"}
+            </div>
+            {visibleNotifications.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                onClick={() => dismissAll(visibleNotifications.map((n) => n.id))}
+              >
+                {locale === "ar" ? "تحديد الكل كمقروء" : "Mark all read"}
+              </Button>
+            )}
           </div>
           <div className="max-h-64 overflow-y-auto">
-            {notifications.length === 0 ? (
+            {visibleNotifications.length === 0 ? (
               <p className="text-[11px] text-muted-foreground p-4 text-center">
                 {tr("no_data", locale)}
               </p>
             ) : (
-              notifications.map((n) => (
-                <button
+              visibleNotifications.map((n) => (
+                <div
                   key={n.id}
-                  type="button"
-                  className="w-full text-start px-3 py-2 border-b border-border/40 text-[11px] hover:bg-muted/50"
-                  onClick={() => {
-                    if (n.href?.includes("view=")) {
-                      const v = n.href.split("view=")[1] as DashboardView;
-                      if (v) setView(v);
-                    }
-                  }}
+                  className="flex items-start gap-1 border-b border-border/40 hover:bg-muted/50"
                 >
-                  <div className="font-medium">
-                    {locale === "ar" ? n.titleAr : n.title}
-                  </div>
-                  <div className="text-muted-foreground truncate">
-                    {locale === "ar" ? n.bodyAr : n.body}
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-start px-3 py-2 text-[11px]"
+                    onClick={() => {
+                      if (n.href?.includes("view=")) {
+                        const v = n.href.split("view=")[1] as DashboardView;
+                        if (v) setView(v);
+                      }
+                    }}
+                  >
+                    <div className="font-medium">
+                      {locale === "ar" ? n.titleAr : n.title}
+                    </div>
+                    <div className="text-muted-foreground truncate">
+                      {locale === "ar" ? n.bodyAr : n.body}
+                    </div>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="me-1 mt-1 size-7 shrink-0"
+                    aria-label={
+                      locale === "ar" ? "تمييز كمقروء" : "Mark as read"
+                    }
+                    onClick={() => dismiss(n.id)}
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
               ))
             )}
           </div>

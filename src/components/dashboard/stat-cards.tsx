@@ -14,19 +14,11 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-
-interface Stats {
-  kpis: {
-    activeProjects: number;
-    proposalsGenerated: number;
-    avgCompliance: number;
-    documentsProcessed: number;
-  };
-}
+import type { StatsResponse } from "@/lib/api-types";
 
 export function StatCards() {
   const { locale } = useLocale();
-  const { data, isLoading } = useQuery<Stats>({
+  const { data, isLoading } = useQuery<StatsResponse>({
     queryKey: ["stats"],
     queryFn: async () => {
       const res = await fetch("/api/stats");
@@ -42,7 +34,7 @@ export function StatCards() {
     value: number | string;
     suffix?: string;
     icon: LucideIcon;
-    trend: number;
+    trend: number | null;
     color: string;
     bg: string;
     bar: string;
@@ -51,7 +43,7 @@ export function StatCards() {
       key: "stat_active_projects",
       value: k?.activeProjects ?? 0,
       icon: FolderKanban,
-      trend: 12,
+      trend: data?.trends.projects ?? null,
       color: "text-chart-1",
       bg: "bg-chart-1/10",
       bar: "bg-chart-1",
@@ -60,7 +52,7 @@ export function StatCards() {
       key: "stat_proposals_generated",
       value: k?.proposalsGenerated ?? 0,
       icon: FileCheck2,
-      trend: 8,
+      trend: data?.trends.proposals ?? null,
       color: "text-chart-3",
       bg: "bg-chart-3/10",
       bar: "bg-chart-3",
@@ -70,7 +62,7 @@ export function StatCards() {
       value: k?.avgCompliance ?? 0,
       suffix: "%",
       icon: ShieldCheck,
-      trend: 5,
+      trend: data?.trends.compliance ?? null,
       color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10",
       bar: "bg-emerald-500",
@@ -79,7 +71,7 @@ export function StatCards() {
       key: "stat_documents_processed",
       value: k?.documentsProcessed ?? 0,
       icon: FileText,
-      trend: -3,
+      trend: data?.trends.documents ?? null,
       color: "text-chart-4",
       bg: "bg-chart-4/10",
       bar: "bg-chart-4",
@@ -90,7 +82,7 @@ export function StatCards() {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
       {cards.map((c) => {
         const Icon = c.icon;
-        const up = c.trend >= 0;
+        const up = c.trend !== null && c.trend >= 0;
         return (
           <Card
             key={c.key}
@@ -100,15 +92,17 @@ export function StatCards() {
               <div className={cn("size-10 rounded-lg flex items-center justify-center", c.bg)}>
                 <Icon className={cn("size-5", c.color)} />
               </div>
-              <span
-                className={cn(
-                  "flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded",
-                  up ? "text-emerald-600 bg-emerald-500/10" : "text-destructive bg-destructive/10"
-                )}
-              >
-                {up ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
-                {Math.abs(c.trend)}%
-              </span>
+              {c.trend !== null && (
+                <span
+                  className={cn(
+                    "flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded",
+                    up ? "text-emerald-600 bg-emerald-500/10" : "text-destructive bg-destructive/10"
+                  )}
+                >
+                  {up ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
+                  {Math.abs(c.trend)}%
+                </span>
+              )}
             </div>
             <div className="text-2xl lg:text-3xl font-bold tracking-tight tabular-nums">
               {isLoading ? (

@@ -132,6 +132,12 @@ export type StatsResponse = {
     statusBreakdown: ChartSlice[];
     docCategoryBreakdown: ChartSlice[];
   };
+  trends: {
+    projects: number | null;
+    documents: number | null;
+    proposals: number | null;
+    compliance: number | null;
+  };
 };
 
 export type ApiPastProject = {

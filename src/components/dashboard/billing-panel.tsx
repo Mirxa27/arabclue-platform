@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Panel, EmptyState, QueryState } from "@/components/patterns";
 import { apiJson } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -53,9 +54,15 @@ type BillingPayload = {
     status: string;
     paymentMethod?: string | null;
     invoiceNumber?: string | null;
+    metadata?: string | null;
     createdAt: string;
   }>;
   myfatoorahConfigured?: boolean;
+};
+
+type CheckoutInput = {
+  planId: string;
+  billingCycle: "MONTHLY" | "YEARLY";
 };
 
 export function BillingPanel() {
@@ -69,11 +76,11 @@ export function BillingPanel() {
   });
 
   const checkout = useMutation({
-    mutationFn: async (planId: string) => {
+    mutationFn: async ({ planId, billingCycle }: CheckoutInput) => {
       return apiJson<{ paymentUrl: string }>("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId, billingCycle: cycle, locale }),
+        body: JSON.stringify({ planId, billingCycle, locale }),
       });
     },
     onSuccess: (res) => {
@@ -93,6 +100,15 @@ export function BillingPanel() {
   const plans = data?.plans ?? [];
   const sub = data?.subscription;
   const records = data?.records ?? [];
+  const latestFailedRecord = records[0]?.status === "FAILED" ? records[0] : null;
+  const failedCheckout = parseCheckoutMetadata(latestFailedRecord?.metadata);
+  const retryCheckout: CheckoutInput | null = sub
+    ? {
+        planId: sub.plan.id,
+        billingCycle: sub.billingCycle === "YEARLY" ? "YEARLY" : "MONTHLY",
+      }
+    : failedCheckout;
+  const hasBillingFailure = sub?.status === "PAST_DUE" || Boolean(latestFailedRecord);
 
   return (
     <div className="space-y-4">
@@ -137,6 +153,43 @@ export function BillingPanel() {
           empty={null}
         >
           <div className="p-4 space-y-4">
+            {hasBillingFailure && (
+              <Alert variant="destructive" className="items-center">
+                <AlertCircle className="size-4" />
+                <AlertTitle>
+                  {locale === "ar" ? "تعذر إتمام الدفع" : "Billing payment failed"}
+                </AlertTitle>
+                <AlertDescription className="sm:flex sm:items-center sm:justify-between sm:gap-3">
+                  <span>
+                    {locale === "ar"
+                      ? "حدّث وسيلة الدفع أو أعد المحاولة لاستعادة الاشتراك والحصص."
+                      : "Update the payment method or retry checkout to restore the subscription and quotas."}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    className="mt-2 sm:mt-0 gap-1.5"
+                    disabled={
+                      checkout.isPending ||
+                      !data?.myfatoorahConfigured ||
+                      !retryCheckout
+                    }
+                    onClick={() => {
+                      if (retryCheckout) checkout.mutate(retryCheckout);
+                    }}
+                  >
+                    {checkout.isPending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <ExternalLink className="size-3.5" />
+                    )}
+                    {locale === "ar" ? "إعادة المحاولة" : "Retry payment"}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {sub ? (
               <div className="rounded-xl border border-border/50 p-4 bg-muted/20 space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -152,7 +205,12 @@ export function BillingPanel() {
                   </div>
                   <Badge
                     variant="outline"
-                    className="text-[10px] bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                    className={cn(
+                      "text-[10px]",
+                      sub.status === "PAST_DUE"
+                        ? "bg-destructive/10 text-destructive border-destructive/20"
+                        : "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                    )}
                   >
                     {sub.status}
                   </Badge>
@@ -255,7 +313,9 @@ export function BillingPanel() {
                         checkout.isPending ||
                         !data?.myfatoorahConfigured
                       }
-                      onClick={() => checkout.mutate(plan.id)}
+                      onClick={() =>
+                        checkout.mutate({ planId: plan.id, billingCycle: cycle })
+                      }
                     >
                       {checkout.isPending ? (
                         <Loader2 className="size-3.5 animate-spin" />
@@ -349,4 +409,28 @@ function UsageBar({
       {!unlimited && <Progress value={pct} className="h-1.5" />}
     </div>
   );
+}
+
+function parseCheckoutMetadata(metadata?: string | null): CheckoutInput | null {
+  if (!metadata) return null;
+
+  try {
+    const parsed = JSON.parse(metadata) as {
+      planId?: unknown;
+      billingCycle?: unknown;
+    };
+    if (
+      typeof parsed.planId !== "string" ||
+      (parsed.billingCycle !== "MONTHLY" && parsed.billingCycle !== "YEARLY")
+    ) {
+      return null;
+    }
+
+    return {
+      planId: parsed.planId,
+      billingCycle: parsed.billingCycle,
+    };
+  } catch {
+    return null;
+  }
 }

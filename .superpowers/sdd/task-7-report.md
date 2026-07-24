@@ -1,40 +1,53 @@
-# Task 7 Report: Verify & ship
+# Task 7 Report: Billing failure UX + notification dismiss + real KPI trends
 
-## Status
+Status: DONE
 
-Task 7 completed on branch `cursor/saudi-contract-remaining-ab64`.
+## Implemented
 
-## Quality gates
+- Added `trendPct(current, previous): number | null` in `src/lib/stats-trends.ts`.
+- Added TDD coverage in `src/lib/__tests__/stats-trends.test.ts`:
+  - `0 -> 0` returns `null`.
+  - `0 -> positive` returns `100`.
+  - Positive and negative changes are rounded.
+- Updated `/api/stats` to return:
+  - `trends.projects`
+  - `trends.documents`
+  - `trends.proposals`
+  - `trends.compliance`
+- Computed trends from last 7 days versus the prior 7 days using tenant-scoped `createdAt` windows.
+- Updated stat cards to consume API trends and omit the trend badge when the trend is `null`.
+- Removed fake hardcoded trend percentages from stat cards.
+- Added billing failure alert UX for:
+  - `subscription.status === "PAST_DUE"`
+  - latest billing record `status === "FAILED"`
+- Wired billing Retry to the existing `/api/billing/checkout` endpoint.
+- Added `src/hooks/use-dismissed-notifications.ts` for localStorage-backed notification dismissal.
+- Updated the topbar to:
+  - filter dismissed notification IDs,
+  - show the unread dot only for visible notifications,
+  - dismiss individual notifications,
+  - dismiss all visible notifications with "Mark all read".
+- Updated `StatsResponse` typing with nullable trend fields.
 
-| Gate | Command | Result |
-| --- | --- | --- |
-| Unit tests | `bun test src/lib/__tests__` | Passed: 187 pass, 0 fail, 765 expect calls, 33 files |
-| Typecheck | `bunx tsc --noEmit` | Passed: exit 0 |
-| Lint | `bun run lint` | Passed: exit 0, 0 errors, 6 existing unused-disable warnings |
-| Optional build | `bun run build` | Failed on known Turbopack client/SSR traces for Node-only `redis` (`net`, `dns/promises`) and `z-ai-web-dev-sdk` (`fs/promises`) modules |
+## Verification
 
-## Documentation updates
+- Confirmed TDD red state before helper implementation:
+  - `bun test src/lib/__tests__/stats-trends.test.ts` failed because `../stats-trends` did not exist.
+- Focused test after implementation:
+  - `bun test src/lib/__tests__/stats-trends.test.ts` -> 3 pass, 0 fail.
+- TypeScript:
+  - `bunx tsc --noEmit` -> pass.
+- Lint:
+  - `bun run lint` -> pass.
+- Full lib test suite:
+  - `bun run test` -> 204 pass, 0 fail.
+- Final checks:
+  - `bunx tsc --noEmit` -> pass.
+  - `git diff --check` -> pass.
 
-- Updated `docs/IMPLEMENTATION_STATUS.md` for branch `cursor/saudi-contract-remaining-ab64`.
-- Added current Task 7 gate results.
-- Summarized these remaining-gap closures:
-  - Contract validation hardening.
-  - Contract studio edit/save/version.
-  - Contract legal review path.
-  - Local-content compliance metadata cleanup.
-  - Mission Control import source fidelity.
-  - Autopilot tender-fact enrichment.
-- Updated `docs/superpowers/plans/2026-07-23-saudi-contract-remaining.md` checkboxes for Tasks 1-7.
-- Marked PR/main deployment as controller-owned.
+## Notes / concerns
 
-## Git
-
-- Docs/status commit: `c545135` (`docs: close saudi contract remaining plan`)
-- Push command: `git push -u origin cursor/saudi-contract-remaining-ab64`
-- Push result: `bc4e2a2..c545135  cursor/saudi-contract-remaining-ab64 -> cursor/saudi-contract-remaining-ab64`
-
-## Concerns
-
-- `bun run build` remains blocked by the documented Next.js 16/Turbopack issue where server-only dependencies are pulled into client/SSR traces from existing imports. The required Task 7 gates all passed.
-- Lint still reports 6 existing unused `eslint-disable` warnings in unrelated UI files.
-- No PR was created and `main` was not touched, per controller handoff instructions.
+- Compliance trend compares the compliance score for checks created in the last 7 days against the prior 7 days, instead of comparing compliance-check volume. This matches the compliance KPI card more closely than raw count volume.
+- Notification dismissals are intentionally local to the browser via localStorage. There is no server-side read state, per the task scope.
+- Billing retry uses the active subscription plan when present. For failed records without an active subscription, it falls back to checkout metadata from the failed billing record when available.
+- `account-onboarding.tsx` was not edited.
