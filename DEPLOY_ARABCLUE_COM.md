@@ -147,7 +147,7 @@ curl https://arabclue.com/api/health
 
 **Current (shipped):**
 - **Postgres:** Neon Postgres via `DATABASE_URL` (not SQLite)
-- **Cron:** Vercel Cron hits `/api/cron/billing-reconcile` (every 6h) and `/api/cron/expiry-notifications` (daily 06:00 UTC). Protect with `CRON_SECRET` (≥16 chars). Cron Authorization header is set automatically by Vercel when `CRON_SECRET` is configured as the project cron secret.
+- **Cron:** Vercel Cron hits `/api/cron/billing-reconcile` (daily 05:15 UTC) and `/api/cron/expiry-notifications` (daily 06:00 UTC). Protect with `CRON_SECRET` (≥16 chars). Cron Authorization header is set automatically by Vercel when `CRON_SECRET` is configured as the project cron secret. (Hobby plans allow at most one run per day per job.)
 - **Email:** Resend via `RESEND_API_KEY` + optional `EMAIL_FROM`. Without the key, expiry cron logs + writes `ExpiryNotificationLog` but does not send mail (in-app cert notifications still work).
 - **PDF on Vercel:** `@sparticuz/chromium` + `playwright-core`. Set `AWS_LAMBDA_JS_RUNTIME=nodejs22.x` in the Vercel project env.
 
