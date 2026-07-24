@@ -111,3 +111,39 @@ Replaced hand-rolled loading/error/empty branches in three dashboard panels with
 ## Concerns
 
 None.
+
+---
+
+## Fix: locale-aware company name on brand chrome
+
+**Status:** DONE  
+**Commit:** `36372ad` — `fix(export): locale-aware company name on brand chrome`
+
+### Summary
+
+`exportCompanyName` now accepts an optional `PdfLocale` (default `"ar"`) and delegates to `letterheadCompanyName`. Proposal-backed generators resolve locale via exported `resolveLocale(proposal, override)`; XLSX generators accept an optional locale parameter. Download route passes `exportLocale` through all non-PDF export paths and ZIP packaging.
+
+### Tests
+
+```bash
+bun test src/lib/__tests__/generators-brand.test.ts
+bunx tsc --noEmit
+```
+
+```
+bun test v1.3.14 (0d9b296a)
+
+src/lib/__tests__/generators-brand.test.ts:
+(pass) export brand chrome > brandArgb normalizes hex colors for Office fills
+(pass) export brand chrome > compliance workbook uses client brand for creator title and header fill
+(pass) export brand chrome > BoQ workbook uses client brand for creator title and header fill
+(pass) export brand chrome > slides HTML uses client company name, font, and brand colors
+(pass) export brand chrome > PPTX uses client company author, title slide, font, and brand colors
+(pass) export brand chrome > compliance workbook uses Arabic company name when locale is ar and only nameAr is set
+(pass) export brand chrome > ZIP README starts with client company name
+
+ 7 pass
+ 0 fail
+```
+
+`bunx tsc --noEmit` — pass.
