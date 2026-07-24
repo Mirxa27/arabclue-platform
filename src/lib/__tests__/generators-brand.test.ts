@@ -71,7 +71,7 @@ describe("export brand chrome", () => {
 
   test("compliance workbook uses client brand for creator title and header fill", async () => {
     const wb = await loadWorkbook(
-      await generateComplianceMatrixXLSX(project, brand, undefined, company)
+      await generateComplianceMatrixXLSX(project, brand, undefined, company, "en")
     );
     const ws = wb.getWorksheet("Compliance Matrix");
 
@@ -88,7 +88,9 @@ describe("export brand chrome", () => {
   });
 
   test("BoQ workbook uses client brand for creator title and header fill", async () => {
-    const wb = await loadWorkbook(await generateBoQXLSX(project, brand, undefined, company));
+    const wb = await loadWorkbook(
+      await generateBoQXLSX(project, brand, undefined, company, "en")
+    );
     const ws = wb.getWorksheet("Financial BoQ");
 
     expect(wb.creator).toBe("Acme Contracting Co.");
@@ -125,6 +127,22 @@ describe("export brand chrome", () => {
     expect(slideXml).toContain("Cairo");
     expect(slideXml).toContain("115E59");
     expect(slideXml).toContain("F59E0B");
+  });
+
+  test("compliance workbook uses Arabic company name when locale is ar and only nameAr is set", async () => {
+    const arCompany = {
+      nameAr: "شركة أكمي للمقاولات",
+      crNumber: "1010123456",
+    };
+    const wb = await loadWorkbook(
+      await generateComplianceMatrixXLSX(project, brand, undefined, arCompany, "ar")
+    );
+    const ws = wb.getWorksheet("Compliance Matrix");
+
+    expect(wb.creator).toBe("شركة أكمي للمقاولات");
+    expect(ws?.getCell("A1").value).toBe(
+      "شركة أكمي للمقاولات Compliance Matrix — Digital Platform RFP"
+    );
   });
 
   test("ZIP README starts with client company name", () => {

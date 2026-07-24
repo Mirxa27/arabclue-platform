@@ -18,7 +18,7 @@ import {
 
 export type PdfLocale = "ar" | "en";
 
-function resolveLocale(proposal: GeneratedProposal, override?: PdfLocale): PdfLocale {
+export function resolveLocale(proposal: GeneratedProposal, override?: PdfLocale): PdfLocale {
   if (override === "ar" || override === "en") return override;
   const loc = (proposal as { locale?: string }).locale;
   return loc === "en" ? "en" : "ar";
@@ -52,9 +52,10 @@ export type ProposalCompanyLetterhead = {
 
 function exportCompanyName(
   brand: BrandProfile | null,
-  company?: ProposalCompanyLetterhead | null
+  company?: ProposalCompanyLetterhead | null,
+  locale: PdfLocale = "ar"
 ): string {
-  return letterheadCompanyName("en", brand, company);
+  return letterheadCompanyName(locale, brand, company);
 }
 
 function buildProposalHTML(
@@ -298,10 +299,11 @@ export async function generateComplianceMatrixXLSX(
   project: TenderProject,
   brand: BrandProfile | null,
   checks?: { framework: string; controlId: string; title: string; requirement: string; complianceLevel: string | null; status: string; evidence?: string | null }[],
-  company?: ProposalCompanyLetterhead | null
+  company?: ProposalCompanyLetterhead | null,
+  locale?: PdfLocale
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  const companyName = exportCompanyName(brand, company);
+  const companyName = exportCompanyName(brand, company, locale ?? "ar");
   const primaryArgb = brandArgb(brand?.primaryColor ?? "#1E3A8A");
   wb.creator = companyName;
   wb.created = new Date();
@@ -391,10 +393,11 @@ export async function generateBoQXLSX(
     unitPrice: number | null;
     total: number | null;
   }[],
-  company?: ProposalCompanyLetterhead | null
+  company?: ProposalCompanyLetterhead | null,
+  locale?: PdfLocale
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  const companyName = exportCompanyName(brand, company);
+  const companyName = exportCompanyName(brand, company, locale ?? "ar");
   const primaryArgb = brandArgb(brand?.primaryColor ?? "#1E3A8A");
   wb.creator = companyName;
   wb.created = new Date();
@@ -507,13 +510,14 @@ export function generateSlidesHTML(
   project: TenderProject,
   brand: BrandProfile | null,
   metrics?: SlidesMetrics,
-  company?: ProposalCompanyLetterhead | null
+  company?: ProposalCompanyLetterhead | null,
+  locale?: PdfLocale
 ): string {
   const primary = brand?.primaryColor ?? "#1E3A8A";
   const accent = brand?.accentColor ?? "#0EA5E9";
   const fontStack = resolveBrandFontStack(brand?.fontFamily);
   const fontsHref = googleFontsHref(brand?.fontFamily);
-  const companyName = exportCompanyName(brand, company);
+  const companyName = exportCompanyName(brand, company, resolveLocale(proposal, locale));
   const tenderType = getTenderType(project.category);
   const qlr = metrics?.quickLiquidityRatio;
   const qlrOk = metrics?.qlrPasses;
@@ -623,13 +627,14 @@ export async function generateProposalPPTX(
   project: TenderProject,
   brand: BrandProfile | null,
   metrics?: SlidesMetrics,
-  company?: ProposalCompanyLetterhead | null
+  company?: ProposalCompanyLetterhead | null,
+  locale?: PdfLocale
 ): Promise<Buffer> {
   const PptxGenJS = (await import("pptxgenjs")).default;
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "LAYOUT_WIDE", width: 13.333, height: 7.5 });
   pptx.layout = "LAYOUT_WIDE";
-  const companyName = exportCompanyName(brand, company);
+  const companyName = exportCompanyName(brand, company, resolveLocale(proposal, locale));
   const fontFace = resolveOfficeFontFace(brand?.fontFamily);
   pptx.author = companyName;
   pptx.title = `${companyName} — ${project.title}`;
@@ -925,11 +930,13 @@ export async function generateBidPackageZIP(
     slidesMetrics?: SlidesMetrics;
     validation?: import("./validation-gate").ValidationReport;
     company?: ProposalCompanyLetterhead | null;
+    locale?: PdfLocale;
   }
 ): Promise<Buffer> {
   const zip = new JSZip();
   const tenderType = getTenderType(project.category);
-  const companyName = exportCompanyName(brand, opts?.company);
+  const locale = resolveLocale(proposal, opts?.locale);
+  const companyName = exportCompanyName(brand, opts?.company, locale);
   const {
     buildExportManifest,
     manifestToJson,
@@ -951,7 +958,8 @@ export async function generateBidPackageZIP(
     project,
     brand,
     opts?.slidesMetrics,
-    opts?.company
+    opts?.company,
+    locale
   );
   zip.file("Technical_Proposal_Slides.pptx", pptxBuf);
 
@@ -960,7 +968,8 @@ export async function generateBidPackageZIP(
     project,
     brand,
     opts?.slidesMetrics,
-    opts?.company
+    opts?.company,
+    locale
   );
   zip.file("Technical_Proposal_Slides.html", Buffer.from(slides, "utf8"));
 
@@ -968,11 +977,12 @@ export async function generateBidPackageZIP(
     project,
     brand,
     opts?.checks,
-    opts?.company
+    opts?.company,
+    locale
   );
   zip.file("Compliance_Matrix.xlsx", matrix);
 
-  const boq = await generateBoQXLSX(project, brand, opts?.boqItems, opts?.company);
+  const boq = await generateBoQXLSX(project, brand, opts?.boqItems, opts?.company, locale);
   zip.file("Financial_BoQ.xlsx", boq);
 
   const contentMd = proposal.contentMd ?? "";

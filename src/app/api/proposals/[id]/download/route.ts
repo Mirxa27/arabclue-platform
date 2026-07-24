@@ -9,6 +9,7 @@ import {
   generateSlidesHTML,
   generateProposalPPTX,
   generateBidPackageZIP,
+  resolveLocale,
   type SlidesMetrics,
 } from "@/lib/generators";
 import { requireSession } from "@/lib/auth";
@@ -225,6 +226,8 @@ export async function GET(
     };
   }
 
+  const exportLocale = resolveLocale(proposal, pdfLocale);
+
   try {
     let buffer: Buffer;
     let contentType: string;
@@ -292,7 +295,8 @@ export async function GET(
           proposal.project,
           brand,
           checks,
-          companyLetterhead
+          companyLetterhead,
+          exportLocale
         );
         contentType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -303,7 +307,8 @@ export async function GET(
           proposal.project,
           brand,
           boqItems,
-          companyLetterhead
+          companyLetterhead,
+          exportLocale
         );
         contentType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -316,7 +321,8 @@ export async function GET(
             proposal.project,
             brand,
             slidesMetrics,
-            companyLetterhead
+            companyLetterhead,
+            exportLocale
           ),
           "utf8"
         );
@@ -329,7 +335,8 @@ export async function GET(
           proposal.project,
           brand,
           slidesMetrics,
-          companyLetterhead
+          companyLetterhead,
+          exportLocale
         );
         contentType =
           "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -371,6 +378,7 @@ export async function GET(
           slidesMetrics,
           validation: gateReport,
           company: companyLetterhead,
+          locale: exportLocale,
         });
         contentType = "application/zip";
         filename = "Arabclue_Bid_Package.zip";
