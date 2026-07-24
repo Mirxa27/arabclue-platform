@@ -30,11 +30,21 @@ interface BrandData {
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
+  fontFamily?: string | null;
   tagline: string | null;
   taglineAr: string | null;
   vision2030Alignment: string | null;
   logoUrl: string | null;
 }
+
+const FONT_OPTIONS = [
+  "IBM Plex Sans Arabic",
+  "IBM Plex Sans",
+  "Space Grotesk",
+  "Cairo",
+  "Tajawal",
+  "Inter",
+];
 
 export function BrandSetup() {
   const { locale } = useLocale();
@@ -60,10 +70,11 @@ export function BrandSetup() {
 
   return (
     <div className="grid lg:grid-cols-3 gap-4">
-      {/* Brand configurator — keyed remount when brand.id changes so form initializes from props */}
       {brand && <BrandForm key={brand.id} brand={brand} />}
-      {/* Past projects */}
-      <PastProjectsPanel pastProjects={pastProjects} />
+      {brand && <LetterheadPreview brand={brand} locale={locale} />}
+      <div className="lg:col-span-3">
+        <PastProjectsPanel pastProjects={pastProjects} />
+      </div>
     </div>
   );
 }
@@ -78,6 +89,7 @@ function BrandForm({ brand }: { brand: BrandData }) {
     primaryColor: brand.primaryColor,
     secondaryColor: brand.secondaryColor,
     accentColor: brand.accentColor,
+    fontFamily: brand.fontFamily ?? "IBM Plex Sans Arabic",
     tagline: brand.tagline ?? "",
     taglineAr: brand.taglineAr ?? "",
     vision2030Alignment: brand.vision2030Alignment ?? "thriving-economy",
@@ -182,6 +194,23 @@ function BrandForm({ brand }: { brand: BrandData }) {
           <ColorField label={tr("brand_accent_color", locale)} value={form.accentColor} onChange={(v) => setForm({ ...form, accentColor: v })} />
         </div>
 
+        <div>
+          <Label className="text-xs">
+            {locale === "ar" ? "خط الهوية" : "Brand typeface"}
+          </Label>
+          <select
+            className="mt-1.5 w-full h-9 rounded-md border border-input bg-background px-2 text-xs"
+            value={form.fontFamily}
+            onChange={(e) => setForm({ ...form, fontFamily: e.target.value })}
+          >
+            {FONT_OPTIONS.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Tagline */}
         <div>
           <Label className="text-xs">{tr("brand_tagline", locale)}</Label>
@@ -235,6 +264,81 @@ function BrandForm({ brand }: { brand: BrandData }) {
   );
 }
 
+function LetterheadPreview({
+  brand,
+  locale,
+}: {
+  brand: BrandData;
+  locale: "ar" | "en";
+}) {
+  const ar = locale === "ar";
+  const name = ar
+    ? brand.taglineAr || brand.tagline || "أراب كلاو"
+    : brand.tagline || "ArabClue";
+  return (
+    <Card className="p-0 overflow-hidden border-border/60 lg:col-span-1">
+      <div className="px-5 py-4 border-b border-border/60 bg-muted/30">
+        <h3 className="text-sm font-semibold">
+          {ar ? "معاينة الورق الرسمي" : "Letterhead preview"}
+        </h3>
+        <p className="text-[11px] text-muted-foreground">
+          {ar
+            ? "يُطبَّق على عروض PDF والعقود لكل عميل في مساحة العمل"
+            : "Applied to proposal PDFs and contracts for this workspace client"}
+        </p>
+      </div>
+      <div className="p-4 space-y-3">
+        <div
+          className="rounded-lg p-3 text-white flex items-center gap-3"
+          style={{
+            background: `linear-gradient(90deg, ${brand.primaryColor}, ${brand.secondaryColor})`,
+            borderBottom: `3px solid ${brand.accentColor}`,
+            fontFamily: brand.fontFamily || "IBM Plex Sans Arabic",
+          }}
+        >
+          {brand.logoUrl ? (
+            <img
+              src={brand.logoUrl}
+              alt=""
+              className="h-8 max-w-[100px] object-contain rounded bg-white/15 p-1"
+            />
+          ) : (
+            <div className="size-8 rounded bg-white/20" />
+          )}
+          <div className="min-w-0">
+            <div className="text-sm font-bold truncate">{name}</div>
+            <div className="text-[10px] opacity-90">
+              {ar ? "ورق رسمي" : "Official letterhead"}
+            </div>
+          </div>
+        </div>
+        <div
+          className="rounded-md border p-3 text-xs space-y-2"
+          style={{ fontFamily: brand.fontFamily || undefined }}
+        >
+          <p
+            className="font-semibold"
+            style={{ color: brand.primaryColor }}
+          >
+            {ar ? "عنوان القسم" : "Section heading"}
+          </p>
+          <p className="text-muted-foreground leading-relaxed">
+            {ar
+              ? "نص تجريبي يظهر كيف تبدو ألوان وخط هوية العميل على المستندات المُصدَّرة."
+              : "Sample body copy showing how this client’s colors and typeface render on exported documents."}
+          </p>
+          <div
+            className="h-1 rounded-full"
+            style={{
+              background: `linear-gradient(90deg, ${brand.accentColor}, transparent)`,
+            }}
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function PastProjectsPanel({ pastProjects }: { pastProjects: ApiPastProject[] }) {
   const { locale } = useLocale();
   const qc = useQueryClient();
@@ -267,7 +371,7 @@ function PastProjectsPanel({ pastProjects }: { pastProjects: ApiPastProject[] })
   });
 
   return (
-    <Card className="p-0 overflow-hidden border-border/60 lg:col-span-2">
+    <Card className="p-0 overflow-hidden border-border/60">
       <div className="px-5 py-4 border-b border-border/60 bg-muted/30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">

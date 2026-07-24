@@ -43,6 +43,8 @@ export async function GET(req: NextRequest) {
       ".webp": "image/webp",
       ".svg": "image/svg+xml",
       ".pdf": "application/pdf",
+      ".html": "text/html",
+      ".htm": "text/html",
       ".txt": "text/plain",
       ".md": "text/markdown",
       ".docx":

@@ -4,6 +4,14 @@ import { COMPLIANCE_FRAMEWORKS, EXECUTION_METHODOLOGY, getTenderType } from "./c
 import type { GeneratedProposal, TenderProject, BrandProfile } from "@prisma/client";
 import { LEGAL_DISCLAIMER } from "./procurement-rules";
 import { escapeHtml, markdownToHtml } from "./markdown";
+import {
+  googleFontsHref,
+  letterheadBarHtml,
+  letterheadCompanyName,
+  pdfFooterTemplate,
+  pdfHeaderTemplate,
+  resolveBrandFontStack,
+} from "./letterhead";
 
 export type PdfLocale = "ar" | "en";
 
@@ -50,7 +58,10 @@ function buildProposalHTML(
   }
 ): string {
   const primary = brand?.primaryColor ?? "#1E3A8A";
+  const secondary = brand?.secondaryColor ?? "#0F172A";
   const accent = brand?.accentColor ?? "#0EA5E9";
+  const fontStack = resolveBrandFontStack(brand?.fontFamily);
+  const fontsHref = googleFontsHref(brand?.fontFamily);
   const tenderType = getTenderType(project.category);
   const forPrint = opts?.forPrint ?? true;
   const locale = resolveLocale(proposal, opts?.locale);
@@ -60,10 +71,7 @@ function buildProposalHTML(
     accentColor: accent,
   });
   const company = opts?.company;
-  const companyName =
-    locale === "ar"
-      ? company?.nameAr || company?.name || brand?.taglineAr || brand?.tagline || "أراب كلاو"
-      : company?.name || brand?.tagline || "Arabclue";
+  const companyName = letterheadCompanyName(locale, brand, company);
 
   const labels =
     locale === "ar"
@@ -114,17 +122,23 @@ function buildProposalHTML(
       ? escapeHtml(project.titleAr || project.title)
       : escapeHtml(project.title);
 
+  const letterhead = letterheadBarHtml({
+    brand,
+    companyName,
+    locale,
+  });
+
   return `<!DOCTYPE html>
 <html lang="${locale}" dir="${rtl ? "rtl" : "ltr"}"><head><meta charset="utf-8">
 <title>${titleDisplay} — ${labels.subtitle}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="${fontsHref}" rel="stylesheet">
 <style>
-  @page { size: A4; margin: 16mm; }
+  @page { size: A4; margin: 18mm 14mm 18mm 14mm; }
   * { box-sizing: border-box; }
   body {
-    font-family: 'IBM Plex Sans Arabic', 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
-    color: #0f172a; margin: 0; line-height: 1.7; font-size: 12px; padding: 10px;
+    font-family: ${fontStack};
+    color: ${secondary}; margin: 0; line-height: 1.7; font-size: 12px; padding: 10px;
     direction: ${rtl ? "rtl" : "ltr"};
   }
   .cover {
@@ -150,6 +164,7 @@ function buildProposalHTML(
 </style></head>
 <body>
   ${forPrint ? "" : `<button class="print-btn" onclick="window.print()">${labels.print}</button>`}
+  ${letterhead}
   <div class="cover">
     ${logoBlock}
     <h1>${escapeHtml(companyName)}</h1>
@@ -235,13 +250,26 @@ export async function generateProposalPDF(
   });
   const { htmlToPdf, PdfGenerationError } = await import("./pdf/html-to-pdf");
   try {
+    const pdfLocaleResolved = resolveLocale(proposal, locale);
+    const companyLabel = letterheadCompanyName(
+      pdfLocaleResolved,
+      brandForPdf,
+      company
+    );
     return await htmlToPdf(html, {
       format: "A4",
       printBackground: true,
       displayHeaderFooter: true,
-      headerTemplate: `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;">Arabclue · ${escapeHtml(project.etimadRef ?? "")}</div>`,
-      footerTemplate: `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
-      margin: { top: "16mm", bottom: "18mm", left: "12mm", right: "12mm" },
+      headerTemplate: pdfHeaderTemplate({
+        companyName: companyLabel,
+        etimadRef: project.etimadRef,
+        primaryColor: brandForPdf?.primaryColor,
+      }),
+      footerTemplate: pdfFooterTemplate({
+        companyName: companyLabel,
+        primaryColor: brandForPdf?.primaryColor,
+      }),
+      margin: { top: "18mm", bottom: "18mm", left: "12mm", right: "12mm" },
       waitMs: 400,
     });
   } catch (err) {

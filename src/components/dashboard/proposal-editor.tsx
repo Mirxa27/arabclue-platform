@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -40,6 +39,7 @@ import {
 import { markdownToHtml } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import { DocumentPreviewFrame } from "./document-preview-frame";
+import { MarkdownStudioEditor } from "./markdown-studio-editor";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import type { ArtifactDownloadFormat } from "@/lib/download-artifact";
 import {
@@ -129,6 +129,19 @@ export function ProposalEditorDialog({
     },
   });
 
+  const { data: brandData } = useQuery({
+    queryKey: ["brand"],
+    enabled: open,
+    queryFn: async () => {
+      const res = await fetch("/api/brand");
+      if (!res.ok) return { brandProfile: null };
+      return res.json();
+    },
+  });
+  const brandColors = {
+    primaryColor: brandData?.brandProfile?.primaryColor as string | undefined,
+    accentColor: brandData?.brandProfile?.accentColor as string | undefined,
+  };
   if (open && proposalId && proposalId !== activeId) {
     setActiveId(proposalId);
     setDraftMd(null);
@@ -164,10 +177,10 @@ export function ProposalEditorDialog({
   const previewHtml = useMemo(
     () =>
       markdownToHtml(markdown, {
-        headingColor: "#1E3A8A",
-        accentColor: "#0EA5E9",
+        headingColor: brandColors.primaryColor ?? "#1E3A8A",
+        accentColor: brandColors.accentColor ?? "#0EA5E9",
       }),
-    [markdown]
+    [markdown, brandColors.primaryColor, brandColors.accentColor]
   );
 
   const saveMutation = useMutation({
@@ -401,8 +414,6 @@ export function ProposalEditorDialog({
 
   const version = data?.proposal?.version ?? 1;
   const status = data?.proposal?.status ?? "DRAFT";
-  const showEdit = mode === "edit" || mode === "split";
-  const showPreview = mode === "preview" || mode === "split";
   const showPrint = mode === "print";
   const issues = validationData?.validation?.issues ?? [];
   const exportBlocked = validationData != null && !validationData.exportReady;
@@ -965,30 +976,21 @@ export function ProposalEditorDialog({
                 />
               </div>
             ) : (
-              <div
-                className={cn(
-                  "flex-1 min-h-0 overflow-hidden rounded-md border grid gap-0",
-                  mode === "split"
-                    ? "grid-cols-1 lg:grid-cols-2"
-                    : "grid-cols-1"
-                )}
-              >
-                {showEdit && (
-                  <Textarea
-                    className={cn(
-                      "h-full min-h-[420px] resize-none border-0 rounded-none font-mono text-xs leading-relaxed",
-                      mode === "split" && "lg:border-e",
-                      propLocale === "ar" && "text-right"
-                    )}
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-2">
+                {(mode === "edit" || mode === "split") && (
+                  <MarkdownStudioEditor
+                    markdown={markdown}
+                    onChange={setMarkdown}
+                    locale={propLocale}
                     dir={propLocale === "ar" ? "rtl" : "ltr"}
-                    value={markdown}
-                    onChange={(e) => setMarkdown(e.target.value)}
-                    spellCheck
+                    splitPreview={mode === "split"}
+                    brand={brandColors}
+                    className="flex-1 min-h-0"
                   />
                 )}
-                {showPreview && (
+                {mode === "preview" && (
                   <div
-                    className="h-full overflow-y-auto p-4 text-sm bg-muted/20"
+                    className="flex-1 min-h-0 overflow-y-auto rounded-md border p-4 text-sm bg-muted/20"
                     dir={propLocale === "ar" ? "rtl" : "ltr"}
                     dangerouslySetInnerHTML={{ __html: previewHtml }}
                   />

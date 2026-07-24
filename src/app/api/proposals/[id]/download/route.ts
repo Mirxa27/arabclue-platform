@@ -242,6 +242,8 @@ export async function GET(
             contentMd: proposal.contentMd ?? "",
             projectTitle: proposal.project.title,
             etimadRef: proposal.project.etimadRef,
+            brand,
+            company: companyLetterhead,
           });
           contentType = "application/pdf";
           filename = "Draft_Contract_Bilingual.pdf";
@@ -268,6 +270,8 @@ export async function GET(
             contentMd: proposal.contentMd ?? "",
             projectTitle: proposal.project.title,
             etimadRef: proposal.project.etimadRef,
+            brand,
+            company: companyLetterhead,
           });
           contentType = "text/html; charset=utf-8";
           filename = "Draft_Contract_Bilingual.html";

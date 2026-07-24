@@ -34,7 +34,7 @@ import type { DocCategory } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
 import { EmptyState, QueryState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
-
+import { DocumentFileViewer } from "./document-file-viewer";
 function fileIcon(name: string, mime: string) {
   if (mime.includes("sheet") || name.endsWith(".xlsx") || name.endsWith(".xls")) return FileSpreadsheet;
   if (mime.includes("zip") || name.endsWith(".zip")) return FileArchive;
@@ -64,7 +64,7 @@ export function DocumentMatrix() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [filter, setFilter] = useStateLocal<DocCategory | "ALL">("docFilter", "ALL");
-
+  const [previewDoc, setPreviewDoc] = useState<ApiDocument | null>(null);
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["documents"],
     queryFn: async () => {
@@ -250,18 +250,30 @@ export function DocumentMatrix() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          title={locale === "ar" ? "مصفوفة المتطلبات" : "Requirements matrix"}
-                          onClick={() => {
-                            if (d.projectId) setActiveProjectId(d.projectId);
-                            setView("compliance");
-                          }}
-                        >
-                          <Eye className="size-3" />
-                        </Button>
+                        {d.storagePath ? (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7"
+                            title={locale === "ar" ? "معاينة المستند" : "Preview document"}
+                            onClick={() => setPreviewDoc(d)}
+                          >
+                            <Eye className="size-3" />
+                          </Button>
+                        ) : (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7"
+                            title={locale === "ar" ? "مصفوفة المتطلبات" : "Requirements matrix"}
+                            onClick={() => {
+                              if (d.projectId) setActiveProjectId(d.projectId);
+                              setView("compliance");
+                            }}
+                          >
+                            <Eye className="size-3" />
+                          </Button>
+                        )}
                         {d.storagePath && (
                           <a
                             href={`/api/files?path=${encodeURIComponent(d.storagePath)}&download=1&name=${encodeURIComponent(d.originalName)}`}
@@ -289,6 +301,20 @@ export function DocumentMatrix() {
           </Table>
         </QueryState>
       </div>
+
+      {previewDoc?.storagePath ? (
+        <DocumentFileViewer
+          open={!!previewDoc}
+          onOpenChange={(open) => {
+            if (!open) setPreviewDoc(null);
+          }}
+          locale={locale}
+          title={previewDoc.originalName}
+          storagePath={previewDoc.storagePath}
+          mimeType={previewDoc.mimeType}
+          fileName={previewDoc.originalName}
+        />
+      ) : null}
     </Card>
   );
 }
