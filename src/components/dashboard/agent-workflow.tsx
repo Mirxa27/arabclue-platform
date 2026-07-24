@@ -103,6 +103,7 @@ type AgentRunHistoryItem = {
   id: string;
   projectId: string;
   projectTitle: string;
+  projectTitleAr: string | null;
   status: string;
   progress: number;
   currentAgent: string | null;
@@ -146,6 +147,10 @@ function isAgentId(value: string): value is AgentId {
 
 function currentAgentLabel(value: string, locale: "ar" | "en") {
   return isAgentId(value) ? tr(`agent_${value}_name`, locale) : value;
+}
+
+function runProjectTitle(run: AgentRunHistoryItem, locale: "ar" | "en") {
+  return locale === "ar" ? run.projectTitleAr ?? run.projectTitle : run.projectTitle;
 }
 
 export function AgentWorkflow() {
@@ -668,7 +673,7 @@ export function AgentWorkflow() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="truncate text-xs font-semibold">
-                            {run.projectTitle}
+                            {runProjectTitle(run, locale)}
                           </span>
                           <Badge
                             variant={failed ? "destructive" : "default"}

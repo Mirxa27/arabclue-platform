@@ -20,6 +20,7 @@ describe("serializeAgentRun", () => {
       completedAt,
       project: {
         title: "Etimad network modernization",
+        titleAr: "تحديث شبكة اعتماد",
       },
     });
 
@@ -27,6 +28,7 @@ describe("serializeAgentRun", () => {
       id: "run_123",
       projectId: "project_456",
       projectTitle: "Etimad network modernization",
+      projectTitleAr: "تحديث شبكة اعتماد",
       status: "FAILED",
       progress: 42.4,
       currentAgent: "TECHNICAL_ARCHITECT",

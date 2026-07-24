@@ -1,5 +1,6 @@
 type AgentRunProject = {
   title: string;
+  titleAr?: string | null;
   etimadRef?: string | null;
 };
 
@@ -19,6 +20,7 @@ export type AgentRunDto = {
   id: string;
   projectId: string;
   projectTitle: string;
+  projectTitleAr: string | null;
   status: string;
   progress: number;
   currentAgent: string | null;
@@ -50,6 +52,7 @@ export function serializeAgentRun(run: SerializableAgentRun): AgentRunDto {
     id: run.id,
     projectId: run.projectId,
     projectTitle: run.project.title || run.project.etimadRef || run.projectId,
+    projectTitleAr: run.project.titleAr ?? null,
     status: run.status,
     progress: run.overallProgress,
     currentAgent: currentAgentFromStates(run.agentStates),

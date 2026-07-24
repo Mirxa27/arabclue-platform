@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
           select: {
             workspaceId: true,
             title: true,
+            titleAr: true,
             etimadRef: true,
           },
         },
