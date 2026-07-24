@@ -23,12 +23,15 @@ import {
   FolderKanban,
   AlertCircle,
   XCircle,
+  History,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { RadialGauge } from "./radial-gauge";
+import { EmptyState, QueryState } from "@/components/patterns";
+import { ListSkeleton } from "./loading-skeletons";
 import { cn } from "@/lib/utils";
 import { AGENTS } from "@/lib/constants";
 import type { AgentState, AgentId } from "@/lib/types";
@@ -96,9 +99,58 @@ function normalizeStatus(s: string | undefined): AgentState["status"] {
   return "pending";
 }
 
+type AgentRunHistoryItem = {
+  id: string;
+  projectId: string;
+  projectTitle: string;
+  status: string;
+  progress: number;
+  currentAgent: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+
+function statusLabel(status: string, locale: "ar" | "en") {
+  const labels: Record<string, { ar: string; en: string }> = {
+    QUEUED: { ar: "في الانتظار", en: "Queued" },
+    RUNNING: { ar: "يعمل", en: "Running" },
+    COMPLETED: { ar: "مكتمل", en: "Completed" },
+    FAILED: { ar: "فشل", en: "Failed" },
+    CANCELLED: { ar: "ملغي", en: "Cancelled" },
+  };
+  return labels[status]?.[locale] ?? status;
+}
+
+function statusBadgeClass(status: string) {
+  if (status === "COMPLETED") return "bg-emerald-600 hover:bg-emerald-600";
+  if (status === "RUNNING" || status === "QUEUED") {
+    return "bg-violet-600 hover:bg-violet-600";
+  }
+  if (status === "FAILED") return "";
+  return "bg-muted text-foreground hover:bg-muted";
+}
+
+function formatRunDate(value: string, locale: "ar" | "en") {
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function isAgentId(value: string): value is AgentId {
+  return AGENTS.some((agent) => agent.id === value);
+}
+
+function currentAgentLabel(value: string, locale: "ar" | "en") {
+  return isAgentId(value) ? tr(`agent_${value}_name`, locale) : value;
+}
+
 export function AgentWorkflow() {
   const { locale } = useLocale();
-  const { tenderType, activeProjectId, setView } = useUI();
+  const { tenderType, activeProjectId, setActiveProjectId, setView } = useUI();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [runId, setRunId] = useState<string | null>(null);
@@ -124,6 +176,21 @@ export function AgentWorkflow() {
       return res.json() as Promise<{
         project?: { title?: string; titleAr?: string; etimadRef?: string | null };
       }>;
+    },
+  });
+
+  const {
+    data: runHistoryData,
+    isLoading: runHistoryLoading,
+    isError: runHistoryIsError,
+    error: runHistoryError,
+    refetch: refetchRunHistory,
+  } = useQuery({
+    queryKey: ["agent-runs"],
+    queryFn: async () => {
+      const res = await fetch("/api/agents/runs?limit=50");
+      if (!res.ok) throw new Error("Failed to load run history");
+      return res.json() as Promise<{ runs: AgentRunHistoryItem[] }>;
     },
   });
 
@@ -198,6 +265,39 @@ export function AgentWorkflow() {
     }
   }
 
+  async function selectHistoryRun(run: AgentRunHistoryItem) {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    setActiveProjectId(run.projectId);
+    setRunId(run.id);
+    setCompleted(false);
+    setRunStatus(run.status);
+    setOverall(run.progress);
+    setErrorMessage(run.status === "FAILED" ? run.errorMessage : null);
+    setLlmFallback(false);
+    setLlmProvider(null);
+    setProposalId(null);
+    setContractId(null);
+    setCoveragePercent(null);
+    setExportReady(null);
+
+    try {
+      const res = await fetch(
+        `/api/agents/status?runId=${encodeURIComponent(run.id)}`
+      );
+      if (!res.ok) throw new Error("status failed");
+      applyStatusPayload(await res.json());
+    } catch (err) {
+      toast({
+        title:
+          locale === "ar"
+            ? "تعذر تحميل التشغيل"
+            : "Could not load run",
+        description: err instanceof Error ? err.message : "error",
+        variant: "destructive",
+      });
+    }
+  }
+
   // Hydrate last run for the active project so the pipeline isn't blank.
   useEffect(() => {
     if (!activeProjectId || runId) return;
@@ -265,6 +365,7 @@ export function AgentWorkflow() {
             : "6 agents running in sequence — watch live progress below",
       });
       qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["agent-runs"] });
     },
     onError: (err: Error) => {
       if (err.message.includes("project") || err.message.includes("مشروع")) {
@@ -295,6 +396,7 @@ export function AgentWorkflow() {
     onSuccess: () => {
       setCompleted(true);
       setRunStatus("CANCELLED");
+      qc.invalidateQueries({ queryKey: ["agent-runs"] });
       toast({
         title: locale === "ar" ? "تم الإلغاء" : "Run cancelled",
       });
@@ -325,6 +427,7 @@ export function AgentWorkflow() {
           qc.invalidateQueries({ queryKey: ["stats"] });
           qc.invalidateQueries({ queryKey: ["proposals"] });
           qc.invalidateQueries({ queryKey: ["compliance"] });
+          qc.invalidateQueries({ queryKey: ["agent-runs"] });
           return;
         }
         if (data.status === "FAILED" || data.status === "CANCELLED") {
@@ -340,6 +443,7 @@ export function AgentWorkflow() {
             description: data.errorMessage ?? "error",
             variant: data.status === "CANCELLED" ? "default" : "destructive",
           });
+          qc.invalidateQueries({ queryKey: ["agent-runs"] });
           return;
         }
         pollRef.current = setTimeout(poll, 900);
@@ -357,6 +461,7 @@ export function AgentWorkflow() {
   const running = !!runId && !completed && (runStatus === "RUNNING" || runStatus === "QUEUED" || (!runStatus && !!runId && !completed));
   const doneCount = agentStates.filter((a) => a.status === "completed").length;
   const activeAgent = agentStates.find((a) => a.status === "running");
+  const runHistory = runHistoryData?.runs ?? [];
 
   const projectTitle = useMemo(() => {
     const p = projectMeta?.project;
@@ -491,6 +596,111 @@ export function AgentWorkflow() {
             {Math.round(overall)}%
           </span>
         )}
+      </div>
+
+      {/* Workspace run history */}
+      <div className="px-5 py-3 border-b border-border/50 bg-background/80">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <History className="size-4 text-muted-foreground shrink-0" />
+            <div className="min-w-0">
+              <h4 className="text-xs font-semibold">
+                {locale === "ar" ? "سجل التشغيل" : "Run history"}
+              </h4>
+              <p className="text-[10px] text-muted-foreground">
+                {locale === "ar"
+                  ? "كل تشغيلات الوكلاء في مساحة العمل"
+                  : "All agent runs in this workspace"}
+              </p>
+            </div>
+          </div>
+          <Badge variant="outline" className="text-[10px]">
+            {runHistory.length}
+          </Badge>
+        </div>
+
+        <div className="mt-3">
+          <QueryState
+            isLoading={runHistoryLoading}
+            isError={runHistoryIsError}
+            errorMessage={
+              runHistoryError instanceof Error
+                ? runHistoryError.message
+                : locale === "ar"
+                  ? "تعذر تحميل سجل التشغيل"
+                  : "Failed to load run history"
+            }
+            isEmpty={runHistory.length === 0}
+            onRetry={() => refetchRunHistory()}
+            locale={locale}
+            loading={<ListSkeleton rows={2} />}
+            empty={
+              <EmptyState
+                icon={History}
+                title={locale === "ar" ? "لا توجد تشغيلات بعد" : "No runs yet"}
+                description={
+                  locale === "ar"
+                    ? "ابدأ تشغيل الوكلاء من مشروع نشط ليظهر هنا."
+                    : "Start agents from an active project to populate history."
+                }
+                className="py-5"
+              />
+            }
+          >
+            <div className="max-h-52 overflow-y-auto space-y-2 pe-1">
+              {runHistory.map((run) => {
+                const selected = run.id === runId;
+                const failed = run.status === "FAILED";
+                return (
+                  <button
+                    key={run.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => selectHistoryRun(run)}
+                    className={cn(
+                      "w-full rounded-lg border p-3 text-start transition-colors hover:bg-muted/50",
+                      selected
+                        ? "border-violet-500/50 bg-violet-500/8"
+                        : "border-border/70 bg-card"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate text-xs font-semibold">
+                            {run.projectTitle}
+                          </span>
+                          <Badge
+                            variant={failed ? "destructive" : "default"}
+                            className={cn("text-[9px]", statusBadgeClass(run.status))}
+                          >
+                            {statusLabel(run.status, locale)}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          {formatRunDate(run.createdAt, locale)}
+                          {run.currentAgent
+                            ? ` · ${
+                                locale === "ar" ? "الوكيل الحالي" : "Current"
+                              }: ${currentAgentLabel(run.currentAgent, locale)}`
+                            : ""}
+                        </p>
+                      </div>
+                      <span className="font-mono text-xs font-bold tabular-nums text-violet-700 dark:text-violet-300">
+                        {Math.round(run.progress)}%
+                      </span>
+                    </div>
+                    {failed && run.errorMessage ? (
+                      <p className="mt-2 rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1.5 text-[10px] text-destructive">
+                        {run.errorMessage}
+                      </p>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </QueryState>
+        </div>
       </div>
 
       {/* Overall progress — always show when we have a run */}
