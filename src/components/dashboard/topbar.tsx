@@ -43,7 +43,7 @@ import { useDismissedNotifications } from "@/hooks/use-dismissed-notifications";
 export function DashboardTopbar() {
   const { locale, toggle } = useLocale();
   const { theme, resolvedTheme, setTheme } = useTheme();
-  const { setView, setMobileNavOpen } = useUI();
+  const { setView, setMobileNavOpen, setActiveProjectId } = useUI();
   const { data: session } = useSession();
   const searchRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
@@ -112,7 +112,13 @@ export function DashboardTopbar() {
     .join("");
 
   const hits = useMemo(() => {
-    if (!q.trim()) return [] as { type: string; label: string; view: DashboardView }[];
+    if (!q.trim())
+      return [] as {
+        type: string;
+        label: string;
+        view: DashboardView;
+        projectId?: string;
+      }[];
     const ql = q.toLowerCase();
     const projects = ((projectsData?.projects ?? []) as ApiProject[])
       .filter((p) => p.title?.toLowerCase().includes(ql))
@@ -121,6 +127,7 @@ export function DashboardTopbar() {
         type: "project",
         label: p.title,
         view: "projects" as const,
+        projectId: p.id,
       }));
     const docs = ((docsData?.documents ?? []) as ApiDocument[])
       .filter((d) => d.originalName?.toLowerCase().includes(ql))
@@ -129,6 +136,7 @@ export function DashboardTopbar() {
         type: "document",
         label: d.originalName,
         view: "documents" as const,
+        projectId: d.projectId ?? undefined,
       }));
     return [...projects, ...docs];
   }, [q, projectsData, docsData]);
@@ -176,6 +184,7 @@ export function DashboardTopbar() {
                 type="button"
                 className="w-full text-start px-3 py-2 text-xs hover:bg-muted/60 flex items-center justify-between"
                 onMouseDown={() => {
+                  if (h.projectId) setActiveProjectId(h.projectId);
                   setView(h.view);
                   setQ("");
                   setSearchOpen(false);

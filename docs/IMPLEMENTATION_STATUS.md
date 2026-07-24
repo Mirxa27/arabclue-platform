@@ -3,7 +3,17 @@
 **Branch:** `cursor/ship-remaining-ux-ab64` → `main`
 **Verified:** 2026-07-24
 
-## Latest closures — production follow-up
+## Latest closures — active project UX
+
+| Gap | Status | Evidence |
+| --- | --- | --- |
+| Upload “No active project” with projects listed | Closed | In-place project select + auto-select first; picker on FileIngestion |
+| Unformatted agent progress % | Closed | `formatPercent` + rounded `overallProgress` writes |
+| Active project lost on refresh | Closed | `useUI` persist (`arabclue-ui`) |
+| Delete clears wrong active project | Closed | Only clears when deleted id was active; falls back to next |
+| Search doesn’t activate project | Closed | Topbar project/doc hits set `activeProjectId` |
+| Requirements empty dead-end | Closed | CTA to Projects |
+
 
 | Gap | Status | Evidence |
 | --- | --- | --- |

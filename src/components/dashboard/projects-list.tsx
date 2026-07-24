@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   ChevronRight,
   Trash2,
+  Check,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,8 @@ import {
 import { apiJson } from "@/lib/api-client";
 import { ListSkeleton } from "./loading-skeletons";
 import { TenderSetupWizard } from "./tender-setup-wizard";
-import { cn } from "@/lib/utils";
+import { cn, formatPercent } from "@/lib/utils";
+import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: "bg-muted text-muted-foreground border-border",
@@ -60,7 +62,8 @@ type ProjectRow = {
 
 export function ProjectsList() {
   const { locale } = useLocale();
-  const { setView, setActiveProjectId } = useUI();
+  const { setView, activeProjectId, setActiveProjectId } = useUI();
+  useEnsureActiveProject();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -79,7 +82,10 @@ export function ProjectsList() {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["stats"] });
-      setActiveProjectId(null);
+      if (id === activeProjectId) {
+        const remaining = (data?.projects ?? []).filter((p) => p.id !== id);
+        setActiveProjectId(remaining[0]?.id ?? null);
+      }
       setDeleteId(null);
       toast({
         title: locale === "ar" ? "تم حذف المشروع" : "Project deleted",
@@ -140,114 +146,154 @@ export function ProjectsList() {
             }
           >
             <div className="divide-y divide-border/40">
-              {projects.map((p) => (
-                <div key={p.id} className="relative group">
-                  <button
-                    onClick={() => {
-                      setActiveProjectId(p.id);
-                      setView("overview");
-                    }}
-                    className="w-full p-4 hover:bg-muted/40 transition-colors text-start"
+              {projects.map((p) => {
+                const selected = p.id === activeProjectId;
+                const compliancePct = formatPercent(p.complianceScore);
+                const agentPct = formatPercent(
+                  p.latestAgentRun?.overallProgress
+                );
+                return (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      "relative group",
+                      selected && "bg-primary/5"
+                    )}
                   >
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate">{p.title}</p>
-                        <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
-                          {p.etimadRef}
-                          {p.category ? ` · ${p.category}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "text-[10px]",
-                            STATUS_COLORS[p.status] ?? STATUS_COLORS.DRAFT
-                          )}
-                        >
-                          {p.status}
-                        </Badge>
-                        <ChevronRight className="size-3.5 text-muted-foreground" />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <FileText className="size-3" />
-                        {p._count?.documents ?? 0}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Bot className="size-3" />
-                        {p._count?.agentRuns ?? 0}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <FileCheck2 className="size-3" />
-                        {p._count?.proposals ?? 0}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <ShieldCheck className="size-3" />
-                        {p._count?.complianceChecks ?? 0}
-                      </span>
-                    </div>
-
-                    <div className="mt-2 flex items-center gap-3">
-                      <div className="flex-1 space-y-1">
-                        <div className="flex justify-between text-[10px] text-muted-foreground">
-                          <span>{ar ? "الامتثال" : "Compliance"}</span>
-                          <span className="font-mono font-semibold">
-                            {p.complianceScore}%
-                          </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveProjectId(p.id)}
+                      className="w-full p-4 hover:bg-muted/40 transition-colors text-start"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate flex items-center gap-1.5">
+                            {selected ? (
+                              <Check className="size-3.5 text-primary shrink-0" />
+                            ) : null}
+                            {p.title}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                            {p.etimadRef}
+                            {p.category ? ` · ${p.category}` : ""}
+                          </p>
                         </div>
-                        <Progress value={p.complianceScore} className="h-1" />
-                      </div>
-                      {p.latestAgentRun ? (
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
-                          <CircleDot
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Badge
+                            variant="outline"
                             className={cn(
-                              "size-2",
-                              p.latestAgentRun.status === "RUNNING"
-                                ? "text-chart-4 animate-pulse"
-                                : "text-emerald-500"
+                              "text-[10px]",
+                              STATUS_COLORS[p.status] ?? STATUS_COLORS.DRAFT
                             )}
-                          />
-                          <span className="font-mono">
-                            {p.latestAgentRun.overallProgress}%
-                          </span>
+                          >
+                            {p.status}
+                          </Badge>
+                          {selected ? (
+                            <Badge
+                              variant="secondary"
+                              className="text-[9px] uppercase"
+                            >
+                              {ar ? "نشط" : "Active"}
+                            </Badge>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </div>
+                      </div>
 
-                    {p.budget ? (
-                      <div className="mt-2 text-[10px] text-muted-foreground">
-                        <span className="font-mono font-semibold text-foreground">
-                          {p.currency} {Number(p.budget).toLocaleString()}
+                      <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <FileText className="size-3" />
+                          {p._count?.documents ?? 0}
                         </span>
-                        {p.submissionDeadline ? (
-                          <span className="ms-2">
-                            · {ar ? "آخر تقديم" : "Due"}:{" "}
-                            {new Date(p.submissionDeadline).toLocaleDateString(
-                              ar ? "ar-SA" : "en-US"
-                            )}
-                          </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Bot className="size-3" />
+                          {p._count?.agentRuns ?? 0}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <FileCheck2 className="size-3" />
+                          {p._count?.proposals ?? 0}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <ShieldCheck className="size-3" />
+                          {p._count?.complianceChecks ?? 0}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-3">
+                        <div className="flex-1 space-y-1">
+                          <div className="flex justify-between text-[10px] text-muted-foreground">
+                            <span>{ar ? "الامتثال" : "Compliance"}</span>
+                            <span className="font-mono font-semibold">
+                              {compliancePct}%
+                            </span>
+                          </div>
+                          <Progress
+                            value={Number(compliancePct)}
+                            className="h-1"
+                          />
+                        </div>
+                        {p.latestAgentRun ? (
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
+                            <CircleDot
+                              className={cn(
+                                "size-2",
+                                p.latestAgentRun.status === "RUNNING"
+                                  ? "text-chart-4 animate-pulse"
+                                  : "text-emerald-500"
+                              )}
+                            />
+                            <span className="font-mono">{agentPct}%</span>
+                          </div>
                         ) : null}
                       </div>
-                    ) : null}
-                  </button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="absolute top-3 end-3 size-7 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteId(p.id);
-                    }}
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
+
+                      {p.budget ? (
+                        <div className="mt-2 text-[10px] text-muted-foreground">
+                          <span className="font-mono font-semibold text-foreground">
+                            {p.currency} {Number(p.budget).toLocaleString()}
+                          </span>
+                          {p.submissionDeadline ? (
+                            <span className="ms-2">
+                              · {ar ? "آخر تقديم" : "Due"}:{" "}
+                              {new Date(
+                                p.submissionDeadline
+                              ).toLocaleDateString(ar ? "ar-SA" : "en-US")}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </button>
+                    <div className="absolute top-3 end-3 flex items-center gap-0.5">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 opacity-0 group-hover:opacity-100"
+                        title={ar ? "فتح لوحة المشروع" : "Open project board"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveProjectId(p.id);
+                          setView("overview");
+                        }}
+                      >
+                        <ChevronRight className="size-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteId(p.id);
+                        }}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </QueryState>
         </div>

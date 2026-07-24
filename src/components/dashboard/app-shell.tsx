@@ -11,10 +11,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { locale, dir } = useLocale();
   const { mobileNavOpen, setMobileNavOpen } = useUI();
+  useEnsureActiveProject();
 
   // Sync <html> lang + dir whenever locale changes
   useEffect(() => {

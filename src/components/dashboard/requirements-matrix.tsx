@@ -104,11 +104,16 @@ export function RequirementsMatrix() {
         icon={ClipboardList}
         title={ar ? "مصفوفة المتطلبات" : "Requirements matrix"}
       >
-        <p className="p-4 text-sm text-muted-foreground">
-          {ar
-            ? "اختر مشروعاً نشطاً لعرض المتطلبات المستخرجة."
-            : "Select an active project to view extracted requirements."}
-        </p>
+        <div className="p-4 space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {ar
+              ? "اختر مشروعاً نشطاً لعرض المتطلبات المستخرجة."
+              : "Select an active project to view extracted requirements."}
+          </p>
+          <Button size="sm" onClick={() => setView("projects")}>
+            {ar ? "اختيار مشروع" : "Choose a project"}
+          </Button>
+        </div>
       </Panel>
     );
   }

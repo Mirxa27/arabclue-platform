@@ -1,9 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useLocale, useUI } from "@/lib/store";
-import { apiJson } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -22,6 +20,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 
 type ProjectRow = {
   id: string;
@@ -35,18 +34,11 @@ type ProjectRow = {
  */
 export function TenderFlowBoard() {
   const { locale } = useLocale();
-  const { activeProjectId, setView, setActiveProjectId } = useUI();
+  const { setView, setActiveProjectId } = useUI();
+  const { projects, active, activeProjectId } = useEnsureActiveProject();
   const ar = locale === "ar";
   const [wizardOpen, setWizardOpen] = useState(false);
 
-  const { data } = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => apiJson<{ projects: ProjectRow[] }>("/api/projects"),
-  });
-
-  const projects = data?.projects ?? [];
-  const active =
-    projects.find((p) => p.id === activeProjectId) ?? projects[0] ?? null;
   const projectId = active?.id ?? null;
   const { data: projectMeta } = useProjectEtimadMeta(projectId);
   const steps = useMemo(() => {
@@ -124,7 +116,7 @@ export function TenderFlowBoard() {
               </h2>
             </div>
             <p className="text-xs text-muted-foreground mt-1 max-w-xl">
-              {active
+              {active && activeProjectId
                 ? ar
                   ? `المشروع النشط: ${active.title}`
                   : `Active project: ${active.title}`

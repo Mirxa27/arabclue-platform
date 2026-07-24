@@ -66,18 +66,30 @@ interface UIState {
   setTenderType: (t: string) => void;
 }
 
-export const useUI = create<UIState>((set) => ({
-  view: "overview",
-  activeProjectId: null,
-  sidebarCollapsed: false,
-  mobileNavOpen: false,
-  adminMode: false,
-  tenderType: "IT",
-  setView: (view) =>
-    set({ view, adminMode: view.startsWith("admin_"), mobileNavOpen: false }),
-  setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-  setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
-  setAdminMode: (adminMode) => set({ adminMode }),
-  setTenderType: (tenderType) => set({ tenderType }),
-}));
+export const useUI = create<UIState>()(
+  persist(
+    (set) => ({
+      view: "overview",
+      activeProjectId: null,
+      sidebarCollapsed: false,
+      mobileNavOpen: false,
+      adminMode: false,
+      tenderType: "IT",
+      setView: (view) =>
+        set({ view, adminMode: view.startsWith("admin_"), mobileNavOpen: false }),
+      setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
+      toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
+      setAdminMode: (adminMode) => set({ adminMode }),
+      setTenderType: (tenderType) => set({ tenderType }),
+    }),
+    {
+      name: "arabclue-ui",
+      partialize: (s) => ({
+        activeProjectId: s.activeProjectId,
+        tenderType: s.tenderType,
+        sidebarCollapsed: s.sidebarCollapsed,
+      }),
+    }
+  )
+);

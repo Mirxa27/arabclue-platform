@@ -24,6 +24,7 @@ import { DocumentPreviewFrame } from "./document-preview-frame";
 import { apiJson } from "@/lib/api-client";
 import type { ApiProposal, ApiProposalArtifact } from "@/lib/api-types";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
+import { formatPercent } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -200,7 +201,7 @@ export function ProposalsList() {
                             variant="outline"
                             className="text-[9px] font-mono tabular-nums"
                           >
-                            {p.complianceScore}%
+                            {formatPercent(p.complianceScore)}%
                           </Badge>
                         )}
                       </div>

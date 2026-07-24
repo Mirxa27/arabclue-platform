@@ -83,8 +83,9 @@ export async function runAgentPipeline(opts: {
 
   const persist = async (status: "RUNNING" | "COMPLETED" | "FAILED", errorMessage?: string) => {
     await assertNotCancelled();
-    const overall =
-      states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1);
+    const overall = Math.round(
+      states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1)
+    );
     await db.agentRun.update({
       where: { id: opts.runId },
       data: {
@@ -1080,7 +1081,9 @@ export async function runAgentPipeline(opts: {
       if (inner instanceof PipelineCancelledError) {
         return {
           agentStates: states,
-          overallProgress: states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1),
+          overallProgress: Math.round(
+            states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1)
+          ),
           status: "CANCELLED",
           errorMessage: "Cancelled by user",
         };

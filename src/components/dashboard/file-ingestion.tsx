@@ -25,6 +25,7 @@ import type { DocCategory } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
 import { ListSkeleton } from "./loading-skeletons";
 import { DocumentFileViewer } from "./document-file-viewer";
+import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 
 interface UploadedFile {
   id: string;
@@ -74,6 +75,7 @@ function formatBytes(bytes: number): string {
 export function FileIngestion() {
   const { locale } = useLocale();
   const { activeProjectId, setActiveProjectId, setView } = useUI();
+  const { projects, active } = useEnsureActiveProject();
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<DocCategory>("RFP");
@@ -250,22 +252,51 @@ export function FileIngestion() {
             </p>
           </div>
         </div>
-        <Badge variant="outline" className="bg-background text-[10px] font-mono">
-          {activeProjectId
-            ? `${locale === "ar" ? "مشروع" : "Project"} · ${activeProjectId.slice(0, 8)}`
+        <Badge variant="outline" className="bg-background text-[10px] max-w-[10rem] truncate">
+          {active
+            ? active.title
             : locale === "ar"
               ? "اختر مشروعاً"
               : "Select project"}
         </Badge>
       </div>
 
-      {!activeProjectId && (
-        <div className="mx-5 mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
-          {locale === "ar"
-            ? "يجب اختيار مشروع نشط قبل رفع الملفات."
-            : "Select an active project before uploading files."}
-        </div>
-      )}
+      <div className="mx-5 mt-4 space-y-2">
+        {projects.length > 0 ? (
+          <label className="block space-y-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {locale === "ar" ? "المشروع النشط للرفع" : "Active project for upload"}
+            </span>
+            <select
+              className="w-full h-9 rounded-md border border-border bg-background px-2.5 text-xs"
+              value={activeProjectId ?? ""}
+              onChange={(e) => setActiveProjectId(e.target.value || null)}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 flex items-center justify-between gap-2">
+            <span>
+              {locale === "ar"
+                ? "أنشئ مشروعاً أولاً قبل رفع الملفات."
+                : "Create a project before uploading files."}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px] shrink-0"
+              onClick={() => setView("projects")}
+            >
+              {locale === "ar" ? "المشاريع" : "Projects"}
+            </Button>
+          </div>
+        )}
+      </div>
 
       {docsError && (
         <div className="mx-5 mt-4 flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
