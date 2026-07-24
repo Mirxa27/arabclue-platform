@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import type { DocCategory } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
 import { ListSkeleton } from "./loading-skeletons";
+import { DocumentFileViewer } from "./document-file-viewer";
 
 interface UploadedFile {
   id: string;
@@ -76,6 +77,7 @@ export function FileIngestion() {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<DocCategory>("RFP");
+  const [previewDoc, setPreviewDoc] = useState<ApiDocument | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -117,9 +119,20 @@ export function FileIngestion() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? "upload failed");
       }
-      return res.json();
+      return res.json() as Promise<{ document: ApiDocument }>;
     },
   });
+
+  const openDocumentPreview = useCallback(
+    (document: ApiDocument) => {
+      if (document.storagePath) {
+        setPreviewDoc(document);
+        return;
+      }
+      setView("documents");
+    },
+    [setView]
+  );
 
   const handleFiles = useCallback(
     async (fileList: FileList | File[]) => {
@@ -169,7 +182,7 @@ export function FileIngestion() {
                     status: "done",
                     progress: 100,
                     documentId: result.document.id,
-                    summary: result.document.parsedSummary,
+                    summary: result.document.parsedSummary ?? undefined,
                     category,
                   }
                 : f
@@ -177,6 +190,9 @@ export function FileIngestion() {
           );
           if (result.document.projectId) {
             setActiveProjectId(result.document.projectId);
+          }
+          if (result.document.storagePath) {
+            setPreviewDoc(result.document);
           }
           qc.invalidateQueries({ queryKey: ["documents"] });
           qc.invalidateQueries({ queryKey: ["stats"] });
@@ -390,7 +406,7 @@ export function FileIngestion() {
               return (
                 <button
                   key={d.id}
-                  onClick={() => setView("documents")}
+                  onClick={() => openDocumentPreview(d)}
                   className="w-full flex items-center gap-2.5 p-1.5 rounded-md hover:bg-muted/50 transition-colors text-start"
                 >
                   <Icon className="size-3.5 text-muted-foreground shrink-0" />
@@ -404,6 +420,20 @@ export function FileIngestion() {
           </div>
         </div>
       )}
+
+      {previewDoc?.storagePath ? (
+        <DocumentFileViewer
+          open={!!previewDoc}
+          onOpenChange={(open) => {
+            if (!open) setPreviewDoc(null);
+          }}
+          locale={locale}
+          title={previewDoc.originalName}
+          storagePath={previewDoc.storagePath}
+          mimeType={previewDoc.mimeType}
+          fileName={previewDoc.originalName}
+        />
+      ) : null}
     </Card>
   );
 }
