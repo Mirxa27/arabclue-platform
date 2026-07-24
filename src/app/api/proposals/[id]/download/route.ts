@@ -288,20 +288,36 @@ export async function GET(
         }
         break;
       case "xlsx-matrix":
-        buffer = await generateComplianceMatrixXLSX(proposal.project, brand, checks);
+        buffer = await generateComplianceMatrixXLSX(
+          proposal.project,
+          brand,
+          checks,
+          companyLetterhead
+        );
         contentType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
         filename = "Compliance_Matrix.xlsx";
         break;
       case "xlsx-boq":
-        buffer = await generateBoQXLSX(proposal.project, brand, boqItems);
+        buffer = await generateBoQXLSX(
+          proposal.project,
+          brand,
+          boqItems,
+          companyLetterhead
+        );
         contentType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
         filename = "Financial_BoQ.xlsx";
         break;
       case "slides":
         buffer = Buffer.from(
-          generateSlidesHTML(proposal, proposal.project, brand, slidesMetrics),
+          generateSlidesHTML(
+            proposal,
+            proposal.project,
+            brand,
+            slidesMetrics,
+            companyLetterhead
+          ),
           "utf8"
         );
         contentType = "text/html; charset=utf-8";
@@ -312,7 +328,8 @@ export async function GET(
           proposal,
           proposal.project,
           brand,
-          slidesMetrics
+          slidesMetrics,
+          companyLetterhead
         );
         contentType =
           "application/vnd.openxmlformats-officedocument.presentationml.presentation";

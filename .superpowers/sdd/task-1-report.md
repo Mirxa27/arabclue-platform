@@ -1,3 +1,43 @@
+# Task 1 Report: Brand Excel / PPTX / slides / ZIP chrome
+
+## Status
+
+DONE
+
+## Implementation
+
+- Added `brandArgb(hex: string): string` in `src/lib/letterhead.ts`.
+- Added Office helpers for mappable font faces and RGB colors.
+- Updated Compliance Matrix XLSX and Financial BoQ XLSX to:
+  - set workbook creator to the resolved company/brand name,
+  - include the company/brand name in the title cell,
+  - use `BrandProfile.primaryColor` for title/header fills,
+  - stop discarding `brand`.
+- Updated slides HTML to:
+  - use the resolved company/brand name on the title slide and HTML title,
+  - use brand primary/accent colors,
+  - load and apply the resolved brand font stack.
+- Updated PPTX generation to:
+  - set author/title metadata from the resolved company/brand name,
+  - use the company/brand name on the title and closing slides,
+  - use brand primary/accent colors,
+  - apply a mappable brand font face.
+- Added `buildBidPackageReadme` and wired ZIP README generation to start with the client company name.
+- Passed `ProposalCompanyLetterhead` through ZIP generation and standalone download routes for XLSX, slides HTML, and PPTX.
+
+## Tests
+
+- Red check before implementation:
+  - `bun test src/lib/__tests__/generators-brand.test.ts` failed because `brandArgb` was missing.
+- Verification after implementation:
+  - `bun test src/lib/__tests__/generators-brand.test.ts` — 6 pass, 0 fail.
+  - `bun test src/lib/__tests__/generators-brand.test.ts src/lib/__tests__/core.test.ts src/lib/__tests__/production.test.ts` — 36 pass, 0 fail.
+  - `bun test src/lib/__tests__` — 219 pass, 0 fail.
+  - `bunx tsc --noEmit` — pass.
+
+## Concerns
+
+- No unresolved concerns.
 # Task 1 Report: QueryState consistency for docs/contracts/history
 
 **Status:** DONE  

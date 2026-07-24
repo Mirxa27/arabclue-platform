@@ -51,6 +51,19 @@ export function googleFontsHref(fontFamily?: string | null): string {
     .join("&")}&display=swap`;
 }
 
+export function brandArgb(hex: string): string {
+  return `FF${hex.replace(/^#/, "").toUpperCase()}`;
+}
+
+export function officeColor(hex?: string | null, fallback = "#1E3A8A"): string {
+  return (hex ?? fallback).replace(/^#/, "").toUpperCase();
+}
+
+export function resolveOfficeFontFace(fontFamily?: string | null): string {
+  const key = (fontFamily || "IBM Plex Sans Arabic").trim();
+  return FONT_STACKS[key] ? key : "Arial";
+}
+
 export function letterheadCompanyName(
   locale: "ar" | "en",
   brand: LetterheadBrand | null | undefined,

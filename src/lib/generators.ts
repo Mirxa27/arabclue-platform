@@ -5,11 +5,14 @@ import type { GeneratedProposal, TenderProject, BrandProfile } from "@prisma/cli
 import { LEGAL_DISCLAIMER } from "./procurement-rules";
 import { escapeHtml, markdownToHtml } from "./markdown";
 import {
+  brandArgb,
   googleFontsHref,
   letterheadBarHtml,
   letterheadCompanyName,
+  officeColor,
   pdfFooterTemplate,
   pdfHeaderTemplate,
+  resolveOfficeFontFace,
   resolveBrandFontStack,
 } from "./letterhead";
 
@@ -46,6 +49,13 @@ export type ProposalCompanyLetterhead = {
   crNumber?: string | null;
   vatNumber?: string | null;
 };
+
+function exportCompanyName(
+  brand: BrandProfile | null,
+  company?: ProposalCompanyLetterhead | null
+): string {
+  return letterheadCompanyName("en", brand, company);
+}
 
 function buildProposalHTML(
   proposal: GeneratedProposal,
@@ -287,10 +297,13 @@ export async function generateProposalPDF(
 export async function generateComplianceMatrixXLSX(
   project: TenderProject,
   brand: BrandProfile | null,
-  checks?: { framework: string; controlId: string; title: string; requirement: string; complianceLevel: string | null; status: string; evidence?: string | null }[]
+  checks?: { framework: string; controlId: string; title: string; requirement: string; complianceLevel: string | null; status: string; evidence?: string | null }[],
+  company?: ProposalCompanyLetterhead | null
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Arabclue";
+  const companyName = exportCompanyName(brand, company);
+  const primaryArgb = brandArgb(brand?.primaryColor ?? "#1E3A8A");
+  wb.creator = companyName;
   wb.created = new Date();
 
   const ws = wb.addWorksheet("Compliance Matrix", {
@@ -300,9 +313,9 @@ export async function generateComplianceMatrixXLSX(
 
   ws.mergeCells("A1:G1");
   const titleCell = ws.getCell("A1");
-  titleCell.value = `Arabclue Compliance Matrix — ${project.title}`;
+  titleCell.value = `${companyName} Compliance Matrix — ${project.title}`;
   titleCell.font = { size: 14, bold: true, color: { argb: "FFFFFFFF" } };
-  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: primaryArgb } };
   titleCell.alignment = { vertical: "middle", horizontal: "center" };
   ws.getRow(1).height = 30;
 
@@ -311,7 +324,7 @@ export async function generateComplianceMatrixXLSX(
     const cell = ws.getCell(2, i + 1);
     cell.value = h;
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: primaryArgb } };
     cell.alignment = { vertical: "middle", horizontal: "center" };
   });
 
@@ -364,7 +377,6 @@ export async function generateComplianceMatrixXLSX(
   ];
   ws.views = [{ state: "frozen", ySplit: 2 }];
 
-  void brand;
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }
@@ -378,18 +390,21 @@ export async function generateBoQXLSX(
     qty: number;
     unitPrice: number | null;
     total: number | null;
-  }[]
+  }[],
+  company?: ProposalCompanyLetterhead | null
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Arabclue";
+  const companyName = exportCompanyName(brand, company);
+  const primaryArgb = brandArgb(brand?.primaryColor ?? "#1E3A8A");
+  wb.creator = companyName;
   wb.created = new Date();
   const ws = wb.addWorksheet("Financial BoQ");
 
   ws.mergeCells("A1:F1");
   const tc = ws.getCell("A1");
-  tc.value = `Financial Bill of Quantities — ${project.title}`;
+  tc.value = `${companyName} Financial Bill of Quantities — ${project.title}`;
   tc.font = { size: 14, bold: true, color: { argb: "FFFFFFFF" } };
-  tc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+  tc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: primaryArgb } };
   tc.alignment = { vertical: "middle", horizontal: "center" };
   ws.getRow(1).height = 30;
 
@@ -405,7 +420,7 @@ export async function generateBoQXLSX(
     const cell = ws.getCell(2, i + 1);
     cell.value = h;
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: primaryArgb } };
   });
 
   // Structure-only defaults — never invent prices from budget
@@ -472,7 +487,6 @@ export async function generateBoQXLSX(
     { width: 14 },
   ];
 
-  void brand;
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }
@@ -492,10 +506,14 @@ export function generateSlidesHTML(
   proposal: GeneratedProposal,
   project: TenderProject,
   brand: BrandProfile | null,
-  metrics?: SlidesMetrics
+  metrics?: SlidesMetrics,
+  company?: ProposalCompanyLetterhead | null
 ): string {
   const primary = brand?.primaryColor ?? "#1E3A8A";
   const accent = brand?.accentColor ?? "#0EA5E9";
+  const fontStack = resolveBrandFontStack(brand?.fontFamily);
+  const fontsHref = googleFontsHref(brand?.fontFamily);
+  const companyName = exportCompanyName(brand, company);
   const tenderType = getTenderType(project.category);
   const qlr = metrics?.quickLiquidityRatio;
   const qlrOk = metrics?.qlrPasses;
@@ -518,8 +536,8 @@ export function generateSlidesHTML(
 
   const slides = [
     {
-      title: brand?.tagline ?? "Arabclue",
-      subtitle: "Technical & Financial Proposal",
+      title: companyName,
+      subtitle: brand?.tagline ?? "Technical & Financial Proposal",
       body: `${escapeHtml(project.title)}<br><span style="opacity:.7">Etimad Ref: ${escapeHtml(project.etimadRef ?? "N/A")} · ${escapeHtml(tenderType.name)}</span>`,
       bg: `linear-gradient(135deg, ${primary}, ${accent})`,
       light: true,
@@ -555,8 +573,8 @@ export function generateSlidesHTML(
     },
     {
       title: "Thank You",
-      subtitle: brand?.taglineAr ?? "شكراً لكم",
-      body: `<em>Generated by Arabclue · Compliance content is not legal advice</em>`,
+      subtitle: brand?.taglineAr ?? companyName,
+      body: `<em>${escapeHtml(companyName)} · Generated with Arabclue · Compliance content is not legal advice</em>`,
       bg: `linear-gradient(135deg, ${primary}, ${accent})`,
       light: true,
     },
@@ -577,10 +595,12 @@ export function generateSlidesHTML(
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<title>${project.title} — Slides</title>
+<title>${escapeHtml(companyName)} — ${escapeHtml(project.title)} — Slides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="${fontsHref}" rel="stylesheet">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Segoe UI', 'IBM Plex Sans Arabic', sans-serif; background:#1e293b; }
+  body { font-family: ${fontStack}; background:#1e293b; }
   .slide {
     width:1280px; height:720px; margin:20px auto; border-radius:16px;
     display:flex; align-items:center; justify-content:center;
@@ -602,18 +622,21 @@ export async function generateProposalPPTX(
   proposal: GeneratedProposal,
   project: TenderProject,
   brand: BrandProfile | null,
-  metrics?: SlidesMetrics
+  metrics?: SlidesMetrics,
+  company?: ProposalCompanyLetterhead | null
 ): Promise<Buffer> {
   const PptxGenJS = (await import("pptxgenjs")).default;
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "LAYOUT_WIDE", width: 13.333, height: 7.5 });
   pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "Arabclue";
-  pptx.title = project.title;
+  const companyName = exportCompanyName(brand, company);
+  const fontFace = resolveOfficeFontFace(brand?.fontFamily);
+  pptx.author = companyName;
+  pptx.title = `${companyName} — ${project.title}`;
   pptx.subject = "Technical & Financial Proposal — Etimad";
 
-  const primary = (brand?.primaryColor ?? "#1E3A8A").replace("#", "");
-  const accent = (brand?.accentColor ?? "#0EA5E9").replace("#", "");
+  const primary = officeColor(brand?.primaryColor, "#1E3A8A");
+  const accent = officeColor(brand?.accentColor, "#0EA5E9");
   const tenderType = getTenderType(project.category);
   const qlr = metrics?.quickLiquidityRatio;
   const qlrOk = metrics?.qlrPasses;
@@ -650,14 +673,14 @@ export async function generateProposalPPTX(
       h: 1.3,
       fill: { color: accent },
     });
-    s.addText(brand?.tagline ?? "Arabclue", {
+    s.addText(companyName, {
       x: 0.8,
       y: 2.2,
       w: 11.5,
       h: 0.6,
       fontSize: 18,
       color: "FFFFFF",
-      fontFace: "Arial",
+      fontFace,
     });
     s.addText(project.title, {
       x: 0.8,
@@ -667,7 +690,7 @@ export async function generateProposalPPTX(
       fontSize: 32,
       bold: true,
       color: "FFFFFF",
-      fontFace: "Arial",
+      fontFace,
     });
     s.addText(
       `Technical & Financial Proposal · Etimad ${project.etimadRef ?? "N/A"} · ${tenderType.name}`,
@@ -678,17 +701,17 @@ export async function generateProposalPPTX(
         h: 0.5,
         fontSize: 14,
         color: "E2E8F0",
-        fontFace: "Arial",
+        fontFace,
       }
     );
-    s.addText(brand?.taglineAr ?? "أراب كلاو · رؤية 2030", {
+    s.addText(brand?.taglineAr ?? companyName, {
       x: 0.8,
       y: 6.5,
       w: 11.5,
       h: 0.4,
       fontSize: 14,
       color: "FFFFFF",
-      fontFace: "Arial",
+      fontFace,
     });
   }
 
@@ -702,7 +725,7 @@ export async function generateProposalPPTX(
       fontSize: 26,
       bold: true,
       color: primary,
-      fontFace: "Arial",
+      fontFace,
     });
     s.addText(
       `Vision 2030 alignment when supportable. Compliance score ${score}%. Local Content preference: ${lcLabel}. ${LEGAL_DISCLAIMER}\n\nEvaluation weights and SLA penalties are taken from the tender extract — statutory candidates are listed separately for legal review.`,
@@ -713,7 +736,7 @@ export async function generateProposalPPTX(
         h: 4.5,
         fontSize: 16,
         color: "0F172A",
-        fontFace: "Arial",
+        fontFace,
       }
     );
   }
@@ -728,7 +751,7 @@ export async function generateProposalPPTX(
       fontSize: 26,
       bold: true,
       color: primary,
-      fontFace: "Arial",
+      fontFace,
     });
     s.addText(
       EXECUTION_METHODOLOGY.map((m) => ({
@@ -742,7 +765,7 @@ export async function generateProposalPPTX(
         h: 5,
         fontSize: 16,
         color: "0F172A",
-        fontFace: "Arial",
+        fontFace,
         paraSpaceAfter: 8,
       }
     );
@@ -758,7 +781,7 @@ export async function generateProposalPPTX(
       fontSize: 26,
       bold: true,
       color: primary,
-      fontFace: "Arial",
+      fontFace,
     });
     s.addText(
       COMPLIANCE_FRAMEWORKS.filter((f) =>
@@ -774,7 +797,7 @@ export async function generateProposalPPTX(
         h: 5,
         fontSize: 15,
         color: "0F172A",
-        fontFace: "Arial",
+        fontFace,
         paraSpaceAfter: 8,
       }
     );
@@ -790,7 +813,7 @@ export async function generateProposalPPTX(
       fontSize: 26,
       bold: true,
       color: primary,
-      fontFace: "Arial",
+      fontFace,
     });
     s.addText(
       [
@@ -809,7 +832,7 @@ export async function generateProposalPPTX(
         h: 4,
         fontSize: 16,
         color: "0F172A",
-        fontFace: "Arial",
+        fontFace,
         paraSpaceAfter: 10,
       }
     );
@@ -832,11 +855,11 @@ export async function generateProposalPPTX(
       fontSize: 36,
       bold: true,
       color: "FFFFFF",
-      fontFace: "Arial",
+      fontFace,
       align: "center",
     });
     s.addText(
-      "Generated by Arabclue · Compliance content is not legal advice · Vision 2030 when supportable",
+      `${companyName} · Generated with Arabclue · Compliance content is not legal advice · Vision 2030 when supportable`,
       {
         x: 0.8,
         y: 4,
@@ -844,7 +867,7 @@ export async function generateProposalPPTX(
         h: 0.5,
         fontSize: 14,
         color: "E2E8F0",
-        fontFace: "Arial",
+        fontFace,
         align: "center",
       }
     );
@@ -855,6 +878,42 @@ export async function generateProposalPPTX(
 }
 
 // ─── ZIP packaging ───────────────────────────────────────────────────────────
+
+export function buildBidPackageReadme(opts: {
+  companyName: string;
+  project: TenderProject;
+  proposal: GeneratedProposal;
+  tenderType: Pick<ReturnType<typeof getTenderType>, "name" | "nameAr">;
+  validationStatus: string;
+  approvalStatus: string;
+}): string {
+  return `${opts.companyName} Bid Package
+====================
+Project: ${opts.project.title}
+Etimad Ref: ${opts.project.etimadRef ?? "N/A"}
+Tender Type: ${opts.tenderType.name} / ${opts.tenderType.nameAr}
+Budget: ${opts.project.currency} ${(opts.project.budget ?? 0).toLocaleString()}
+Generated: ${new Date().toISOString()}
+Compliance Score: ${opts.proposal.complianceScore ?? 100}%
+Validation: ${opts.validationStatus}
+Approval: ${opts.approvalStatus}
+
+Contents:
+1. Technical_Proposal.pdf
+2. Technical_Proposal_Slides.pptx
+3. Technical_Proposal_Slides.html
+4. Compliance_Matrix.xlsx
+5. Financial_BoQ.xlsx              — structure only; client enters prices
+6. Proposal_Content.md
+7. Export_Manifest.json           — hashes, versions, validation
+8. Validation_Report.json
+9. Traceability_Report.json
+
+${opts.companyName} is final author of record.
+ArabClue is assisted drafting; compliance content is not legal advice.
+Generated with Arabclue
+`;
+}
 
 export async function generateBidPackageZIP(
   proposal: GeneratedProposal,
@@ -870,6 +929,7 @@ export async function generateBidPackageZIP(
 ): Promise<Buffer> {
   const zip = new JSZip();
   const tenderType = getTenderType(project.category);
+  const companyName = exportCompanyName(brand, opts?.company);
   const {
     buildExportManifest,
     manifestToJson,
@@ -890,17 +950,29 @@ export async function generateBidPackageZIP(
     proposal,
     project,
     brand,
-    opts?.slidesMetrics
+    opts?.slidesMetrics,
+    opts?.company
   );
   zip.file("Technical_Proposal_Slides.pptx", pptxBuf);
 
-  const slides = generateSlidesHTML(proposal, project, brand, opts?.slidesMetrics);
+  const slides = generateSlidesHTML(
+    proposal,
+    project,
+    brand,
+    opts?.slidesMetrics,
+    opts?.company
+  );
   zip.file("Technical_Proposal_Slides.html", Buffer.from(slides, "utf8"));
 
-  const matrix = await generateComplianceMatrixXLSX(project, brand, opts?.checks);
+  const matrix = await generateComplianceMatrixXLSX(
+    project,
+    brand,
+    opts?.checks,
+    opts?.company
+  );
   zip.file("Compliance_Matrix.xlsx", matrix);
 
-  const boq = await generateBoQXLSX(project, brand, opts?.boqItems);
+  const boq = await generateBoQXLSX(project, brand, opts?.boqItems, opts?.company);
   zip.file("Financial_BoQ.xlsx", boq);
 
   const contentMd = proposal.contentMd ?? "";
@@ -992,32 +1064,14 @@ export async function generateBidPackageZIP(
     )
   );
 
-  const readme = `Arabclue Bid Package
-====================
-Project: ${project.title}
-Etimad Ref: ${project.etimadRef ?? "N/A"}
-Tender Type: ${tenderType.name} / ${tenderType.nameAr}
-Budget: ${project.currency} ${(project.budget ?? 0).toLocaleString()}
-Generated: ${new Date().toISOString()}
-Compliance Score: ${proposal.complianceScore ?? 100}%
-Validation: ${manifest.validation.status}
-Approval: ${manifest.proposal.approvalStatus}
-
-Contents:
-1. Technical_Proposal.pdf
-2. Technical_Proposal_Slides.pptx
-3. Technical_Proposal_Slides.html
-4. Compliance_Matrix.xlsx
-5. Financial_BoQ.xlsx              — structure only; client enters prices
-6. Proposal_Content.md
-7. Export_Manifest.json           — hashes, versions, validation
-8. Validation_Report.json
-9. Traceability_Report.json
-
-ArabClue is assisted drafting — the user remains final author of record.
-Compliance content is not legal advice.
-Generated by Arabclue
-`;
+  const readme = buildBidPackageReadme({
+    companyName,
+    project,
+    proposal,
+    tenderType,
+    validationStatus: manifest.validation.status,
+    approvalStatus: manifest.proposal.approvalStatus,
+  });
   zip.file("README.txt", readme);
 
   const buf = await zip.generateAsync({
