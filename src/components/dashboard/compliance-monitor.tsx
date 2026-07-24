@@ -20,12 +20,14 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { COMPLIANCE_FRAMEWORKS } from "@/lib/constants";
 import { ListSkeleton } from "./loading-skeletons";
+import { EmptyState, ErrorState } from "@/components/patterns";
 import type { ApiComplianceCheck } from "@/lib/api-types";
-
+import { ArrowRight, Upload } from "lucide-react";
 const FW_ICONS: Record<string, LucideIcon> = {
   NCA_ECC1: ShieldCheck,
   NCA_CCC1: Cloud,
@@ -62,9 +64,9 @@ type ComplianceResponse = {
 
 export function ComplianceMonitor() {
   const { locale } = useLocale();
-  const { activeProjectId } = useUI();
+  const { activeProjectId, setView } = useUI();
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["compliance", activeProjectId],
     queryFn: async () => {
       const url = activeProjectId
@@ -82,7 +84,15 @@ export function ComplianceMonitor() {
   const total = summary?.total ?? 0;
   const compliant = summary?.compliant ?? 0;
   const pct = total > 0 ? Math.round((compliant / total) * 100) : 0;
-
+  const openActions = Object.values(grouped)
+    .flat()
+    .filter(
+      (c) =>
+        c.status === "NON_COMPLIANT" ||
+        c.status === "PARTIAL" ||
+        c.status === "PENDING"
+    )
+    .slice(0, 6);
   return (
     <Card className="p-0 overflow-hidden border-border/60">
       {/* Header */}
@@ -158,14 +168,90 @@ export function ComplianceMonitor() {
         </div>
       </div>
 
+      {/* Remediation next actions */}
+      {!isLoading && !isError && openActions.length > 0 ? (
+        <div className="px-5 pb-3 space-y-2 border-b border-border/40">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold">
+              {locale === "ar" ? "إجراءات التصحيح" : "Remediation actions"}
+            </h4>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px] gap-1"
+              onClick={() => setView("account")}
+            >
+              <Upload className="size-3" />
+              {locale === "ar" ? "رفع أدلة الحساب" : "Upload account evidence"}
+            </Button>
+          </div>
+          <ul className="space-y-1.5">
+            {openActions.map((c) => (
+              <li
+                key={c.id}
+                className="flex items-start gap-2 rounded-md border border-border/50 bg-background/60 px-2.5 py-2 text-[11px]"
+              >
+                <StatusDot status={c.status} />
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium truncate">{c.title}</div>
+                  <div className="text-muted-foreground font-mono text-[10px]">
+                    {c.controlId} · {c.status}
+                  </div>
+                  <p className="text-muted-foreground mt-0.5">
+                    {locale === "ar"
+                      ? "اربط شهادة أو سياسة أو إثبات محتوى محلي من إعداد الحساب، ثم أعد تشغيل وكيل الامتثال."
+                      : "Attach a certificate, policy, or local-content proof from Account, then re-run the compliance agent."}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 shrink-0 text-[11px] gap-1"
+                  onClick={() => setView("agents")}
+                >
+                  {locale === "ar" ? "وكلاء" : "Agents"}
+                  <ArrowRight className="size-3" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/* Framework breakdown */}
       <div className="px-5 pb-4 space-y-2 max-h-[22rem] overflow-y-auto scrollbar-thin">
         {isLoading ? (
           <ListSkeleton rows={3} className="px-0" />
         ) : isError ? (
-          <p className="text-xs text-destructive py-4 text-center">
-            {locale === "ar" ? "تعذر تحميل الامتثال" : "Failed to load compliance"}
-          </p>
+          <ErrorState
+            message={
+              locale === "ar"
+                ? "تعذر تحميل الامتثال"
+                : "Failed to load compliance"
+            }
+            onRetry={() => refetch()}
+            retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+          />
+        ) : total === 0 ? (
+          <EmptyState
+            icon={ShieldCheck}
+            title={
+              locale === "ar"
+                ? "لا ضوابط بعد لهذا المشروع"
+                : "No controls for this project yet"
+            }
+            description={
+              locale === "ar"
+                ? "اختر مشروعاً وشغّل وكيل الامتثال لبناء مصفوفة الضوابط."
+                : "Select a project and run the compliance agent to build the control matrix."
+            }
+            action={
+              <Button size="sm" onClick={() => setView("agents")}>
+                {locale === "ar" ? "تشغيل الوكلاء" : "Run agents"}
+              </Button>
+            }
+            className="py-6"
+          />
         ) : (
           COMPLIANCE_FRAMEWORKS.map((fw) => {
             const checks = grouped[fw.id] ?? [];

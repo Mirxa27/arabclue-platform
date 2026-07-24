@@ -55,11 +55,13 @@ interface UIState {
   view: DashboardView;
   activeProjectId: string | null;
   sidebarCollapsed: boolean;
+  mobileNavOpen: boolean;
   adminMode: boolean;
   tenderType: string;
   setView: (v: DashboardView) => void;
   setActiveProjectId: (id: string | null) => void;
   toggleSidebar: () => void;
+  setMobileNavOpen: (open: boolean) => void;
   setAdminMode: (v: boolean) => void;
   setTenderType: (t: string) => void;
 }
@@ -68,11 +70,14 @@ export const useUI = create<UIState>((set) => ({
   view: "overview",
   activeProjectId: null,
   sidebarCollapsed: false,
+  mobileNavOpen: false,
   adminMode: false,
   tenderType: "IT",
-  setView: (view) => set({ view, adminMode: view.startsWith("admin_") }),
+  setView: (view) =>
+    set({ view, adminMode: view.startsWith("admin_"), mobileNavOpen: false }),
   setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
   setAdminMode: (adminMode) => set({ adminMode }),
   setTenderType: (tenderType) => set({ tenderType }),
 }));

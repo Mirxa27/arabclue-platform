@@ -56,7 +56,7 @@ export function MissionControlShell({
 
   return (
     <div
-      className="flex h-[calc(100vh-7.5rem)] min-h-[560px] flex-col gap-0 overflow-hidden rounded-2xl border border-border/70 bg-[linear-gradient(165deg,rgba(15,118,110,0.06),transparent_42%),linear-gradient(345deg,rgba(15,23,42,0.03),transparent_50%)]"
+      className="flex h-[calc(100dvh-7.5rem)] min-h-[420px] sm:min-h-[520px] md:min-h-[560px] flex-col gap-0 overflow-hidden rounded-2xl border border-border/70 bg-[linear-gradient(165deg,rgba(15,118,110,0.06),transparent_42%),linear-gradient(345deg,rgba(15,23,42,0.03),transparent_50%)]"
       dir={ar ? "rtl" : "ltr"}
     >
       <header className="shrink-0 border-b border-border/60 px-4 py-3 sm:px-5">

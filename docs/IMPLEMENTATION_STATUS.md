@@ -1,37 +1,36 @@
 # Implementation Status
 
-**Branch:** `cursor/saudi-qualification-accuracy-ab64`
-**Verified:** 2026-07-23
+**Branch:** `cursor/product-gaps-ux-ab64`
+**Verified:** 2026-07-24
 
 ## Quality gates (executed)
 
 | Gate | Command | Result |
 | --- | --- | --- |
 | Unit tests | `bun test src/lib/__tests__` | **see latest gate** |
-| Typecheck | `bunx tsc --noEmit` | **pass** |
-| Lint | `bun run lint` | **0 errors** (existing warnings) |
-| Build | `bun run build` | **pass** (client/server import split for onboarding steps) |
+| Typecheck | `bunx tsc --noEmit` | **see latest gate** |
+| Lint | `bun run lint` | **see latest gate** |
+| Build | `bun run build` | **see latest gate** |
 
-## Latest closures
+## Latest closures (product gaps UX)
 
 | Gap | Status | Evidence |
 | --- | --- | --- |
-| Client import build break | Closed | `onboarding-steps.ts` client-safe; Production healthy on `b382ba6` |
-| Blanket saudization/local-content defaults | Closed | Project/tools/wizard use null / blank unless tender-stated |
-| PDPL + marketing accuracy | Closed | PDPL-14 no absolute 100% residency; ZATCA trust chip = CR & VAT fields |
-| Saudi qualification dossier | Closed | `qualification.ts` + Account Setup advisory + submit checklist advisory |
-| Compliance seed refresh | Closed | `seedComplianceChecks` backfills missing controls and refreshes catalog text |
-| Parallel research | Closed | `docs/research/saudi-procurement-contracts-2026.{md,json}` |
+| App Router route states | Closed | `not-found` / `error` / `global-error` / app `loading`+`error` |
+| Mobile shell | Closed | Sheet drawer nav + topbar menu; sidebar hidden `<md` |
+| Proposal export readiness UX | Closed | Checklist, gated ZIP/PDF, load error, empty BoQ |
+| Requirements evidence link | Closed | CERTIFICATE / STAFF / LIBRARY selectors in matrix |
+| Compliance remediation | Closed | Next-action list + Account/Agents CTAs |
+| Etimad manual cockpit | Closed | Deadline + bond/envelope checklist on overview |
+| Mission Control mobile height | Closed | Responsive `min-h` + `100dvh` |
+| Gap register | Closed | `docs/product-gaps-2026-07-24.md` |
 
-## Previously completed
+## Still open (see product-gaps doc)
 
-Contract studio/review, Mission Control import fidelity, autopilot enrichment, OCR/RAG/PDF/tender flow, Redis rate limit, webhooks, NORA export gate, multi-engine AI providers — see git history.
+Agent ops center, reviews error/redline timeline, contract obligation register, Mission speech/`alert` polish, onboarding CRUD polish, billing failed-payment (needs merchant credentials), persisted notification read-state, live KPI trends.
 
-## Deferred / external only
+## Explicitly out of scope
 
-- Live MyFatoorah sandbox charge requires merchant credentials
-- External malware scanner credentials
-- Full browser E2E in CI image
-- Google/Microsoft OAuth app linking (paste/upload path is production-complete)
-- Etimad portal submission API (explicitly out of scope)
-- SSO/OIDC (explicitly out of scope per PRD)
+- Etimad portal submission API
+- SSO / OIDC
+- Live MyFatoorah without merchant credentials

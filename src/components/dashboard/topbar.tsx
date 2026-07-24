@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Command,
   LogOut,
+  Menu,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,7 @@ import type { ApiDocument, ApiProject, ApiNotification } from "@/lib/api-types";
 export function DashboardTopbar() {
   const { locale, toggle } = useLocale();
   const { theme, resolvedTheme, setTheme } = useTheme();
-  const { setView } = useUI();
+  const { setView, setMobileNavOpen } = useUI();
   const { data: session } = useSession();
   const searchRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
@@ -132,8 +133,18 @@ export function DashboardTopbar() {
   const notifications = (notifData?.items ?? []) as ApiNotification[];
 
   return (
-    <header className="h-16 shrink-0 border-b border-border bg-card/80 glass backdrop-blur-xl flex items-center gap-3 px-4 lg:px-6 z-30">
-      <div className="relative flex-1 max-w-md">
+    <header className="h-14 sm:h-16 shrink-0 border-b border-border bg-card/80 glass backdrop-blur-xl flex items-center gap-2 sm:gap-3 px-3 sm:px-4 lg:px-6 z-30">
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className="md:hidden h-10 w-10 shrink-0"
+        onClick={() => setMobileNavOpen(true)}
+        aria-label={locale === "ar" ? "فتح القائمة" : "Open menu"}
+      >
+        <Menu className="size-4" />
+      </Button>
+      <div className="relative flex-1 max-w-md min-w-0">
         <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
         <Input
           ref={searchRef}

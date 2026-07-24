@@ -18,6 +18,7 @@ import {
   GitFork,
   Download,
   FileText,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,10 @@ import { cn } from "@/lib/utils";
 import { DocumentPreviewFrame } from "./document-preview-frame";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import type { ArtifactDownloadFormat } from "@/lib/download-artifact";
+import {
+  ExportReadinessChecklist,
+  ErrorState,
+} from "@/components/patterns";
 
 type StudioMode =
   | "edit"
@@ -95,7 +100,7 @@ export function ProposalEditorDialog({
   const [compareB, setCompareB] = useState<string>("");
   const [diffLines, setDiffLines] = useState<string[]>([]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["proposal", proposalId],
     enabled: open && !!proposalId,
     queryFn: async () => {
@@ -104,7 +109,6 @@ export function ProposalEditorDialog({
       return res.json();
     },
   });
-
   const { data: finData } = useQuery({
     queryKey: ["proposal-financial", proposalId],
     enabled: open && !!proposalId,
@@ -361,6 +365,14 @@ export function ProposalEditorDialog({
   const exportMutation = useMutation({
     mutationFn: async (format: ArtifactDownloadFormat) => {
       if (!proposalId) throw new Error("Missing proposal");
+      if (!validationData?.exportReady) {
+        throw new Error(
+          validationData?.exportBlocker?.error ??
+            (locale === "ar"
+              ? "العرض غير جاهز للتصدير"
+              : "Proposal is not export-ready")
+        );
+      }
       const ok = await download({
         proposalId,
         format,
@@ -380,8 +392,10 @@ export function ProposalEditorDialog({
       qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
       refetchValidation();
     },
-    onError: () => {
+    onError: (err: Error) => {
       refetchValidation();
+      setMode("validation");
+      toast({ title: err.message, variant: "destructive" });
     },
   });
 
@@ -391,6 +405,7 @@ export function ProposalEditorDialog({
   const showPreview = mode === "preview" || mode === "split";
   const showPrint = mode === "print";
   const issues = validationData?.validation?.issues ?? [];
+  const exportBlocked = validationData != null && !validationData.exportReady;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -423,10 +438,27 @@ export function ProposalEditorDialog({
             <Loader2 className="size-4 animate-spin" />
             {tr("loading", locale)}
           </div>
+        ) : isError ? (
+          <ErrorState
+            message={
+              locale === "ar"
+                ? "تعذر تحميل العرض"
+                : "Failed to load proposal"
+            }
+            onRetry={() => refetch()}
+            retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+          />
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <div className="flex rounded-md border p-0.5 flex-wrap">
+            <ExportReadinessChecklist
+              locale={locale}
+              exportReady={validationData?.exportReady}
+              exportBlocker={validationData?.exportBlocker}
+              issues={issues}
+              onOpenValidation={() => setMode("validation")}
+              className="shrink-0"
+            />
+            <div className="flex flex-wrap items-center gap-2 shrink-0">              <div className="flex rounded-md border p-0.5 flex-wrap">
                 {(
                   [
                     ["edit", Pencil, tr("action_edit", locale)],
@@ -547,8 +579,19 @@ export function ProposalEditorDialog({
               </Button>
               <Button
                 size="sm"
+                variant="outline"
                 className="h-7 text-[11px] gap-1"
-                disabled={exportMutation.isPending || downloadBusy}
+                disabled={
+                  exportMutation.isPending || downloadBusy || exportBlocked
+                }
+                title={
+                  exportBlocked
+                    ? validationData?.exportBlocker?.error ??
+                      (locale === "ar"
+                        ? "أكمل التحقق أولاً"
+                        : "Complete validation first")
+                    : undefined
+                }
                 onClick={() => exportMutation.mutate("zip")}
               >
                 {busyFormat === "zip" ? (
@@ -562,7 +605,17 @@ export function ProposalEditorDialog({
                 size="sm"
                 variant="outline"
                 className="h-7 text-[11px] gap-1"
-                disabled={exportMutation.isPending || downloadBusy}
+                disabled={
+                  exportMutation.isPending || downloadBusy || exportBlocked
+                }
+                title={
+                  exportBlocked
+                    ? validationData?.exportBlocker?.error ??
+                      (locale === "ar"
+                        ? "أكمل التحقق أولاً"
+                        : "Complete validation first")
+                    : undefined
+                }
                 onClick={() => exportMutation.mutate("pdf")}
               >
                 {busyFormat === "pdf" ? (
@@ -573,7 +626,6 @@ export function ProposalEditorDialog({
                 PDF
               </Button>
             </div>
-
             <div className="flex flex-wrap gap-2 shrink-0">
               <Input
                 className="h-8 text-xs flex-1 min-w-[200px]"
@@ -614,6 +666,40 @@ export function ProposalEditorDialog({
                     ? "أدخل الأسعار يدوياً فقط. أراب كلاو لا يقترح أو يحسب أسعار العطاء."
                     : "Enter prices yourself. ArabClue never suggests or calculates bid prices."}
                 </p>
+                {boqRows.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border/70 p-8 text-center space-y-3">
+                    <p className="text-sm font-medium">
+                      {locale === "ar"
+                        ? "لا توجد بنود جدول كميات بعد"
+                        : "No BoQ line items yet"}
+                    </p>
+                    <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                      {locale === "ar"
+                        ? "أضف بنوداً من كراسة الشروط، ثم أدخل الكميات والأسعار يدوياً قبل التصدير."
+                        : "Add lines from the tender schedule, then enter quantities and unit prices before export."}
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="gap-1"
+                      onClick={() =>
+                        setBoqRows([
+                          {
+                            item: "",
+                            unit: "LS",
+                            qty: 1,
+                            unitPrice: null,
+                            total: null,
+                          },
+                        ])
+                      }
+                    >
+                      <Plus className="size-3.5" />
+                      {locale === "ar" ? "إضافة بند" : "Add line item"}
+                    </Button>
+                  </div>
+                ) : (
+                  <>
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b text-muted-foreground">
@@ -702,6 +788,26 @@ export function ProposalEditorDialog({
                     ))}
                   </tbody>
                 </table>
+                <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setBoqRows([
+                      ...boqRows,
+                      {
+                        item: "",
+                        unit: "LS",
+                        qty: 1,
+                        unitPrice: null,
+                        total: null,
+                      },
+                    ])
+                  }
+                >
+                  <Plus className="size-3 me-1" />
+                  {locale === "ar" ? "بند" : "Line"}
+                </Button>
                 <Button
                   size="sm"
                   onClick={() => saveFinancialMutation.mutate()}
@@ -716,9 +822,11 @@ export function ProposalEditorDialog({
                   )}
                   {locale === "ar" ? "حفظ الأسعار" : "Save prices"}
                 </Button>
+                </div>
+                  </>
+                )}
               </div>
-            ) : mode === "versions" ? (
-              <div className="flex-1 min-h-0 overflow-y-auto space-y-3 text-xs">
+            ) : mode === "versions" ? (              <div className="flex-1 min-h-0 overflow-y-auto space-y-3 text-xs">
                 <ul className="space-y-2">
                   {versions.map((v) => (
                     <li

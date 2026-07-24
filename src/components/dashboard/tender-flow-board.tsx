@@ -9,6 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { TenderSetupWizard } from "./tender-setup-wizard";
 import {
+  EtimadWorkflowCockpit,
+  useProjectEtimadMeta,
+} from "./etimad-workflow-cockpit";
+import {
   Bot,
   CheckCircle2,
   Circle,
@@ -43,7 +47,8 @@ export function TenderFlowBoard() {
   const projects = data?.projects ?? [];
   const active =
     projects.find((p) => p.id === activeProjectId) ?? projects[0] ?? null;
-
+  const projectId = active?.id ?? null;
+  const { data: projectMeta } = useProjectEtimadMeta(projectId);
   const steps = useMemo(() => {
     const docs = active?._count?.documents ?? 0;
     const runs = active?._count?.agentRuns ?? 0;
@@ -182,6 +187,15 @@ export function TenderFlowBoard() {
           })}
         </ol>
       </Card>
+
+      {projectId ? (
+        <EtimadWorkflowCockpit
+          projectId={projectId}
+          locale={locale}
+          deadline={projectMeta?.project?.submissionDeadline}
+          etimadRef={projectMeta?.project?.etimadRef}
+        />
+      ) : null}
 
       <TenderSetupWizard open={wizardOpen} onOpenChange={setWizardOpen} />
     </>

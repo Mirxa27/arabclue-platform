@@ -175,6 +175,26 @@ export function ProposalsList() {
                           <CheckCircle2 className="size-2.5" />
                           {tr(`status_${p.status}`, locale)}
                         </Badge>
+                        {p.status === "APPROVED" || p.status === "EXPORTED" ? (
+                          <Badge className="text-[9px] bg-emerald-600">
+                            {locale === "ar" ? "جاهز" : "Export-ready"}
+                          </Badge>
+                        ) : p.status === "IN_REVIEW" ||
+                          p.status === "REVIEW" ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] text-amber-700 border-amber-500/30"
+                          >
+                            {locale === "ar" ? "مراجعة" : "In review"}
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] text-muted-foreground"
+                          >
+                            {locale === "ar" ? "مسودة" : "Not ready"}
+                          </Badge>
+                        )}
                         {p.complianceScore != null && (
                           <Badge
                             variant="outline"

@@ -196,7 +196,9 @@ function OverviewView() {
         locale={locale}
       />
       <OnboardingBanner />
-      <TenderFlowBoard />
+      <div className="space-y-4">
+        <TenderFlowBoard />
+      </div>
       <StatCards />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <FileIngestion />

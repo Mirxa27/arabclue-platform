@@ -60,12 +60,18 @@ const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboar
   { view: "admin_audit", key: "nav_admin_audit", icon: ScrollText },
 ];
 
-export function DashboardSidebar() {
+export function DashboardSidebar({
+  variant = "desktop",
+}: {
+  variant?: "desktop" | "drawer";
+}) {
   const { locale } = useLocale();
   const { view, setView, sidebarCollapsed, toggleSidebar } = useUI();
   const { data: session } = useSession();
   const isAdmin =
     session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
+  const collapsed = variant === "drawer" ? false : sidebarCollapsed;
+  const isDrawer = variant === "drawer";
 
   const { data } = useQuery({
     queryKey: ["workspace"],
@@ -84,13 +90,13 @@ export function DashboardSidebar() {
       dir={locale === "ar" ? "rtl" : "ltr"}
       className={cn(
         "relative shrink-0 bg-sidebar text-sidebar-foreground flex flex-col border-e border-sidebar-border transition-[width] duration-300",
-        sidebarCollapsed ? "w-[68px]" : "w-64"
+        isDrawer ? "h-full w-full border-e-0" : collapsed ? "w-[68px]" : "w-64"
       )}
     >
       {/* Brand */}
       <div className="h-16 flex items-center gap-3 px-4 border-b border-sidebar-border shrink-0">
         <ArabclueLogo className="size-9 rounded-lg shadow-lg shadow-chart-1/20 ring-1 ring-white/10" />
-        {!sidebarCollapsed && (
+        {!collapsed && (
           <div className="min-w-0">
             <div className="text-sm font-bold text-sidebar-foreground truncate">
               {tr("appName", locale)}
@@ -103,7 +109,7 @@ export function DashboardSidebar() {
       </div>
 
       {/* Workspace selector */}
-      {!sidebarCollapsed && (
+      {!collapsed && (
         <WorkspaceSwitcher
           locale={locale}
           memberships={data?.memberships}
@@ -127,12 +133,12 @@ export function DashboardSidebar() {
                 active
                   ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-sidebar-primary/20"
                   : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                sidebarCollapsed && "justify-center"
+                collapsed && "justify-center"
               )}
             >
               <Icon className="size-[18px] shrink-0" />
-              {!sidebarCollapsed && <span className="truncate">{tr(item.key, locale)}</span>}
-              {active && !sidebarCollapsed && (
+              {!collapsed && <span className="truncate">{tr(item.key, locale)}</span>}
+              {active && !collapsed && (
                 <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-sidebar-primary-foreground rounded-s-full" />
               )}
             </button>
@@ -142,13 +148,13 @@ export function DashboardSidebar() {
         {/* Admin section — SUPER_ADMIN / ADMIN only */}
         {isAdmin && (
           <>
-            {!sidebarCollapsed && (
+            {!collapsed && (
               <div className="pt-4 pb-1 px-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sidebar-foreground/40">
                 <Lock className="size-2.5" />
                 {tr("nav_admin", locale)}
               </div>
             )}
-            {sidebarCollapsed && <div className="my-2 border-t border-sidebar-border" />}
+            {collapsed && <div className="my-2 border-t border-sidebar-border" />}
             {ADMIN_NAV.map((item) => {
               const Icon = item.icon;
               const active = view === item.view;
@@ -162,14 +168,14 @@ export function DashboardSidebar() {
                     active
                       ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
                       : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                    sidebarCollapsed && "justify-center"
+                    collapsed && "justify-center"
                   )}
                 >
                   <Icon className="size-[18px] shrink-0" />
-                  {!sidebarCollapsed && (
+                  {!collapsed && (
                     <span className="truncate text-[13px]">{tr(item.key, locale)}</span>
                   )}
-                  {active && !sidebarCollapsed && (
+                  {active && !collapsed && (
                     <span className="absolute end-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-white rounded-s-full shadow" />
                   )}
                 </button>
@@ -180,7 +186,7 @@ export function DashboardSidebar() {
       </nav>
 
       {/* Vision 2030 badge */}
-      {!sidebarCollapsed && (
+      {!collapsed && (
         <div className="p-3 border-t border-sidebar-border">
           <div className="rounded-lg bg-gradient-to-br from-emerald-600/20 to-chart-1/20 border border-emerald-500/20 p-3">
             <div className="flex items-center gap-2 mb-1.5">
@@ -198,17 +204,19 @@ export function DashboardSidebar() {
         </div>
       )}
 
-      {/* Collapse toggle */}
-      <button
-        onClick={toggleSidebar}
-        className={cn(
-          "absolute top-1/2 -translate-y-1/2 z-20 size-6 rounded-full bg-sidebar-accent border border-sidebar-border flex items-center justify-center text-sidebar-foreground/70 hover:text-white hover:bg-sidebar-primary transition-colors",
-          locale === "ar" ? "-start-3" : "-end-3"
-        )}
-        title={sidebarCollapsed ? "Expand" : "Collapse"}
-      >
-        <ChevronLeft className={cn("size-3.5 transition-transform", sidebarCollapsed && "rotate-180", locale === "ar" && "rotate-180", sidebarCollapsed && locale === "ar" && "rotate-0")} />
-      </button>
+      {/* Collapse toggle (desktop only) */}
+      {!isDrawer ? (
+        <button
+          onClick={toggleSidebar}
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 z-20 size-6 rounded-full bg-sidebar-accent border border-sidebar-border flex items-center justify-center text-sidebar-foreground/70 hover:text-white hover:bg-sidebar-primary transition-colors",
+            locale === "ar" ? "-start-3" : "-end-3"
+          )}
+          title={collapsed ? "Expand" : "Collapse"}
+        >
+          <ChevronLeft className={cn("size-3.5 transition-transform", collapsed && "rotate-180", locale === "ar" && "rotate-180", collapsed && locale === "ar" && "rotate-0")} />
+        </button>
+      ) : null}
     </aside>
   );
 }
