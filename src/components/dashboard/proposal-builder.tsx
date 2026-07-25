@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
@@ -47,13 +48,15 @@ export function ProposalBuilder() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { activeProjectId } = useUI();
+  const { data: session } = useSession();
+  const sessionWorkspaceId = session?.user?.workspaceId ?? "";
 
   const [mode, setMode] = useState<BuilderMode>("split");
   const [sections, setSections] = useState<ProposalSection[]>(getDefaultSections());
   const [metadata, setMetadata] = useState<ProposalMetadata>({
     title: { ar: "", en: "" },
     projectId: activeProjectId || "",
-    workspaceId: "",
+    workspaceId: sessionWorkspaceId,
     locale: locale as "ar" | "en",
     version: 1,
   });
@@ -88,15 +91,24 @@ export function ProposalBuilder() {
     );
   }, [activeProjectId, ar]);
 
-  // Keep projectId in sync when the workspace selection changes.
+  // Keep projectId / workspaceId in sync with session selection.
   useEffect(() => {
-    if (!activeProjectId) return;
-    setMetadata((prev) =>
-      prev.projectId === activeProjectId
-        ? prev
-        : { ...prev, projectId: activeProjectId }
-    );
-  }, [activeProjectId]);
+    if (!activeProjectId && !sessionWorkspaceId) return;
+    setMetadata((prev) => {
+      const nextProject =
+        activeProjectId && prev.projectId !== activeProjectId
+          ? activeProjectId
+          : prev.projectId;
+      const nextWorkspace =
+        sessionWorkspaceId && !prev.workspaceId
+          ? sessionWorkspaceId
+          : prev.workspaceId;
+      if (nextProject === prev.projectId && nextWorkspace === prev.workspaceId) {
+        return prev;
+      }
+      return { ...prev, projectId: nextProject, workspaceId: nextWorkspace };
+    });
+  }, [activeProjectId, sessionWorkspaceId]);
 
   // Load proposal if editing
   const { data: proposalData, isLoading: isLoadingProposal } = useQuery({
@@ -133,6 +145,7 @@ export function ProposalBuilder() {
         ok?: boolean;
         proposalId?: string;
         version?: number;
+        workspaceId?: string;
         error?: string;
       };
       if (!res.ok) {
@@ -146,6 +159,8 @@ export function ProposalBuilder() {
           ...prev,
           proposalId: data.proposalId,
           version: data.version ?? prev.version,
+          workspaceId:
+            data.workspaceId || prev.workspaceId || sessionWorkspaceId,
         }));
         setIsDirty(false);
         setDraftBanner(null);
@@ -324,10 +339,10 @@ export function ProposalBuilder() {
           metadata={metadata}
           onMetadataChange={setMetadata}
         />
-        {metadata.proposalId && metadata.workspaceId ? (
+        {metadata.proposalId && (metadata.workspaceId || sessionWorkspaceId) ? (
           <CollaborationPresenceBar
             proposalId={metadata.proposalId}
-            workspaceId={metadata.workspaceId}
+            workspaceId={metadata.workspaceId || sessionWorkspaceId}
             locale={locale}
           />
         ) : null}

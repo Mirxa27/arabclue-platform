@@ -145,6 +145,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       proposalId: proposal.id,
+      workspaceId: proposal.workspaceId,
       version: proposal.version + (proposalId ? 1 : 0),
       sections: createdSections,
     });

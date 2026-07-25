@@ -29,18 +29,14 @@
 
 ### Task 6: Marketplace → builder → HTML export — DONE (`17e1c46`)
 
-### Task 7: Collaboration resolve + builder mount + agent DASHBOARD_VIEWS
+### Task 7: Collaboration resolve + builder mount + agent DASHBOARD_VIEWS — DONE (`d305ea8`)
 
-**Files:**
-- Create: `src/app/api/collaboration/comments/[id]/resolve/route.ts`
-- Modify: `src/components/dashboard/proposal-builder.tsx` — mount comments + presence when saved
-- Modify: `src/lib/agents/platform/context.ts` — include `proposal-builder`, `marketplace`, `analytics`, `brand`
-- Commit schema Phase 4 models aligned with migration SQL
-
-**Acceptance:**
-- Resolve endpoint soft-fails 501 when table missing
-- Saved proposals show collaboration panel; honest toast on write failure
-- Platform agent view allowlist matches sidebar product views
+Also landed (same branch cleanup):
+- `3ea5c2b` auth Redis-optional login rate limits
+- `ca94e29` agent decision registry / metrics / orchestrator logging
+- `5ceefd9` Mission Control UX + stats Retry
+- `e3f1da2` bilingual PDF / print-ready helpers
+- `f9c40db` login/documents/contracts/file-delivery polish
 
 ---
 
@@ -48,9 +44,3 @@
 
 - Applying Phase 4 migration to shared Neon without explicit authorization in chat
 - Full Playwright login e2e suite (follow-up plan)
-
-## Remaining after Task 7
-
-- Auth login rate-limit must not require Redis solely because runtime is production
-- Mission Control / orchestrator / bilingual PDF polish still in working tree — commit as coherent batches when green
-- Agent decision-docs / print-ready standards docs (optional product polish)
