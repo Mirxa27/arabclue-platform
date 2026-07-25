@@ -271,8 +271,8 @@ const COPY = {
     ar: "لا تتوفر سجلات مصدرية لهذا القسم.",
   },
   provenance: {
-    en: "Generated only from the supplied business profile snapshot; missing translations were not inferred.",
-    ar: "تم الإنشاء حصراً من لقطة ملف الأعمال الموردة؛ ولم يتم استنتاج الترجمات المفقودة.",
+    en: "Generated only from the supplied business profile snapshot; shared identifiers may appear in both columns, and missing translations were not invented.",
+    ar: "تم الإنشاء حصراً من لقطة ملف الأعمال الموردة؛ وقد تظهر المعرّفات المشتركة في العمودين، ولم تُختلق الترجمات المفقودة.",
   },
 } as const satisfies Readonly<Record<string, Localized<string>>>;
 
@@ -673,14 +673,49 @@ function emptyCollectionBlock(
   context: AdapterContext,
   id: string,
   path: CapabilitySourcePath,
-  label: CopyValue
+  label: CopyValue,
+  options?: { readonly optional?: boolean }
 ): PairedBlock {
-  recordMissingSource(context, path, "collection", label);
+  if (!options?.optional) {
+    recordMissingSource(context, path, "collection", label);
+  }
   return {
     type: "paragraph",
     id,
     content: staticLocalized(COPY.noSourceRecords),
   };
+}
+
+/**
+ * Prefer true bilingual fields; when only one language exists, publish the
+ * available text as a shared identifier/term in both columns (no invented
+ * translation, no MISSING_TRANSLATION block).
+ */
+function localizedOrSharedSourceField(
+  context: AdapterContext,
+  field: LocalizedSourceField,
+  sharedValueKind: BilingualValueKind = "identifier"
+): LocalizedInline {
+  const en = sanitizeSourceText(context, field.en, field.enPath);
+  const ar = sanitizeSourceText(context, field.ar, field.arPath);
+
+  if (en !== null && ar !== null) {
+    return {
+      en: valueInline(en, "en"),
+      ar: valueInline(ar, "ar"),
+    };
+  }
+  if (en === null && ar === null) {
+    recordMissingSource(context, field.sourcePath, "field", field.label);
+    return unavailableLocalized();
+  }
+  return sharedSourceValue(
+    context,
+    en ?? ar,
+    en !== null ? field.enPath : field.arPath,
+    field.label,
+    sharedValueKind
+  );
 }
 
 function resolvePolicy(
@@ -785,14 +820,13 @@ export function buildCapabilityStatement(
     en: profile.brand?.tagline,
     ar: profile.brand?.taglineAr,
   });
-  const vision2030 = localizedSourceField(context, {
-    label: COPY.vision2030,
-    sourcePath: sourcePath("brand.vision2030Alignment"),
-    enPath: sourcePath("brand.vision2030Alignment"),
-    arPath: sourcePath("brand.vision2030AlignmentAr"),
-    en: profile.brand?.vision2030Alignment,
-    ar: null,
-  });
+  const vision2030 = sharedSourceValue(
+    context,
+    profile.brand?.vision2030Alignment,
+    sourcePath("brand.vision2030Alignment"),
+    COPY.vision2030,
+    "identifier"
+  );
 
   const identityRows: BilingualTableRow[] = [
     {
@@ -992,44 +1026,46 @@ export function buildCapabilityStatement(
             })
           ),
           client: tableCell(
-            localizedSourceField(context, {
+            localizedOrSharedSourceField(context, {
               label: COPY.client,
               sourcePath: sourcePath(`${root}.clientName`),
               enPath: sourcePath(`${root}.clientName`),
               arPath: sourcePath(`${root}.clientNameAr`),
               en: project.clientName,
-              ar: null,
+              ar: project.clientNameAr,
             })
           ),
           sector: tableCell(
-            localizedSourceField(context, {
-              label: COPY.sector,
-              sourcePath: sourcePath(`${root}.sector`),
-              enPath: sourcePath(`${root}.sector`),
-              arPath: sourcePath(`${root}.sectorAr`),
-              en: project.sector,
-              ar: null,
-            })
+            sharedSourceValue(
+              context,
+              project.sector,
+              sourcePath(`${root}.sector`),
+              COPY.sector,
+              "technical-term"
+            )
           ),
           outcome: tableCell(
-            localizedSourceField(context, {
-              label: COPY.outcome,
-              sourcePath: sourcePath(`${root}.outcome`),
-              enPath: sourcePath(`${root}.outcome`),
-              arPath: sourcePath(`${root}.outcomeAr`),
-              en: project.outcome,
-              ar: null,
-            })
+            sharedSourceValue(
+              context,
+              project.outcome,
+              sourcePath(`${root}.outcome`),
+              COPY.outcome,
+              "technical-term"
+            )
           ),
           summary: tableCell(
-            localizedSourceField(context, {
-              label: COPY.summary,
-              sourcePath: sourcePath(`${root}.summary`),
-              enPath: sourcePath(`${root}.summary`),
-              arPath: sourcePath(`${root}.summaryAr`),
-              en: project.summary,
-              ar: null,
-            })
+            localizedOrSharedSourceField(
+              context,
+              {
+                label: COPY.summary,
+                sourcePath: sourcePath(`${root}.summary`),
+                enPath: sourcePath(`${root}.summary`),
+                arPath: sourcePath(`${root}.summaryAr`),
+                en: project.summary,
+                ar: project.summaryAr,
+              },
+              "identifier"
+            )
           ),
         },
       };
@@ -1087,7 +1123,7 @@ export function buildCapabilityStatement(
         id: `team-member-${paddedIndex(index)}`,
         cells: {
           name: tableCell(
-            localizedSourceField(context, {
+            localizedOrSharedSourceField(context, {
               label: COPY.name,
               sourcePath: sourcePath(`${root}.name`),
               enPath: sourcePath(`${root}.name`),
@@ -1097,7 +1133,7 @@ export function buildCapabilityStatement(
             })
           ),
           role: tableCell(
-            localizedSourceField(context, {
+            localizedOrSharedSourceField(context, {
               label: COPY.role,
               sourcePath: sourcePath(`${root}.title`),
               enPath: sourcePath(`${root}.title`),
@@ -1145,7 +1181,8 @@ export function buildCapabilityStatement(
             context,
             "team-empty",
             sourcePath("highlights.staff"),
-            COPY.teamMembers
+            COPY.teamMembers,
+            { optional: true }
           ),
           ];
 
@@ -1156,7 +1193,7 @@ export function buildCapabilityStatement(
         id: `certificate-${paddedIndex(index)}`,
         cells: {
           certificate: tableCell(
-            localizedSourceField(context, {
+            localizedOrSharedSourceField(context, {
               label: COPY.certificate,
               sourcePath: sourcePath(`${root}.name`),
               enPath: sourcePath(`${root}.name`),
@@ -1166,14 +1203,13 @@ export function buildCapabilityStatement(
             })
           ),
           issuer: tableCell(
-            localizedSourceField(context, {
-              label: COPY.issuer,
-              sourcePath: sourcePath(`${root}.issuer`),
-              enPath: sourcePath(`${root}.issuer`),
-              arPath: sourcePath(`${root}.issuerAr`),
-              en: certificate.issuer,
-              ar: null,
-            })
+            sharedSourceValue(
+              context,
+              certificate.issuer,
+              sourcePath(`${root}.issuer`),
+              COPY.issuer,
+              "identifier"
+            )
           ),
         },
       };
@@ -1205,7 +1241,8 @@ export function buildCapabilityStatement(
             context,
             "certificates-empty",
             sourcePath("highlights.certificates"),
-            COPY.certificates
+            COPY.certificates,
+            { optional: true }
           ),
         ];
 
@@ -1216,7 +1253,7 @@ export function buildCapabilityStatement(
         id: `partnership-${paddedIndex(index)}`,
         cells: {
           partner: tableCell(
-            localizedSourceField(context, {
+            localizedOrSharedSourceField(context, {
               label: COPY.partner,
               sourcePath: sourcePath(`${root}.name`),
               enPath: sourcePath(`${root}.name`),
@@ -1226,14 +1263,13 @@ export function buildCapabilityStatement(
             })
           ),
           type: tableCell(
-            localizedSourceField(context, {
-              label: COPY.partnershipType,
-              sourcePath: sourcePath(`${root}.kind`),
-              enPath: sourcePath(`${root}.kind`),
-              arPath: sourcePath(`${root}.kindAr`),
-              en: partnership.kind,
-              ar: null,
-            })
+            sharedSourceValue(
+              context,
+              partnership.kind,
+              sourcePath(`${root}.kind`),
+              COPY.partnershipType,
+              "technical-term"
+            )
           ),
         },
       };
@@ -1273,7 +1309,8 @@ export function buildCapabilityStatement(
             context,
             "partnerships-empty",
             sourcePath("highlights.partnerships"),
-            COPY.partnerships
+            COPY.partnerships,
+            { optional: true }
           ),
           ];
 
@@ -1281,7 +1318,7 @@ export function buildCapabilityStatement(
     const root = `highlights.sectors[${index}]`;
     return {
       id: `sector-${paddedIndex(index)}`,
-      content: localizedSourceField(context, {
+      content: localizedOrSharedSourceField(context, {
         label: COPY.sector,
         sourcePath: sourcePath(`${root}.name`),
         enPath: sourcePath(`${root}.name`),
@@ -1306,7 +1343,8 @@ export function buildCapabilityStatement(
             context,
             "target-sectors-empty",
             sourcePath("highlights.sectors"),
-            COPY.targetSectors
+            COPY.targetSectors,
+            { optional: true }
           ),
         ];
 
@@ -1315,7 +1353,7 @@ export function buildCapabilityStatement(
       const root = `highlights.methodologies[${index}]`;
       return {
         id: `methodology-${paddedIndex(index)}`,
-        content: localizedSourceField(context, {
+        content: localizedOrSharedSourceField(context, {
           label: COPY.methodology,
           sourcePath: sourcePath(`${root}.title`),
           enPath: sourcePath(`${root}.title`),
@@ -1341,7 +1379,8 @@ export function buildCapabilityStatement(
             context,
             "methodologies-empty",
             sourcePath("highlights.methodologies"),
-            COPY.methodologies
+            COPY.methodologies,
+            { optional: true }
           ),
         ];
 

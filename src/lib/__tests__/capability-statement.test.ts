@@ -63,10 +63,13 @@ function profileFixture(): BusinessProfileSnapshot {
           title: "National procurement transformation",
           titleAr: "تحول المشتريات الوطنية",
           clientName: "Public Sector Client",
+          clientNameAr: "عميل القطاع العام",
           sector: "Government",
           outcome: "Cycle time reduced",
           summary:
             "Delivered a governed procurement operating model and evidence library.",
+          summaryAr:
+            "تم تسليم نموذج تشغيلي محكوم للمشتريات ومكتبة أدلة.",
         },
       ],
       staff: [
@@ -309,7 +312,8 @@ describe("capability statement AST adapter", () => {
         diagnostic.code === "MISSING_SOURCE" &&
         diagnostic.sourceKind === "collection"
     );
-    expect(missingCollections).toHaveLength(6);
+    expect(missingCollections).toHaveLength(1);
+    expect(missingCollections[0]?.path).toBe("highlights.pastProjects");
     expect(result.document.sections).toHaveLength(9);
 
     const html = renderBilingualHTML(result.document);
@@ -320,14 +324,27 @@ describe("capability statement AST adapter", () => {
   });
 
   test("exposes a configurable final-export gate and narrowing assertion", () => {
-    const strict = buildCapabilityStatement(profileFixture());
+    const incomplete = profileFixture();
+    incomplete.readiness = {
+      readyForProposals: false,
+      missing: ["approvalChain"],
+      completedCount: 4,
+      totalRequired: 5,
+      score: 80,
+    };
+    const strict = buildCapabilityStatement(incomplete);
     expect(strict.status).toBe("blocked");
     expect(strict.blockingDiagnostics.length).toBeGreaterThan(0);
     expect(() => assertCapabilityStatementExportable(strict)).toThrow(
       CapabilityStatementExportBlockedError
     );
 
-    const permissive = allowIncomplete(profileFixture());
+    const ready = buildCapabilityStatement(profileFixture());
+    expect(ready.status).toBe("exportable");
+    expect(ready.blockingDiagnostics).toHaveLength(0);
+    expect(() => assertCapabilityStatementExportable(ready)).not.toThrow();
+
+    const permissive = allowIncomplete(incomplete);
     expect(permissive.status).toBe("exportable");
     expect(permissive.blockingDiagnostics).toHaveLength(0);
     expect(
@@ -419,10 +436,12 @@ describe("large capability statement performance", () => {
         title: `Procurement transformation ${index}`,
         titleAr: `تحول المشتريات ${index}`,
         clientName: `Client ${index}`,
+        clientNameAr: `عميل ${index}`,
         sector: `Sector ${index % 12}`,
         outcome: `Outcome ${index}`,
         summary:
           `Evidence-backed delivery summary ${index}. `.repeat(4).trim(),
+        summaryAr: `ملخص تسليم مدعوم بالأدلة ${index}. `.repeat(4).trim(),
       })
     );
     profile.highlights.staff = Array.from(
@@ -480,7 +499,7 @@ describe("large capability statement performance", () => {
 
     expect(result.status).toBe("exportable");
     expect(validateBilingualDocument(result.document).valid).toBe(true);
-    expect(result.diagnostics.length).toBeGreaterThan(itemCount);
+    expect(result.diagnostics.length).toBeGreaterThan(0);
     expect(html.length).toBeGreaterThan(500_000);
     expect(elapsedMs).toBeLessThan(2_500);
   });

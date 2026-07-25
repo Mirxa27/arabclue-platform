@@ -57,9 +57,11 @@ function profileFixture(): BusinessProfileSnapshot {
           title: "Route project",
           titleAr: "مشروع المسار",
           clientName: "Client",
+          clientNameAr: "عميل",
           sector: "Government",
           outcome: "Delivered",
           summary: "Verified summary.",
+          summaryAr: "ملخص موثق.",
         },
       ],
       staff: [
@@ -85,6 +87,7 @@ function profileFixture(): BusinessProfileSnapshot {
 
 interface RouteHarnessState {
   session: { userId: string } | null;
+  profile: BusinessProfileSnapshot;
   profileLoadCount: number;
   legacyHtmlLocales: Array<"ar" | "en">;
   legacyPdfLocales: Array<"ar" | "en">;
@@ -98,9 +101,9 @@ function routeHarness(): {
   readonly dependencies: BusinessProfileExportDependencies;
   readonly state: RouteHarnessState;
 } {
-  const profile = profileFixture();
   const state: RouteHarnessState = {
     session: { userId: "user-001" },
+    profile: profileFixture(),
     profileLoadCount: 0,
     legacyHtmlLocales: [],
     legacyPdfLocales: [],
@@ -113,12 +116,12 @@ function routeHarness(): {
   const dependencies: BusinessProfileExportDependencies = {
     getSession: async () => state.session,
     getWorkspace: async () => ({
-      id: profile.workspace.id,
-      slug: profile.workspace.slug,
+      id: state.profile.workspace.id,
+      slug: state.profile.workspace.slug,
     }),
     loadProfile: async () => {
       state.profileLoadCount += 1;
-      return structuredClone(profile);
+      return structuredClone(state.profile);
     },
     buildLegacyHtml: (_profile, locale) => {
       state.legacyHtmlLocales.push(locale);
@@ -213,6 +216,16 @@ describe("business-profile export route", () => {
 
   test("returns a stable 422 response for strict bilingual diagnostics", async () => {
     const { dependencies, state } = routeHarness();
+    state.profile = {
+      ...state.profile,
+      readiness: {
+        readyForProposals: false,
+        missing: ["approvalChain"],
+        completedCount: 4,
+        totalRequired: 5,
+        score: 80,
+      },
+    };
     const response = await handleBusinessProfileExport(
       request("?format=html&locale=bilingual"),
       dependencies

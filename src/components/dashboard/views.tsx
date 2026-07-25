@@ -106,6 +106,22 @@ const BusinessProfileView = dynamic(
     })),
   { loading: PanelLoading }
 );
+// Phase 4: Enhanced Proposal System
+const ProposalBuilderView = dynamic(
+  () =>
+    import("./proposal-builder").then((m) => ({ default: m.ProposalBuilder })),
+  { loading: PanelLoading }
+);
+const MarketplaceView = dynamic(
+  () =>
+    import("./template-marketplace").then((m) => ({ default: m.TemplateMarketplace })),
+  { loading: PanelLoading }
+);
+const AnalyticsView = dynamic(
+  () =>
+    import("./analytics-dashboard").then((m) => ({ default: m.AnalyticsDashboard })),
+  { loading: PanelLoading }
+);
 const ADMIN_VIEWS = new Set<DashboardView>([
   "admin_overview",
   "admin_ai",
@@ -136,6 +152,10 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   reviews: ReviewsView,
   settings: SettingsView,
   billing: BillingView,
+  // Phase 4: Enhanced Proposal System
+  "proposal-builder": ProposalBuilderView,
+  marketplace: MarketplaceView,
+  analytics: AnalyticsView,
   admin_overview: AdminOverviewView,
   admin_ai: AdminAIView,
   admin_env: AdminEnvView,

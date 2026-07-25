@@ -29,6 +29,9 @@ import {
   Scale,
   Sparkles,
   Zap,
+  LayoutList,
+  Store,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -49,6 +52,10 @@ const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] 
   { view: "reviews", key: "nav_reviews", icon: ScrollText },
   { view: "billing", key: "nav_billing", icon: CreditCard },
   { view: "settings", key: "nav_settings", icon: Lock },
+  // Phase 4: Enhanced Proposal System
+  { view: "proposal-builder", key: "nav_proposal_builder", icon: LayoutList },
+  { view: "marketplace", key: "nav_marketplace", icon: Store },
+  { view: "analytics", key: "nav_analytics", icon: BarChart3 },
 ];
 
 const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] = [

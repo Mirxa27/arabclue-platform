@@ -59,9 +59,11 @@ function profileFixture(): BusinessProfileSnapshot {
           title: "Procurement delivery",
           titleAr: "تنفيذ المشتريات",
           clientName: "Client",
+          clientNameAr: "عميل",
           sector: "Government",
           outcome: "Delivered",
           summary: "Verified project summary.",
+          summaryAr: "ملخص مشروع موثق.",
         },
       ],
       staff: [
@@ -93,14 +95,29 @@ function profileFixture(): BusinessProfileSnapshot {
 
 describe("business-profile bilingual export library", () => {
   test("uses strict diagnostics for final output and explicit draft opt-in", () => {
-    const strict = compileBilingualBusinessProfile(profileFixture(), "strict");
-    expect(strict.status).toBe("blocked");
-    expect(strict.blockingDiagnostics.length).toBeGreaterThan(0);
-    expect(() => renderBilingualBusinessProfileHTML(strict)).toThrow(
+    const incomplete = profileFixture();
+    incomplete.readiness = {
+      readyForProposals: false,
+      missing: ["approvalChain"],
+      completedCount: 4,
+      totalRequired: 5,
+      score: 80,
+    };
+    const strictBlocked = compileBilingualBusinessProfile(incomplete, "strict");
+    expect(strictBlocked.status).toBe("blocked");
+    expect(strictBlocked.blockingDiagnostics.length).toBeGreaterThan(0);
+    expect(() => renderBilingualBusinessProfileHTML(strictBlocked)).toThrow(
       CapabilityStatementExportBlockedError
     );
 
-    const draft = compileBilingualBusinessProfile(profileFixture(), "draft");
+    const strictReady = compileBilingualBusinessProfile(
+      profileFixture(),
+      "strict"
+    );
+    expect(strictReady.status).toBe("exportable");
+    expect(strictReady.blockingDiagnostics).toHaveLength(0);
+
+    const draft = compileBilingualBusinessProfile(incomplete, "draft");
     expect(draft.status).toBe("exportable");
     expect(draft.blockingDiagnostics).toHaveLength(0);
     expect(validateBilingualDocument(draft.document).valid).toBe(true);

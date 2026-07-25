@@ -42,6 +42,9 @@ export type DashboardView =
   | "reviews"
   | "settings"
   | "copilot"
+  | "proposal-builder"
+  | "marketplace"
+  | "analytics"
   // Admin views
   | "admin_overview"
   | "admin_ai"

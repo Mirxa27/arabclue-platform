@@ -86,9 +86,11 @@ export type BusinessProfileSnapshot = {
       title: string;
       titleAr: string | null;
       clientName: string | null;
+      clientNameAr: string | null;
       sector: string | null;
       outcome: string | null;
       summary: string;
+      summaryAr: string | null;
     }>;
     staff: Array<{
       name: string;
@@ -422,9 +424,11 @@ export async function loadBusinessProfile(
         title: p.title,
         titleAr: p.titleAr,
         clientName: p.clientName,
+        clientNameAr: p.clientNameAr,
         sector: p.sector,
         outcome: p.outcome,
         summary: p.summary.slice(0, 280),
+        summaryAr: p.summaryAr ? p.summaryAr.slice(0, 280) : null,
       })),
       staff: workspace.staffMembers.map((s) => ({
         name: s.name,
