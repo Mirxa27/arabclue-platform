@@ -17,6 +17,7 @@ import {
   BookOpen,
   CheckCircle2,
   ArrowRight,
+  AlertTriangle,
 } from "lucide-react";
 import { useLocale, useUI } from "@/lib/store";
 import { PageHeader } from "@/components/patterns";
@@ -29,6 +30,24 @@ import {
   normalizeDocumentBrandColor,
   safeBrandLogoUrlForDocument,
 } from "@/lib/brand-policy";
+
+type BilingualExportReadiness = {
+  strict: {
+    canExport: boolean;
+    diagnosticCount: number;
+    blocking: Array<{
+      code: string;
+      path?: string;
+      message?: { ar?: string; en?: string };
+      severity?: string;
+    }>;
+  };
+  draft: {
+    canExport: boolean;
+    diagnosticCount: number;
+    warningCount: number;
+  };
+};
 
 type BusinessProfileSnapshot = {
   workspace: {
@@ -91,11 +110,15 @@ export function BusinessProfileView() {
     queryFn: async () => {
       const res = await fetch("/api/business-profile");
       if (!res.ok) throw new Error(`profile ${res.status}`);
-      return (await res.json()) as { profile: BusinessProfileSnapshot };
+      return (await res.json()) as {
+        profile: BusinessProfileSnapshot;
+        bilingualExport?: BilingualExportReadiness;
+      };
     },
   });
 
   const profile = data?.profile;
+  const bilingualExport = data?.bilingualExport;
   const primary = normalizeDocumentBrandColor(
     profile?.brand?.primaryColor,
     DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
@@ -133,27 +156,111 @@ export function BusinessProfileView() {
           : "bilingual-html"
         : format;
     setExporting(exportKey);
+
+    const formatDiagnostic = (d: {
+      code?: string;
+      message?: { ar?: string; en?: string };
+    }) => {
+      const msg = ar ? d.message?.ar : d.message?.en;
+      return msg || d.code || "diagnostic";
+    };
+
     try {
-      const res = await fetch(
-        `/api/business-profile/export?format=${format}&locale=${exportLocale}${
-          exportLocale === "bilingual" ? "&quality=strict" : ""
-        }`,
-        { credentials: "include" }
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Export failed (${res.status})`);
+      // Incomplete profiles cannot pass the strict final gate — export as an
+      // explicit draft so users still get a printable bilingual package.
+      const bilingualQuality =
+        exportLocale === "bilingual"
+          ? profile?.readiness.readyForProposals
+            ? "strict"
+            : "draft"
+          : null;
+
+      const runExport = async (quality: "strict" | "draft" | null) => {
+        const qualityQuery =
+          quality != null ? `&quality=${quality}` : "";
+        const res = await fetch(
+          `/api/business-profile/export?format=${format}&locale=${exportLocale}${qualityQuery}`,
+          { credentials: "include" }
+        );
+        const contentType = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          const body = contentType.includes("application/json")
+            ? ((await res.json().catch(() => ({}))) as {
+                error?: string;
+                code?: string;
+                diagnostics?: Array<{
+                  code?: string;
+                  message?: { ar?: string; en?: string };
+                }>;
+              })
+            : {};
+          const diagnosticLines = (body.diagnostics ?? [])
+            .slice(0, 4)
+            .map(formatDiagnostic);
+          const detail =
+            diagnosticLines.length > 0
+              ? diagnosticLines.join(" · ")
+              : body.error || `Export failed (${res.status})`;
+          const err = new Error(detail) as Error & {
+            code?: string;
+            diagnostics?: typeof body.diagnostics;
+          };
+          err.code = body.code;
+          err.diagnostics = body.diagnostics;
+          throw err;
+        }
+        return { res, quality };
+      };
+
+      let result: { res: Response; quality: "strict" | "draft" | null };
+      try {
+        result = await runExport(bilingualQuality);
+      } catch (firstErr) {
+        // Strict failed after user became "ready" but still has translation gaps —
+        // fall back once to draft with a clear notice.
+        const code =
+          firstErr instanceof Error && "code" in firstErr
+            ? (firstErr as { code?: string }).code
+            : undefined;
+        if (
+          exportLocale === "bilingual" &&
+          bilingualQuality === "strict" &&
+          code === "BILINGUAL_CAPABILITY_EXPORT_BLOCKED"
+        ) {
+          result = await runExport("draft");
+          toast({
+            title: ar ? "تصدير مسودة" : "Draft export",
+            description: ar
+              ? "التصدير النهائي محظور بسبب نواقص — تم إنشاء مسودة ثنائية اللغة بدلاً منه."
+              : "Final export is blocked by gaps — generated a bilingual draft instead.",
+          });
+        } else {
+          throw firstErr;
+        }
       }
-      const blob = await res.blob();
-      const cd = res.headers.get("content-disposition");
+
+      const blob = await result.res.blob();
+      const cd = result.res.headers.get("content-disposition");
       const match = cd?.match(/filename="?([^";]+)"?/);
       const filename =
         match?.[1] ||
         `business-profile.${format === "pdf" ? "pdf" : "html"}`;
       saveBlob(blob, filename);
       toast({
-        title: ar ? "تم التصدير" : "Exported",
-        description: filename,
+        title:
+          result.quality === "draft"
+            ? ar
+              ? "تم تصدير المسودة"
+              : "Draft exported"
+            : ar
+              ? "تم التصدير"
+              : "Exported",
+        description:
+          result.quality === "draft"
+            ? ar
+              ? `${filename} · مسودة — أكمل الإعداد للتصدير النهائي`
+              : `${filename} · draft — finish setup for final export`
+            : filename,
       });
     } catch (err) {
       toast({
@@ -244,25 +351,51 @@ export function BusinessProfileView() {
               variant="secondary"
               disabled={exporting != null}
               onClick={() => exportProfile("html", "bilingual")}
+              title={
+                profile.readiness.readyForProposals
+                  ? undefined
+                  : ar
+                    ? "سيُصدَّر كمسودة لأن الملف غير مكتمل"
+                    : "Exports as draft while setup is incomplete"
+              }
             >
               {exporting === "bilingual-html" ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 <Download className="size-3.5" />
               )}
-              {ar ? "HTML ثنائي اللغة" : "Bilingual HTML"}
+              {ar
+                ? profile.readiness.readyForProposals
+                  ? "HTML ثنائي اللغة"
+                  : "مسودة HTML ثنائية"
+                : profile.readiness.readyForProposals
+                  ? "Bilingual HTML"
+                  : "Draft bilingual HTML"}
             </Button>
             <Button
               size="sm"
               disabled={exporting != null}
               onClick={() => exportProfile("pdf", "bilingual")}
+              title={
+                profile.readiness.readyForProposals
+                  ? undefined
+                  : ar
+                    ? "سيُصدَّر كمسودة لأن الملف غير مكتمل"
+                    : "Exports as draft while setup is incomplete"
+              }
             >
               {exporting === "bilingual-pdf" ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 <Download className="size-3.5" />
               )}
-              {ar ? "PDF ثنائي اللغة" : "Bilingual PDF"}
+              {ar
+                ? profile.readiness.readyForProposals
+                  ? "PDF ثنائي اللغة"
+                  : "مسودة PDF ثنائية"
+                : profile.readiness.readyForProposals
+                  ? "Bilingual PDF"
+                  : "Draft bilingual PDF"}
             </Button>
           </div>
         }
@@ -350,6 +483,76 @@ export function BusinessProfileView() {
         </div>
       </motion.section>
 
+      {bilingualExport && !bilingualExport.strict.canExport ? (
+        <section
+          className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-5"
+          role="status"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold">
+                  {ar
+                    ? "التصدير النهائي الثنائي محظور"
+                    : "Final bilingual export blocked"}
+                </h3>
+                <Badge variant="outline" className="text-[10px]">
+                  {bilingualExport.strict.blocking.length}{" "}
+                  {ar ? "تشخيص" : "diagnostics"}
+                </Badge>
+                {bilingualExport.draft.canExport ? (
+                  <Badge className="bg-emerald-600/90 text-[10px] hover:bg-emerald-600">
+                    {ar ? "المسودة متاحة" : "Draft available"}
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {ar
+                  ? "أكمل الإعداد أو صدّر مسودة ثنائية اللغة الآن. التصدير النهائي يتطلب معالجة التشخيصات أدناه."
+                  : "Finish setup or export a bilingual draft now. Final export needs the diagnostics below resolved."}
+              </p>
+              <ul className="space-y-1.5">
+                {bilingualExport.strict.blocking.slice(0, 6).map((d, i) => (
+                  <li
+                    key={`${d.code}-${i}`}
+                    className="rounded-lg border border-border/50 bg-background/60 px-3 py-2 text-xs"
+                  >
+                    <span className="font-medium">
+                      {ar ? d.message?.ar : d.message?.en || d.code}
+                    </span>
+                    {d.path ? (
+                      <span className="ms-2 text-muted-foreground">{d.path}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => startTransition(() => setView("account"))}
+                >
+                  {ar ? "إكمال الإعداد" : "Complete setup"}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={exporting != null}
+                  onClick={() => exportProfile("pdf", "bilingual")}
+                >
+                  {exporting === "bilingual-pdf" ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Download className="size-3.5" />
+                  )}
+                  {ar ? "تصدير مسودة PDF" : "Export draft PDF"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -358,21 +561,48 @@ export function BusinessProfileView() {
       >
         {stats.map((s, i) => {
           const Icon = s.icon;
+          const isZero = s.value === 0;
+          const CardTag = isZero ? "button" : "div";
           return (
             <motion.div
               key={s.label}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.05 * i }}
-              className="rounded-2xl border border-border/70 bg-card p-4"
             >
-              <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
-                <Icon className="size-3.5" style={{ color: accent }} />
-                {s.label}
-              </div>
-              <div className="text-2xl font-bold" style={{ color: primary }}>
-                {s.value}
-              </div>
+              <CardTag
+                type={isZero ? "button" : undefined}
+                onClick={
+                  isZero
+                    ? () => startTransition(() => setView("account"))
+                    : undefined
+                }
+                className={
+                  isZero
+                    ? "w-full rounded-2xl border border-dashed border-border/70 bg-card p-4 text-start transition-colors hover:border-primary/40 hover:bg-muted/30"
+                    : "rounded-2xl border border-border/70 bg-card p-4"
+                }
+                title={
+                  isZero
+                    ? ar
+                      ? "افتح إعداد الحساب لإضافة سجلات"
+                      : "Open Account Setup to add records"
+                    : undefined
+                }
+              >
+                <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
+                  <Icon className="size-3.5" style={{ color: accent }} />
+                  {s.label}
+                </div>
+                <div className="text-2xl font-bold" style={{ color: primary }}>
+                  {s.value}
+                </div>
+                {isZero ? (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {ar ? "أضف من الإعداد ←" : "Add in setup →"}
+                  </p>
+                ) : null}
+              </CardTag>
             </motion.div>
           );
         })}

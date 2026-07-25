@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useLocale } from "@/lib/store";
+import { startTransition, useEffect, useState } from "react";
+import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -64,6 +64,7 @@ function parseArtifacts(p: ApiProposal): ApiProposalArtifact[] {
 
 export function ProposalsList() {
   const { locale } = useLocale();
+  const { setView } = useUI();
   const { toast } = useToast();
   const [editId, setEditId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -115,6 +116,28 @@ export function ProposalsList() {
                   locale === "ar"
                     ? "شغّل الوكلاء لإنشاء عطاء"
                     : "Run agents to generate a proposal"
+                }
+                description={
+                  locale === "ar"
+                    ? "ارفع مستندات المناقصة ثم شغّل خط أنابيب الوكلاء، أو افتح مشروعاً نشطاً."
+                    : "Upload tender documents, then run the agent pipeline — or open an active project."
+                }
+                action={
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => startTransition(() => setView("agents"))}
+                    >
+                      {locale === "ar" ? "الوكلاء" : "AI Agents"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => startTransition(() => setView("projects"))}
+                    >
+                      {locale === "ar" ? "المشاريع" : "Projects"}
+                    </Button>
+                  </div>
                 }
               />
             }
@@ -282,6 +305,9 @@ export function ProposalsList() {
                 locale={locale}
                 proposalId={previewId}
                 defaultMode="html"
+                contentRevision={
+                  proposals.find((p) => p.id === previewId)?.updatedAt
+                }
               />
             </div>
           ) : null}

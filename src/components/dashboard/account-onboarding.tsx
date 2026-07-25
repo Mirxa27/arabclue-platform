@@ -198,7 +198,17 @@ export function AccountOnboarding() {
           >
             {locale === "ar" ? "عرض ملف الشركة" : "View business profile"}
           </Button>
-        ) : null}
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => startTransition(() => setView("business-profile"))}
+          >
+            {locale === "ar"
+              ? "معاينة مسودة ملف الشركة"
+              : "View draft capability statement"}
+          </Button>
+        )}
       </Card>
 
       <div className="flex flex-wrap gap-2">
@@ -308,6 +318,7 @@ function LegalPanel({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({ title: locale === "ar" ? "تم الحفظ" : "Saved" });
     },
     onError: (err) => {
@@ -336,6 +347,7 @@ function LegalPanel({
       setExpiresAt("");
       qc.invalidateQueries({ queryKey: ["certificates"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({
         title: locale === "ar" ? "تمت إضافة الشهادة" : "Certificate added",
       });
@@ -359,6 +371,7 @@ function LegalPanel({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["certificates"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({
         title: locale === "ar" ? "تم حذف الشهادة" : "Certificate deleted",
       });
@@ -600,6 +613,7 @@ function StaffPanel() {
       setTags("");
       qc.invalidateQueries({ queryKey: ["staff"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({ title: locale === "ar" ? "تمت إضافة عضو الفريق" : "Staff member added" });
     },
     onError: (err) => {
@@ -621,6 +635,7 @@ function StaffPanel() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({ title: locale === "ar" ? "تم حذف عضو الفريق" : "Staff member deleted" });
     },
     onError: (err) => {
@@ -723,6 +738,7 @@ function SimpleCrudPanel({
       setForm({});
       qc.invalidateQueries({ queryKey: [queryKey] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({
         title:
           locale === "ar"
@@ -749,6 +765,7 @@ function SimpleCrudPanel({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [queryKey] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({
         title:
           locale === "ar"
@@ -896,6 +913,7 @@ function SectorsPanel() {
                 });
                 qc.invalidateQueries({ queryKey: ["sectors"] });
                 qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
               }}
             >
               <Plus className="size-4" />
@@ -930,6 +948,7 @@ function SectorsPanel() {
               setEntity("");
               qc.invalidateQueries({ queryKey: ["bid-history"] });
               qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
             }}
             disabled={!entity}
           >
@@ -983,6 +1002,7 @@ function ApprovalPanel() {
       setReviewerId("");
       qc.invalidateQueries({ queryKey: ["approval-policy"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({
         title: locale === "ar" ? "تم تحديث سلسلة الاعتماد" : "Approval chain updated",
       });
@@ -1166,6 +1186,7 @@ function RestrictionsPanel() {
               body: JSON.stringify({ restrictionsReviewed: true }),
             });
             qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
           }}
         >
           <CheckCircle2 className="size-4 me-1" />

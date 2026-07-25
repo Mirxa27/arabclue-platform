@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -92,6 +92,10 @@ export function PlatformAgentConsole() {
       confidence: number;
       routeStatus: string;
       source: string;
+      reasons?: string[];
+      clarifyingQuestion?: string | null;
+      runPipeline?: boolean;
+      createProject?: boolean;
     }>
   >([]);
   const [feedItems, setFeedItems] = useState<MissionFeedItem[]>([]);
@@ -167,7 +171,52 @@ export function PlatformAgentConsole() {
         if (cancelled) return;
         setMissionId(data.mission.id);
         setMissionError(null);
-        setAttachments(data.mission.attachments ?? []);
+        setAttachments(
+          (data.mission.attachments ?? []).map(
+            (row: {
+              id: string;
+              originalName: string;
+              docCategory: string;
+              confidence: number;
+              routeStatus: string;
+              source: string;
+              classificationJson?: string | null;
+            }) => {
+              let reasons: string[] | undefined;
+              let clarifyingQuestion: string | null | undefined;
+              let runPipeline: boolean | undefined;
+              let createProject: boolean | undefined;
+              if (row.classificationJson) {
+                try {
+                  const parsed = JSON.parse(row.classificationJson) as {
+                    reasons?: string[];
+                    clarifyingQuestion?: string | null;
+                    runPipeline?: boolean;
+                    createProject?: boolean;
+                  };
+                  reasons = parsed.reasons;
+                  clarifyingQuestion = parsed.clarifyingQuestion;
+                  runPipeline = parsed.runPipeline;
+                  createProject = parsed.createProject;
+                } catch {
+                  /* ignore malformed classification snapshots */
+                }
+              }
+              return {
+                id: row.id,
+                originalName: row.originalName,
+                docCategory: row.docCategory,
+                confidence: row.confidence,
+                routeStatus: row.routeStatus,
+                source: row.source,
+                reasons,
+                clarifyingQuestion,
+                runPipeline,
+                createProject,
+              };
+            }
+          )
+        );
         setFeedItems(
           (data.mission.actions ?? []).map(
             (a: {
@@ -496,38 +545,42 @@ export function PlatformAgentConsole() {
           : null
       }
       performing={performing}
+      pipelineTools={theaterTools}
       kitMeta={{ files: attachments.length }}
       statusBadges={
-        <>
+        <div className="flex flex-wrap items-center gap-1.5">
           {followView ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-7 gap-1"
-              onClick={() => setView(followView)}
+              className="h-7 rounded-full gap-1 text-[11px]"
+              onClick={() => startTransition(() => setView(followView))}
             >
-              {ar ? "عرض الشاشة:" : "Watch screen:"} {followView}
-              {followNote ? ` — ${followNote}` : ""}
+              <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
+              {ar ? "عرض:" : "View:"} {followView}
             </Button>
           ) : null}
           {mode !== "live" || !liveConfig?.enabled ? (
             <>
               {busy ? (
-                <Badge className="gap-1 animate-pulse">
+                <Badge className="rounded-full gap-1 border-teal-500/20 bg-teal-500/10 text-teal-800 dark:text-teal-200 animate-pulse text-[10px]">
                   <Loader2 className="size-3 animate-spin" />
-                  {ar ? "ينفّذ…" : "Executing…"}
+                  {ar ? "ينفّذ مباشر" : "Live exec"}
                 </Badge>
               ) : null}
               {listening ? (
-                <Badge variant="destructive" className="gap-1 animate-pulse">
+                <Badge variant="destructive" className="rounded-full gap-1 animate-pulse text-[10px]">
                   <Mic className="size-3" />
                   {ar ? "يستمع" : "Listening"}
                 </Badge>
               ) : null}
             </>
           ) : null}
-        </>
+          <Badge variant="outline" className="rounded-full text-[10px] border-zinc-200/70 dark:border-white/10 bg-white/60 dark:bg-white/[0.04] px-2">
+            {theaterTools.length} {ar ? "خطوات" : "steps"} · {theaterTools.filter((t: { state: string; preliminary?: boolean }) => isToolRunning(t.state) || (t as { preliminary?: boolean }).preliminary).length} {ar ? "حي" : "live"}
+          </Badge>
+        </div>
       }
       kit={
         <>
@@ -581,10 +634,28 @@ export function PlatformAgentConsole() {
                   message?: string;
                   question?: string;
                 };
-                decision?: { category?: string; confidence?: number };
+                decision?: {
+                  category?: string;
+                  confidence?: number;
+                  reasons?: string[];
+                  clarifyingQuestion?: string | null;
+                  runPipeline?: boolean;
+                  createProject?: boolean;
+                };
               };
               if (data.attachment) {
-                setAttachments((prev) => [data.attachment!, ...prev].slice(0, 40));
+                setAttachments((prev) =>
+                  [
+                    {
+                      ...data.attachment!,
+                      reasons: data.decision?.reasons,
+                      clarifyingQuestion: data.decision?.clarifyingQuestion,
+                      runPipeline: data.decision?.runPipeline,
+                      createProject: data.decision?.createProject,
+                    },
+                    ...prev,
+                  ].slice(0, 40)
+                );
               }
               if (data.autopilot?.projectId) {
                 setActiveProjectId(data.autopilot.projectId);
@@ -636,11 +707,29 @@ export function PlatformAgentConsole() {
                   message?: string;
                   question?: string;
                 };
-                decision?: { category?: string; confidence?: number };
+                decision?: {
+                  category?: string;
+                  confidence?: number;
+                  reasons?: string[];
+                  clarifyingQuestion?: string | null;
+                  runPipeline?: boolean;
+                  createProject?: boolean;
+                };
                 message?: string;
               };
               if (data.attachment) {
-                setAttachments((prev) => [data.attachment!, ...prev].slice(0, 40));
+                setAttachments((prev) =>
+                  [
+                    {
+                      ...data.attachment!,
+                      reasons: data.decision?.reasons,
+                      clarifyingQuestion: data.decision?.clarifyingQuestion,
+                      runPipeline: data.decision?.runPipeline,
+                      createProject: data.decision?.createProject,
+                    },
+                    ...prev,
+                  ].slice(0, 40)
+                );
               }
               if (data.autopilot?.projectId) {
                 setActiveProjectId(data.autopilot.projectId);
@@ -671,71 +760,67 @@ export function PlatformAgentConsole() {
       }
       composer={
         mode === "live" && liveConfig?.enabled ? undefined : (
-          <div className="flex flex-col gap-2">
+          <div className="flex w-full min-w-0 max-w-full flex-col gap-2.5">
             {error ? (
-              <div className="rounded-lg border border-destructive/30 px-3 py-2 text-sm text-destructive">
+              <div className="rounded-[12px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300">
                 {error.message}
               </div>
             ) : null}
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                ar
-                  ? "اكتب أمراً… مثل: اعرض مشاريعي، أنشئ مناقصة، شغّل الوكلاء"
-                  : "Type a command… e.g. list projects, create a tender, run agents"
-              }
-              rows={2}
-              className="min-h-[72px] resize-none"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-              disabled={busy}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="lg"
-                className={cn("min-w-[9.5rem]", listening && "animate-pulse")}
-                onClick={() => (listening ? stopMissionRun() : speakAndSend())}
-                disabled={busy && !listening}
+            {!missionId ? (
+              <div
+                className="rounded-[12px] border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200"
+                role="status"
               >
-                {listening ? (
-                  <MicOff className="size-4 me-2" />
-                ) : (
-                  <Mic className="size-4 me-2" />
-                )}
-                {listening
+                {missionCreating
                   ? ar
-                    ? "إيقاف"
-                    : "Stop"
-                  : ar
-                    ? "تحدّث"
-                    : "Speak"}
+                    ? "جاري تجهيز المهمة…"
+                    : "Preparing mission…"
+                  : missionError
+                    ? ar
+                      ? "تعذر إنشاء المهمة — استخدم إعادة المحاولة أعلاه."
+                      : "Mission create failed — use Retry above."
+                    : ar
+                      ? "انتظر حتى تصبح المهمة جاهزة قبل الإرسال."
+                      : "Wait until the mission is ready before sending."}
+              </div>
+            ) : null}
+            <div className="relative">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={ar ? "اكتب أمراً… مثل: اعرض مشاريعي، أنشئ مناقصة، شغّل الوكلاء" : "Type a command… e.g. list projects, create a tender, run agents"}
+                rows={2}
+                className="min-h-[72px] sm:min-h-[76px] resize-none rounded-[14px] border-zinc-200/70 dark:border-white/10 bg-white/80 dark:bg-black/20 backdrop-blur text-[13px] sm:text-[14px] focus-visible:ring-teal-500/30 focus-visible:border-teal-500/30"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!missionId || busy) return;
+                    void submit();
+                  }
+                }}
+                disabled={busy || !missionId}
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-teal-500/20 to-transparent opacity-0 group-focus-within:opacity-100 transition-opacity" />
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+              <Button type="button" size="lg" className={cn("col-span-1 h-11 rounded-full text-[13px] gap-1.5 sm:min-w-[9.5rem]", listening && "animate-pulse shadow-[0_0_20px_-6px_rgba(20,184,166,0.5)]")} onClick={() => (listening ? stopMissionRun() : speakAndSend())} disabled={!missionId || (busy && !listening)}>
+                {listening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+                {listening ? (ar ? "إيقاف" : "Stop") : ar ? "تحدّث" : "Speak"}
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="lg"
-                onClick={() => void submit()}
-                disabled={busy || !input.trim()}
-              >
-                <Send className="size-4 me-2" />
+              <Button type="button" variant="secondary" size="lg" onClick={() => void submit()} disabled={!missionId || busy || !input.trim()} className="col-span-1 h-11 rounded-full text-[13px] gap-1.5">
+                <Send className="size-4" />
                 {ar ? "إرسال" : "Send"}
               </Button>
               {busy ? (
-                <Button type="button" variant="outline" onClick={stopMissionRun}>
-                  <Square className="size-4 me-2" />
+                <Button type="button" variant="outline" onClick={stopMissionRun} className="col-span-2 sm:col-span-1 h-10 rounded-full gap-1.5 text-[12px]">
+                  <Square className="size-4" />
                   {ar ? "إيقاف التنفيذ" : "Stop run"}
                 </Button>
               ) : null}
               <Button
                 type="button"
                 variant="ghost"
-                className="ms-auto"
+                className="col-span-2 sm:col-span-1 sm:ms-auto h-9 rounded-full gap-1.5 text-[12px] px-3"
                 onClick={() => {
                   setVoiceOut((v) => {
                     if (v) window.speechSynthesis?.cancel();
@@ -743,18 +828,8 @@ export function PlatformAgentConsole() {
                   });
                 }}
               >
-                {voiceOut ? (
-                  <Volume2 className="size-4 me-2" />
-                ) : (
-                  <VolumeX className="size-4 me-2" />
-                )}
-                {voiceOut
-                  ? ar
-                    ? "صوت الرد"
-                    : "Voice on"
-                  : ar
-                    ? "صامت"
-                    : "Muted"}
+                {voiceOut ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+                {voiceOut ? (ar ? "صوت الرد" : "Voice on") : ar ? "صامت" : "Muted"}
               </Button>
             </div>
           </div>
