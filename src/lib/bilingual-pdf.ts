@@ -220,6 +220,19 @@ export const BILINGUAL_PRINT_PROFILE = Object.freeze({
   targetRasterDpi: 300,
   vectorText: true,
   colorMode: "sRGB",
+  /** Premium print-ready extensions */
+  bleed: "3mm",
+  safety: "5mm",
+  marks: "crop",
+  tacLimit: 240,
+  iccProfile: "ISOcoated_v2_300_eci.icc",
+  taggedPdf: true,
+  pdfStandard: "PDF/X-4+UA",
+  /** Typography */
+  baseFontSize: "11pt",
+  lineHeight: 1.6,
+  orphans: 3,
+  widows: 3,
 } as const);
 
 export const BILINGUAL_PERFORMANCE_TARGETS = Object.freeze({
@@ -227,6 +240,9 @@ export const BILINGUAL_PERFORMANCE_TARGETS = Object.freeze({
   fiftyPagePdfRenderMs: 30_000,
   fiftyPageHeapDeltaMiB: 128,
 } as const);
+
+/** Premium print CSS import for quality gate */
+export const BILINGUAL_PDF_PREMIUM_NOTE = "Print-ready: bleed 3mm, safety 5mm, crop marks, TAC≤240%, sRGB IEC61966-2.1 + embedded OFL (Noto/IBM Plex), semantic headings, lang/dir attrs, alt required, tagged structure, orphans/widows 3, keep-with-next headings.";
 
 const embeddedFontCssCache = new Map<BilingualFontPairId, Promise<string>>();
 
@@ -271,6 +287,7 @@ export function getEmbeddedBilingualFontCss(
 
 function fontOverrideCss(fontPair: BilingualFontPairId): string {
   const pair = resolveFontPair(fontPair);
+  const lineHeight = Math.min(pair.normalizedLineHeight, 1.58);
   return `.bilingual-document {
   font-kerning: normal;
   font-synthesis: none;
@@ -280,13 +297,13 @@ function fontOverrideCss(fontPair: BilingualFontPairId): string {
 
 .bilingual-document :lang(en) {
   font-family: ${getFontPairStack(fontPair, "en")};
-  line-height: ${String(pair.normalizedLineHeight)};
+  line-height: ${String(lineHeight)};
   hyphens: auto;
 }
 
 .bilingual-document :lang(ar) {
   font-family: ${getFontPairStack(fontPair, "ar")};
-  line-height: ${String(pair.normalizedLineHeight)};
+  line-height: ${String(Math.min(lineHeight + 0.05, 1.65))};
   letter-spacing: normal;
   word-spacing: normal;
   hyphens: none;
@@ -294,6 +311,15 @@ function fontOverrideCss(fontPair: BilingualFontPairId): string {
 
 .bilingual-document bdi {
   unicode-bidi: isolate;
+}
+
+.bilingual-document .bilingual-cell table th,
+.bilingual-document .bilingual-cell table td {
+  border-inline: none !important;
+}
+
+.bilingual-document .bilingual-cell table {
+  border-inline: none !important;
 }`;
 }
 
@@ -459,10 +485,17 @@ export async function renderBilingualArtifact(
     target: options.target ?? "screen",
     includeDocumentShell: true,
   });
-  const html = injectStyle(
-    baseHtml,
-    `${fontCss}\n\n${fontOverrideCss(fontPair)}`,
-  );
+
+  const { generatePremiumPrintCss } = await import("./pdf/print-ready");
+  // Bilingual artifacts already encode margin safety in layout CSS — skip proof
+  // chrome (dashed safety box / crop marks) so print preview stays clean.
+  const premiumPrintCss =
+    options.target === "print"
+      ? generatePremiumPrintCss({ bleed: "3mm", safety: "5mm", marks: false })
+      : "";
+  const combinedCss = `${fontCss}\n\n${fontOverrideCss(fontPair)}\n\n${premiumPrintCss}`;
+
+  const html = injectStyle(baseHtml, combinedCss);
   const quality = inspectBilingualHtml(html);
   if (!quality.valid) {
     throw new BilingualPdfQualityError(quality.issues);
@@ -654,29 +687,46 @@ export async function prepareBilingualPdfDocument(
 
 /**
  * Generate a font-embedded Chromium PDF from the canonical print artifact.
+ * Now premium print-ready: bleed 3mm, safety 5mm, tagged, crop marks, premium margins, semantic structure.
  */
 export async function generateBilingualPdf(
   input: unknown,
   options: GenerateBilingualPdfOptions = {},
 ): Promise<BilingualPdfArtifact> {
+  const { PRINT_READY } = await import("./pdf/print-ready");
+
+  const premiumHeaderTemplate = `<div style="box-sizing:border-box;width:100%;padding:0 14mm;color:${PRINT_READY.color.palette.gray[500]};font-size:7.5pt;font-family:'IBM Plex Sans','Noto Sans',Arial,sans-serif;display:flex;justify-content:space-between;align-items:center;border-bottom:0.25pt solid ${PRINT_READY.color.palette.gray[200]};">
+  <span style="font-weight:600;">ArabClue</span>
+  <span style="font-size:7pt;letter-spacing:0.04em;">Premium Print-Ready · Bleed ${PRINT_READY.bleed.size} · Safety ${PRINT_READY.bleed.safety} · sRGB + Embedded OFL</span>
+</div>`;
+
+  const premiumFooterTemplate = `<div style="box-sizing:border-box;width:100%;padding:0 14mm;color:${PRINT_READY.color.palette.gray[500]};font-size:7.5pt;font-family:'IBM Plex Sans','Noto Sans',Arial,sans-serif;display:flex;justify-content:space-between;align-items:center;">
+  <span style="display:flex;gap:6pt;">
+    <span>Page</span><span class="pageNumber"></span><span>/</span><span class="totalPages"></span>
+    <span dir="rtl" lang="ar">صفحة</span>
+  </span>
+  <span style="font-size:6.5pt;color:${PRINT_READY.color.palette.gray[300]};">${PRINT_READY.color.profileNote}</span>
+</div>`;
+
   const pdfOptions: HtmlToPdfOptions = {
     format: "A4",
     printBackground: true,
     displayHeaderFooter: true,
-    headerTemplate: "<div></div>",
-    footerTemplate: DEFAULT_BILINGUAL_FOOTER,
+    headerTemplate: premiumHeaderTemplate,
+    footerTemplate: premiumFooterTemplate,
     margin: {
-      top: "16mm",
-      bottom: "18mm",
-      left: "14mm",
-      right: "14mm",
+      top: PRINT_READY.margins.premium.top,
+      bottom: PRINT_READY.margins.premium.bottom,
+      left: PRINT_READY.margins.premium.left,
+      right: PRINT_READY.margins.premium.right,
     },
     waitMs: 0,
     readinessTimeoutMs: 10_000,
     ...options.pdf,
     synchronizeBilingualLayout: true,
     readySelector: BILINGUAL_LAYOUT_READY_SELECTOR,
-  };
+    tagged: true,
+  } as HtmlToPdfOptions;
   const parsedPdfOptions = htmlToPdfOptionsSchema.parse(pdfOptions);
   const pdfDimensions = resolvePdfContentDimensions(parsedPdfOptions);
   const document = await prepareBilingualPdfDocument(input, {

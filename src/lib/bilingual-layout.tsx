@@ -2277,30 +2277,43 @@ export function generateBilingualCSS(
 
   return `
 :root {
-  --bilingual-primary: ${designTokens.colors.primary[600]};
-  --bilingual-ink: ${designTokens.colors.secondary[900]};
-  --bilingual-muted: ${designTokens.colors.secondary[600]};
-  --bilingual-border: ${designTokens.colors.secondary[200]};
-  --bilingual-surface: ${designTokens.colors.neutral[50]};
+  --bilingual-primary: #0F766E;
+  --bilingual-ink: #173F5F;
+  --bilingual-ink-deep: #0F172A;
+  --bilingual-muted: #475569;
+  --bilingual-border: #E2E8F0;
+  --bilingual-border-strong: #94A3B8;
+  --bilingual-surface: #F8FAFC;
+  --bilingual-surface-strong: #EEF2F6;
+  --bilingual-accent: #B45309;
+  --bilingual-paper: #FFFFFF;
   --bilingual-en-column: ${String(enPercent)}fr;
   --bilingual-ar-column: ${String(arPercent)}fr;
-  --bilingual-gap: ${designTokens.spacing[6]};
+  --bilingual-gap: 1.25rem;
+  --bilingual-rule: 2.5px solid var(--bilingual-primary);
+  --bilingual-hairline: 0.5px solid var(--bilingual-border);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  color: var(--bilingual-ink);
-  background: white;
+  color: var(--bilingual-ink-deep);
+  background: var(--bilingual-paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 .bilingual-document {
   direction: ltr;
   max-inline-size: 210mm;
   margin-inline: auto;
-  padding-inline: ${designTokens.spacing[8]};
-  padding-block: ${designTokens.spacing[8]};
+  padding-inline: 1.75rem;
+  padding-block: 1.5rem 1.25rem;
+  font-size: 11pt;
+  line-height: 1.55;
+  color: var(--bilingual-ink-deep);
 }
 
 .bilingual-document-header,
@@ -2315,10 +2328,40 @@ body {
 .bilingual-document h5,
 .bilingual-document h6 {
   margin-block: 0;
+  color: var(--bilingual-ink);
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+  text-wrap: balance;
 }
 
 .bilingual-document h1[data-fragment-kind="document-title"] {
-  border-block-end: 2px solid var(--bilingual-primary);
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding-block-end: 0.7rem;
+  margin-block-end: 1.1rem;
+  border-block-end: var(--bilingual-rule);
+  break-before: auto !important;
+  page-break-before: auto !important;
+}
+
+.bilingual-document h1[data-fragment-kind="document-title"] .bilingual-cell {
+  padding-block: 0.15rem 0.35rem;
+}
+
+.bilingual-document h2 {
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  padding-block-end: 0.35rem;
+  margin-block-end: 0.15rem;
+  border-block-end: 1px solid color-mix(in srgb, var(--bilingual-primary) 45%, var(--bilingual-border));
+}
+
+.bilingual-document h3 {
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
 .bilingual-section--new-page {
@@ -2328,7 +2371,7 @@ body {
 .bilingual-pair {
   position: relative;
   inline-size: 100%;
-  margin-block-end: ${designTokens.spacing[4]};
+  margin-block-end: 0.7rem;
   break-inside: avoid-page;
   page-break-inside: avoid;
 }
@@ -2346,25 +2389,27 @@ body {
 .bilingual-pair--serial {
   display: flex;
   flex-direction: column;
-  gap: ${designTokens.spacing[4]};
+  gap: 0.75rem;
 }
 
 .bilingual-cell {
   position: relative;
   min-inline-size: 0;
-  padding-inline: ${designTokens.spacing[4]};
-  padding-block: ${designTokens.spacing[3]};
+  padding-inline: 0.55rem;
+  padding-block: 0.4rem;
   overflow-wrap: break-word;
 }
 
 .bilingual-continuation-marker {
   position: absolute;
-  inset-inline-start: ${designTokens.spacing[4]};
+  inset-inline-start: 0.55rem;
   z-index: 1;
   color: var(--bilingual-muted);
-  font-size: 8px;
-  font-weight: ${String(designTokens.typography.fontWeights.semibold)};
+  font-size: 7.5px;
+  font-weight: 600;
   line-height: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .bilingual-continuation-marker--before {
@@ -2401,41 +2446,60 @@ body {
 .bilingual-value--currency,
 .bilingual-value--date,
 .bilingual-table-cell--numeric {
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
 }
 
 .bilingual-cell p {
-  margin-block: 0 ${designTokens.spacing[3]};
-  line-height: ${designTokens.typography.lineHeights.relaxed};
+  margin-block: 0 0.55rem;
+  line-height: 1.55;
+  color: var(--bilingual-ink-deep);
 }
 
 .bilingual-cell ul,
 .bilingual-cell ol {
-  margin-block: ${designTokens.spacing[2]};
-  padding-inline-start: ${designTokens.spacing[6]};
+  margin-block: 0.2rem 0.65rem;
+  padding-inline-start: 1.15rem;
 }
 
 .bilingual-cell li {
-  margin-block: ${designTokens.spacing[1]};
+  margin-block: 0.18rem;
+  line-height: 1.45;
+  padding-inline-start: 0.1rem;
+}
+
+.bilingual-cell li::marker {
+  color: var(--bilingual-primary);
+  font-weight: 600;
 }
 
 .bilingual-cell table {
   inline-size: 100%;
   border-collapse: collapse;
   table-layout: fixed;
+  margin-block: 0.35rem 0.55rem;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  border: none;
+  border-block-start: 1.5px solid var(--bilingual-ink);
+  border-block-end: 1.5px solid var(--bilingual-ink);
 }
 
 .bilingual-cell caption {
-  margin-block-end: ${designTokens.spacing[2]};
-  font-weight: ${String(designTokens.typography.fontWeights.semibold)};
+  margin-block-end: 0.4rem;
+  font-weight: 650;
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  color: var(--bilingual-ink);
   text-align: start;
 }
 
 .bilingual-cell th,
 .bilingual-cell td {
-  padding-inline: ${designTokens.spacing[2]};
-  padding-block: ${designTokens.spacing[2]};
-  border: 1px solid var(--bilingual-border);
+  padding-inline: 0.55rem;
+  padding-block: 0.42rem;
+  border: none;
+  border-block-end: var(--bilingual-hairline);
   vertical-align: top;
   text-align: start;
   overflow-wrap: anywhere;
@@ -2443,7 +2507,24 @@ body {
 
 .bilingual-cell thead {
   display: table-header-group;
-  background: var(--bilingual-surface);
+  background: linear-gradient(
+    180deg,
+    var(--bilingual-surface-strong) 0%,
+    var(--bilingual-surface) 100%
+  );
+}
+
+.bilingual-cell th {
+  font-weight: 650;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bilingual-ink);
+  border-block-end: 1px solid var(--bilingual-border-strong);
+}
+
+.bilingual-cell tbody tr:last-child td {
+  border-block-end: none;
 }
 
 .bilingual-cell table[data-repeat-header="false"] thead {
@@ -2456,13 +2537,16 @@ body {
 
 .bilingual-visual {
   margin-inline: 0;
-  margin-block: ${designTokens.spacing[3]};
+  margin-block: 0.85rem 0.35rem;
+  padding-block: 0.55rem 0.35rem;
   text-align: center;
+  border-block-start: var(--bilingual-hairline);
 }
 
 .bilingual-visual img {
   max-inline-size: 100%;
   block-size: auto;
+  border-radius: 2px;
 }
 
 [dir="rtl"] .bilingual-visual--mirror-in-rtl img {
@@ -2470,9 +2554,51 @@ body {
 }
 
 .bilingual-visual figcaption {
-  margin-block-start: ${designTokens.spacing[2]};
+  margin-block-start: 0.4rem;
   color: var(--bilingual-muted);
-  font-size: ${designTokens.typography.fontSizes.sm};
+  font-size: 0.7rem;
+  font-weight: 550;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.bilingual-document-footer {
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--bilingual-en-column))
+    minmax(0, var(--bilingual-ar-column));
+  gap: var(--bilingual-gap);
+  margin-block-start: 1.35rem;
+  padding-block-start: 0.7rem;
+  border-block-start: 1.5px solid var(--bilingual-ink);
+  color: var(--bilingual-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.bilingual-document-footer__cell {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.bilingual-document-footer__cell--en,
+.bilingual-document-footer__cell--ar {
+  text-align: start;
+}
+
+.bilingual-document-footer__brand {
+  color: var(--bilingual-ink);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.66rem;
+}
+
+.bilingual-document-footer__meta {
+  color: var(--bilingual-muted);
 }
 
 .document-chart {
@@ -2502,18 +2628,20 @@ body {
 .bilingual-viewer-tabs {
   display: flex;
   justify-content: center;
-  gap: ${designTokens.spacing[2]};
-  margin-block-end: ${designTokens.spacing[6]};
+  gap: 0.5rem;
+  margin-block-end: 1rem;
 }
 
 .bilingual-viewer-tabs button {
-  padding-inline: ${designTokens.spacing[4]};
-  padding-block: ${designTokens.spacing[2]};
+  padding-inline: 0.9rem;
+  padding-block: 0.4rem;
   border: 1px solid var(--bilingual-primary);
-  border-radius: ${designTokens.effects.borderRadius.base};
+  border-radius: 999px;
   color: var(--bilingual-primary);
   background: white;
   font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .bilingual-viewer-tabs button[aria-pressed="true"] {
@@ -2552,22 +2680,31 @@ body {
 
 @media screen and (max-width: ${String(config.mobileBreakpointPx)}px) {
   .bilingual-document {
-    padding-inline: ${designTokens.spacing[4]};
+    padding-inline: 1rem;
+  }
+
+  .bilingual-pair--parallel,
+  .bilingual-document-footer {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .bilingual-pair--parallel {
-    grid-template-columns: minmax(0, 1fr);
-    gap: ${designTokens.spacing[3]};
+    gap: 0.75rem;
   }
 
   .bilingual-cell--en { order: ${String(mobileEnOrder)}; }
   .bilingual-cell--ar { order: ${String(mobileArOrder)}; }
+
+  .bilingual-document-footer__cell--en { order: ${String(mobileEnOrder)}; }
+  .bilingual-document-footer__cell--ar { order: ${String(mobileArOrder)}; }
 }
 
 @media print {
   .bilingual-document {
     max-inline-size: none;
     padding: 0;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   .bilingual-document-header,
@@ -2590,7 +2727,8 @@ body {
     display: grid !important;
   }
 
-  .bilingual-pair--parallel {
+  .bilingual-pair--parallel,
+  .bilingual-document-footer {
     grid-template-columns:
       minmax(0, var(--bilingual-en-column))
       minmax(0, var(--bilingual-ar-column)) !important;
@@ -2603,6 +2741,12 @@ body {
 
   [data-viewer-mode="tabs"] [data-language] {
     display: block !important;
+  }
+
+  .bilingual-cell th,
+  .bilingual-cell thead {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }
 `.trim();
@@ -2657,6 +2801,16 @@ ${renderDocumentTitle(document, config, target === "print")}
 ${document.sections
   .map((section) => renderSection(section, config, target === "print"))
   .join("\n")}
+<footer class="bilingual-document-footer" data-bilingual-footer aria-label="Document identity">
+  <div class="bilingual-document-footer__cell bilingual-document-footer__cell--en" lang="en" dir="ltr">
+    <span class="bilingual-document-footer__brand">Print-ready draft</span>
+    <span class="bilingual-document-footer__meta">Human author is final authority · Confidential</span>
+  </div>
+  <div class="bilingual-document-footer__cell bilingual-document-footer__cell--ar" lang="ar" dir="rtl">
+    <span class="bilingual-document-footer__brand">مسودة جاهزة للطباعة</span>
+    <span class="bilingual-document-footer__meta">المؤلف البشري هو المرجع النهائي · سري</span>
+  </div>
+</footer>
 </main>`;
 
     if (!includeDocumentShell) return root;

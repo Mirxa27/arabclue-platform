@@ -844,6 +844,25 @@ export function generateBilingualTypographyCss(
     font-synthesis: none;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+    color: #0a0a0a;
+  }
+
+  .bilingual-typography h1,
+  .bilingual-typography h2,
+  .bilingual-typography h3,
+  .bilingual-typography h4 {
+    page-break-after: avoid;
+    break-after: avoid-page;
+    orphans: 3;
+    widows: 3;
+  }
+
+  .bilingual-typography table,
+  .bilingual-typography figure,
+  .bilingual-typography .article-block,
+  .bilingual-typography .bilingual-pair {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 }`;
 }

@@ -22,10 +22,10 @@ const pdfCssLengthSchema = z
   });
 
 export const pdfMarginSchema = z.object({
-  top: pdfCssLengthSchema.default("16mm"),
+  top: pdfCssLengthSchema.default("18mm"),
   bottom: pdfCssLengthSchema.default("18mm"),
-  left: pdfCssLengthSchema.default("12mm"),
-  right: pdfCssLengthSchema.default("12mm"),
+  left: pdfCssLengthSchema.default("14mm"),
+  right: pdfCssLengthSchema.default("14mm"),
 });
 
 export const htmlToPdfOptionsSchema = z.object({
@@ -47,6 +47,18 @@ export const htmlToPdfOptionsSchema = z.object({
     .max(30_000)
     .default(5_000),
   synchronizeBilingualLayout: z.boolean().default(false),
+  tagged: z.boolean().default(true),
+  outline: z.boolean().default(false),
+  preferCSSPageSize: z.boolean().default(false),
+  omitBackground: z.boolean().default(false),
+  scale: z.number().min(0.1).max(2).default(1),
+  /** Bleed and crop marks for physical print */
+  bleedSize: z.string().trim().optional(),
+  displayCropMarks: z.boolean().default(false),
+  /** Color profile hint */
+  colorProfile: z.string().optional(),
+  /** Accessibility */
+  generateTaggedPdf: z.boolean().default(true),
 });
 
 export type HtmlToPdfOptions = z.input<typeof htmlToPdfOptionsSchema>;
@@ -474,17 +486,21 @@ export async function htmlToPdf(
           displayHeaderFooter: options.displayHeaderFooter,
           headerTemplate:
             options.headerTemplate ??
-            `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;">ArabClue</div>`,
+            `<div style="font-size:8px;width:100%;text-align:center;color:#64748b;padding:0 12mm;font-family:'IBM Plex Sans',Arial,sans-serif;">ArabClue – Premium Print Ready</div>`,
           footerTemplate:
             options.footerTemplate ??
-            `<div style="font-size:8px;width:100%;text-align:center;color:#94a3b8;padding:0 12mm;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
+            `<div style="font-size:7.5pt;width:100%;text-align:center;color:#64748b;padding:0 12mm;font-family:'IBM Plex Sans',Arial,sans-serif;display:flex;justify-content:center;gap:5pt;"><span>Page</span><span class="pageNumber"></span><span>/</span><span class="totalPages"></span><span dir="rtl" lang="ar">صفحة</span></div>`,
           margin: options.margin ?? {
-            top: "16mm",
-            bottom: "18mm",
-            left: "12mm",
-            right: "12mm",
+            top: "20mm",
+            bottom: "20mm",
+            left: "18mm",
+            right: "18mm",
           },
-        });
+          tagged: options.tagged ?? true,
+          outline: options.outline ?? false,
+          preferCSSPageSize: options.preferCSSPageSize ?? false,
+          scale: options.scale ?? 1,
+        } as Record<string, unknown>);
         return Buffer.from(pdf);
       } finally {
         await context.close();

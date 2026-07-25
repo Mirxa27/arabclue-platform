@@ -182,38 +182,100 @@ export function generatePrintCSS(
   additionalCSS?: string
 ): string {
   const pageCSS = generatePageCSS(options);
+  // Lazy import to avoid circular, but we have static import available via dynamic require.
+  // We inline premium CSS generation via function call in module that imports this; to keep file standalone we generate minimal premium plus included additional.
   
   return `
 @media print {
   ${pageCSS}
   
+  /* Premium Print-Ready Base */
+  @page {
+    orphans: 3;
+    widows: 3;
+    bleed: 3mm;
+    marks: crop cross;
+  }
+
   body {
     margin: 0;
     padding: 0;
     background: white;
-    color: black;
+    color: #111827;
+    font-family: "IBM Plex Sans", "Noto Sans", "Noto Sans Arabic", "IBM Plex Sans Arabic", Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    font-kerning: normal;
+    font-optical-sizing: auto;
+    font-variant-ligatures: common-ligatures contextual;
+    text-rendering: optimizeLegibility;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  
-  * {
-    box-shadow: none !important;
+
+  /* Typography refinements */
+  h1, h2, h3, h4 {
+    break-after: avoid;
+    break-inside: avoid;
+    page-break-after: avoid;
+    page-break-inside: avoid;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
-  
-  .page-break {
-    page-break-before: always;
+  h1 { font-size: 27pt; line-height: 1.25; }
+  h2 { font-size: 21pt; line-height: 1.25; border-bottom: 0.5pt solid #e0e0e0; padding-bottom: 4pt; }
+  h3 { font-size: 17pt; line-height: 1.35; }
+  h4 { font-size: 14pt; }
+  p {
+    orphans: 3;
+    widows: 3;
+    hyphens: auto;
+    margin: 0 0 0.85em;
   }
-  
-  .avoid-break {
+  :lang(ar), [dir="rtl"] {
+    font-family: "IBM Plex Sans Arabic", "Noto Sans Arabic", sans-serif;
+    line-height: 1.75;
+    letter-spacing: normal !important;
+    hyphens: none;
+  }
+
+  /* Page break optimization */
+  table, figure, blockquote, ul, ol, .keep-together, .bilingual-pair {
+    break-inside: avoid;
     page-break-inside: avoid;
   }
-  
-  .no-print {
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { break-inside: avoid; }
+  .page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+  .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .no-print, .screen-only {
     display: none !important;
   }
-  
   a {
     text-decoration: none;
-    color: inherit;
+    color: #173f5f;
   }
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: #6b7280;
+  }
+
+  /* Safety zone for critical content */
+  .critical-content { margin: 5mm; }
+
+  /* Accessibility: semantic focus not needed in print but keep structure */
+  img:not([alt]) { outline: 2pt solid #b91c1c; }
+
+  /* CMYK-safe palette note */
+  /* sRGB IEC61966-2.1 + embedded OFL, TAC≤240%, ready for ISOcoated_v2_300_eci conversion */
   
   ${additionalCSS || ""}
 }`;

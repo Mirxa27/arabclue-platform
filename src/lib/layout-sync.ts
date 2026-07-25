@@ -1394,7 +1394,31 @@ export function applyBilingualLayoutInPage(
     }
     page.append(pair);
   });
+  // Preserve non-pair chrome (document footer / identity) on the last page.
+  // Leaving it ahead of absolutely-positioned pages made identity bands render
+  // above the title in print screenshots.
+  const preservedChrome = Array.from(root.children).filter((child): child is HTMLElement => {
+    if (!isHtmlElement(child)) return false;
+    if (child.hasAttribute("data-bilingual-pair")) return false;
+    if (child.hasAttribute("data-bilingual-sync-page")) return false;
+    return true;
+  });
   pageElements.forEach((page) => root.append(page));
+  const lastPage = pageElements.get(pageCount);
+  preservedChrome.forEach((child) => {
+    if (
+      child.classList.contains("bilingual-document-footer") ||
+      child.hasAttribute("data-bilingual-footer")
+    ) {
+      (child as HTMLElement).style.position = "absolute";
+      (child as HTMLElement).style.insetInlineStart = "0";
+      (child as HTMLElement).style.insetInlineEnd = "0";
+      (child as HTMLElement).style.insetBlockEnd = "0";
+      (child as HTMLElement).style.inlineSize = "100%";
+      (child as HTMLElement).style.marginBlockStart = "0";
+    }
+    (lastPage ?? root).append(child);
+  });
 
   root.setAttribute("data-bilingual-layout-state", "ready");
   root.setAttribute("data-bilingual-layout-ready", "true");
