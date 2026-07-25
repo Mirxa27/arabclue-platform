@@ -507,6 +507,7 @@ export function ContractsPanel() {
                   proposalId={active.id}
                   title={active.titleAr || active.title}
                   defaultMode="html"
+                  contentRevision={active.updatedAt}
                 />
               </TabsContent>
             </Tabs>

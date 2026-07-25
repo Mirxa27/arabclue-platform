@@ -181,11 +181,18 @@ export function ProposalEditorDialog({
     }
   }, [finData]);
 
-  const markdown = draftMd ?? data?.proposal?.contentMd ?? "";
+  const persistedMd = data?.proposal?.contentMd ?? "";
+  const markdown = draftMd ?? persistedMd;
   const propLocale: "ar" | "en" =
     draftLocale ?? (data?.proposal?.locale === "en" ? "en" : "ar");
   const setMarkdown = (v: string) => setDraftMd(v);
   const setPropLocale = (v: "ar" | "en") => setDraftLocale(v);
+  const isDirty =
+    draftMd != null
+      ? draftMd !== persistedMd ||
+        (draftLocale != null &&
+          draftLocale !== (data?.proposal?.locale === "en" ? "en" : "ar"))
+      : false;
   const versions: {
     id: string;
     version: number;
@@ -233,6 +240,8 @@ export function ProposalEditorDialog({
       return res.json();
     },
     onSuccess: () => {
+      setDraftMd(null);
+      setDraftLocale(null);
       qc.invalidateQueries({ queryKey: ["proposals"] });
       qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
       refetchValidation();
@@ -529,6 +538,11 @@ export function ProposalEditorDialog({
               <Badge variant="outline" className="font-mono text-[10px]">
                 {tr("proposal_version", locale)} v{version}
               </Badge>
+              {isDirty ? (
+                <Badge variant="destructive" className="text-[10px]">
+                  {locale === "ar" ? "غير محفوظ" : "Unsaved"}
+                </Badge>
+              ) : null}
               <Badge variant="outline" className="text-[10px]">
                 {tr(`status_${status}` as Parameters<typeof tr>[0], locale)}
               </Badge>
@@ -608,7 +622,24 @@ export function ProposalEditorDialog({
                     size="sm"
                     variant={mode === key ? "default" : "ghost"}
                     className="h-7 text-[11px] gap-1"
-                    onClick={() => setMode(key)}
+                    onClick={() => {
+                      if (
+                        isDirty &&
+                        (key === "preview" || key === "print")
+                      ) {
+                        toast({
+                          title:
+                            locale === "ar"
+                              ? "معاينة PDF/التخطيط تعرض آخر حفظ"
+                              : "Layout/PDF preview shows the last save",
+                          description:
+                            locale === "ar"
+                              ? "احفظ المسودة لتحديث المعاينة الرسمية."
+                              : "Save your draft to refresh the official preview.",
+                        });
+                      }
+                      setMode(key);
+                    }}
                   >
                     <Icon className="size-3" />
                     {label}
@@ -1143,7 +1174,10 @@ export function ProposalEditorDialog({
                   locale={propLocale}
                   proposalId={proposalId}
                   title={data?.proposal?.title}
-                  defaultMode="html"
+                  defaultMode={mode === "print" ? "pdf" : "html"}
+                  contentRevision={data?.proposal?.updatedAt}
+                  stale={isDirty}
+                  onRequestSave={() => saveMutation.mutate()}
                   compact
                 />
               </div>

@@ -68,9 +68,19 @@ function LoginForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
-        const preData = await pre.json();
+        const preData = await pre.json().catch(() => ({} as { ok?: boolean; error?: string }));
         if (!pre.ok || !preData.ok) {
-          setError(ar ? "بيانات الدخول غير صحيحة" : "Invalid email or password");
+          if (pre.status === 429) {
+            setError(ar ? "محاولات كثيرة — حاول لاحقاً" : "Too many attempts — try again later");
+          } else if (pre.status === 503 || preData.error === "rate_limit_service_unavailable") {
+            setError(
+              ar
+                ? "خدمة الحماية غير متاحة مؤقتاً — حاول بعد لحظات"
+                : "Security service temporarily unavailable — try again shortly"
+            );
+          } else {
+            setError(ar ? "بيانات الدخول غير صحيحة" : "Invalid email or password");
+          }
           setLoading(false);
           return;
         }
@@ -90,7 +100,26 @@ function LoginForm() {
       });
 
       if (res?.error || !res?.ok) {
-        setError(ar ? "فشل تسجيل الدخول — تحقق من البيانات ورمز MFA" : "Sign-in failed — check credentials and MFA code");
+        // NextAuth maps authorize() → null as "CredentialsSignin".
+        // A 401 with status can also mean CSRF token mismatch (server restart
+        // without stable NEXTAUTH_SECRET). Differentiate for the user.
+        const errType = res?.error ?? "";
+        if (errType === "CredentialsSignin") {
+          setError(
+            needsMfa
+              ? ar ? "رمز MFA غير صحيح — حاول مرة أخرى" : "Invalid MFA code — try again"
+              : ar ? "بيانات الدخول غير صحيحة" : "Invalid email or password"
+          );
+        } else if (errType === "OAuthSignin" || errType === "OAuthCallback") {
+          setError(ar ? "فشل المصادقة الخارجية" : "External authentication failed");
+        } else {
+          // Generic fallback — covers CSRF mismatch, session errors, etc.
+          setError(
+            ar
+              ? "فشل تسجيل الدخول — تأكد من البيانات وأعد المحاولة. إذا استمرت المشكلة، أعد تحميل الصفحة."
+              : "Sign-in failed — check your credentials and try again. If the problem persists, reload the page."
+          );
+        }
         setLoading(false);
         return;
       }

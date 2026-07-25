@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Loader2,
   Eye,
+  FileText,
   GitCompare,
   History,
   Pencil,
@@ -41,8 +42,14 @@ import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import type { ApiProposal, ApiProposalVersion } from "@/lib/api-types";
 import { MarkdownStudioEditor } from "./markdown-studio-editor";
+import { DocumentPreviewFrame } from "./document-preview-frame";
 
-export type ContractStudioMode = "preview" | "edit" | "versions" | "obligations";
+export type ContractStudioMode =
+  | "preview"
+  | "print"
+  | "edit"
+  | "versions"
+  | "obligations";
 
 type Props = {
   title: string;
@@ -435,6 +442,7 @@ export function BilingualContractStudio({
             {(
               [
                 ["preview", Eye, ar ? "معاينة" : "Preview"],
+                ["print", FileText, ar ? "PDF / طباعة" : "PDF / Print"],
                 [
                   "obligations",
                   ClipboardCheck,
@@ -448,8 +456,23 @@ export function BilingualContractStudio({
                 key={id}
                 size="sm"
                 variant="ghost"
-                disabled={id === "edit" && locked}
-                onClick={() => setStudioMode(id)}
+                disabled={
+                  (id === "edit" && locked) ||
+                  (id === "print" && !proposalId)
+                }
+                onClick={() => {
+                  if (id === "print" && isDirty) {
+                    toast({
+                      title: ar
+                        ? "معاينة PDF تعرض آخر حفظ"
+                        : "PDF preview shows the last save",
+                      description: ar
+                        ? "احفظ العقد لتحديث التخطيط الرسمي."
+                        : "Save the contract to refresh the official layout.",
+                    });
+                  }
+                  setStudioMode(id);
+                }}
                 className={cn(
                   "h-8 rounded-full text-[11px] gap-1.5 border",
                   studioMode === id
@@ -529,7 +552,20 @@ export function BilingualContractStudio({
         </motion.div>
       ) : null}
 
-      {studioMode === "edit" ? (
+      {studioMode === "print" && proposalId ? (
+        <div className="h-[min(70vh,720px)] p-4 sm:p-6 bg-background">
+          <DocumentPreviewFrame
+            locale={locale}
+            proposalId={proposalId}
+            title={titleAr || title}
+            defaultMode="html"
+            contentRevision={updatedAt}
+            stale={isDirty}
+            onRequestSave={() => saveMutation.mutate()}
+            className="h-full"
+          />
+        </div>
+      ) : studioMode === "edit" ? (
         <div className="h-[min(70vh,720px)] p-4 sm:p-6">
           <MarkdownStudioEditor
             markdown={draftMd}

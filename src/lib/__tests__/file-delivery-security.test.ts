@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   classifyStoredFilePreviewKind,
+  createHtmlPreviewObjectUrl,
+  createPdfPreviewObjectUrl,
   createStoredFileResponsePolicy,
   GENERATED_HTML_PREVIEW_SANDBOX,
-  PDF_PREVIEW_SANDBOX,
+  PDF_PREVIEW_USES_SANDBOX,
   sanitizeDownloadFilename,
 } from "../file-delivery-policy";
 
@@ -26,7 +28,8 @@ describe("workspace file delivery policy", () => {
     ).toBe("pdf");
     expect(GENERATED_HTML_PREVIEW_SANDBOX).not.toContain("allow-scripts");
     expect(GENERATED_HTML_PREVIEW_SANDBOX).not.toContain("allow-popups");
-    expect(PDF_PREVIEW_SANDBOX).toBe("");
+    // Empty sandbox="" breaks Chromium PDF viewers — must stay off.
+    expect(PDF_PREVIEW_USES_SANDBOX).toBe(false);
   });
 
   test("forces HTML and SVG to inert download-safe responses", () => {
@@ -71,6 +74,28 @@ describe("workspace file delivery policy", () => {
     expect(download.headers["Content-Disposition"]).toContain(
       "filename*=UTF-8''"
     );
+  });
+
+  test("infers PDF content-type from requested name when storage key has no extension", () => {
+    const policy = createStoredFileResponsePolicy(
+      "uploads/workspace-1/a1b2c3d4e5f6",
+      "مواصفات بنك التصدير.pdf",
+      false
+    );
+    expect(policy.contentType).toBe("application/pdf");
+    expect(policy.forceDownload).toBe(false);
+  });
+
+  test("PDF preview object URLs always advertise application/pdf", () => {
+    const url = createPdfPreviewObjectUrl(new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer);
+    expect(url.startsWith("blob:")).toBe(true);
+    URL.revokeObjectURL(url);
+  });
+
+  test("HTML preview object URLs always advertise text/html", () => {
+    const url = createHtmlPreviewObjectUrl("<html><body>ok</body></html>");
+    expect(url.startsWith("blob:")).toBe(true);
+    URL.revokeObjectURL(url);
   });
 
   test("removes path and header-control syntax from requested filenames", () => {

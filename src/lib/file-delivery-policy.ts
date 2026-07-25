@@ -18,8 +18,13 @@ export type StoredFileResponsePolicy = {
 /** Generated HTML may retain its origin for parent-driven print, never script. */
 export const GENERATED_HTML_PREVIEW_SANDBOX =
   "allow-same-origin allow-modals" as const;
-/** PDF/blob previews receive no optional sandbox capabilities. */
-export const PDF_PREVIEW_SANDBOX = "" as const;
+
+/**
+ * PDF blob iframes must NOT set `sandbox` (including the empty string).
+ * An empty sandbox blocks Chrome/Edge built-in PDF viewers and shows the
+ * broken-document glyph — keep security via authenticated fetch + opaque blob.
+ */
+export const PDF_PREVIEW_USES_SANDBOX = false as const;
 
 const RESPONSE_MEDIA_TYPES: Readonly<Record<string, string>> = Object.freeze({
   ".png": "image/png",
@@ -137,13 +142,39 @@ export function classifyStoredFilePreviewKind(
   return "binary";
 }
 
+/**
+ * Build a same-origin blob URL for PDF preview. Always force application/pdf
+ * so Chrome's viewer activates even when the fetch response was octet-stream.
+ */
+export function createPdfPreviewObjectUrl(bytes: ArrayBuffer | Blob): string {
+  return URL.createObjectURL(
+    new Blob([bytes], { type: "application/pdf" })
+  );
+}
+
+/** Force text/html so layout iframes don't render as plain text. */
+export function createHtmlPreviewObjectUrl(bytes: ArrayBuffer | Blob | string): string {
+  return URL.createObjectURL(
+    new Blob([bytes], { type: "text/html;charset=utf-8" })
+  );
+}
+
 /** Build fail-closed headers from the canonical storage key, never user MIME. */
 export function createStoredFileResponsePolicy(
   storagePath: string,
   requestedName: string | null,
   downloadRequested: boolean
 ): StoredFileResponsePolicy {
-  const extension = extensionOf(storagePath);
+  const pathExtension = extensionOf(storagePath);
+  const nameExtension = extensionOf(requestedName || "");
+  // Prefer storage-key extension; fall back to requested download name so
+  // extensionless blob keys still get a correct Content-Type for Open/Download.
+  const extension =
+    pathExtension in RESPONSE_MEDIA_TYPES
+      ? pathExtension
+      : nameExtension in RESPONSE_MEDIA_TYPES
+        ? nameExtension
+        : pathExtension || nameExtension;
   const fileName = sanitizeDownloadFilename(
     requestedName || baseName(storagePath)
   );

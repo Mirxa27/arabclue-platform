@@ -1,23 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  AlertTriangle,
   Download,
   ExternalLink,
   FileText,
   Loader2,
   Maximize2,
   Printer,
+  RefreshCw,
 } from "lucide-react";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import {
+  createHtmlPreviewObjectUrl,
+  createPdfPreviewObjectUrl,
   GENERATED_HTML_PREVIEW_SANDBOX,
-  PDF_PREVIEW_SANDBOX,
 } from "@/lib/file-delivery-policy";
 import { synchronizeCurrentBilingualDocument } from "@/lib/layout-sync";
+import {
+  pdfPreviewSrc,
+  type PdfPreviewZoom,
+} from "@/lib/pdf-preview-view";
 
 type Mode = "html" | "pdf";
 
@@ -29,6 +36,14 @@ type Props = {
   defaultMode?: Mode;
   className?: string;
   compact?: boolean;
+  /**
+   * Bump after save (e.g. proposal.updatedAt) so HTML/PDF reloads.
+   * Without this, Preview/PDF stay on the last fetched revision.
+   */
+  contentRevision?: string | number | null;
+  /** True when the studio has unsaved markdown — show save-before-PDF banner. */
+  stale?: boolean;
+  onRequestSave?: () => void;
 };
 
 async function waitForPreviewAssets(document: Document): Promise<void> {
@@ -113,7 +128,7 @@ function bindBilingualViewerTabs(
 /**
  * In-app document viewer for proposals/contracts.
  * HTML mode uses a sandboxed iframe of the print layout.
- * PDF mode fetches bytes and embeds via blob URL.
+ * PDF mode fetches bytes and embeds via blob URL (no sandbox — Chromium PDF).
  */
 export function DocumentPreviewFrame({
   locale,
@@ -122,19 +137,39 @@ export function DocumentPreviewFrame({
   defaultMode = "html",
   className,
   compact,
+  contentRevision,
+  stale = false,
+  onRequestSave,
 }: Props) {
   const ar = locale === "ar";
   const [mode, setMode] = useState<Mode>(defaultMode);
   const [htmlSrc, setHtmlSrc] = useState<string | null>(null);
-  const [pdfSrc, setPdfSrc] = useState<string | null>(null);
+  const [pdfBase, setPdfBase] = useState<string | null>(null);
+  const [pdfZoom, setPdfZoom] = useState<PdfPreviewZoom>("fitH");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const { download, busyFormat } = useArtifactDownload();
+  const pdfCacheRef = useRef<{
+    key: string;
+    url: string;
+  } | null>(null);
+
+  const revisionKey = String(contentRevision ?? "0");
+  const cacheKey = `${proposalId}:${revisionKey}:${locale}:${reloadNonce}`;
 
   const htmlUrl = useMemo(
-    () => `/api/proposals/${proposalId}/download?format=html`,
-    [proposalId],
+    () =>
+      `/api/proposals/${proposalId}/download?format=html&locale=${locale}`,
+    [proposalId, locale],
   );
+  const pdfUrl = useMemo(
+    () =>
+      `/api/proposals/${proposalId}/download?format=pdf&locale=${locale}`,
+    [proposalId, locale],
+  );
+
+  const pdfSrc = pdfBase ? pdfPreviewSrc(pdfBase, pdfZoom) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -144,10 +179,9 @@ export function DocumentPreviewFrame({
       setLoading(true);
       setError(null);
       setHtmlSrc(null);
-      setPdfSrc(null);
+
       try {
         if (mode === "html") {
-          // Fetch as blob so preview works even if framing headers change.
           const res = await fetch(htmlUrl, { credentials: "include" });
           if (!res.ok) {
             const data = (await res.json().catch(() => ({}))) as {
@@ -155,24 +189,38 @@ export function DocumentPreviewFrame({
             };
             throw new Error(data.error || `HTML failed (${res.status})`);
           }
-          const blob = await res.blob();
-          objectUrl = URL.createObjectURL(blob);
+          const html = await res.text();
+          objectUrl = createHtmlPreviewObjectUrl(html);
           if (!cancelled) setHtmlSrc(objectUrl);
           return;
         }
-        const res = await fetch(
-          `/api/proposals/${proposalId}/download?format=pdf`,
-          { credentials: "include" },
-        );
+
+        const cached = pdfCacheRef.current;
+        if (cached?.key === cacheKey) {
+          if (!cancelled) {
+            setPdfBase(cached.url);
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (pdfCacheRef.current?.url) {
+          URL.revokeObjectURL(pdfCacheRef.current.url);
+          pdfCacheRef.current = null;
+        }
+        setPdfBase(null);
+
+        const res = await fetch(pdfUrl, { credentials: "include" });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as {
             error?: string;
           };
           throw new Error(data.error || `PDF failed (${res.status})`);
         }
-        const blob = await res.blob();
-        objectUrl = URL.createObjectURL(blob);
-        if (!cancelled) setPdfSrc(objectUrl);
+        const bytes = await res.arrayBuffer();
+        objectUrl = createPdfPreviewObjectUrl(bytes);
+        pdfCacheRef.current = { key: cacheKey, url: objectUrl };
+        if (!cancelled) setPdfBase(objectUrl);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Preview failed");
@@ -185,9 +233,19 @@ export function DocumentPreviewFrame({
     void load();
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      // Only revoke HTML blobs here; PDF cache is owned by pdfCacheRef.
+      if (mode === "html" && objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [htmlUrl, mode, proposalId]);
+  }, [htmlUrl, pdfUrl, mode, cacheKey]);
+
+  useEffect(() => {
+    return () => {
+      if (pdfCacheRef.current?.url) {
+        URL.revokeObjectURL(pdfCacheRef.current.url);
+        pdfCacheRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div
@@ -204,8 +262,13 @@ export function DocumentPreviewFrame({
             {title || (ar ? "معاينة المستند" : "Document preview")}
           </p>
           <Badge variant="outline" className="text-[10px] uppercase">
-            {mode}
+            {mode === "pdf" ? "PDF" : ar ? "تخطيط" : "Layout"}
           </Badge>
+          {stale ? (
+            <Badge variant="destructive" className="text-[10px]">
+              {ar ? "مسودة غير محفوظة" : "Unsaved draft"}
+            </Badge>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Button
@@ -226,12 +289,45 @@ export function DocumentPreviewFrame({
           >
             PDF
           </Button>
+          {mode === "pdf" ? (
+            <div className="flex rounded-md border p-0.5">
+              {(
+                [
+                  ["fitH", ar ? "عرض" : "Width"],
+                  ["fitV", ar ? "صفحة" : "Page"],
+                  ["page", "100%"],
+                ] as const
+              ).map(([id, label]) => (
+                <Button
+                  key={id}
+                  type="button"
+                  size="sm"
+                  variant={pdfZoom === id ? "secondary" : "ghost"}
+                  className="h-7 px-2 text-[11px]"
+                  onClick={() => setPdfZoom(id)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1"
+            disabled={loading}
+            onClick={() => setReloadNonce((n) => n + 1)}
+            title={ar ? "تحديث المعاينة" : "Refresh preview"}
+          >
+            <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+          </Button>
           <Button
             type="button"
             size="sm"
             variant="outline"
             className="h-8 gap-1"
-            disabled={busyFormat === "pdf"}
+            disabled={busyFormat === "pdf" || stale}
             onClick={() =>
               void download({
                 proposalId,
@@ -279,6 +375,27 @@ export function DocumentPreviewFrame({
         </div>
       </div>
 
+      {stale ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-950 dark:text-amber-100">
+          <AlertTriangle className="size-3.5 shrink-0" />
+          <span className="flex-1 min-w-0">
+            {ar
+              ? "المعاينة الرسمية وPDF تعكسان آخر نسخة محفوظة. احفظ المسودة لتحديثهما."
+              : "Official layout and PDF show the last saved revision. Save your draft to refresh them."}
+          </span>
+          {onRequestSave ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-7"
+              onClick={onRequestSave}
+            >
+              {ar ? "حفظ الآن" : "Save now"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div
         className={cn(
           "relative overflow-auto bg-slate-100/80 p-3 sm:p-5 dark:bg-slate-950/30",
@@ -286,27 +403,44 @@ export function DocumentPreviewFrame({
         )}
       >
         {loading ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground z-10 bg-background/40">
             <Loader2 className="size-5 animate-spin" />
-            {ar ? "جارٍ تحميل المعاينة…" : "Loading preview…"}
+            {mode === "pdf"
+              ? ar
+                ? "جارٍ توليد PDF…"
+                : "Rendering PDF…"
+              : ar
+                ? "جارٍ تحميل المعاينة…"
+                : "Loading preview…"}
           </div>
         ) : null}
         {error ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center z-10">
             <p className="text-sm text-destructive max-w-md">{error}</p>
             <p className="text-xs text-muted-foreground max-w-sm">
               {ar
                 ? "تأكد من تثبيت Chromium لـ Playwright على الخادم، أو استخدم معاينة التخطيط HTML."
                 : "Ensure Playwright Chromium is installed on the server, or use HTML layout preview."}
             </p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setMode("html")}
-            >
-              {ar ? "العودة للتخطيط" : "Back to layout"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setMode("html")}
+              >
+                {ar ? "العودة للتخطيط" : "Back to layout"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setReloadNonce((n) => n + 1)}
+              >
+                <RefreshCw className="size-3.5 me-1" />
+                {ar ? "إعادة المحاولة" : "Retry"}
+              </Button>
+            </div>
           </div>
         ) : null}
         {!loading && !error && mode === "html" && htmlSrc ? (
@@ -373,9 +507,9 @@ export function DocumentPreviewFrame({
         {!loading && !error && mode === "pdf" && pdfSrc ? (
           <div className="mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-sm border border-slate-200/90 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.18)] ring-1 ring-black/5">
             <iframe
+              key={pdfSrc}
               title={title || "PDF preview"}
               src={pdfSrc}
-              sandbox={PDF_PREVIEW_SANDBOX}
               referrerPolicy="no-referrer"
               className="size-full border-0 bg-muted/30"
             />
