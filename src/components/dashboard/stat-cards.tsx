@@ -20,14 +20,32 @@ import type { StatsResponse } from "@/lib/api-types";
 
 export function StatCards() {
   const { locale } = useLocale();
-  const { data, isLoading } = useQuery<StatsResponse>({
+  const { data, isLoading, isError, refetch } = useQuery<StatsResponse>({
     queryKey: ["stats"],
     queryFn: async () => {
       const res = await fetch("/api/stats");
+      if (!res.ok) throw new Error(`stats ${res.status}`);
       return res.json();
     },
     refetchInterval: 8000,
   });
+
+  if (isError) {
+    return (
+      <Card className="col-span-full p-4 border-border/60 text-center space-y-2">
+        <p className="text-xs text-destructive" role="alert">
+          {locale === "ar" ? "تعذر تحميل المؤشرات" : "Could not load dashboard stats"}
+        </p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className="text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+        >
+          {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+        </button>
+      </Card>
+    );
+  }
 
   const k = data?.kpis;
 

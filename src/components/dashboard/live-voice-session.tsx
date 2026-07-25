@@ -36,6 +36,7 @@ import {
   voicesForProvider,
 } from "@/lib/agents/platform/voice-options";
 import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
+import { useToast } from "@/hooks/use-toast";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionStage } from "./mission-stage";
 import { MissionConversation } from "./mission-conversation";
@@ -96,6 +97,7 @@ export function LiveVoiceSession({
 }) {
   const { locale } = useLocale();
   const { setView, setActiveProjectId } = useUI();
+  const { toast } = useToast();
   const ar = locale === "ar";
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -262,7 +264,14 @@ export function LiveVoiceSession({
       /* ignore */
     }
     setStarting(false);
-  }, [releaseMic]);
+    toast({
+      title: ar ? "تم الإيقاف" : "Stopped",
+      description: ar
+        ? "تم إنهاء المكالمة وإيقاف الصوت."
+        : "Live call and audio playback were stopped.",
+      duration: 2500,
+    });
+  }, [ar, releaseMic, toast]);
 
   // Tear down only on unmount — never when connect/disconnect identities change.
   useEffect(() => {
@@ -389,50 +398,35 @@ export function LiveVoiceSession({
             : "Disconnected";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3" dir={ar ? "rtl" : "ltr"}>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+    <div className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col gap-3" dir={ar ? "rtl" : "ltr"}>
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
         <span
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium",
+            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur",
             connected
-              ? "border-emerald-600/30 bg-emerald-600/10 text-emerald-800 dark:text-emerald-200"
+              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 shadow-[0_0_12px_-6px_rgba(16,185,129,0.5)]"
               : connecting || starting
-                ? "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100"
-                : "border-border/70 bg-muted/30 text-muted-foreground"
+                ? "border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+                : "border-zinc-200/70 dark:border-white/10 bg-white/60 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-400"
           )}
         >
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              connected
-                ? "bg-emerald-600"
-                : connecting || starting
-                  ? "bg-amber-500 animate-pulse"
-                  : "bg-slate-400"
-            )}
-          />
+          <span className={cn("size-1.5 rounded-full", connected ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" : connecting || starting ? "bg-amber-500 animate-pulse" : "bg-zinc-400")} />
           {statusLabel}
         </span>
         {isCapturing ? (
-          <span className="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:text-rose-300">
+          <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-700 dark:text-rose-300">
             <Mic className="size-3" />
             {ar ? "الميكروفون" : "Mic live"}
           </span>
         ) : null}
         {realtime.isPlaying ? (
-          <span className="inline-flex items-center gap-1 rounded-md border border-teal-600/30 bg-teal-600/10 px-2 py-0.5 text-[11px] font-medium text-teal-800 dark:text-teal-200">
+          <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/20 bg-teal-500/10 px-2.5 py-1 text-[11px] font-medium text-teal-800 dark:text-teal-200">
             {ar ? "يتحدث…" : "Speaking…"}
           </span>
         ) : null}
         {followView ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7"
-            onClick={() => setView(followView)}
-          >
-            {ar ? "افتح الشاشة:" : "Open view:"} {followView}
+          <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-[11px]" onClick={() => setView(followView)}>
+            {ar ? "افتح:" : "Open:"} {followView}
           </Button>
         ) : null}
       </div>
@@ -467,12 +461,12 @@ export function LiveVoiceSession({
       </MissionPerformanceStage>
 
       {(error || realtime.status === "error") && (
-        <div className="text-sm text-destructive border border-destructive/30 rounded-md px-3 py-2">
+        <div className="rounded-[12px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300">
           {error || (ar ? "خطأ في الجلسة المباشرة" : "Live session error")}
         </div>
       )}
 
-      <div className="flex shrink-0 flex-col gap-2 rounded-xl border border-border/70 bg-background/80 p-3">
+      <div className="flex shrink-0 flex-col gap-2.5 rounded-[16px] border border-zinc-200/70 dark:border-white/[0.08] bg-white/[0.72] dark:bg-zinc-900/60 backdrop-blur-xl p-3 shadow-[0_1px_0_0_rgba(255,255,255,0.6)_inset]">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
             <AudioLines className="size-3.5 text-muted-foreground" />

@@ -618,6 +618,13 @@
   animation: mission-ripple-out 1.1s ease-out infinite;
 }
 .mission-tool-card { animation: mission-tool-in 0.28s ease-out both; }
+
+/* Ambient processing glow for mission control shell */
+@keyframes mission-glow {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(20,184,166,0.15), 0 0 20px -8px rgba(20,184,166,0.2); }
+  50% { box-shadow: inset 0 0 0 1px rgba(20,184,166,0.3), 0 0 30px -4px rgba(20,184,166,0.35); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mission-tool-glitter, .mission-agent-hand-dot, .mission-agent-hand-ring, .mission-tool-live, .mission-tool-card, .aurora-blob-1, .aurora-blob-2, .aurora-blob-3 {
     animation: none !important;
