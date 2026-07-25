@@ -7,10 +7,7 @@ import { verifyMfaToken } from "./mfa";
 import { audit, AUDIT_ACTIONS } from "./audit";
 import { rateLimitAsync as rateLimit } from "./rate-limit";
 import type { Role } from "./types";
-import {
-  isProductionBlockedDevelopmentIdentity,
-  isProductionRuntime,
-} from "./production-identities";
+import { isProductionBlockedDevelopmentIdentity } from "./production-identities";
 
 declare module "next-auth" {
   interface Session {
@@ -23,6 +20,7 @@ declare module "next-auth" {
       locale: string;
       mustChangePassword: boolean;
       avatarUrl?: string | null;
+      workspaceId: string;
     };
     mfaVerified: boolean;
     sessionToken?: string;
@@ -38,6 +36,7 @@ declare module "next-auth" {
     mustChangePassword: boolean;
     sessionToken: string;
     avatarUrl?: string | null;
+    workspaceId?: string;
   }
 }
 
@@ -74,25 +73,30 @@ export const authOptions: NextAuthOptions = {
         const password = credentials?.password ?? "";
         const mfaToken = credentials?.mfaToken?.trim() ?? "";
 
+        // Prefer Redis when REDIS_URL is set; otherwise use in-memory limits
+        // (Vercel Hobby / single-node). Do not force requireDistributed on
+        // production alone — that blocks all logins when Redis is unset.
         const rl = await rateLimit({
           key: `login:${email || "unknown"}`,
           limit: 10,
           windowMs: 15 * 60 * 1000,
-          requireDistributed: isProductionRuntime(),
         });
         if (!rl.ok) {
-          if (rl.backend === "unavailable") {
-            return null;
-          }
+          const reason =
+            rl.backend === "unavailable"
+              ? "rate_limit_service_unavailable"
+              : "rate_limited";
+          console.warn(`[auth] authorize rejected: ${reason}`, { email });
           await audit({
             action: AUDIT_ACTIONS.LOGIN_FAILED,
-            details: { email, reason: "rate_limited" },
+            details: { email, reason },
             severity: "WARN",
             success: false,
           });
           return null;
         }
         if (isProductionBlockedDevelopmentIdentity(email)) {
+          console.warn("[auth] authorize rejected: reserved_development_identity", { email });
           await audit({
             action: AUDIT_ACTIONS.LOGIN_FAILED,
             details: { reason: "reserved_development_identity" },
@@ -106,13 +110,18 @@ export const authOptions: NextAuthOptions = {
         try {
           await getBootstrapContext();
         } catch (err) {
-          console.error("[auth] bootstrap failed", err);
+          console.error("[auth] bootstrap failed — rejecting login", err);
+          return null;
         }
 
-        if (!email || !password) return null;
+        if (!email || !password) {
+          console.warn("[auth] authorize rejected: missing_email_or_password");
+          return null;
+        }
 
         const user = await db.user.findUnique({ where: { email } });
         if (!user || !user.active) {
+          console.warn("[auth] authorize rejected: not_found_or_inactive", { email, active: user?.active });
           await audit({
             action: AUDIT_ACTIONS.LOGIN_FAILED,
             details: { email, reason: "not_found_or_inactive" },
@@ -124,6 +133,7 @@ export const authOptions: NextAuthOptions = {
 
         const ok = await verifyPassword(password, user.passwordHash);
         if (!ok) {
+          console.warn("[auth] authorize rejected: bad_password", { email });
           await audit({
             userId: user.id,
             action: AUDIT_ACTIONS.LOGIN_FAILED,
@@ -137,6 +147,7 @@ export const authOptions: NextAuthOptions = {
         let mfaVerified = !user.mfaEnabled;
         if (user.mfaEnabled) {
           if (!user.mfaSecret || !mfaToken || !verifyMfaToken(user.mfaSecret, mfaToken)) {
+            console.warn("[auth] authorize rejected: mfa_failed", { email, hasSecret: !!user.mfaSecret, hasToken: !!mfaToken });
             return null;
           }
           mfaVerified = true;
@@ -180,7 +191,7 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
-  callbacks: {
+    callbacks: {
     async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
@@ -286,6 +297,7 @@ export const authOptions: NextAuthOptions = {
         locale: token.locale,
         mustChangePassword: !!token.mustChangePassword,
         avatarUrl: token.avatarUrl ?? null,
+        workspaceId: "",
       };
       session.mfaVerified = token.mfaVerified;
       session.sessionToken = token.sessionToken;

@@ -40,6 +40,24 @@ describe("distributed rate-limit policy", () => {
     ).toBe(false);
   });
 
+  test("login authorize must not force Redis just because runtime is production", () => {
+    // Mirrors src/lib/auth.ts: omit requireDistributed so Hobby / single-node
+    // production stays on in-memory limits when REDIS_URL is unset.
+    expect(
+      requiresDistributedRateLimit(undefined, {
+        NODE_ENV: "production",
+        VERCEL: "1",
+      })
+    ).toBe(false);
+    expect(
+      requiresDistributedRateLimit(undefined, {
+        NODE_ENV: "production",
+        VERCEL: "1",
+        REDIS_URL: "rediss://upstash.example",
+      })
+    ).toBe(true);
+  });
+
   test("distinguishes limiter exhaustion from backend unavailability", () => {
     expect(
       describeRateLimitDenial({
