@@ -1,4 +1,5 @@
 import type { DocCategory } from "@/lib/types";
+import { AGENT_CONFIG } from "@/lib/agents/agent-config";
 
 export type AttachmentSource =
   | "upload"
@@ -22,7 +23,7 @@ export type ClassificationDecision = {
   suggestedTitle: string | null;
 };
 
-const HIGH = 0.78;
+const HIGH = AGENT_CONFIG.PLATFORM.autopilotConfidence;
 const ATTACHMENT_SOURCES = new Set<AttachmentSource>([
   "upload",
   "url",
@@ -143,7 +144,7 @@ export function classifyAttachment(input: {
     reasons.push("technical specs cues");
   } else if (contractHit) {
     category = "IT_CONTRACT";
-    confidence = 0.78;
+    confidence = HIGH;
     reasons.push("contract cues");
   } else if (eaHit) {
     category = "EA_COMPLIANCE";

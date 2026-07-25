@@ -16,6 +16,7 @@ import {
   isQualityMilestoneName,
   isQualityScopeText,
 } from "../text-quality";
+import { AGENT_CONFIG } from "./agent-config";
 
 export type CoverageStatus =
   | "COVERED"
@@ -130,11 +131,15 @@ export function buildCoveragePlan(opts: {
       }))
       .sort((a, b) => b.score - a.score);
 
-    const top = scored.filter((s) => s.score >= 0.12).slice(0, 4);
+    const { coveredMinScore, partialMinScore, evidenceHitsMax } =
+      AGENT_CONFIG.COVERAGE;
+    const top = scored
+      .filter((s) => s.score >= partialMinScore)
+      .slice(0, evidenceHitsMax);
     const best = top[0]?.score ?? 0;
     let status: CoverageStatus = "GAP";
-    if (best >= 0.28 && top.length >= 1) status = "COVERED";
-    else if (best >= 0.12) status = "PARTIAL";
+    if (best >= coveredMinScore && top.length >= 1) status = "COVERED";
+    else if (best >= partialMinScore) status = "PARTIAL";
     else status = "NEEDS_USER_INPUT";
 
     const evidenceIds = top.map((t) => t.doc.id);

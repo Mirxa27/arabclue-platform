@@ -4,6 +4,8 @@
 
 Durable in-process workflow with persisted `AgentRun` state, progress, cancel, and final artifacts.
 
+**Decision logic SSOT (human + machine):** see [`docs/AGENT_DECISION_LOGIC.md`](./AGENT_DECISION_LOGIC.md), `src/lib/agents/agent-registry.ts`, and `src/lib/agents/agent-config.ts`. **Print/PDF layout:** [`docs/PRINT_READY_STANDARDS.md`](./PRINT_READY_STANDARDS.md).
+
 Each agent is a **principal tender engineer** role (not a generic chatbot). Craft rules live in `WINNING_TENDER_CRAFT` (`src/lib/agents/prompts.ts`): complete requirement coverage, evaluation alignment, explicit gaps, evidence-only claims, no pricing, human final author.
 
 1. **Ingestion (Agent 1)** — Principal Tender Ingestion & Requirements Engineer. Parse tender text; extract SOW, evaluation weights, SLA clauses exactly as written, milestones, and requirement rows with section/page refs.

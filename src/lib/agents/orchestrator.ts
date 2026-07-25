@@ -39,6 +39,9 @@ import { parseAgentRunConfig } from "../proposal-studio";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "../proposal-snapshot-persistence";
 import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "../contract-render-snapshot";
 import { isProposalEditLocked } from "../proposal-status";
+import { createDecisionLogger, decision, truncateForLog } from "./decision-logger";
+import { createMetricsTracker } from "./agent-metrics";
+import { AGENT_CONFIG } from "./agent-config";
 
 export interface OrchestratorResult {
   agentStates: AgentState[];
@@ -86,6 +89,18 @@ export async function runAgentPipeline(opts: {
 }): Promise<OrchestratorResult> {
   const locale: Locale = opts.locale === "en" ? "en" : "ar";
   const states = initStates(locale);
+  const logger = createDecisionLogger();
+  const metrics = createMetricsTracker(opts.runId, opts.projectId);
+  const runStartedAtIso = new Date().toISOString();
+
+  decision(logger, {
+    agentId: "ORCHESTRATOR",
+    ruleId: "orchestration-order",
+    sourceCategory: "INTERNAL_RECOMMENDATION",
+    message: `Pipeline start for project ${opts.projectId} locale=${locale} mode=${opts.regenerateMode ?? "create"}`,
+    inputs: truncateForLog({ projectId: opts.projectId, workspaceId: opts.workspaceId, regenerateMode: opts.regenerateMode, docsCount: undefined }) as Record<string, unknown>,
+    runId: opts.runId,
+  });
 
   const assertNotCancelled = async () => {
     const row = await db.agentRun.findUnique({
@@ -143,13 +158,66 @@ export async function runAgentPipeline(opts: {
 
     // ─── Agent 1: INGESTION ───────────────────────────────────────────────
     await mark("INGESTION", { status: "running", progress: 10, startedAt: new Date().toISOString() });
+    metrics.startAgent("INGESTION");
+    logger.startTimer("ingestion-extraction");
 
+    const extractionConcurrency = AGENT_CONFIG.PERFORMANCE.maxParallelExtractions ?? 3;
     const texts: string[] = [];
-    for (const d of docs) {
-      const t = await extractTextFromStorage(d.storagePath, d.mimeType, d.originalName);
-      if (t) texts.push(`--- ${d.originalName} (${d.docCategory}) ---\n${t}`);
+    const extractionQueue = [...docs];
+    const extractionWorkers: Promise<void>[] = [];
+    const extractionErrors: string[] = [];
+
+    for (let w = 0; w < Math.min(extractionConcurrency, extractionQueue.length); w++) {
+      extractionWorkers.push(
+        (async () => {
+          while (extractionQueue.length > 0) {
+            const docItem = extractionQueue.shift();
+            if (!docItem) break;
+            try {
+              const t = await extractTextFromStorage(docItem.storagePath, docItem.mimeType, docItem.originalName);
+              if (t) texts.push(`--- ${docItem.originalName} (${docItem.docCategory}) ---\n${t}`);
+              decision(logger, {
+                agentId: "INGESTION",
+                ruleId: "text-extraction-routing",
+                sourceCategory: "DETERMINISTIC_CALC",
+                message: `Extracted ${docItem.originalName} (${t?.length ?? 0} chars)`,
+                inputs: truncateForLog({ docId: docItem.id, category: docItem.docCategory, mime: docItem.mimeType }) as Record<string, unknown>,
+                output: `${t?.length ?? 0} chars`,
+                runId: opts.runId,
+              });
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              extractionErrors.push(`${docItem.originalName}: ${msg}`);
+              metrics.failAgent("INGESTION", msg);
+              decision(logger, {
+                agentId: "INGESTION",
+                ruleId: "text-extraction-routing",
+                sourceCategory: "DETERMINISTIC_CALC",
+                level: "WARNING",
+                message: `Failed extraction ${docItem.originalName}`,
+                evidence: msg,
+                runId: opts.runId,
+              });
+            }
+          }
+        })()
+      );
     }
+
+    await Promise.all(extractionWorkers);
+    const extractionDuration = logger.endTimer("ingestion-extraction");
     const combined = texts.join("\n\n");
+
+    decision(logger, {
+      agentId: "INGESTION",
+      ruleId: "sla-preservation",
+      sourceCategory: "EXPLICIT_TENDER",
+      message: `Combined ${texts.length}/${docs.length} docs, ${combined.length} chars, extraction ${extractionDuration}ms`,
+      inputs: truncateForLog({ docsCount: docs.length, combinedLength: combined.length }) as Record<string, unknown>,
+      output: `${texts.length} texts`,
+      evidence: extractionErrors.length ? extractionErrors.join("; ") : undefined,
+      runId: opts.runId,
+    });
     if (!combined && docs.length === 0) {
       await mark("INGESTION", {
         status: "failed",
@@ -223,7 +291,13 @@ export async function runAgentPipeline(opts: {
       progress: 100,
       completedAt: new Date().toISOString(),
       output: summary,
-      findings: entities.evidence,
+      findings: [...entities.evidence, ...logger.getFindingsForState(10)],
+    });
+    metrics.completeAgent("INGESTION", {
+      evidenceCount: entities.evidence.length,
+      enriched: (entities.evidence as string[]).some((e) => e.includes("AI skill applied")),
+      fallback: (entities.evidence as string[]).some((e) => e.includes("unavailable")),
+      provider: entities.evidence.find((e) => e.includes("via"))?.split("via ").pop()?.trim(),
     });
 
     // Persist tender requirements matrix (structure + account linking)
@@ -240,10 +314,21 @@ export async function runAgentPipeline(opts: {
     }
 
     // ─── Agent 2: COMPLIANCE_REGULATORY ───────────────────────────────────
+    metrics.startAgent("COMPLIANCE_REGULATORY");
+    logger.startTimer("compliance");
     await mark("COMPLIANCE_REGULATORY", {
       status: "running",
       progress: 15,
       startedAt: new Date().toISOString(),
+    });
+
+    decision(logger, {
+      agentId: "COMPLIANCE_REGULATORY",
+      ruleId: "pdpl-residency-explicit",
+      sourceCategory: "EXPLICIT_TENDER",
+      message: `Starting compliance evaluation with ${combined.length} chars corpus`,
+      inputs: truncateForLog({ combinedLength: combined.length, frameworks: AGENT_CONFIG.COMPLIANCE.frameworks }) as Record<string, unknown>,
+      runId: opts.runId,
     });
 
     let { rows, findings: cFindings, score } = evaluateCompliance({
@@ -322,15 +407,29 @@ export async function runAgentPipeline(opts: {
       }
     }
 
+    const complianceDuration = logger.endTimer("compliance");
+    decision(logger, {
+      agentId: "COMPLIANCE_REGULATORY",
+      ruleId: "sla-tender-vs-statutory-separation",
+      sourceCategory: "EXPLICIT_TENDER",
+      message: `Compliance completed ${rows.length} controls, score ${score}% in ${complianceDuration}ms`,
+      inputs: truncateForLog({ rowsCount: rows.length, score }) as Record<string, unknown>,
+      output: `score ${score}%`,
+      runId: opts.runId,
+    });
+
     await mark("COMPLIANCE_REGULATORY", {
       status: "completed",
       progress: 100,
       completedAt: new Date().toISOString(),
       output: `Compliance score ${score}% — ${rows.length} controls evaluated`,
-      findings: cFindings,
+      findings: [...cFindings, ...logger.getEntries().filter(e=>e.agentId==="COMPLIANCE_REGULATORY").slice(-3).map(e=>`${e.ruleId}: ${e.message}`)],
     });
+    metrics.completeAgent("COMPLIANCE_REGULATORY", { complianceScore: score, evidenceCount: rows.length, enriched: cFindings.some(f=>f.includes("AI skill applied")), fallback: cFindings.some(f=>f.includes("unavailable")) });
 
     // ─── Agent 3: TECHNICAL_ARCHITECT ─────────────────────────────────────
+    metrics.startAgent("TECHNICAL_ARCHITECT");
+    logger.startTimer("technical");
     await mark("TECHNICAL_ARCHITECT", {
       status: "running",
       progress: 20,
@@ -572,8 +671,25 @@ export async function runAgentPipeline(opts: {
       output: technical.solutionApproach.slice(0, 500),
       findings: technical.findings,
     });
+    metrics.completeAgent("TECHNICAL_ARCHITECT", {
+      evidenceCount: technical.matchedProjects.length,
+      enriched: technical.findings.some(f=>f.includes("AI skill applied")),
+      fallback: technical.findings.some(f=>f.includes("unavailable")),
+      provider: technical.findings.find(f=>f.includes("via"))?.split("via ").pop(),
+    });
+    decision(logger, {
+      agentId: "TECHNICAL_ARCHITECT",
+      ruleId: "rag-retrieval-thresholds",
+      sourceCategory: "APPROVED_KNOWLEDGE",
+      message: `Technical completed with ${technical.matchedProjects.length} matches`,
+      inputs: truncateForLog({ matchedProjects: technical.matchedProjects.length }) as Record<string, unknown>,
+      output: `${technical.findings.length} findings`,
+      runId: opts.runId,
+    });
 
     // ─── Agent 4: FINANCIAL_QUALIFICATION ─────────────────────────────────
+    metrics.startAgent("FINANCIAL_QUALIFICATION");
+    logger.startTimer("financial");
     await mark("FINANCIAL_QUALIFICATION", {
       status: "running",
       progress: 20,
@@ -626,12 +742,27 @@ export async function runAgentPipeline(opts: {
       };
     }
 
+    const finDuration = logger.endTimer("financial");
+    decision(logger, {
+      agentId: "FINANCIAL_QUALIFICATION",
+      ruleId: "qlr-formula-exact",
+      sourceCategory: "DETERMINISTIC_CALC",
+      message: `Financial QLR ${financial.quickLiquidityRatio ?? "N/A"} BoQ ${financial.boqItems.length} lines in ${finDuration}ms`,
+      inputs: truncateForLog({ boqLines: financial.boqItems.length, qlr: financial.quickLiquidityRatio }) as Record<string, unknown>,
+      runId: opts.runId,
+    });
+
     await mark("FINANCIAL_QUALIFICATION", {
       status: "completed",
       progress: 100,
       completedAt: new Date().toISOString(),
       output: `QLR=${financial.quickLiquidityRatio ?? "N/A"}; BoQ lines=${financial.boqItems.length}`,
       findings: financial.findings,
+    });
+    metrics.completeAgent("FINANCIAL_QUALIFICATION", {
+      evidenceCount: financial.boqItems.length,
+      enriched: financial.findings.some(f=>f.includes("AI skill applied")),
+      fallback: financial.findings.some(f=>f.includes("unavailable")),
     });
 
     // ─── Coverage plan (requirement → evidence matrix) ────────────────────
@@ -650,6 +781,8 @@ export async function runAgentPipeline(opts: {
     }
 
     // ─── Agent 5: PROPOSAL_DRAFTING ───────────────────────────────────────
+    metrics.startAgent("PROPOSAL_DRAFTING");
+    logger.startTimer("drafting");
     await mark("PROPOSAL_DRAFTING", {
       status: "running",
       progress: 25,
@@ -934,6 +1067,20 @@ export async function runAgentPipeline(opts: {
       });
     }
 
+    const draftingDuration = logger.endTimer("drafting");
+    decision(logger, {
+      agentId: "PROPOSAL_DRAFTING",
+      ruleId: "validation-gate-blocking",
+      sourceCategory: "DETERMINISTIC_CALC",
+      level: validationReport.blocking ? "BLOCKING" : "INFO",
+      message: `Proposal ${proposal.id} ${validationReport.blocking ? "BLOCKED" : "GENERATED"} coverage ${coverage.coveragePercent}% in ${draftingDuration}ms`,
+      inputs: truncateForLog({ coveragePercent: coverage.coveragePercent, compliant: score, tokens: draft.tokensUsed }) as Record<string, unknown>,
+      output: draft.provider,
+      blocking: validationReport.blocking,
+      runId: opts.runId,
+    });
+    if (validationReport.blocking) metrics.blockExport();
+
     await mark("PROPOSAL_DRAFTING", {
       status: "completed",
       progress: 100,
@@ -953,8 +1100,20 @@ export async function runAgentPipeline(opts: {
           : "Validation passed — draft ready for human review",
       ],
     });
+    metrics.completeAgent("PROPOSAL_DRAFTING", {
+      coveragePercent: coverage.coveragePercent,
+      complianceScore: score,
+      gapCount: coverage.gapCount,
+      evidenceCount: realArtifacts.length,
+      enriched: !draft.fallback,
+      fallback: draft.fallback,
+      provider: draft.provider,
+      tokensUsed: draft.tokensUsed,
+    });
 
     // ─── Agent 6: LAW_CONTRACT (research then bilingual draft) ────────────
+    metrics.startAgent("LAW_CONTRACT");
+    logger.startTimer("law_contract");
     await mark("LAW_CONTRACT", {
       status: "running",
       progress: 15,
@@ -1056,6 +1215,20 @@ export async function runAgentPipeline(opts: {
       data: { artifactsJson: JSON.stringify(realContractArtifacts) },
     });
 
+    const lawDuration = logger.endTimer("law_contract");
+    decision(logger, {
+      agentId: "LAW_CONTRACT",
+      ruleId: "contract-validation-blocking",
+      sourceCategory: "DETERMINISTIC_CALC",
+      level: contractValidation.blocking ? "BLOCKING" : "INFO",
+      message: `Contract ${contract.id} ${lawDraft.articles.length} articles ${contractValidation.blocking ? "BLOCKED" : "READY"} in ${lawDuration}ms`,
+      inputs: truncateForLog({ articles: lawDraft.articles.length, sources: lawDraft.research.sources.length }) as Record<string, unknown>,
+      output: `${lawDraft.articles.length} articles`,
+      blocking: contractValidation.blocking,
+      runId: opts.runId,
+    });
+    if (contractValidation.blocking) metrics.blockExport();
+
     await mark("LAW_CONTRACT", {
       status: "completed",
       progress: 100,
@@ -1070,7 +1243,15 @@ export async function runAgentPipeline(opts: {
           ? `Contract validation issues: ${contractValidation.issues.map((i) => i.code).join(", ")}`
           : "Contract draft ready for authorized legal review (not legal advice)",
         "No 100% legal certainty asserted — counsel verification mandatory",
+        ...logger.getEntries().filter(e=>e.agentId==="LAW_CONTRACT").slice(-2).map(e=>`${e.ruleId}: ${e.message}`),
       ],
+    });
+    metrics.completeAgent("LAW_CONTRACT", {
+      evidenceCount: lawDraft.research.sources.length + lawDraft.research.findings.length,
+      enriched: !lawDraft.fallback,
+      fallback: lawDraft.fallback,
+      provider: lawDraft.provider,
+      tokensUsed: lawDraft.tokensUsed,
     });
 
     // Augment final artifact with contract id
@@ -1086,6 +1267,8 @@ export async function runAgentPipeline(opts: {
     } catch {
       artifactObj = {};
     }
+    const finalMetrics = metrics.build("COMPLETED", 100);
+    const decisionLog = logger.toLog(opts.runId, opts.projectId, runStartedAtIso);
     await db.agentRun.update({
       where: { id: opts.runId },
       data: {
@@ -1094,6 +1277,12 @@ export async function runAgentPipeline(opts: {
           contractId: contract.id,
           contractValidation,
           contractResearchAt: lawDraft.research.researchedAt,
+          metrics: finalMetrics,
+          decisionLog: {
+            entries: decisionLog.entries.slice(-100),
+            total: decisionLog.entries.length,
+            auditChecklist: (await import("./agent-registry")).AUDIT_CHECKLIST,
+          },
         }),
       },
     });

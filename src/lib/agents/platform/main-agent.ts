@@ -6,6 +6,7 @@ import {
   type UIMessage,
 } from "ai";
 import { canWriteRole } from "@/lib/auth";
+import { AGENT_CONFIG } from "@/lib/agents/agent-config";
 import { getTenantContext } from "@/lib/workspace-context";
 import type { Session } from "next-auth";
 import type { PlatformAgentContext } from "./context";
@@ -65,8 +66,8 @@ export async function createPlatformAgent(
       isAdmin: ctx.isAdmin,
     }),
     tools,
-    stopWhen: stepCountIs(28),
-    temperature: 0.3,
+    stopWhen: stepCountIs(AGENT_CONFIG.PLATFORM.toolLoopMaxSteps),
+    temperature: AGENT_CONFIG.PLATFORM.toolLoopTemperature,
   });
 
   return { agent, ctx, providerLabel, modelId };
