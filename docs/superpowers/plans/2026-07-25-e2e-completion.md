@@ -17,104 +17,40 @@
 
 ---
 
-### Task 1: AI Agents preflight — block empty-document runs + honest failure UI
+### Task 1: AI Agents preflight — DONE (`7985e18`)
+
+### Task 2: Soft-fail Phase 4 APIs — DONE (`0d283b1`)
+
+### Task 3: Phase 4 migration SQL + marketplace Use — DONE (`6719fe7`)
+
+### Task 4: Business Profile zero-stat CTAs — DONE (`113bf4e`)
+
+### Task 5: Mission Control chat gate + proposals empty CTA — DONE (`113bf4e`)
+
+### Task 6: Marketplace → builder → HTML export — DONE (`17e1c46`)
+
+### Task 7: Collaboration resolve + builder mount + agent DASHBOARD_VIEWS
 
 **Files:**
-- Modify: `src/components/dashboard/agent-workflow.tsx`
-- Modify: `src/app/api/agents/run/route.ts` (or existing run handler) — return 422 when project has zero documents
-- Optional helper: `src/lib/agents/run-preflight.ts` + test `src/lib/__tests__/agent-run-preflight.test.ts`
+- Create: `src/app/api/collaboration/comments/[id]/resolve/route.ts`
+- Modify: `src/components/dashboard/proposal-builder.tsx` — mount comments + presence when saved
+- Modify: `src/lib/agents/platform/context.ts` — include `proposal-builder`, `marketplace`, `analytics`, `brand`
+- Commit schema Phase 4 models aligned with migration SQL
 
 **Acceptance:**
-- Before starting a run, UI knows document count for `activeProjectId` (query existing documents API or project endpoint)
-- Primary Run button disabled (or click shows destructive toast + navigates to Documents) when `documentCount === 0`
-- Banner: AR/EN “Upload tender documents before running agents” with CTA → `setView("documents")`
-- API rejects empty-doc runs with stable `{ error, code: "NO_DOCUMENTS" }` 422 — do not create AgentRun rows that immediately fail
-- Failed ingestion agent showing `progress: 100` + FAILED must render as failed (red), not success-looking; ensure card uses `status === "FAILED"` for chrome (verify/fix agent card)
-- `projectMeta` fetch failure shows error + Retry (not silent null)
-
-- [ ] **Step 1:** Extract `assertProjectHasDocuments(count)` pure helper + unit test
-- [ ] **Step 2:** Wire documents count query into AgentWorkflow
-- [ ] **Step 3:** Gate Run button + banner CTA
-- [ ] **Step 4:** API preflight 422
-- [ ] **Step 5:** tests + tsc; commit: `fix(agents): preflight block runs with no documents`
+- Resolve endpoint soft-fails 501 when table missing
+- Saved proposals show collaboration panel; honest toast on write failure
+- Platform agent view allowlist matches sidebar product views
 
 ---
 
-### Task 2: Soft-fail Phase 4 APIs (analytics + collaboration) without migration
+## Out of scope / blocked on human
 
-**Files:**
-- Modify: `src/app/api/analytics/proposals/route.ts`
-- Modify: `src/app/api/collaboration/comments/route.ts`
-- Modify: `src/app/api/collaboration/presence/route.ts`
-- Modify: `src/components/dashboard/analytics-dashboard.tsx` — Retry on error
-- Optional: add resolve stub route that returns 501 honest message OR implement resolve if `CollaborationComment` exists
-
-**Acceptance:**
-- When Prisma table missing (P2021), return `{ ok: true, empty: true, items: [] }` / empty analytics with `degraded: true` — never 500 HTML
-- Analytics UI shows Retry on fetch error and empty state when degraded
-- Do not mock fake metrics
-
-- [ ] Steps: detect Prisma missing-table; soft response; UI Retry; tests; commit `fix(phase4): soft-fail analytics and collaboration when tables absent`
-
----
-
-### Task 3: Phase 4 migration SQL (file only) + marketplace Use resolves DB or catalog
-
-**Files:**
-- Create: `prisma/migrations/20260725_phase4_proposal_system/migration.sql` matching schema models `ProposalBuilderSection`, `TemplateMarketplaceEntry`, `CollaborationComment`, `AnalyticsEvent` (+ indexes/FKs from schema)
-- Modify: `src/app/api/templates/marketplace/[id]/use/route.ts` — resolve system catalog OR DB by id/templateKey
-- Do **not** apply migration to Neon
-
-**Acceptance:**
-- Migration SQL is valid for PostgreSQL / Neon
-- Use route finds DB templates when table exists; falls back to system catalog; never 404 for system ids
-- Unit/integration test for catalog resolution helper
-- Commit: `feat(phase4): add proposal-system migration SQL and marketplace use resolution`
-
----
-
-### Task 4: Business Profile zero-stat CTAs + Account → Profile when incomplete
-
-**Files:**
-- Modify: `src/components/dashboard/business-profile-view.tsx` — clickable zero stats → account
-- Modify: `src/components/dashboard/account-onboarding.tsx` — always show “View capability statement / draft” link
-
-**Acceptance:**
-- Zero KPI cards are buttons/links to Account Setup
-- Incomplete onboarding still offers View Business Profile
-- Commit: `fix(profile): zero-stat CTAs and always-on profile link`
-
----
-
-### Task 5: Mission Control chat gate + proposals empty CTA
-
-**Files:**
-- Modify: `src/components/dashboard/platform-agent-console.tsx` — disable Send/Speak until `missionId`
-- Modify: `src/components/dashboard/proposals-list.tsx` — empty state CTAs to projects/agents
-
-**Acceptance:**
-- Composer disabled with hint until mission ready
-- Proposals empty has real CTAs
-- Commit: `fix(ux): gate mission chat and proposals empty CTAs`
-
----
-
-### Task 6: Verify marketplace→builder→HTML export path + unit coverage
-
-**Files:**
-- Verify existing handoff in `proposal-builder-draft.ts`, marketplace card, builder export
-- Add/extend tests if gaps remain
-- Soften Create Template: open blank builder (already) — ensure no dead “Create Template” label
-
-**Acceptance:**
-- Automated tests cover draft handoff + HTML export compile
-- No “coming soon” toasts on marketplace Preview
-- Commit only if code changes: `test(marketplace): harden builder handoff coverage`
-
----
-
-## Out of scope
-
-- Applying Phase 4 migration to shared Neon without explicit human authorization
+- Applying Phase 4 migration to shared Neon without explicit authorization in chat
 - Full Playwright login e2e suite (follow-up plan)
-- Etimad / SSO / live payments
+
+## Remaining after Task 7
+
+- Auth login rate-limit must not require Redis solely because runtime is production
+- Mission Control / orchestrator / bilingual PDF polish still in working tree — commit as coherent batches when green
+- Agent decision-docs / print-ready standards docs (optional product polish)

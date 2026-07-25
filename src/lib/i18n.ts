@@ -36,6 +36,11 @@ export const t: Dict = {
   nav_admin_security: { ar: "الأمن والصلاحيات", en: "Security & RBAC" },
   nav_admin_audit: { ar: "سجل التدقيق", en: "Audit Trail" },
 
+  // Phase 4: Enhanced Proposal System
+  nav_proposal_builder: { ar: "بناء العروض", en: "Proposal Builder" },
+  nav_marketplace: { ar: "سوق القوالب", en: "Template Marketplace" },
+  nav_analytics: { ar: "التحليلات", en: "Analytics" },
+
   // Sections
   section_overview: { ar: "نظرة عامة", en: "Overview" },
   section_ingestion: { ar: "منطقة استيعاب الملفات", en: "File Ingestion Zone" },

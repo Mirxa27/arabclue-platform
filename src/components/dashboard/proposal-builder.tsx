@@ -36,6 +36,8 @@ import { saveBlob } from "@/lib/download-artifact";
 import { ProposalBuilderSections } from "./proposal-builder-sections";
 import { ProposalBuilderPreview } from "./proposal-builder-preview";
 import { ProposalBuilderToolbar } from "./proposal-builder-toolbar";
+import { CollaborationComments } from "./collaboration-comments";
+import { CollaborationPresenceBar } from "./collaboration-presence";
 
 type BuilderMode = "edit" | "preview" | "split";
 
@@ -296,31 +298,40 @@ export function ProposalBuilder() {
       ) : null}
 
       {/* Toolbar */}
-      <ProposalBuilderToolbar
-        locale={locale}
-        mode={mode}
-        onModeChange={setMode}
-        isDirty={isDirty}
-        isSaving={saveMutation.isPending}
-        onSave={() => {
-          if (!metadata.projectId) {
-            toast({
-              title: ar ? "مطلوب مشروع" : "Project required",
-              description: ar
-                ? "اختر مشروعاً نشطاً من قائمة المشاريع ثم أعد الحفظ."
-                : "Select an active project from Projects, then save again.",
-              variant: "destructive",
-            });
-            return;
-          }
-          saveMutation.mutate();
-        }}
-        onValidate={handleValidate}
-        onExportHtml={handleExportHtml}
-        validationSummary={validationSummary}
-        metadata={metadata}
-        onMetadataChange={setMetadata}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ProposalBuilderToolbar
+          locale={locale}
+          mode={mode}
+          onModeChange={setMode}
+          isDirty={isDirty}
+          isSaving={saveMutation.isPending}
+          onSave={() => {
+            if (!metadata.projectId) {
+              toast({
+                title: ar ? "مطلوب مشروع" : "Project required",
+                description: ar
+                  ? "اختر مشروعاً نشطاً من قائمة المشاريع ثم أعد الحفظ."
+                  : "Select an active project from Projects, then save again.",
+                variant: "destructive",
+              });
+              return;
+            }
+            saveMutation.mutate();
+          }}
+          onValidate={handleValidate}
+          onExportHtml={handleExportHtml}
+          validationSummary={validationSummary}
+          metadata={metadata}
+          onMetadataChange={setMetadata}
+        />
+        {metadata.proposalId && metadata.workspaceId ? (
+          <CollaborationPresenceBar
+            proposalId={metadata.proposalId}
+            workspaceId={metadata.workspaceId}
+            locale={locale}
+          />
+        ) : null}
+      </div>
 
       {/* Main content area */}
       <div className="flex min-h-0 flex-1 gap-4">
@@ -409,6 +420,17 @@ export function ProposalBuilder() {
             </div>
           )}
         </div>
+
+        {/* Collaboration (saved proposals only) */}
+        {metadata.proposalId && mode !== "preview" ? (
+          <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/60 backdrop-blur-xl">
+            <CollaborationComments
+              proposalId={metadata.proposalId}
+              sectionKey={selectedSectionKey ?? undefined}
+              locale={locale}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

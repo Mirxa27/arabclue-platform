@@ -66,9 +66,13 @@ model User {
   revokedCertificates      Certificate[]             @relation("CertificateRevoker")
   reviewedMethodologies    MethodologyAsset[]        @relation("MethodologyReviewer")
   revokedMethodologies     MethodologyAsset[]        @relation("MethodologyRevoker")
-  reviewedLibraryItems     ContentLibraryItem[]      @relation("LibraryItemReviewer")
-  revokedLibraryItems      ContentLibraryItem[]      @relation("LibraryItemRevoker")
-  updatedProposalSnapshots GeneratedProposal[]       @relation("ProposalSnapshotUpdater")
+  reviewedLibraryItems      ContentLibraryItem[]      @relation("LibraryItemReviewer")
+  revokedLibraryItems       ContentLibraryItem[]      @relation("LibraryItemRevoker")
+  updatedProposalSnapshots  GeneratedProposal[]       @relation("ProposalSnapshotUpdater")
+  builderSections           ProposalBuilderSection[]
+  createdTemplatesMarket    TemplateMarketplaceEntry[]
+  collaborationComments     CollaborationComment[]
+  analyticsEvents           AnalyticsEvent[]
 }
 
 model UserSession {
@@ -113,11 +117,13 @@ model Workspace {
   approvalPolicy     ApprovalPolicy?
   restrictions       Restriction[]
   onboardingProgress OnboardingProgress?
-  copilotMissions    CopilotMission[]
-  copilotAttachments CopilotAttachment[]
-  copilotActions     CopilotAction[]
-  contractTemplates  ContractTemplate[]
-  generatedContracts GeneratedContract[]
+  copilotMissions         CopilotMission[]
+  copilotAttachments      CopilotAttachment[]
+  copilotActions          CopilotAction[]
+  contractTemplates       ContractTemplate[]
+  generatedContracts      GeneratedContract[]
+  templateMarketplace     TemplateMarketplaceEntry[]
+  analyticsEvents         AnalyticsEvent[]
 }
 
 model WorkspaceMember {
@@ -486,6 +492,8 @@ model GeneratedProposal {
   versions                    ProposalVersion[]
   reviews                     ProposalReview[]
   obligationStates            ContractObligationState[]
+  builderSections             ProposalBuilderSection[]
+  collaborationComments       CollaborationComment[]
 
   @@index([workspaceId])
   @@index([projectId])
@@ -1211,4 +1219,103 @@ model GeneratedContract {
   @@index([projectId])
   @@index([workspaceId, legalReviewStatus, isExecutable])
   @@index([workspaceId, generationSchemaVersion, status, createdAt, id])
+}
+
+// =============================================================================
+// Phase 4: Enhanced Proposal System
+// =============================================================================
+
+model ProposalBuilderSection {
+  id            String   @id @default(cuid())
+  proposalId    String
+  sectionKey    String
+  sectionType   String   // cover, executive-summary, technical-approach, pricing, team, qualifications, timeline, compliance, appendix
+  sortOrder     Int
+  titleJson     Json     // { ar: string, en: string }
+  contentJson   Json     // { ar: string, en: string } - markdown content per locale
+  metadataJson  Json?    // section-specific metadata (pricing rows, team members, etc.)
+  isRequired    Boolean  @default(false)
+  isVisible     Boolean  @default(true)
+  validationJson Json?   // validation rules and current status
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  proposal      GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  creator       User              @relation(fields: [createdBy], references: [id])
+
+  @@unique([proposalId, sectionKey])
+  @@index([proposalId, sortOrder])
+  @@index([sectionType])
+}
+
+model TemplateMarketplaceEntry {
+  id              String   @id @default(cuid())
+  workspaceId     String?  // null for system templates
+  templateKey     String
+  nameJson        Json     // { ar: string, en: string }
+  descriptionJson Json     // { ar: string, en: string }
+  category        String   // construction, it, consulting, government, healthcare
+  industry        String?
+  sectionTypes    Json     // array of section types included
+  previewJson     Json?    // sample data for preview
+  rating          Float    @default(0)
+  ratingCount     Int      @default(0)
+  downloadCount   Int      @default(0)
+  usageCount      Int      @default(0)
+  isPublic        Boolean  @default(false)
+  isFeatured      Boolean  @default(false)
+  version         Int      @default(1)
+  tags            Json?    // array of tags
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator         User       @relation(fields: [createdBy], references: [id])
+
+  @@unique([workspaceId, templateKey])
+  @@index([category, isPublic])
+  @@index([rating, downloadCount])
+  @@index([isFeatured, isPublic])
+}
+
+model CollaborationComment {
+  id            String   @id @default(cuid())
+  proposalId    String
+  sectionKey    String?  // null for general comments
+  content       String   @db.Text
+  mentions      Json?    // array of user IDs mentioned
+  isResolved    Boolean  @default(false)
+  parentId      String?  // for threaded replies
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  proposal      GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  creator       User              @relation(fields: [createdBy], references: [id])
+  parent        CollaborationComment? @relation("CommentReplies", fields: [parentId], references: [id])
+  replies       CollaborationComment[] @relation("CommentReplies")
+
+  @@index([proposalId, sectionKey])
+  @@index([proposalId, createdAt])
+  @@index([createdBy])
+}
+
+model AnalyticsEvent {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  eventType     String   // proposal_created, proposal_exported, template_used, section_added, etc.
+  entityType    String   // proposal, template, section, export
+  entityId      String
+  metadataJson  Json?    // event-specific data
+  userId        String
+  createdAt     DateTime @default(now())
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@index([workspaceId, eventType, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
 }

@@ -43,6 +43,10 @@ describe("platform agent views", () => {
     expect(DASHBOARD_VIEWS).toContain("projects");
     expect(DASHBOARD_VIEWS).toContain("contracts");
     expect(DASHBOARD_VIEWS).toContain("agents");
+    expect(DASHBOARD_VIEWS).toContain("proposal-builder");
+    expect(DASHBOARD_VIEWS).toContain("marketplace");
+    expect(DASHBOARD_VIEWS).toContain("analytics");
+    expect(DASHBOARD_VIEWS).toContain("brand");
   });
 });
 
