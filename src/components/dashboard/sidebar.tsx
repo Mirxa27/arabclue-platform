@@ -242,6 +242,7 @@ function WorkspaceSwitcher({
   plan?: string;
 }) {
   const qc = useQueryClient();
+  const { update: updateSession } = useSession();
   const switchMutation = useMutation({
     mutationFn: async (workspaceId: string) => {
       const res = await fetch("/api/workspaces", {
@@ -251,9 +252,10 @@ function WorkspaceSwitcher({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Switch failed");
-      return data;
+      return data as { workspaceId?: string };
     },
-    onSuccess: () => {
+    onSuccess: async (data, workspaceId) => {
+      await updateSession({ workspaceId: data.workspaceId || workspaceId });
       qc.invalidateQueries();
     },
   });
