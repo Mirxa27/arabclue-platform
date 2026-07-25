@@ -12,6 +12,7 @@ import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { agentRunBodySchema, parseJsonBody } from "@/lib/validation";
 import { assertOnboardingReady } from "@/lib/onboarding";
 import { ApiError } from "@/lib/api-controller";
+import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -77,6 +78,17 @@ export async function POST(req: NextRequest) {
     let project = await db.tenderProject.findUnique({ where: { id: projectId } });
     if (!project || !assertWorkspaceMatch(project.workspaceId, workspace.id)) {
       return NextResponse.json({ error: "project not found" }, { status: 404 });
+    }
+
+    const documentCount = await db.uploadedDocument.count({
+      where: { projectId: project.id },
+    });
+    const documentPreflight = assertProjectHasDocuments(documentCount);
+    if (!documentPreflight.ok) {
+      return NextResponse.json(
+        { error: documentPreflight.error, code: documentPreflight.code },
+        { status: 422 }
+      );
     }
 
     // Atomic race guard: only one QUEUED/RUNNING run per project

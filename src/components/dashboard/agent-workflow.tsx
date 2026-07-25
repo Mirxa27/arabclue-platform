@@ -32,11 +32,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { RadialGauge } from "./radial-gauge";
-import { EmptyState, QueryState } from "@/components/patterns";
+import { EmptyState, QueryState, ErrorState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
 import { cn } from "@/lib/utils";
 import { AGENTS } from "@/lib/constants";
 import type { AgentState, AgentId } from "@/lib/types";
+import type { ApiDocument } from "@/lib/api-types";
+import { NO_DOCUMENTS_PREFLIGHT } from "@/lib/agents/run-preflight";
 
 const AGENT_META: Record<
   AgentId,
@@ -174,17 +176,56 @@ export function AgentWorkflow() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: projectMeta } = useQuery({
+  const { data: projectMeta, isError: projectMetaIsError, error: projectMetaError, refetch: refetchProjectMeta, isLoading: projectMetaLoading } = useQuery({
     queryKey: ["project-brief", activeProjectId],
     enabled: !!activeProjectId,
     queryFn: async () => {
       const res = await fetch(`/api/projects/${activeProjectId}`);
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof err.error === "string"
+            ? err.error
+            : locale === "ar"
+              ? "تعذر تحميل المشروع"
+              : "Failed to load project"
+        );
+      }
       return res.json() as Promise<{
         project?: { title?: string; titleAr?: string; etimadRef?: string | null };
       }>;
     },
   });
+
+  const {
+    data: docsData,
+    isLoading: docsLoading,
+    isError: docsIsError,
+    error: docsError,
+    refetch: refetchDocs,
+  } = useQuery({
+    queryKey: ["documents", activeProjectId],
+    enabled: !!activeProjectId,
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/documents?projectId=${encodeURIComponent(activeProjectId!)}`
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof err.error === "string"
+            ? err.error
+            : locale === "ar"
+              ? "تعذر تحميل المستندات"
+              : "Failed to load documents"
+        );
+      }
+      return res.json() as Promise<{ documents: ApiDocument[] }>;
+    },
+  });
+
+  const documentCount = docsData?.documents?.length ?? 0;
+  const hasDocuments = documentCount > 0;
 
   const {
     data: runHistoryData,
@@ -343,6 +384,13 @@ export function AgentWorkflow() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (err.code === NO_DOCUMENTS_PREFLIGHT.code) {
+          throw new Error(
+            locale === "ar"
+              ? "ارفع مستندات المناقصة قبل تشغيل الوكلاء"
+              : err.error ?? NO_DOCUMENTS_PREFLIGHT.error
+          );
+        }
         throw new Error(err.error ?? "run failed");
       }
       return res.json();
@@ -360,7 +408,12 @@ export function AgentWorkflow() {
       setCoveragePercent(null);
       setExportReady(null);
       if (Array.isArray(data.agentStates) && data.agentStates.length) {
-        setAgentStates(data.agentStates);
+        setAgentStates(
+          data.agentStates.map((a) => ({
+            ...a,
+            status: normalizeStatus(a.status),
+          }))
+        );
       } else {
         setAgentStates(idleStates());
       }
@@ -377,6 +430,13 @@ export function AgentWorkflow() {
     onError: (err: Error) => {
       if (err.message.includes("project") || err.message.includes("مشروع")) {
         startTransition(() => setView("projects"));
+      }
+      if (
+        err.message.includes("document") ||
+        err.message.includes("مستند") ||
+        err.message.includes("ارفع")
+      ) {
+        startTransition(() => setView("documents"));
       }
       toast({
         title: locale === "ar" ? "تعذر التشغيل" : "Could not start",
@@ -415,7 +475,15 @@ export function AgentWorkflow() {
     const poll = async () => {
       try {
         const res = await fetch(`/api/agents/status?runId=${runId}`);
+        if (!res.ok) {
+          throw new Error(`status ${res.status}`);
+        }
         const data = await res.json();
+        if (data?.error && !data?.status) {
+          throw new Error(
+            typeof data.error === "string" ? data.error : "status failed"
+          );
+        }
         applyStatusPayload(data);
         if (data.status === "COMPLETED") {
           toast({
@@ -456,6 +524,19 @@ export function AgentWorkflow() {
         pollRef.current = setTimeout(poll, 900);
       } catch (e) {
         console.error("poll error", e);
+        toast({
+          title:
+            locale === "ar"
+              ? "تعذر تحديث حالة التشغيل"
+              : "Could not refresh run status",
+          description:
+            locale === "ar"
+              ? "ستتم إعادة المحاولة تلقائياً…"
+              : "Retrying automatically…",
+          variant: "destructive",
+        });
+        // Keep polling after transient failures — never hang "Live" forever.
+        pollRef.current = setTimeout(poll, 2_500);
       }
     };
     poll();
@@ -475,6 +556,39 @@ export function AgentWorkflow() {
     if (!p) return null;
     return locale === "ar" ? p.titleAr || p.title : p.title;
   }, [projectMeta, locale]);
+
+  function handleRunClick() {
+    if (!activeProjectId) {
+      toast({
+        title: locale === "ar" ? "لا يوجد مشروع نشط" : "No active project",
+        description:
+          locale === "ar"
+            ? "أنشئ أو اختر مشروعاً أولاً"
+            : "Create or select a project first",
+        variant: "destructive",
+      });
+      startTransition(() => setView("projects"));
+      return;
+    }
+    if (!hasDocuments) {
+      toast({
+        title:
+          locale === "ar"
+            ? "لا توجد مستندات للمشروع"
+            : "No project documents",
+        description:
+          locale === "ar"
+            ? "ارفع مستندات المناقصة قبل تشغيل الوكلاء"
+            : "Upload tender documents before running agents",
+        variant: "destructive",
+      });
+      startTransition(() => setView("documents"));
+      return;
+    }
+    runMutation.mutate();
+  }
+
+  const runBlocked = !!activeProjectId && !docsLoading && !hasDocuments;
 
   return (
     <Card className="p-0 overflow-hidden border-border/70 shadow-sm">
@@ -537,23 +651,8 @@ export function AgentWorkflow() {
           )}
           <Button
             size="sm"
-            onClick={() => {
-              if (!activeProjectId) {
-                toast({
-                  title:
-                    locale === "ar" ? "لا يوجد مشروع نشط" : "No active project",
-                  description:
-                    locale === "ar"
-                      ? "أنشئ أو اختر مشروعاً أولاً"
-                      : "Create or select a project first",
-                  variant: "destructive",
-                });
-                startTransition(() => setView("projects"));
-                return;
-              }
-              runMutation.mutate();
-            }}
-            disabled={running || runMutation.isPending}
+            onClick={handleRunClick}
+            disabled={running || runMutation.isPending || runBlocked}
             className="gap-1.5"
           >
             {running || runMutation.isPending ? (
@@ -575,7 +674,30 @@ export function AgentWorkflow() {
       {/* Project context */}
       <div className="px-5 py-2.5 border-b border-border/50 bg-muted/40 flex flex-wrap items-center gap-2 text-[11px]">
         <FolderKanban className="size-3.5 text-muted-foreground" />
-        {activeProjectId && projectTitle ? (
+        {activeProjectId && projectMetaIsError ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-destructive font-medium">
+              {projectMetaError instanceof Error
+                ? projectMetaError.message
+                : locale === "ar"
+                  ? "تعذر تحميل المشروع"
+                  : "Failed to load project"}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-6 text-[10px]"
+              onClick={() => refetchProjectMeta()}
+            >
+              {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+            </Button>
+          </div>
+        ) : activeProjectId && projectMetaLoading ? (
+          <span className="text-muted-foreground">
+            {locale === "ar" ? "جاري تحميل المشروع…" : "Loading project…"}
+          </span>
+        ) : activeProjectId && projectTitle ? (
           <>
             <span className="font-medium text-foreground truncate max-w-[280px]">
               {projectTitle}
@@ -604,6 +726,45 @@ export function AgentWorkflow() {
           </span>
         )}
       </div>
+
+      {activeProjectId && !docsLoading && !docsIsError && !hasDocuments ? (
+        <div className="mx-5 mt-3 rounded-lg border border-amber-500/35 bg-amber-500/8 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-start gap-2 min-w-0">
+            <AlertCircle className="size-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-900 dark:text-amber-200 font-medium">
+              {locale === "ar"
+                ? "ارفع مستندات المناقصة قبل تشغيل الوكلاء"
+                : "Upload tender documents before running agents"}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px] shrink-0"
+            onClick={() => startTransition(() => setView("documents"))}
+          >
+            {locale === "ar" ? "فتح المستندات" : "Go to Documents"}
+          </Button>
+        </div>
+      ) : null}
+
+      {activeProjectId && docsIsError ? (
+        <div className="mx-5 mt-3">
+          <ErrorState
+            message={
+              docsError instanceof Error
+                ? docsError.message
+                : locale === "ar"
+                  ? "تعذر تحميل المستندات"
+                  : "Failed to load documents"
+            }
+            onRetry={() => refetchDocs()}
+            retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+            className="py-4"
+          />
+        </div>
+      ) : null}
 
       {/* Workspace run history */}
       <div className="px-5 py-3 border-b border-border/50 bg-background/80">
@@ -727,9 +888,10 @@ export function AgentWorkflow() {
           <div className="flex items-center gap-1 pt-1">
             {agentStates.map((a, i) => {
               const meta = AGENT_META[a.id];
-              const done = a.status === "completed";
-              const live = a.status === "running";
-              const failed = a.status === "failed";
+              const status = normalizeStatus(a.status);
+              const done = status === "completed";
+              const live = status === "running";
+              const failed = status === "failed";
               return (
                 <div key={a.id} className="flex items-center gap-1 flex-1 min-w-0">
                   <div
@@ -765,10 +927,11 @@ export function AgentWorkflow() {
             ring: "text-muted-foreground",
           };
           const Icon = meta.icon;
-          const isRunning = a.status === "running";
-          const isDone = a.status === "completed";
-          const isFailed = a.status === "failed";
-          const isPending = a.status === "pending";
+          const status = normalizeStatus(a.status);
+          const isRunning = status === "running";
+          const isDone = status === "completed";
+          const isFailed = status === "failed";
+          const isPending = status === "pending";
           const pct = isDone ? 100 : Math.round(a.progress || 0);
 
           return (
@@ -789,17 +952,19 @@ export function AgentWorkflow() {
                   size={52}
                   strokeWidth={5}
                   trackClassName={
-                    isRunning
-                      ? "text-violet-200 dark:text-violet-900"
-                      : "text-slate-300 dark:text-slate-600"
+                    isFailed
+                      ? "text-destructive/25"
+                      : isRunning
+                        ? "text-violet-200 dark:text-violet-900"
+                        : "text-slate-300 dark:text-slate-600"
                   }
                   className={cn(
-                    isDone
-                      ? "text-emerald-500"
-                      : isRunning
-                        ? "text-violet-500"
-                        : isFailed
-                          ? "text-destructive"
+                    isFailed
+                      ? "text-destructive"
+                      : isDone
+                        ? "text-emerald-500"
+                        : isRunning
+                          ? "text-violet-500"
                           : meta.ring + "/40"
                   )}
                   ariaLabel={`${tr(`agent_${a.id}_name`, locale)} ${pct}%`}
@@ -859,18 +1024,32 @@ export function AgentWorkflow() {
                     </div>
                   </div>
 
-                  {(isRunning || isDone) && a.findings && a.findings.length > 0 && (
+                  {(isRunning || isDone || isFailed) && a.findings && a.findings.length > 0 && (
                     <ul className="mt-2 space-y-1 border-t border-border/50 pt-2">
                       {a.findings.slice(0, isDone ? 3 : 2).map((f, i) => (
                         <li
                           key={i}
-                          className="flex items-start gap-1.5 text-[10px] text-foreground/70"
+                          className={cn(
+                            "flex items-start gap-1.5 text-[10px]",
+                            isFailed ? "text-destructive/90" : "text-foreground/70"
+                          )}
                         >
-                          <ChevronRight className="size-2.5 mt-0.5 shrink-0 text-violet-500" />
+                          <ChevronRight
+                            className={cn(
+                              "size-2.5 mt-0.5 shrink-0",
+                              isFailed ? "text-destructive" : "text-violet-500"
+                            )}
+                          />
                           <span className="leading-relaxed">{f}</span>
                         </li>
                       ))}
                     </ul>
+                  )}
+
+                  {a.output && isFailed && (
+                    <div className="mt-2 text-[10px] text-destructive bg-destructive/10 rounded-md px-2 py-1.5 border border-destructive/20">
+                      {a.output}
+                    </div>
                   )}
 
                   {a.output && isDone && (
