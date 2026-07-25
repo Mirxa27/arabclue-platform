@@ -187,6 +187,7 @@ export const authOptions: NextAuthOptions = {
           mustChangePassword: user.mustChangePassword,
           sessionToken,
           avatarUrl: user.avatarUrl,
+          workspaceId: user.activeWorkspaceId ?? undefined,
         };
       },
     }),
@@ -204,6 +205,8 @@ export const authOptions: NextAuthOptions = {
         token.mustChangePassword = user.mustChangePassword;
         token.sessionToken = user.sessionToken;
         token.avatarUrl = user.avatarUrl ?? null;
+        token.workspaceId =
+          (user as { workspaceId?: string | null }).workspaceId ?? undefined;
         token.claimsRefreshedAt = Date.now();
       }
       if (trigger === "update" && session) {
@@ -224,6 +227,9 @@ export const authOptions: NextAuthOptions = {
         }
         if ("avatarUrl" in session) {
           token.avatarUrl = (session as { avatarUrl?: string | null }).avatarUrl ?? null;
+        }
+        if (typeof (session as { workspaceId?: string }).workspaceId === "string") {
+          token.workspaceId = (session as { workspaceId: string }).workspaceId;
         }
         token.claimsRefreshedAt = 0; // force DB refresh next tick for consistency
       }
@@ -269,6 +275,7 @@ export const authOptions: NextAuthOptions = {
             email: true,
             name: true,
             avatarUrl: true,
+            activeWorkspaceId: true,
           },
         });
         if (!dbUser || !dbUser.active) {
@@ -282,6 +289,7 @@ export const authOptions: NextAuthOptions = {
         token.email = dbUser.email;
         token.name = dbUser.name;
         token.avatarUrl = dbUser.avatarUrl;
+        token.workspaceId = dbUser.activeWorkspaceId ?? token.workspaceId;
         token.claimsRefreshedAt = now;
       }
 
@@ -297,7 +305,7 @@ export const authOptions: NextAuthOptions = {
         locale: token.locale,
         mustChangePassword: !!token.mustChangePassword,
         avatarUrl: token.avatarUrl ?? null,
-        workspaceId: "",
+        workspaceId: (token.workspaceId as string | undefined) ?? "",
       };
       session.mfaVerified = token.mfaVerified;
       session.sessionToken = token.sessionToken;
