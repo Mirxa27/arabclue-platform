@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { SCROLL_VIEWPORT } from "@/lib/animation";
 import {
   Bar,
   BarChart,
@@ -142,7 +143,7 @@ export function TenderInsightsChart() {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
+        viewport={SCROLL_VIEWPORT}
         className="overflow-hidden rounded-2xl border border-white/12 bg-white/[0.03] backdrop-blur-sm"
       >
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-5 py-4 sm:px-6">

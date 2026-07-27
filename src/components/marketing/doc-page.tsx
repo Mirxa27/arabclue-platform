@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { SCROLL_VIEWPORT } from "@/lib/animation";
 import { ArrowUpRight, ChevronDown, Sparkles, ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PublicShell, usePublicLocale } from "@/components/marketing/public-shell";
@@ -116,7 +117,7 @@ function DocBody({
                   key={section.titleEn}
                   initial={{ opacity: 0, y: 16 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-60px" }}
+                  viewport={SCROLL_VIEWPORT}
                   transition={{ delay: Math.min(i * 0.05, 0.25), duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
                   className="group relative rounded-[22px] border border-[var(--hairline)] bg-white/[0.04] p-[1px] hover:border-white/15 transition-colors"
                 >
@@ -169,7 +170,7 @@ function DocBody({
                     key={item.qEn}
                     initial={{ opacity: 0, y: 8 }}
                     whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
+                    viewport={SCROLL_VIEWPORT}
                     transition={{ delay: Math.min(i * 0.04, 0.2) }}
                     className={cn("rounded-[18px] border bg-white/[0.04] backdrop-blur transition-colors", isOpen ? "border-white/15 bg-white/[0.06]" : "border-[var(--hairline)] hover:border-white/12")}
                   >

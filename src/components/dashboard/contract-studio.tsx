@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { SCROLL_VIEWPORT } from "@/lib/animation";
 import {
   Scale,
   ShieldAlert,
@@ -774,7 +775,7 @@ export function BilingualContractStudio({
                   key={article.number}
                   initial={{ opacity: 0, y: 12 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-20px" }}
+                  viewport={SCROLL_VIEWPORT}
                   transition={{ delay: Math.min(i * 0.03, 0.2) }}
                   className="rounded-xl border border-white/10 bg-white/[0.025] overflow-hidden"
                 >

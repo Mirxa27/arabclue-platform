@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import {
   Menu,
   X,
@@ -101,7 +101,8 @@ export function PublicShell({
 
   return (
     <LocaleCtx.Provider value={{ locale, setLocale, toggle }}>
-      <div
+      <MotionConfig reducedMotion="user">
+        <div
         className={cn(
           "min-h-screen flex flex-col antialiased",
           isDark
@@ -439,6 +440,7 @@ export function PublicShell({
           </div>
         </footer>
       </div>
+      </MotionConfig>
     </LocaleCtx.Provider>
   );
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { SCROLL_VIEWPORT } from "@/lib/animation";
 import { Shield, Lock, Eye, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PublicShell, usePublicLocale } from "@/components/marketing/public-shell";
@@ -101,7 +102,7 @@ function ComplianceContent() {
                 key={p.titleEn}
                 initial={{ opacity: 0, y: 12 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={SCROLL_VIEWPORT}
                 transition={{ delay: i * 0.06 }}
                 className="border-t border-white/15 pt-6 flex gap-4"
               >

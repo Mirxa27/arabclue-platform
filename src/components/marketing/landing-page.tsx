@@ -10,7 +10,9 @@ import {
   useMotionValue,
   useSpring,
   useInView,
+  MotionConfig,
 } from "framer-motion";
+import { SCROLL_VIEWPORT, useFadeTransition, rtlX } from "@/lib/animation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -279,7 +281,7 @@ function ScrollProgress() {
 
 function AnimatedCounter({ value, suffix = "" }: { value: number; suffix?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-40px" });
+  const inView = useInView(ref, SCROLL_VIEWPORT);
   const [display, setDisplay] = useState(0);
   useEffect(() => {
     if (!inView) return;
@@ -496,7 +498,7 @@ function ProductMock() {
                     </span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                    <motion.div className="h-full rounded-full bg-gradient-to-r from-cyan-300 to-teal-300" initial={{ width: 0 }} whileInView={{ width: "88%" }} viewport={{ once: true }} transition={{ duration: 1.3, delay: 0.6, ease: "easeOut" }} />
+                    <motion.div className="h-full rounded-full bg-gradient-to-r from-cyan-300 to-teal-300" initial={{ width: 0 }} whileInView={{ width: "88%" }} viewport={SCROLL_VIEWPORT} transition={{ duration: 1.3, delay: 0.6, ease: "easeOut" }} />
                   </div>
                 </div>
               </div>
@@ -722,7 +724,7 @@ function LandingContent() {
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/30 whitespace-nowrap">{ar ? "ضوابط سير عمل لمشتريات المملكة" : "Workflow controls for KSA procurement"}</p>
             <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
               {TRUST_PILLS.map((pill) => (
-                <motion.span key={pill.en} initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-medium text-white/60 hover:bg-white/[0.06] transition-colors">
+                <motion.span key={pill.en} initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={SCROLL_VIEWPORT} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-medium text-white/60 hover:bg-white/[0.06] transition-colors">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-300/80" />
                   {ar ? pill.ar : pill.en}
                 </motion.span>
@@ -747,7 +749,7 @@ function LandingContent() {
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-[oklch(0.14_0.02_260/.6)] to-transparent" />
         <div className="container-premium">
           <div className="grid lg:grid-cols-2 gap-6 lg:gap-8 items-stretch">
-            <motion.div initial={{ opacity: 0, y: 16, x: ar ? 16 : -16 }} whileInView={{ opacity: 1, y: 0, x: 0 }} viewport={{ once: true }} className="relative rounded-[24px] border border-[var(--hairline)] bg-white/[0.03] p-[1px] overflow-hidden">
+            <motion.div initial={{ opacity: 0, y: 16, x: ar ? 16 : -16 }} whileInView={{ opacity: 1, y: 0, x: 0 }} viewport={SCROLL_VIEWPORT} className="relative rounded-[24px] border border-[var(--hairline)] bg-white/[0.03] p-[1px] overflow-hidden">
               <div className="rounded-[23px] bg-[var(--surface-1)]/80 p-6 sm:p-8 h-full">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-red-400/10 text-red-300 flex items-center justify-center ring-1 ring-red-300/20">
@@ -772,7 +774,7 @@ function LandingContent() {
               </div>
             </motion.div>
 
-            <motion.div initial={{ opacity: 0, y: 16, x: ar ? -16 : 16 }} whileInView={{ opacity: 1, y: 0, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.08 }} className="relative rounded-[24px] bg-gradient-to-b from-cyan-400/20 via-teal-300/10 to-amber-200/10 p-[1px] overflow-hidden shadow-[0_20px_60px_-20px_oklch(0.72_0.12_195/.35)]">
+            <motion.div initial={{ opacity: 0, y: 16, x: ar ? -16 : 16 }} whileInView={{ opacity: 1, y: 0, x: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: 0.08 }} className="relative rounded-[24px] bg-gradient-to-b from-cyan-400/20 via-teal-300/10 to-amber-200/10 p-[1px] overflow-hidden shadow-[0_20px_60px_-20px_oklch(0.72_0.12_195/.35)]">
               <div className="rounded-[23px] bg-[var(--surface-2)] p-6 sm:p-8 h-full relative overflow-hidden">
                 <div className="absolute -top-24 -right-24 h-[240px] w-[240px] rounded-full bg-[radial-gradient(circle,oklch(0.72_0.12_195/.18),transparent_70%)] blur-xl" />
                 <div className="flex items-center gap-2 relative">
@@ -818,7 +820,7 @@ function LandingContent() {
               { value: 1, suffix: "", labelEn: "Human pricing path", labelAr: "مسار تسعير بشري", subEn: "Reviewer-gated", subAr: "خاضع للمراجعة" },
               { value: 0, suffix: "", labelEn: "AI price suggestions", labelAr: "اقتراحات أسعار AI", subEn: "Architecturally blocked", subAr: "محظورة معمارياً" },
             ].map((stat, i) => (
-              <motion.div key={stat.labelEn} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.07 }} className="group rounded-[20px] border border-[var(--hairline)] bg-white/[0.03] p-5 sm:p-6 backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/10 transition-all hover:-translate-y-0.5">
+              <motion.div key={stat.labelEn} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: i * 0.07 }} className="group rounded-[20px] border border-[var(--hairline)] bg-white/[0.03] p-5 sm:p-6 backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/10 transition-all hover:-translate-y-0.5">
                 <p className="text-[26px] sm:text-[28px] font-bold tracking-tight text-white group-hover:text-cyan-100 transition-colors">
                   <AnimatedCounter value={stat.value} suffix={stat.suffix} />
                 </p>
@@ -842,12 +844,12 @@ function LandingContent() {
                 <stop offset="100%" stopColor="oklch(0.78 0.16 70)" stopOpacity="0" />
               </linearGradient>
             </defs>
-            <motion.path d={ar ? "M 0 60 Q 300 0, 600 60 T 1200 60" : "M 0 60 Q 300 120, 600 60 T 1200 60"} stroke="url(#beamGrad)" strokeWidth="2" fill="none" initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: true }} transition={{ duration: 1.8, ease: "easeInOut" }} />
+            <motion.path d={ar ? "M 0 60 Q 300 0, 600 60 T 1200 60" : "M 0 60 Q 300 120, 600 60 T 1200 60"} stroke="url(#beamGrad)" strokeWidth="2" fill="none" initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={SCROLL_VIEWPORT} transition={{ duration: 1.8, ease: "easeInOut" }} />
           </svg>
         </div>
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-[oklch(0.14_0.03_240/.38)] to-transparent" />
         <div className="container-premium relative z-10">
-          <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mx-auto max-w-[760px] text-center">
+          <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} className="mx-auto max-w-[760px] text-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3.5 py-1 backdrop-blur">
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 animate-pulse" />
               <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-200">{ar ? "كيف يعمل" : "How it works"}</span>
@@ -864,7 +866,7 @@ function LandingContent() {
             {STEPS.map((s, i) => {
               const Icon = s.icon;
               return (
-                <motion.div key={s.n} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.14, duration: 0.6, ease: [0.22, 1, 0.36, 1] }} whileHover={{ y: -4, transition: { duration: 0.2 } }} className="group relative flex flex-col">
+                <motion.div key={s.n} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: i * 0.14, duration: 0.6, ease: [0.22, 1, 0.36, 1] }} whileHover={{ y: -4, transition: { duration: 0.2 } }} className="group relative flex flex-col">
                   <div className="absolute -top-3 left-7 z-10 hidden md:flex h-7 items-center gap-2 rounded-full bg-[var(--surface-2)] border border-[var(--hairline)] px-3 shadow">
                     <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 animate-pulse" />
                     <span className="text-[10px] font-mono font-semibold text-white/40">{s.n}</span>
@@ -902,7 +904,7 @@ function LandingContent() {
         <div className="absolute left-1/2 top-0 -z-10 h-[640px] w-[960px] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,oklch(0.55_0.08_200/.12),transparent_70%)] blur-[30px]" />
         <div className="container-premium">
           <div className="grid lg:grid-cols-[0.92fr_1.15fr] gap-8 lg:gap-12 items-start">
-            <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="lg:sticky lg:top-28">
+            <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} className="lg:sticky lg:top-28">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3.5 py-1 backdrop-blur">
                 <span className="h-1.5 w-1.5 rounded-full bg-amber-200 animate-pulse" />
                 <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/50">{ar ? "المنصة" : "Platform"}</span>
@@ -923,7 +925,7 @@ function LandingContent() {
                     key={f.titleEn}
                     initial={{ opacity: 0, y: 16 }}
                     whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
+                    viewport={SCROLL_VIEWPORT}
                     transition={{ delay: i * 0.07 }}
                     className={`${f.span} group relative rounded-[22px] border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-[1px] hover:from-white/[0.10] hover:to-white/[0.04] transition-all`}
                   >
@@ -940,7 +942,7 @@ function LandingContent() {
                   </motion.div>
                 );
               })}
-              <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.32 }} className="bento-span-12 group relative rounded-[22px] border border-amber-200/15 bg-gradient-to-br from-amber-200/[0.08] via-white/[0.04] to-cyan-200/[0.06] p-[1px] overflow-hidden">
+              <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: 0.32 }} className="bento-span-12 group relative rounded-[22px] border border-amber-200/15 bg-gradient-to-br from-amber-200/[0.08] via-white/[0.04] to-cyan-200/[0.06] p-[1px] overflow-hidden">
                 <div className="rounded-[21px] bg-[oklch(0.16_0.02_260)]/80 p-5 sm:p-6 backdrop-blur-xl flex flex-col sm:flex-row gap-5 items-start sm:items-center">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-200/20 to-cyan-200/20 text-amber-100 ring-1 ring-amber-200/20">
                     <Users className="h-6 w-6" />
@@ -966,7 +968,7 @@ function LandingContent() {
         <div className="absolute inset-0 -z-10 bg-gradient-to-br from-amber-200/[0.06] via-transparent to-cyan-200/[0.06]" />
         <div className="container-premium">
           <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-12 items-center">
-            <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="relative">
+            <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} className="relative">
               <div className="inline-flex items-center gap-2 rounded-full border border-amber-200/20 bg-amber-200/10 px-3.5 py-1.5">
                 <motion.div animate={{ rotate: [0, -8, 8, 0] }} transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}>
                   <Lock className="h-3.5 w-3.5 text-amber-200" />
@@ -992,7 +994,7 @@ function LandingContent() {
               </div>
             </motion.div>
 
-            <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.12 }} className="relative">
+            <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: 0.12 }} className="relative">
               <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-1 backdrop-blur-xl shadow-2xl">
                 <div className="rounded-[20px] bg-[oklch(0.12_0.02_260)] p-6 sm:p-7 relative overflow-hidden">
                   <div className="flex items-center gap-3 relative">
@@ -1014,7 +1016,7 @@ function LandingContent() {
                       { labelEn: "Margin / discount", labelAr: "هامش / خصم", valEn: "Blocked", valAr: "محظور", locked: true },
                       { labelEn: "AI suggestions", labelAr: "اقتراحات AI", valEn: "Structure only", valAr: "هيكل فقط", locked: false },
                     ].map((row, i) => (
-                      <motion.div key={row.labelEn} initial={{ opacity: 0, x: 10 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 + i * 0.08 }} className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-3">
+                      <motion.div key={row.labelEn} initial={{ opacity: 0, x: rtlX(ar, 10) }} whileInView={{ opacity: 1, x: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: 0.2 + i * 0.08 }} className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-3">
                         <span className="text-[12px] font-medium text-white/60">{ar ? row.labelAr : row.labelEn}</span>
                         <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${row.locked ? "bg-emerald-400/10 text-emerald-200 ring-1 ring-emerald-300/15" : "bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15"}`}>
                           {row.locked && <ShieldCheck className="h-3 w-3" />}
@@ -1083,7 +1085,7 @@ function LandingContent() {
             </div>
             <div className="space-y-3">
               {FAQS.map((f, i) => (
-                <motion.div key={f.qEn} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.06 }} className="rounded-[18px] border border-[var(--hairline)] bg-white/[0.04] overflow-hidden backdrop-blur">
+                <motion.div key={f.qEn} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: i * 0.06 }} className="rounded-[18px] border border-[var(--hairline)] bg-white/[0.04] overflow-hidden backdrop-blur">
                   <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left">
                     <span className="text-[14px] font-medium text-white/80">{ar ? f.qAr : f.qEn}</span>
                     <motion.span animate={{ rotate: openFaq === i ? 180 : 0 }} transition={{ duration: 0.22 }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.06] ring-1 ring-white/10">
@@ -1168,7 +1170,7 @@ function LandingContent() {
                           {ar ? "مثال" : "Example"}
                         </div>
                       </div>
-                      <motion.p className="mt-4 text-[13.5px] leading-[1.65] text-white/65 italic text-pretty" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ delay: 0.2 }}>
+                      <motion.p className="mt-4 text-[13.5px] leading-[1.65] text-white/65 italic text-pretty" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={SCROLL_VIEWPORT} transition={{ delay: 0.2 }}>
                         {ar ? "تتيح المصفوفة المشتركة للفريق مراجعة المتطلبات والنواقص ومراجع المصادر نفسها." : "A shared matrix lets the team review the same requirements, gaps, and source references."}
                       </motion.p>
                     </div>

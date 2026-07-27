@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { SCROLL_VIEWPORT } from "@/lib/animation";
 import { Bot, ShieldCheck, Users, FileCheck2, BarChart3, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PublicShell, usePublicLocale } from "@/components/marketing/public-shell";
@@ -140,7 +141,7 @@ function OwnersContent() {
                 key={c.titleEn}
                 initial={{ opacity: 0, y: 12 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={SCROLL_VIEWPORT}
                 transition={{ delay: i * 0.05 }}
                 className="border-t border-white/15 pt-6"
               >
