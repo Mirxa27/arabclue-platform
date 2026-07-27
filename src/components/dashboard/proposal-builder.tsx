@@ -227,7 +227,7 @@ export function ProposalBuilder() {
   const handleAddSection = useCallback((type: SectionType) => {
     const newSection = {
       id: crypto.randomUUID(),
-      sectionKey: `${type}-${Date.now().toString(36)}`,
+      sectionKey: `${type}-${crypto.randomUUID()}`,
       sectionType: type,
       sortOrder: sections.length,
       title: { ar: getSectionLabel(type, "ar"), en: getSectionLabel(type, "en") },

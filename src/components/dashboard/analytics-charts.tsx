@@ -1,6 +1,5 @@
 "use client";
 
-import { useLocale } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import {
   AreaChart,
@@ -15,9 +14,10 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 import type { AnalyticsSummary, TimeSeriesPoint, CategoryCount } from "@/lib/proposal-builder-types";
+import { tr } from "@/lib/i18n";
+import type { Locale } from "@/lib/types";
 
 const CHART_COLORS = [
   "oklch(0.62 0.2 258)",
@@ -35,31 +35,33 @@ export function AnalyticsCharts({
   summary: AnalyticsSummary;
   locale: string;
 }) {
-  const ar = locale === "ar";
-
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      {/* Proposals over time */}
       <ChartCard
-        title={ar ? "العروض عبر الزمن" : "Proposals Over Time"}
+        title={tr("chart_proposalsOverTime", locale as Locale)}
+        subtitle={tr("chart_axis_date", locale as Locale)}
         className="lg:col-span-2"
       >
         <TimeSeriesChart data={summary.charts.proposalsOverTime} locale={locale} />
       </ChartCard>
 
-      {/* Exports by type */}
-      <ChartCard title={ar ? "التصدير حسب النوع" : "Exports by Type"}>
+      <ChartCard
+        title={tr("chart_exportsByType", locale as Locale)}
+        subtitle={tr("chart_axis_category", locale as Locale)}
+      >
         <CategoryBarChart data={summary.charts.exportsByType} locale={locale} />
       </ChartCard>
 
-      {/* Template usage */}
-      <ChartCard title={ar ? "استخدام القوالب" : "Template Usage"}>
+      <ChartCard
+        title={tr("chart_templateUsage", locale as Locale)}
+        subtitle={tr("chart_axis_count", locale as Locale)}
+      >
         <CategoryPieChart data={summary.charts.templateUsage} locale={locale} />
       </ChartCard>
 
-      {/* Section completion */}
       <ChartCard
-        title={ar ? "اكتمال الأقسام" : "Section Completion"}
+        title={tr("chart_sectionCompletion", locale as Locale)}
+        subtitle={tr("chart_axis_category", locale as Locale)}
         className="lg:col-span-2"
       >
         <CategoryBarChart data={summary.charts.sectionCompletion} locale={locale} horizontal />
@@ -70,10 +72,12 @@ export function AnalyticsCharts({
 
 function ChartCard({
   title,
+  subtitle,
   children,
   className,
 }: {
   title: string;
+  subtitle?: string;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -84,7 +88,10 @@ function ChartCard({
         className
       )}
     >
-      <h3 className="mb-4 text-sm font-semibold">{title}</h3>
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+      </div>
       <div className="h-[240px]">{children}</div>
     </div>
   );
@@ -100,7 +107,7 @@ function TimeSeriesChart({
   const ar = locale === "ar";
 
   if (data.length === 0) {
-    return <EmptyChartState message={ar ? "لا توجد بيانات" : "No data"} />;
+    return <EmptyChartState message={tr("analytics_no_data", locale as Locale)} />;
   }
 
   const chartData = data.map((point) => ({
@@ -160,10 +167,8 @@ function CategoryBarChart({
   locale: string;
   horizontal?: boolean;
 }) {
-  const ar = locale === "ar";
-
   if (data.length === 0) {
-    return <EmptyChartState message={ar ? "لا توجد بيانات" : "No data"} />;
+    return <EmptyChartState message={tr("analytics_no_data", locale as Locale)} />;
   }
 
   const chartData = data.map((item) => ({
@@ -236,10 +241,8 @@ function CategoryPieChart({
   data: CategoryCount[];
   locale: string;
 }) {
-  const ar = locale === "ar";
-
   if (data.length === 0) {
-    return <EmptyChartState message={ar ? "لا توجد بيانات" : "No data"} />;
+    return <EmptyChartState message={tr("analytics_no_data", locale as Locale)} />;
   }
 
   const chartData = data.map((item) => ({

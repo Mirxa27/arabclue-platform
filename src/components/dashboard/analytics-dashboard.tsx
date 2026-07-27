@@ -15,9 +15,11 @@ import {
   Clock,
   Loader2,
   Calendar,
+  Layers,
+  CheckCircle,
+  XCircle,
+  Timer,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -28,6 +30,7 @@ import {
 import type { AnalyticsSummary, AnalyticsMetric, DateRange } from "@/lib/proposal-builder-types";
 import { ErrorState, EmptyState } from "@/components/patterns/query-state";
 import { AnalyticsCharts } from "./analytics-charts";
+import { tr } from "@/lib/i18n";
 
 type Period = "7d" | "30d" | "90d" | "1y";
 
@@ -42,13 +45,30 @@ function getDateRange(period: Period): DateRange {
   const end = new Date();
   const start = new Date();
   switch (period) {
-    case "7d": start.setDate(end.getDate() - 7); break;
-    case "30d": start.setDate(end.getDate() - 30); break;
-    case "90d": start.setDate(end.getDate() - 90); break;
-    case "1y": start.setFullYear(end.getFullYear() - 1); break;
+    case "7d":
+      start.setDate(end.getDate() - 7);
+      break;
+    case "30d":
+      start.setDate(end.getDate() - 30);
+      break;
+    case "90d":
+      start.setDate(end.getDate() - 90);
+      break;
+    case "1y":
+      start.setFullYear(end.getFullYear() - 1);
+      break;
   }
   return { start: start.toISOString(), end: end.toISOString() };
 }
+
+type AnalyticsResponse = {
+  ok: boolean;
+  degraded?: boolean;
+  empty?: boolean;
+  summary?: AnalyticsSummary & { empty?: boolean };
+  error?: string;
+  code?: string;
+};
 
 export function AnalyticsDashboard() {
   const { locale } = useLocale();
@@ -58,37 +78,50 @@ export function AnalyticsDashboard() {
   const dateRange = getDateRange(period);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["analytics-proposals", period],
-    queryFn: async () => {
+    queryKey: ["analytics-proposals", period, dateRange.start, dateRange.end],
+    queryFn: async (): Promise<AnalyticsResponse> => {
       const params = new URLSearchParams({
         start: dateRange.start,
         end: dateRange.end,
       });
       const res = await fetch(`/api/analytics/proposals?${params}`);
-      if (!res.ok) throw new Error("Failed to fetch analytics");
-      return res.json() as Promise<{
-        ok: boolean;
-        degraded?: boolean;
-        summary?: AnalyticsSummary;
-      }>;
+      const body = (await res.json().catch(() => ({}))) as AnalyticsResponse;
+      if (!res.ok) {
+        const code = (body as { code?: string }).code;
+        const err = new Error(body.error || "Failed to fetch analytics") as Error & {
+          code?: string;
+        };
+        if (code) err.code = code;
+        throw err;
+      }
+      return body;
     },
   });
 
   const summary = data?.summary;
   const isDegraded = data?.degraded === true;
+  const isEmpty = data?.empty === true || (summary as { empty?: boolean } | undefined)?.empty === true;
+
+  const localizedError = (() => {
+    if (!error) return "";
+    const code = (error as Error & { code?: string }).code;
+    if (code && tr(code, locale) !== code) return tr(code, locale);
+    return error instanceof Error
+      ? error.message
+      : ar
+        ? "فشل تحميل التحليلات"
+        : "Failed to load analytics";
+  })();
 
   return (
     <div className="flex h-[calc(100dvh-10rem)] flex-col gap-4">
-      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-bold tracking-tight">
-            {ar ? "لوحة التحليلات" : "Analytics Dashboard"}
+            {tr("analytics_dashboard_title", locale)}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {ar
-              ? "إحصائيات إنشاء العروض والقوالب"
-              : "Proposal generation and template usage statistics"}
+            {tr("analytics_dashboard_subtitle", locale)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -115,13 +148,7 @@ export function AnalyticsDashboard() {
       ) : isError ? (
         <ErrorState
           className="flex flex-1 items-center justify-center"
-          message={
-            error instanceof Error
-              ? error.message
-              : ar
-                ? "فشل تحميل التحليلات"
-                : "Failed to load analytics"
-          }
+          message={localizedError}
           onRetry={() => void refetch()}
           retryLabel={ar ? "إعادة المحاولة" : "Retry"}
         />
@@ -129,11 +156,7 @@ export function AnalyticsDashboard() {
         <EmptyState
           className="flex flex-1 items-center justify-center"
           icon={BarChart3}
-          title={
-            ar
-              ? "التحليلات غير متوفرة بعد"
-              : "Analytics not available yet"
-          }
+          title={ar ? "التحليلات غير متوفرة بعد" : "Analytics not available yet"}
           description={
             ar
               ? "لم يتم تفعيل تتبع التحليلات على قاعدة البيانات الحالية. ستظهر الإحصائيات هنا بعد ترحيل الجداول."
@@ -141,23 +164,28 @@ export function AnalyticsDashboard() {
           }
         />
       ) : summary ? (
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
-          {/* Metric cards */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {summary.metrics.map((metric) => (
-              <MetricCard key={metric.key} metric={metric} locale={locale} />
-            ))}
+        isEmpty ? (
+          <EmptyState
+            className="flex flex-1 items-center justify-center"
+            icon={BarChart3}
+            title={tr("analytics_emptyRange", locale)}
+            description={tr("analytics_emptyDescription", locale)}
+          />
+        ) : (
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {summary.metrics.map((metric) => (
+                <MetricCard key={metric.key} metric={metric} locale={locale} />
+              ))}
+            </div>
+            <AnalyticsCharts summary={summary} locale={locale} />
           </div>
-
-          {/* Charts */}
-          <AnalyticsCharts summary={summary} locale={locale} />
-        </div>
+        )
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <BarChart3 className="size-12 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">
-            {ar ? "لا توجد بيانات للفترة المحددة" : "No data for the selected period"}
-          </p>
+          <p className="text-sm text-muted-foreground">{tr("analytics_emptyRange", locale)}</p>
+          <p className="text-xs text-muted-foreground">{tr("analytics_emptyDescription", locale)}</p>
         </div>
       )}
     </div>
@@ -171,7 +199,6 @@ function MetricCard({
   metric: AnalyticsMetric;
   locale: string;
 }) {
-  const ar = locale === "ar";
   const trendIcon =
     metric.trend === "up" ? TrendingUp : metric.trend === "down" ? TrendingDown : Minus;
   const TrendIcon = trendIcon;
@@ -188,12 +215,16 @@ function MetricCard({
       ? Math.round(((metric.value - metric.previousValue) / metric.previousValue) * 100)
       : null;
 
-  // Icon mapping based on metric key
   const iconMap: Record<string, typeof FileText> = {
     proposals_created: FileText,
     proposals_exported: Download,
+    templates_used: Layers,
+    proposal_views: Users,
     active_users: Users,
     avg_completion_time: Clock,
+    agent_runs_completed: CheckCircle,
+    agent_runs_failed: XCircle,
+    agent_median_duration: Timer,
   };
   const Icon = iconMap[metric.key] ?? BarChart3;
 
@@ -206,17 +237,20 @@ function MetricCard({
         {changePercent !== null && (
           <div className={cn("flex items-center gap-0.5 text-xs font-medium", trendColor)}>
             <TrendIcon className="size-3" />
-            {changePercent > 0 ? "+" : ""}{changePercent}%
+            {changePercent > 0 ? "+" : ""}
+            {changePercent}%
           </div>
         )}
       </div>
       <div className="mt-3">
         <p className="text-2xl font-bold tabular-nums">
           {metric.value.toLocaleString()}
-          {metric.unit && <span className="ms-1 text-sm font-normal text-muted-foreground">{metric.unit}</span>}
+          {metric.unit && (
+            <span className="ms-1 text-sm font-normal text-muted-foreground">{metric.unit}</span>
+          )}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {metric.label[locale as "ar" | "en"]}
+          {metric.label[locale as "ar" | "en"] ?? metric.key}
         </p>
       </div>
     </div>

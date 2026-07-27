@@ -61,6 +61,11 @@ let redisGeneration = 0;
 const REDIS_RETRY_DELAY_MS = 5_000;
 const REDIS_CONNECT_TIMEOUT_MS = 1_000;
 const REDIS_COMMAND_TIMEOUT_MS = 1_000;
+/**
+ * Upper bound for acquiring a usable client: module load, connect, and ping.
+ * Keeps a fail-closed answer inside the caller's budget even on a cold start.
+ */
+const REDIS_ACQUIRE_TIMEOUT_MS = 2_000;
 
 function destroyRedisClient(client: RedisClient | undefined): void {
   if (!client) return;
@@ -211,6 +216,11 @@ async function getRedis(): Promise<RedisClient | null> {
         "ping"
       );
       if (pong !== "PONG") throw new Error("Redis ping failed");
+      if (generation !== redisGeneration) {
+        // A newer acquisition superseded this one while it was in flight.
+        destroyRedisClient(createdClient);
+        return null;
+      }
       redisClient = createdClient;
       redisConnectingClient = undefined;
       redisRetryAfter = 0;
@@ -223,7 +233,17 @@ async function getRedis(): Promise<RedisClient | null> {
   })();
   redisInit = initialization;
   try {
-    return await initialization;
+    // The whole acquisition is bounded, not just the connect and the ping. A
+    // cold `import("redis")` can cost seconds on a first invocation, and an
+    // unbounded acquisition would stall every rate-limited request behind it.
+    return await withRedisDeadline(
+      initialization,
+      REDIS_ACQUIRE_TIMEOUT_MS,
+      "acquire",
+      () => invalidateAllRedisConnections()
+    );
+  } catch {
+    return null;
   } finally {
     if (redisInit === initialization) redisInit = null;
   }

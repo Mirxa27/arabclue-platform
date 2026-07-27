@@ -1,0 +1,907 @@
+{
+  "pbtResults": {
+    "1.7 Write the static property test for additive migration SQL": {
+      "status": "passed",
+      "lastRunTimestamp": 1785063416553
+    },
+    "2.7 Write the property test for side-effect-free invalid registration": {
+      "status": "passed",
+      "lastRunTimestamp": 1785023496163
+    }
+  },
+  "executionHistory": {
+    "1.1 Complete the additive Prisma model and SQL baseline": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002641128
+      },
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002672210
+      },
+      {
+        "executionId": "4a3d2872-b790-41e7-a26b-8c4074f774e7",
+        "chatSessionId": "sess_3dd45282-a130-4bfd-b68d-cf4075a5dd7a",
+        "timestamp": 1785007382496
+      },
+      {
+        "executionId": "8b7b8fc7-a089-4f92-a3df-276308dd55a3",
+        "chatSessionId": "sess_af54c220-7e66-49c1-b5e9-3d6832d185bc",
+        "timestamp": 1785016121995
+      }
+    ],
+    "1.2 Implement the migration registry, readiness probe, and deployment-safety synchronization": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002641605
+      },
+      {
+        "executionId": "8b7b8fc7-a089-4f92-a3df-276308dd55a3",
+        "chatSessionId": "sess_af54c220-7e66-49c1-b5e9-3d6832d185bc",
+        "timestamp": 1785013444309
+      },
+      {
+        "executionId": "8b7b8fc7-a089-4f92-a3df-276308dd55a3",
+        "chatSessionId": "sess_af54c220-7e66-49c1-b5e9-3d6832d185bc",
+        "timestamp": 1785016128438
+      }
+    ],
+    "1.3 Centralize API failures, tenant authorization, and missing-schema handling": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002641782
+      },
+      {
+        "executionId": "8b7b8fc7-a089-4f92-a3df-276308dd55a3",
+        "chatSessionId": "sess_af54c220-7e66-49c1-b5e9-3d6832d185bc",
+        "timestamp": 1785016142891
+      }
+    ],
+    "1.4 Add reusable security, time, hashing, cursor, and provider-boundary primitives": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002641982
+      },
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002677409
+      },
+      {
+        "executionId": "4a3d2872-b790-41e7-a26b-8c4074f774e7",
+        "chatSessionId": "sess_3dd45282-a130-4bfd-b68d-cf4075a5dd7a",
+        "timestamp": 1785007388381
+      },
+      {
+        "executionId": "4a3d2872-b790-41e7-a26b-8c4074f774e7",
+        "chatSessionId": "sess_3dd45282-a130-4bfd-b68d-cf4075a5dd7a",
+        "timestamp": 1785011823837
+      }
+    ],
+    "1.5 Define typed localization and error-message contracts for every completion surface": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002642366
+      },
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002683113
+      },
+      {
+        "executionId": "4a3d2872-b790-41e7-a26b-8c4074f774e7",
+        "chatSessionId": "sess_3dd45282-a130-4bfd-b68d-cf4075a5dd7a",
+        "timestamp": 1785007392131
+      },
+      {
+        "executionId": "8b7b8fc7-a089-4f92-a3df-276308dd55a3",
+        "chatSessionId": "sess_af54c220-7e66-49c1-b5e9-3d6832d185bc",
+        "timestamp": 1785016136482
+      }
+    ],
+    "Checkpoint A — Verify the foundation before domain implementation": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002642629
+      }
+    ],
+    "2.1 Implement transactional registration and email verification": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002643069
+      },
+      {
+        "executionId": "1f7b70ce-b0f0-4ac2-9578-2c7d4855882d",
+        "chatSessionId": "sess_ac8e3c32-8bfa-4d46-a958-c3a0b5377b8c",
+        "timestamp": 1785020426141
+      },
+      {
+        "executionId": "1f7b70ce-b0f0-4ac2-9578-2c7d4855882d",
+        "chatSessionId": "sess_ac8e3c32-8bfa-4d46-a958-c3a0b5377b8c",
+        "timestamp": 1785022411775
+      }
+    ],
+    "2.2 Enforce unverified-session gating and expose account routes safely": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002643527
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061293771
+      },
+      {
+        "executionId": "6581a836-ec54-4d01-bb47-25701b6ce82d",
+        "chatSessionId": "sess_04fe7302-656a-4e0c-baf3-f20a3b37fad1",
+        "timestamp": 1785118079868
+      }
+    ],
+    "2.3 Implement credential-recovery request and reset flows": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002644089
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061294294
+      }
+    ],
+    "2.4 Make invitation creation, listing, revocation, and acceptance atomic": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002644531
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061294643
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061333272
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785063199588
+      }
+    ],
+    "2.5 Build bilingual account, recovery, verification, and invitation surfaces": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002644753
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061295137
+      }
+    ],
+    "3.1 Enforce the closed analytics vocabulary and minimized event constructor": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002644954
+      },
+      {
+        "executionId": "35b3407d-6ebc-49db-8a4b-8af6b51cab80",
+        "chatSessionId": "sess_761d377f-e605-4489-bd50-dca0613aaf10",
+        "timestamp": 1785023590770
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061296920
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061339822
+      }
+    ],
+    "3.2 Wire analytics to every committed proposal, agent, and document origin": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002645139
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061297229
+      }
+    ],
+    "3.3 Implement tenant-scoped analytics aggregation and range validation": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002645928
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061297515
+      }
+    ],
+    "3.4 Complete the bilingual analytics dashboard": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002646450
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061298093
+      }
+    ],
+    "4.1 Implement deterministic catalog seeding and canonical drift repair": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002646820
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061298858
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061345855
+      }
+    ],
+    "4.2 Complete clause list, custom-create, detail, and selection APIs": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002646980
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061299437
+      }
+    ],
+    "4.3 Build the bilingual clause browser and insertion flow": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002647720
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061299793
+      }
+    ],
+    "5.1 Define canonical template schemas and pure validation": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002648126
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061300334
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061350815
+      }
+    ],
+    "5.2 Implement atomic template create, update, and retirement commands": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002648483
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061300697
+      }
+    ],
+    "5.3 Complete template CRUD, version-list, version-detail, and preview routes": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002648873
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061301033
+      }
+    ],
+    "5.4 Build the workspace template editor and history UI": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002649119
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061301424
+      }
+    ],
+    "5.5 Persist complete immutable generated-contract revisions": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002649441
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061301795
+      }
+    ],
+    "5.6 Complete contract revision list, detail, integrity, and comparison APIs": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002649795
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061302176
+      }
+    ],
+    "5.7 Build the bilingual contract revision history and comparison surface": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002650086
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061302591
+      }
+    ],
+    "Checkpoint B — Verify content authoring and history foundations": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002650321
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061302909
+      }
+    ],
+    "6.1 Build a pure workbook-plan compiler": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002650617
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061303382
+      }
+    ],
+    "6.2 Implement the ExcelJS serializer and XLSX download response": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002650959
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061304141
+      }
+    ],
+    "6.3 Apply the existing validation and approval gate before workbook creation": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002651150
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061304798
+      }
+    ],
+    "7.1 Implement exact-value recurring state and persistence rules": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002651335
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061305642
+      }
+    ],
+    "7.2 Complete recurring checkout and provider finalization": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002651583
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061306384
+      }
+    ],
+    "7.3 Harden recurring webhook verification and idempotent state updates": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002651768
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061306990
+      }
+    ],
+    "7.4 Implement cancel and resume commands and routes": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002651898
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061308142
+      }
+    ],
+    "7.5 Build the bilingual recurring-billing console": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002652067
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061308786
+      }
+    ],
+    "7.6 Complete reconciliation report/apply services and routes": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002652212
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061309751
+      }
+    ],
+    "7.7 Build the admin reconciliation UI": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002652633
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061310262
+      }
+    ],
+    "8.1 Implement normalized knowledge projections, merged ordering, and keyset pages": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002652836
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061310911
+      }
+    ],
+    "8.2 Implement first-decision-wins knowledge commands": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002653053
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061311317
+      }
+    ],
+    "8.3 Build the approver-reachable knowledge queue": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002653186
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061313767
+      }
+    ],
+    "8.4 Implement comment amendment and reply-preserving deletion": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002653369
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061314178
+      }
+    ],
+    "8.5 Complete edited/withdrawn comment UI behavior": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002653567
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061314782
+      }
+    ],
+    "8.6 Replace process-local presence with tenant-scoped durable SSE polling": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002653734
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061315499
+      }
+    ],
+    "9.1 Implement complete proposal/document version list and detail APIs": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002653926
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061315790
+      }
+    ],
+    "9.2 Implement append-only proposal and document reverts": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002654069
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061316149
+      }
+    ],
+    "9.3 Build proposal and document history/detail/revert surfaces": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002654289
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061316459
+      }
+    ],
+    "9.4 Implement a pure canonical dashboard route table": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002654517
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061316881
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061355856
+      }
+    ],
+    "9.5 Add the server-resolved `/app/[...segments]` entry and authorization gates": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002654686
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061317264
+      }
+    ],
+    "9.6 Synchronize navigation, history, locale, and post-login deep links": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002654858
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061317655
+      }
+    ],
+    "10.1 Implement database-backed marketplace seeding, publish, list, detail, and retire": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002655013
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061318018
+      }
+    ],
+    "10.2 Implement transactional marketplace rating and application": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002655132
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061318391
+      }
+    ],
+    "10.3 Build marketplace list/detail/publish/retire/rate/apply UI": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002655293
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061318589
+      }
+    ],
+    "11.1 Build the notification outbox domain, recipient resolvers, and minimized templates": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002655468
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061318732
+      }
+    ],
+    "11.2 Wire notification rows into triggering business transactions": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002655654
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061318945
+      }
+    ],
+    "11.3 Implement bounded after-commit delivery and protected retry dispatch": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002655967
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061319114
+      }
+    ],
+    "11.4 Connect in-app notification UI and canonical links": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002656201
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061319482
+      }
+    ],
+    "12.1 Make locale and direction server-first and path-preserving": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002656413
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061319748
+      }
+    ],
+    "12.2 Remove literals/physical-direction CSS and enforce document-language purity": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002656712
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061320008
+      }
+    ],
+    "12.3 Add the capability reachability manifest and production-integrity scanners": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002657003
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061320924
+      }
+    ],
+    "Checkpoint C — Verify all domains and cross-cutting policies": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002657204
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061321309
+      }
+    ],
+    "13.1 Run and repair the targeted cross-domain completion test matrix": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002657444
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061321849
+      }
+    ],
+    "13.2 Pass the mandatory static, type, unit, and production-build gates": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002657698
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061322324
+      }
+    ],
+    "13.3 Add the automated completion E2E suite": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002657911
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061322802
+      }
+    ],
+    "13.4 Execute final isolated E2E and report-only browser QA": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002658120
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061323123
+      }
+    ],
+    "Final checkpoint — Confirm the implementation is execution-complete": [
+      {
+        "executionId": "1ac5e648-8c55-45a2-a57e-069e3e807b71",
+        "chatSessionId": "sess_ea014ab8-e7d2-40c2-9263-2ec01a4ec38b",
+        "timestamp": 1785002658376
+      },
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061323385
+      }
+    ],
+    "1.6 Configure safe completion-test infrastructure": [
+      {
+        "executionId": "4a3d2872-b790-41e7-a26b-8c4074f774e7",
+        "chatSessionId": "sess_3dd45282-a130-4bfd-b68d-cf4075a5dd7a",
+        "timestamp": 1785007395928
+      },
+      {
+        "executionId": "4a3d2872-b790-41e7-a26b-8c4074f774e7",
+        "chatSessionId": "sess_3dd45282-a130-4bfd-b68d-cf4075a5dd7a",
+        "timestamp": 1785011829831
+      }
+    ],
+    "1.7 Write the static property test for additive migration SQL": [
+      {
+        "executionId": "8b7b8fc7-a089-4f92-a3df-276308dd55a3",
+        "chatSessionId": "sess_af54c220-7e66-49c1-b5e9-3d6832d185bc",
+        "timestamp": 1785016149646
+      },
+      {
+        "executionId": "53878081-637f-4dc0-9cfb-c171f55ca75d",
+        "chatSessionId": "sess_0014750d-7b09-436d-8bdf-48c001fc50e7",
+        "timestamp": 1785017535947
+      }
+    ],
+    "2.7 Write the property test for side-effect-free invalid registration": [
+      {
+        "executionId": "1f7b70ce-b0f0-4ac2-9578-2c7d4855882d",
+        "chatSessionId": "sess_ac8e3c32-8bfa-4d46-a958-c3a0b5377b8c",
+        "timestamp": 1785022422672
+      },
+      {
+        "executionId": "1f7b70ce-b0f0-4ac2-9578-2c7d4855882d",
+        "chatSessionId": "sess_ac8e3c32-8bfa-4d46-a958-c3a0b5377b8c",
+        "timestamp": 1785023536272
+      }
+    ],
+    "2.6 Add account, recovery, and invitation example/integration tests": [
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061295982
+      }
+    ],
+    "2.8 Write the cross-token single-use property test": [
+      {
+        "executionId": "f3f3ba63-38d0-4063-a3b8-127c398f5608",
+        "chatSessionId": "sess_7061b5a0-2318-4404-be59-1ff6249b7a89",
+        "timestamp": 1785061296638
+      }
+    ]
+  }
+}

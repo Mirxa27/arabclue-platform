@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       tokensIncluded: body.tokensIncluded ?? 0,
       proposalsIncluded: body.proposalsIncluded ?? 0,
       status: body.status ?? "PAID",
-      invoiceNumber: body.invoiceNumber ?? `INV-${Date.now()}`,
+      invoiceNumber: body.invoiceNumber ?? `INV-${crypto.randomUUID()}`,
       paymentMethod: body.paymentMethod ?? "bank_transfer",
     },
   });

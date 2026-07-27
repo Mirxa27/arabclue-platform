@@ -42,6 +42,10 @@ import { isProposalEditLocked } from "../proposal-status";
 import { createDecisionLogger, decision, truncateForLog } from "./decision-logger";
 import { createMetricsTracker } from "./agent-metrics";
 import { AGENT_CONFIG } from "./agent-config";
+import {
+  analyticsBackgroundOrigin,
+  recordAgentRunAnalyticsEvent,
+} from "../analytics-collector";
 
 export interface OrchestratorResult {
   agentStates: AgentState[];
@@ -63,6 +67,12 @@ function agentLabel(id: AgentId, locale: "ar" | "en" = "en") {
     name: tr(`agent_${id}_name` as Parameters<typeof tr>[0], locale),
     nameAr: tr(`agent_${id}_name` as Parameters<typeof tr>[0], "ar"),
   };
+}
+
+/** Clamps recorded progress to the whole 0–100 count the analytics payload accepts. */
+function toProgressPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function initStates(locale: Locale = "ar"): AgentState[] {
@@ -92,6 +102,16 @@ export async function runAgentPipeline(opts: {
   const logger = createDecisionLogger();
   const metrics = createMetricsTracker(opts.runId, opts.projectId);
   const runStartedAtIso = new Date().toISOString();
+  /**
+   * The pipeline is a background operation, so analytics provenance comes from
+   * the run's stored workspace and the member recorded as its initiator
+   * (requirement 4.5). Every terminal transition derives its elapsed time from
+   * `runStartedAtIso`, the recorded start instant (requirement 4.2).
+   */
+  const analyticsOrigin = analyticsBackgroundOrigin({
+    subjectWorkspaceId: opts.workspaceId,
+    initiatorUserId: opts.userId,
+  });
 
   decision(logger, {
     agentId: "ORCHESTRATOR",
@@ -218,6 +238,7 @@ export async function runAgentPipeline(opts: {
       evidence: extractionErrors.length ? extractionErrors.join("; ") : undefined,
       runId: opts.runId,
     });
+
     if (!combined && docs.length === 0) {
       await mark("INGESTION", {
         status: "failed",
@@ -227,6 +248,16 @@ export async function runAgentPipeline(opts: {
         findings: ["Upload at least one RFP / conditions booklet before running agents"],
       });
       const overall = await persist("FAILED", "No documents uploaded for ingestion");
+      await recordAgentRunAnalyticsEvent({
+        eventType: "agent_run_failed",
+        runId: opts.runId,
+        origin: analyticsOrigin,
+        startedAt: runStartedAtIso,
+        metadata: {
+          projectId: opts.projectId,
+          outcomeReason: "no_documents",
+        },
+      });
       return { agentStates: states, overallProgress: overall, status: "FAILED", errorMessage: "No documents uploaded" };
     }
 
@@ -1311,6 +1342,18 @@ export async function runAgentPipeline(opts: {
     });
 
     const overall = await persist("COMPLETED");
+    await recordAgentRunAnalyticsEvent({
+      eventType: "agent_run_completed",
+      runId: opts.runId,
+      origin: analyticsOrigin,
+      startedAt: runStartedAtIso,
+      metadata: {
+        projectId: opts.projectId,
+        proposalId: proposal.id,
+        progressPercent: toProgressPercent(overall),
+      },
+    });
+
     return {
       agentStates: states,
       overallProgress: overall,
@@ -1331,6 +1374,17 @@ export async function runAgentPipeline(opts: {
           completedAt: new Date(),
         },
       });
+      await recordAgentRunAnalyticsEvent({
+        eventType: "agent_run_cancelled",
+        runId: opts.runId,
+        origin: analyticsOrigin,
+        startedAt: runStartedAtIso,
+        metadata: {
+          projectId: opts.projectId,
+          outcomeReason: "cancelled_by_user",
+          progressPercent: toProgressPercent(overall),
+        },
+      });
       return {
         agentStates: states,
         overallProgress: overall,
@@ -1342,6 +1396,19 @@ export async function runAgentPipeline(opts: {
     console.error("[orchestrator]", err);
     try {
       const overall = await persist("FAILED", message);
+      // The provider message stays in the run record and the server log; the
+      // analytics payload carries only a closed outcome code (requirement 4.6).
+      await recordAgentRunAnalyticsEvent({
+        eventType: "agent_run_failed",
+        runId: opts.runId,
+        origin: analyticsOrigin,
+        startedAt: runStartedAtIso,
+        metadata: {
+          projectId: opts.projectId,
+          outcomeReason: "pipeline_error",
+          progressPercent: toProgressPercent(overall),
+        },
+      });
       return {
         agentStates: states,
         overallProgress: overall,

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useLocale } from "@/lib/store";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   CreditCard,
@@ -10,6 +10,10 @@ import {
   Check,
   ExternalLink,
   AlertCircle,
+  RefreshCw,
+  PauseCircle,
+  PlayCircle,
+  CalendarClock,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +46,23 @@ type Subscription = {
   plan: Plan;
 } | null;
 
+type RecurringProfile = {
+  id: string;
+  recurringId: string;
+  status: string;
+  recurringType: string | null;
+  intervalDays: number | null;
+  amount: number | null;
+  currency: string;
+  planId: string | null;
+  subscriptionId: string | null;
+  nextChargeAt: string | null;
+  lastChargeAt: string | null;
+  failedCharges: number;
+  lastFailureReason: string | null;
+  createdAt: string;
+};
+
 type BillingPayload = {
   plans: Plan[];
   subscription: Subscription;
@@ -68,11 +89,18 @@ type CheckoutInput = {
 export function BillingPanel() {
   const { locale } = useLocale();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [cycle, setCycle] = useState<"MONTHLY" | "YEARLY">("MONTHLY");
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["billing"],
     queryFn: () => apiJson<BillingPayload>("/api/billing"),
+  });
+
+  const { data: recurringData, isLoading: recurringLoading } = useQuery({
+    queryKey: ["billing", "recurring"],
+    queryFn: () =>
+      apiJson<{ profiles: RecurringProfile[] }>("/api/billing/recurring"),
   });
 
   const checkout = useMutation({
@@ -97,9 +125,53 @@ export function BillingPanel() {
     },
   });
 
+  const cancelRecurring = useMutation({
+    mutationFn: async (profileId: string) => {
+      return apiJson<{ ok: boolean }>(`/api/billing/recurring/${profileId}/cancel`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: locale === "ar" ? "تم إلغاء الاشتراك المتكرر" : "Recurring subscription canceled",
+      });
+      queryClient.invalidateQueries({ queryKey: ["billing"] });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "فشل إلغاء الاشتراك" : "Failed to cancel",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resumeRecurring = useMutation({
+    mutationFn: async (profileId: string) => {
+      return apiJson<{ ok: boolean }>(`/api/billing/recurring/${profileId}/resume`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: locale === "ar" ? "تم استئناف الاشتراك المتكرر" : "Recurring subscription resumed",
+      });
+      queryClient.invalidateQueries({ queryKey: ["billing"] });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "فشل استئناف الاشتراك" : "Failed to resume",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const plans = data?.plans ?? [];
   const sub = data?.subscription;
   const records = data?.records ?? [];
+  const recurringProfiles = recurringData?.profiles ?? [];
+  const activeRecurringProfile = recurringProfiles.find((p) => p.status === "ACTIVE");
   const latestFailedRecord = records[0]?.status === "FAILED" ? records[0] : null;
   const failedCheckout = parseCheckoutMetadata(latestFailedRecord?.metadata);
   const retryCheckout: CheckoutInput | null = sub
@@ -246,6 +318,27 @@ export function BillingPanel() {
               </div>
             )}
 
+            {/* Recurring Profile Section */}
+            {!recurringLoading && recurringProfiles.length > 0 && (
+              <div className="rounded-xl border border-border/50 p-4 bg-muted/10 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <RefreshCw className="size-4 text-primary" />
+                  {locale === "ar" ? "الدفع المتكرر" : "Recurring Billing"}
+                </div>
+                {recurringProfiles.map((profile) => (
+                  <RecurringProfileCard
+                    key={profile.id}
+                    profile={profile}
+                    locale={locale}
+                    onCancel={() => cancelRecurring.mutate(profile.id)}
+                    onResume={() => resumeRecurring.mutate(profile.id)}
+                    isCanceling={cancelRecurring.isPending}
+                    isResuming={resumeRecurring.isPending}
+                  />
+                ))}
+              </div>
+            )}
+
             {!data?.myfatoorahConfigured && (
               <p className="text-[11px] text-muted-foreground">
                 {locale === "ar"
@@ -382,6 +475,116 @@ export function BillingPanel() {
           </div>
         )}
       </Panel>
+    </div>
+  );
+}
+
+function RecurringProfileCard({
+  profile,
+  locale,
+  onCancel,
+  onResume,
+  isCanceling,
+  isResuming,
+}: {
+  profile: RecurringProfile;
+  locale: string;
+  onCancel: () => void;
+  onResume: () => void;
+  isCanceling: boolean;
+  isResuming: boolean;
+}) {
+  const isActive = profile.status === "ACTIVE";
+  const isCanceled = profile.status === "CANCELED";
+  const intervalLabel =
+    profile.intervalDays && profile.intervalDays >= 365
+      ? locale === "ar"
+        ? "سنوي"
+        : "Yearly"
+      : locale === "ar"
+        ? "شهري"
+        : "Monthly";
+
+  return (
+    <div className="rounded-lg border border-border/40 p-3 bg-background/50 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-[9px]",
+              isActive
+                ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                : isCanceled
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-amber-500/10 text-amber-700 border-amber-500/20"
+            )}
+          >
+            {profile.status}
+          </Badge>
+          <span className="text-[11px] text-muted-foreground">{intervalLabel}</span>
+        </div>
+        <div className="text-[11px] font-mono font-semibold">
+          {profile.currency} {profile.amount?.toLocaleString() ?? "—"}
+        </div>
+      </div>
+
+      {profile.nextChargeAt && isActive && (
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <CalendarClock className="size-3" />
+          {locale === "ar" ? "الدفعة القادمة:" : "Next charge:"}{" "}
+          {new Date(profile.nextChargeAt).toLocaleDateString(
+            locale === "ar" ? "ar-SA" : "en-US"
+          )}
+        </div>
+      )}
+
+      {profile.failedCharges > 0 && (
+        <div className="flex items-center gap-1.5 text-[10px] text-destructive">
+          <AlertCircle className="size-3" />
+          {locale === "ar"
+            ? `${profile.failedCharges} محاولة فاشلة`
+            : `${profile.failedCharges} failed attempt(s)`}
+          {profile.lastFailureReason && (
+            <span className="text-muted-foreground">— {profile.lastFailureReason}</span>
+          )}
+        </div>
+      )}
+
+      <div className="flex gap-2 pt-1">
+        {isActive && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px] gap-1"
+            disabled={isCanceling}
+            onClick={onCancel}
+          >
+            {isCanceling ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <PauseCircle className="size-3" />
+            )}
+            {locale === "ar" ? "إلغاء التجديد" : "Cancel"}
+          </Button>
+        )}
+        {isCanceled && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px] gap-1"
+            disabled={isResuming}
+            onClick={onResume}
+          >
+            {isResuming ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <PlayCircle className="size-3" />
+            )}
+            {locale === "ar" ? "استئناف" : "Resume"}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

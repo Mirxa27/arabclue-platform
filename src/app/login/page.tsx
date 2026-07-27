@@ -68,10 +68,28 @@ function LoginForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
-        const preData = await pre.json().catch(() => ({} as { ok?: boolean; error?: string }));
+        const preData = await pre.json().catch(
+          () =>
+            ({}) as {
+              ok?: boolean;
+              code?: string;
+              error?: string | { ar: string; en: string };
+              message?: { ar: string; en: string };
+            }
+        );
         if (!pre.ok || !preData.ok) {
           if (pre.status === 429) {
             setError(ar ? "محاولات كثيرة — حاول لاحقاً" : "Too many attempts — try again later");
+          } else if (preData.code === "SCHEMA_MIGRATION_PENDING") {
+            // A pending migration is an operator condition, not a credential or
+            // security-service problem, so the mapper's own bilingual reason is
+            // shown instead of a generic unavailable message.
+            setError(
+              preData.message?.[locale] ??
+                (ar
+                  ? "ترحيل قاعدة البيانات قيد الانتظار — تواصل مع الإدارة"
+                  : "Database migration pending — contact an administrator")
+            );
           } else if (pre.status === 503 || preData.error === "rate_limit_service_unavailable") {
             setError(
               ar
@@ -276,6 +294,10 @@ function LoginForm() {
                 </form>
 
                 <div className="mt-5 pt-5 border-t border-border/60 space-y-3">
+                  <div className="flex items-center justify-between text-[12px]">
+                    <Link href="/forgot-password" className="text-muted-foreground hover:text-foreground underline underline-offset-4">{ar ? "نسيت كلمة المرور؟" : "Forgot password?"}</Link>
+                    <Link href="/register" className="font-semibold text-foreground hover:underline underline-offset-4">{ar ? "إنشاء حساب" : "Create account"}</Link>
+                  </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed text-center flex items-center justify-center gap-1.5"><ShieldCheck className="size-3.5" />{ar ? "فعّل MFA من الإعدادات بعد تسجيل الدخول · جلسات JWT + تدقيق" : "Enable MFA from Settings after sign-in · JWT sessions + audit"}</p>
                 </div>
               </div>

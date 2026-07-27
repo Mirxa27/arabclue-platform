@@ -67,7 +67,7 @@ export async function getTenantContext(userId: string): Promise<TenantContext> {
     };
   }
 
-  const slug = `ws-${userId.slice(-8)}-${Date.now().toString(36)}`;
+  const slug = `ws-${userId.slice(-8)}-${crypto.randomUUID()}`;
   const workspace = await db.workspace.create({
     data: {
       name: `${user.name}'s Workspace`,

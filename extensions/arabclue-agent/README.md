@@ -1,73 +1,109 @@
-# ArabClue Voice Agent — Chrome Extension (MV3)
+# ArabClue Etimad Agent — Chrome Extension (MV3)
 
-Futuristic side-panel companion that **strengthens** the ArabClue Voice Mission Control agent by capturing any browser tab (selection, full page text, or screenshot) and beaming it into the platform.
-
-Research baseline: **Chrome Manifest V3 + Side Panel API** (Chrome 116+, sidePanel enhancements through 2025–2026).
-
-## Install
-
-### Smart Install (optional)
-
-The extension is **optional** — Mission Control works fully without it.
-
-While signed in to ArabClue → **Mission Control**, use **Optional install**:
-
-1. Click **Optional install** (the wizard does not auto-force itself)
-2. Download the ZIP from ArabClue
-3. Unzip → open `chrome://extensions` → Developer mode → **Load unpacked** → select the `arabclue-agent` folder
-4. **Refresh the ArabClue tab** so the content-script bridge can link
-5. In the side panel, keep **API base** as `https://arabclue.com` (origin only — never `/app`) and stay signed in
-
-Mission Control detects the link automatically after refresh.
-
-### Load unpacked (manual)
-
-1. Open Chrome → `chrome://extensions`
-2. Enable **Developer mode**
-3. **Load unpacked** → select this folder:
-   ```
-   extensions/arabclue-agent
-   ```
-4. Pin the extension and click the icon to open the **side panel**
-5. Sign in at [https://arabclue.com](https://arabclue.com) in the same browser profile
-6. On any tab: **Capture page** / **Send selection** / **Screenshot → agent**
-
-Optional: for local development, set **API base** in the side panel to your local ArabClue origin and approve the optional host permission when Chrome prompts.
+Intelligent Etimad tender discovery and automated proposal preparation for ArabClue. Scans the Saudi Etimad procurement portal, finds tenders matching your criteria, downloads documents, and triggers ArabClue's AI proposal pipeline.
 
 ## What it does
 
-| Action | Effect |
+| Feature | Description |
 | --- | --- |
-| Capture page | Extracts title, URL, headings, body text → Mission Control ingest + classify/autopilot |
-| Send selection | Beams highlighted text only |
-| Screenshot | `captureVisibleTab` PNG → staged as browser attachment |
-| Context menu | Right-click page/selection → send to agent |
-| Glitter FX | Custom cursor + particle field while performing |
-| Offline queue | Failed text captures are saved locally and auto-retry every minute (badge shows pending count; side panel has Retry now) |
-| Auto-update | Mission Control compares versions and offers a one-click Update flow when the platform ships a newer extension |
+| **Scan Etimad** | Automatically browses tenders.etimad.sa, extracts structured tender data |
+| **Smart Matching** | Multi-factor scoring: category, keywords (AR/EN), value range, deadline, entity |
+| **Download Documents** | Fetches RFPs, specs, terms, qualifications from tender pages |
+| **Prepare Proposal** | One-click triggers ArabClue's AI agent pipeline for proposal generation |
+| **Auto-scan** | Background scanning every N minutes with Chrome notifications |
+| **Bilingual UI** | Full Arabic (RTL) and English side panel |
+| **Offline Queue** | Failed ingestions retry automatically |
+| **Keyboard Shortcuts** | `Ctrl+Shift+E` scan, `Ctrl+Shift+P` prepare proposal |
 
-Uplink endpoint: `POST /api/platform-agent/extension/ingest` (session cookie auth).
+## Install
 
-## Permissions (least privilege)
+### Development (Load unpacked)
 
-- `sidePanel`, `activeTab`, `scripting`, `storage`, `contextMenus`, `alarms` (offline queue retry)
-- Host: `arabclue.com`
-- Optional broader hosts if you grant them for local/dev or more sites
+1. Install dependencies and build:
+   ```bash
+   cd extensions/arabclue-agent
+   bun install
+   bun run build
+   ```
+2. Open Chrome → `chrome://extensions`
+3. Enable **Developer mode**
+4. **Load unpacked** → select `extensions/arabclue-agent`
+5. Pin the extension and click to open the **side panel**
+6. Sign in at [https://arabclue.com](https://arabclue.com)
 
-No API secrets ship in the extension. Auth uses your ArabClue browser session.
+### Smart Install (from platform)
 
-## Folder
+While signed in to ArabClue → **Mission Control**, use **Optional install**:
+1. Download the ZIP
+2. Unzip → Load unpacked → select `arabclue-agent` folder
+3. Refresh the ArabClue tab
+
+## Usage
+
+1. **Set Criteria** — Click ⚙️ in the side panel, add keywords (AR/EN), categories, value range
+2. **Scan** — Click "Scan Etimad" or press `Ctrl+Shift+E`
+3. **Review Matches** — Tenders are scored and sorted by relevance
+4. **Prepare Proposal** — Click "Prepare Proposal" on any tender card
+5. **Auto-mode** — Enable auto-scan + auto-download + auto-proposal in Settings
+
+## Architecture
 
 ```
-extensions/arabclue-agent/
-  manifest.json
-  background/service-worker.js
-  sidepanel/{sidepanel.html,sidepanel.css,sidepanel.js}
-  content/arabclue-bridge.js
-  shared/messages.js
-  assets/icons/
+src/
+├── types.ts              # TypeScript type system
+├── constants.ts          # Message types, Etimad URLs, storage keys
+├── i18n.ts              # Bilingual AR/EN strings
+├── utils.ts             # Date parsers, SAR parser, helpers
+├── background/
+│   ├── service-worker.ts # Message router, alarms, context menus
+│   ├── scanner.ts       # Etimad scanning orchestrator
+│   ├── matcher.ts       # Multi-factor tender matching engine
+│   ├── downloader.ts    # Document download manager
+│   ├── ingest.ts        # ArabClue API uplink
+│   ├── queue.ts         # Offline retry queue
+│   └── notifications.ts # Chrome notifications
+├── content/
+│   ├── bridge.ts        # ArabClue ↔ extension bridge
+│   ├── etimad-parser.ts # Listing page parser
+│   ├── etimad-detail-parser.ts # Detail page parser
+│   ├── etimad-navigator.ts     # Page navigation/filters
+│   └── etimad-document-extractor.ts # Document link extraction
+└── sidepanel/
+    ├── sidepanel.ts     # Panel controller + view routing
+    └── fx.ts            # Visual effects
 ```
 
-## Web Store
+## Build
 
-Zip this directory (not the parent). Keep permissions minimal and explain host access in the listing. For a stable extension ID used by `externally_connectable`, upload once and pin the public `key` in the manifest.
+```bash
+bun install          # Install esbuild + typescript
+bun run build        # Build all entry points
+bun run watch        # Watch mode for development
+bun run typecheck    # Type-check without emitting
+```
+
+Output files:
+- `background/service-worker.js`
+- `content/arabclue-bridge.js`
+- `content/etimad-parser.js` (+ detail, navigator, document-extractor)
+- `sidepanel/sidepanel.js`
+- `shared/messages.js`
+
+## Permissions
+
+- `sidePanel`, `activeTab`, `scripting`, `storage`, `contextMenus`, `alarms`, `notifications`, `downloads`, `tabs`
+- Host: `arabclue.com`, `tenders.etimad.sa`
+- Optional broader hosts for dev
+
+## API Endpoint
+
+Uplink: `POST /api/platform-agent/extension/ingest`
+
+Supports `mode: "tender"` with structured `EtimadTender` data for automated proposal pipeline triggering.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+Shift+E` (Mac: `MacCtrl+Shift+E`) | Scan Etimad |
+| `Ctrl+Shift+P` (Mac: `MacCtrl+Shift+P`) | Prepare proposal |

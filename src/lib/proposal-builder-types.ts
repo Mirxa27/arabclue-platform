@@ -141,13 +141,15 @@ export type CollaborationComment = {
   content: string;
   mentions: string[];
   isResolved: boolean;
+  isWithdrawn?: boolean;
   parentId: string | null;
   createdBy: string;
   creatorName: string;
   creatorAvatar?: string | null;
   createdAt: string;
   updatedAt: string;
-  creator?: { id: string; name: string; avatarUrl?: string | null };
+  editedAt?: string | null;
+  creator?: { id: true; name: string; avatarUrl?: string | null };
 };
 
 export type CommentThread = {
@@ -160,5 +162,5 @@ export type CollaborationPresence = {
   name: string;
   avatarUrl?: string | null;
   sectionKey?: string | null;
-  lastSeenAt: string;
+  lastSeenAt?: string;
 };

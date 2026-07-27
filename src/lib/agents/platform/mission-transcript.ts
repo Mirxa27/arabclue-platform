@@ -74,7 +74,7 @@ export async function syncMissionTranscript(opts: {
       id:
         typeof m.id === "string" && m.id
           ? m.id
-          : `msg_${normalized.length}_${Date.now()}`,
+          : `msg_${normalized.length}_${crypto.randomUUID()}`,
       role,
       parts,
     });

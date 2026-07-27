@@ -39,6 +39,7 @@
   "exclude": [
     "node_modules",
     "examples",
+    "extensions",
     "src/lib/__tests__"
   ]
 }

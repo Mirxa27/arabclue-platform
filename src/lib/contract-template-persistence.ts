@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { db } from "./db";
 import { AUDIT_ACTIONS } from "./audit";
+import { createContractVersion } from "./contract-versioning";
 import { parseBilingualDocument } from "./bilingual-layout";
 import {
   compileContractTemplateDocument,
@@ -1158,6 +1159,18 @@ export async function persistPreparedContractDraft(
             success: true,
           },
         });
+
+        // Create initial contract version for version history (Req 7)
+        await createContractVersion(
+          {
+            contractId: created.id,
+            bindings: input.prepared.data.bindings,
+            documentSpec: input.prepared.documentSpec,
+            contentHtml: input.prepared.contentHtml,
+            createdBy: input.userId,
+          },
+          tx as unknown as PrismaClient
+        );
 
         return {
           created: true as const,

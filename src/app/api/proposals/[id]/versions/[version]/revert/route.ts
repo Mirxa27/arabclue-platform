@@ -44,7 +44,10 @@ export async function POST(
     where: { proposalId_version: { proposalId: id, version: versionNum } },
   });
   if (!target) {
-    return NextResponse.json({ error: "version not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Version not found", code: "VERSION_NOT_FOUND" },
+      { status: 404 }
+    );
   }
 
   const nextVersion = proposal.version + 1;

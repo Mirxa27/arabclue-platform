@@ -1,6 +1,29 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 import { PUBLIC_PAGE_PATHS } from "@/lib/marketing/site-pages";
+import { isAppPath } from "@/lib/dashboard-routes";
+import { getCompletionErrorContract } from "@/lib/i18n";
+import {
+  RETURN_TO_COOKIE,
+  RETURN_TO_MAX_AGE_SECONDS,
+  signReturnTo,
+} from "@/lib/return-to";
+
+/** Path of the account-verification surface unverified sessions are held to. */
+const VERIFICATION_SURFACE_PATH = "/verify-email";
+
+/**
+ * Bilingual `ApiFailure` body for a stable completion code (requirement 18.4).
+ * `i18n` is a dependency-free data module, so building the contract here keeps
+ * the edge middleware free of a user-facing literal without importing the
+ * Node-only response mapper.
+ */
+function bilingualFailureBody(
+  code: Parameters<typeof getCompletionErrorContract>[0]
+) {
+  const contract = getCompletionErrorContract(code);
+  return { ...contract, error: contract.message };
+}
 
 /** Public marketing + health/auth surfaces (no session required). */
 const PUBLIC_PATHS = new Set<string>([
@@ -30,10 +53,58 @@ function isPasswordChangeAllowed(path: string): boolean {
   return false;
 }
 
+/**
+ * The only paths an authenticated-but-unverified session may reach
+ * (requirement 1.5): the account-verification surface, the verification action,
+ * the sign-out action (with the CSRF token NextAuth requires to sign out), and
+ * the minimum session-refresh path the verification page calls after success.
+ * Everything else is denied. Keep in sync with VERIFICATION_ALLOWLIST in
+ * src/lib/auth.ts.
+ */
+const VERIFICATION_ALLOWED: string[] = [
+  VERIFICATION_SURFACE_PATH,
+  "/api/auth/verify-email",
+  "/api/auth/session",
+  "/api/auth/signout",
+  "/api/auth/csrf",
+];
+
+function isVerificationAllowedPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return VERIFICATION_ALLOWED.some((allowed) =>
+    lower.includes(allowed.toLowerCase())
+  );
+}
+
 export default withAuth(
-  function middleware(req) {
+  async function middleware(req) {
     const token = req.nextauth.token;
     const path = req.nextUrl.pathname;
+
+    // Requirement 14.10 — a visitor with no session who opens a Dashboard_View
+    // URL sees the sign-in surface, and the requested view path plus any project
+    // identifier are retained for at most 30 minutes in a signed cookie.
+    if (!token && isAppPath(path)) {
+      const requested = `${path}${req.nextUrl.search}`;
+      const url = req.nextUrl.clone();
+      url.pathname = "/login";
+      url.search = "";
+      url.searchParams.set("callbackUrl", requested);
+      const response = NextResponse.redirect(url);
+      const signed = await signReturnTo(requested);
+      if (signed) {
+        response.cookies.set({
+          name: RETURN_TO_COOKIE,
+          value: signed,
+          httpOnly: true,
+          sameSite: "lax",
+          secure: req.nextUrl.protocol === "https:",
+          path: "/",
+          maxAge: RETURN_TO_MAX_AGE_SECONDS,
+        });
+      }
+      return response;
+    }
 
     // Force password change before any app/API use
     if (token?.mustChangePassword && !isPasswordChangeAllowed(path)) {
@@ -46,6 +117,22 @@ export default withAuth(
       const url = req.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("changePassword", "1");
+      return NextResponse.redirect(url);
+    }
+
+    // Gate unverified sessions (requirement 1.5): deny every other authenticated
+    // API with a bilingual 403 EMAIL_VERIFICATION_REQUIRED, and redirect every
+    // other authenticated page to the verification surface before it renders.
+    if (token?.emailVerified === false && !isVerificationAllowedPath(path)) {
+      if (path.startsWith("/api/")) {
+        return NextResponse.json(
+          bilingualFailureBody("EMAIL_VERIFICATION_REQUIRED"),
+          { status: 403 }
+        );
+      }
+      const url = req.nextUrl.clone();
+      url.pathname = VERIFICATION_SURFACE_PATH;
+      url.search = "";
       return NextResponse.redirect(url);
     }
 
@@ -62,7 +149,11 @@ export default withAuth(
   {
     callbacks: {
       authorized: ({ token, req }) => {
-        if (isPublicPath(req.nextUrl.pathname)) return true;
+        const path = req.nextUrl.pathname;
+        if (isPublicPath(path)) return true;
+        // Application-shell paths are handled inside the middleware so the
+        // requested path can be retained in a signed cookie before redirecting.
+        if (isAppPath(path)) return true;
         return !!token;
       },
     },

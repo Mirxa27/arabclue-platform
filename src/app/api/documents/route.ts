@@ -5,6 +5,10 @@ import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { ingestDocumentForWorkspace } from "@/lib/agents/platform/ingest-document";
+import {
+  analyticsRequestOrigin,
+  recordDocumentAnalyticsEvent,
+} from "@/lib/analytics-collector";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -104,6 +108,21 @@ export async function POST(req: NextRequest) {
       docCategory,
       tenderCategory: project.category || undefined,
       via: "documents-api",
+    });
+
+    // The document row has committed. The persisted document identifier is the
+    // mutation reference, so a repeated attempt for the same upload appends no
+    // second row and a failure never changes this response (requirements 4.3,
+    // 4.4, 4.5, 4.6).
+    await recordDocumentAnalyticsEvent({
+      eventType: "document_uploaded",
+      documentId: ingested.document.id,
+      mutationRef: ingested.document.id,
+      origin: analyticsRequestOrigin({
+        tenantWorkspaceId: workspace.id,
+        actorUserId: userId,
+      }),
+      metadata: { projectId, sizeBytes: bytes.length },
     });
 
     return NextResponse.json({ document: ingested.document });

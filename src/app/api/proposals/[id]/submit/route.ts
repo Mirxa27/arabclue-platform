@@ -5,6 +5,10 @@ import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
 import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getSubmittedForReviewStatus } from "@/lib/contract-review";
+import {
+  analyticsRequestOrigin,
+  recordProposalAnalyticsEvent,
+} from "@/lib/analytics-collector";
 import { isProposalSubmitBlocked } from "@/lib/proposal-status";
 import { assessQualificationDossier } from "@/lib/qualification";
 import {
@@ -24,6 +28,7 @@ import {
   ContractRenderSnapshotError,
   createContractRenderSnapshot,
 } from "@/lib/contract-render-snapshot";
+import { notifyReviewRequested } from "@/lib/notification-service";
 
 export const dynamic = "force-dynamic";
 
@@ -382,10 +387,42 @@ export async function POST(
       },
     });
 
+    // The submission has committed. The persisted revision of the submitted
+    // proposal is the mutation reference, so two distinct submissions never
+    // coalesce and a failure never changes this response (requirements 4.1, 4.4,
+    // 4.5, 4.6).
+    await recordProposalAnalyticsEvent({
+      eventType: "proposal_submitted",
+      proposalId: id,
+      mutationRef: updated.version,
+      origin: analyticsRequestOrigin({
+        tenantWorkspaceId: workspace.id,
+        actorUserId: userId,
+      }),
+      metadata: {
+        projectId: proposal.projectId,
+        revision: updated.version,
+      },
+    });
+
     const reviews = await db.proposalReview.findMany({
       where: { proposalId: id },
       orderBy: { stepIndex: "asc" },
       include: { reviewer: { select: { id: true, name: true, email: true } } },
+    });
+
+    // Notify reviewers about the new review request (fire-and-forget)
+    const project = await db.tenderProject.findUnique({
+      where: { id: proposal.projectId },
+      select: { title: true },
+    });
+    notifyReviewRequested({
+      proposalId: id,
+      proposalTitle: proposal.titleAr || proposal.title,
+      projectTitle: project?.title || "",
+      workspaceId: workspace.id,
+    }).catch((err) => {
+      console.error("[proposal-submit] notification error:", err);
     });
 
     return jsonOk({ proposal: updated, reviews, checklist });

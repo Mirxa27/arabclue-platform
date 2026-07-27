@@ -1,41 +1,54 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextRequest } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { isPrismaMissingTable } from "@/lib/prisma-missing-table";
+import {
+  withTenant,
+  jsonOk,
+  parseSearchParams,
+  parseJsonBody,
+  requireTenantRecord,
+  type TenantHandlerContext,
+} from "@/lib/api-controller";
 
-const COMMENTS_UNAVAILABLE = {
-  ok: true,
-  empty: true,
-  comments: [] as const,
-};
+const commentListSchema = z
+  .object({
+    proposalId: z.string().min(1),
+    sectionKey: z.string().optional(),
+  })
+  .strict();
 
-const COMMENTS_WRITE_UNAVAILABLE = {
-  ok: false,
-  empty: true,
-  error: "Collaboration comments are not available on this database yet.",
-};
+const commentCreateSchema = z
+  .object({
+    proposalId: z.string().min(1),
+    sectionKey: z.string().optional(),
+    content: z.string().min(1).max(10_000),
+    parentId: z.string().optional(),
+  })
+  .strict();
+
+async function loadOwnedProposal(
+  proposalId: string,
+  workspaceId: string,
+) {
+  const proposal = await db.generatedProposal.findUnique({
+    where: { id: proposalId },
+    select: { workspaceId: true },
+  });
+  return requireTenantRecord(
+    proposal ? { workspaceId: proposal.workspaceId } : null,
+    workspaceId,
+  );
+}
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return withTenant("session", async (ctx: TenantHandlerContext) => {
+    const { proposalId, sectionKey } = parseSearchParams(
+      request,
+      commentListSchema,
+    );
 
-  const { searchParams } = new URL(request.url);
-  const proposalId = searchParams.get("proposalId");
-  const sectionKey = searchParams.get("sectionKey");
-
-  if (!proposalId) return NextResponse.json({ error: "Missing proposalId" }, { status: 400 });
-
-  try {
-    const proposal = await db.generatedProposal.findUnique({
-      where: { id: proposalId },
-      select: { workspaceId: true },
-    });
-
-    if (!proposal || proposal.workspaceId !== session.user.workspaceId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    await loadOwnedProposal(proposalId, ctx.workspace.id);
 
     const where: { proposalId: string; sectionKey?: string } = { proposalId };
     if (sectionKey) where.sectionKey = sectionKey;
@@ -54,8 +67,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({
-      ok: true,
+    return jsonOk({
       comments: comments.map((c) => ({
         id: c.id,
         proposalId: c.proposalId,
@@ -63,53 +75,39 @@ export async function GET(request: NextRequest) {
         content: c.content,
         mentions: c.mentions,
         isResolved: c.isResolved,
+        isWithdrawn: c.isWithdrawn,
         parentId: c.parentId,
         createdBy: c.createdBy,
         creatorName: c.creator.name,
         creatorAvatar: c.creator.avatarUrl,
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
+        editedAt: c.editedAt?.toISOString() ?? null,
         replies: c.replies.map((r) => ({
           id: r.id,
           content: r.content,
           isResolved: r.isResolved,
+          isWithdrawn: r.isWithdrawn,
           createdBy: r.createdBy,
           creatorName: r.creator.name,
           creatorAvatar: r.creator.avatarUrl,
           createdAt: r.createdAt.toISOString(),
           updatedAt: r.updatedAt.toISOString(),
+          editedAt: r.editedAt?.toISOString() ?? null,
         })),
       })),
     });
-  } catch (error) {
-    if (isPrismaMissingTable(error)) {
-      return NextResponse.json(COMMENTS_UNAVAILABLE);
-    }
-    console.error("Comments fetch error:", error);
-    return NextResponse.json({ error: "Failed to load comments" }, { status: 500 });
-  }
+  }, "collaboration/comments GET");
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return withTenant("session", async (ctx: TenantHandlerContext) => {
+    const { proposalId, sectionKey, content, parentId } = await parseJsonBody(
+      request,
+      commentCreateSchema,
+    );
 
-  try {
-    const body = await request.json();
-    const { proposalId, sectionKey, content, parentId } = body;
-
-    if (!proposalId || !content?.trim()) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
-
-    const proposal = await db.generatedProposal.findUnique({
-      where: { id: proposalId },
-      select: { workspaceId: true },
-    });
-
-    if (!proposal || proposal.workspaceId !== session.user.workspaceId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    await loadOwnedProposal(proposalId, ctx.workspace.id);
 
     const comment = await db.collaborationComment.create({
       data: {
@@ -119,7 +117,7 @@ export async function POST(request: NextRequest) {
         mentions: [],
         isResolved: false,
         parentId,
-        createdBy: session.user.id,
+        createdBy: ctx.userId,
       },
       include: {
         creator: { select: { id: true, name: true, avatarUrl: true } },
@@ -127,7 +125,7 @@ export async function POST(request: NextRequest) {
     });
 
     await audit({
-      userId: session.user.id,
+      userId: ctx.userId,
       action: "COMMENT_CREATE",
       resource: "CollaborationComment",
       resourceId: comment.id,
@@ -135,8 +133,7 @@ export async function POST(request: NextRequest) {
       success: true,
     });
 
-    return NextResponse.json({
-      ok: true,
+    return jsonOk({
       comment: {
         id: comment.id,
         proposalId: comment.proposalId,
@@ -144,20 +141,16 @@ export async function POST(request: NextRequest) {
         content: comment.content,
         mentions: comment.mentions,
         isResolved: comment.isResolved,
+        isWithdrawn: comment.isWithdrawn,
         parentId: comment.parentId,
         createdBy: comment.createdBy,
         creatorName: comment.creator.name,
         creatorAvatar: comment.creator.avatarUrl,
         createdAt: comment.createdAt.toISOString(),
         updatedAt: comment.updatedAt.toISOString(),
+        editedAt: comment.editedAt?.toISOString() ?? null,
         replies: [],
       },
     });
-  } catch (error) {
-    if (isPrismaMissingTable(error)) {
-      return NextResponse.json(COMMENTS_WRITE_UNAVAILABLE, { status: 501 });
-    }
-    console.error("Comment create error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  }, "collaboration/comments POST");
 }

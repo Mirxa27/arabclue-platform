@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
         workspaceId: workspace.id,
         createdById: session.user.id,
         etimadRef:
-          body.etimadRef || `ETM-${Date.now().toString(36).toUpperCase()}`,
+          body.etimadRef || `ETM-${crypto.randomUUID().toUpperCase()}`,
         title: body.title,
         titleAr: body.titleAr ?? null,
         category: body.category || "IT",

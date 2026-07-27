@@ -1,79 +1,129 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ArabClue Voice Agent</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
+    <title>ArabClue Etimad Agent</title>
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
     <div class="stage" id="stage">
-      <canvas id="fx" aria-hidden="true"></canvas>
-      <div class="cursor" id="cursor" aria-hidden="true"></div>
-
       <header class="hero">
         <div class="orb" id="orb"></div>
         <div class="hero-copy">
-          <p class="eyebrow">ArabClue · optional uplink</p>
-          <h1>Voice Agent</h1>
-          <p class="sub">Capture a tab into Mission Control. Not required for the app.</p>
+          <p class="eyebrow">ArabClue · اعتماد</p>
+          <h1 id="appTitle">وكيل اعتماد</h1>
+          <p class="sub" id="appSubtitle">اكتشاف ذكي للمناقصات وأتمتة إعداد العروض</p>
         </div>
       </header>
 
-      <section class="panel status" id="statusPanel">
+      <!-- Status Panel -->
+      <section class="panel status">
         <div class="pulse" id="pulse"></div>
         <div class="status-copy">
-          <strong id="statusTitle">Ready</strong>
-          <p id="statusText">Pick a capture action below.</p>
+          <strong id="statusTitle">جاهز</strong>
+          <p id="statusText">حدد المعايير وابدأ الفحص</p>
         </div>
       </section>
 
-      <section class="panel target" id="preview">
-        <div class="target-top">
-          <div class="favicon" id="favicon" aria-hidden="true"></div>
-          <div class="target-meta">
-            <span class="target-title" id="pageTitle">No active tab</span>
-            <span class="target-host" id="pageHost">—</span>
-          </div>
-        </div>
-        <div class="stats" id="stats">
-          <span id="statWords">0 words</span>
-          <span id="statHeads">0 headings</span>
-          <span id="statSel">no selection</span>
-        </div>
-        <p class="excerpt" id="snippet">Open any page, then capture.</p>
-        <a id="pageUrl" class="target-url" href="#" target="_blank" rel="noreferrer" hidden></a>
-      </section>
+      <!-- Dashboard View -->
+      <div class="view" id="view-dashboard">
+        <section class="scan-controls">
+          <button class="btn primary" id="btnScan">فحص اعتماد</button>
+          <button class="btn primary hidden" id="btnStop">إيقاف الفحص</button>
+          <div class="stats" id="stats"></div>
+        </section>
 
-      <section class="actions">
-        <button class="btn primary" id="btnCapture">
-          <span class="spark"></span>
-          Capture page
-        </button>
-        <button class="btn" id="btnSelection">Send selection</button>
-        <button class="btn" id="btnShot">Screenshot</button>
-        <button class="btn ghost" id="btnOpen">Open Mission Control</button>
-      </section>
+        <section class="tender-list" id="tenderList">
+          <p class="empty">لا توجد مناقصات مطابقة. حدد المعايير وابدأ الفحص.</p>
+        </section>
 
-      <section class="panel queue" id="queuePanel" hidden>
-        <div class="meta">
-          <span id="queueLabel">Captures waiting offline</span>
-        </div>
-        <button class="btn tiny" id="btnFlush">Retry now</button>
-      </section>
+        <section class="panel queue" id="queuePanel" hidden>
+          <div class="meta"><span id="queueLabel">التقاطات في الانتظار</span></div>
+          <button class="btn tiny" id="btnFlush">إعادة المحاولة</button>
+        </section>
 
-      <details class="panel settings" id="settingsPanel">
-        <summary>Advanced · API base</summary>
-        <label>
-          Origin only (never /app)
-          <input id="apiBase" type="url" placeholder="https://arabclue.com" autocomplete="off" />
-        </label>
-        <button class="btn tiny" id="btnSave" type="button">Save</button>
-        <p class="hint" id="apiHint">Must be https://arabclue.com — you stay signed in there.</p>
-      </details>
+        <nav class="bottom-nav">
+          <button class="nav-btn" id="btnCriteria" title="معايير المطابقة">⚙️ معايير</button>
+          <button class="nav-btn" id="btnDownloads" title="التنزيلات">📥 تنزيلات</button>
+          <button class="nav-btn" id="btnSettings" title="الإعدادات">🔧 إعدادات</button>
+          <button class="nav-btn" id="btnMissionControl" title="Mission Control">🚀 MC</button>
+        </nav>
+      </div>
+
+      <!-- Tender Detail View -->
+      <div class="view hidden" id="view-detail">
+        <button class="btn-back" id="btnBack">← رجوع</button>
+        <div id="detailContent"></div>
+      </div>
+
+      <!-- Criteria View -->
+      <div class="view hidden" id="view-criteria">
+        <button class="btn-back" id="btnBackCriteria" onclick="document.getElementById('view-criteria').classList.add('hidden');document.getElementById('view-dashboard').classList.remove('hidden')">← رجوع</button>
+        <h2>معايير المطابقة</h2>
+        <form id="criteriaForm" onsubmit="return false">
+          <label>كلمات مفتاحية (إنجليزي)
+            <input id="critKeywords" type="text" placeholder="cloud, IT, software" />
+          </label>
+          <label>كلمات مفتاحية (عربي)
+            <input id="critKeywordsAr" type="text" placeholder="تقنية, برمجيات, سحابي" />
+          </label>
+          <label>الحد الأدنى (ريال)
+            <input id="critMinValue" type="number" placeholder="100000" />
+          </label>
+          <label>الحد الأعلى (ريال)
+            <input id="critMaxValue" type="number" placeholder="10000000" />
+          </label>
+          <label>أقصى أيام حتى الإغلاق
+            <input id="critMaxDays" type="number" placeholder="30" />
+          </label>
+          <label class="checkbox">
+            <input id="critAutoDownload" type="checkbox" />
+            تنزيل تلقائي للمستندات
+          </label>
+          <label class="checkbox">
+            <input id="critAutoProposal" type="checkbox" />
+            بدء العرض تلقائياً
+          </label>
+          <button class="btn primary" id="btnSaveCriteria" type="button">حفظ المعايير</button>
+        </form>
+      </div>
+
+      <!-- Downloads View -->
+      <div class="view hidden" id="view-downloads">
+        <button class="btn-back" onclick="document.getElementById('view-downloads').classList.add('hidden');document.getElementById('view-dashboard').classList.remove('hidden')">← رجوع</button>
+        <h2>التنزيلات</h2>
+        <div id="downloadsList"></div>
+      </div>
+
+      <!-- Settings View -->
+      <div class="view hidden" id="view-settings">
+        <button class="btn-back" onclick="document.getElementById('view-settings').classList.add('hidden');document.getElementById('view-dashboard').classList.remove('hidden')">← رجوع</button>
+        <h2>الإعدادات</h2>
+        <form onsubmit="return false">
+          <label>API base (الأصل فقط)
+            <input id="settApiBase" type="url" placeholder="https://arabclue.com" />
+          </label>
+          <label>فحص تلقائي (دقائق، 0 = يدوي)
+            <input id="settAutoScan" type="number" placeholder="30" />
+          </label>
+          <label class="checkbox">
+            <input id="settNotify" type="checkbox" checked />
+            إشعار عند وجود مطابقات جديدة
+          </label>
+          <label>اللغة
+            <select id="settLocale">
+              <option value="ar">العربية</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <button class="btn primary" id="btnSaveSettings" type="button">حفظ</button>
+        </form>
+      </div>
 
       <footer>
-        <span>Optional · MV3</span>
+        <span>ArabClue Etimad Agent</span>
         <span id="version"></span>
       </footer>
     </div>

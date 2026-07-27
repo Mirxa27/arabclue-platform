@@ -579,7 +579,12 @@ export const PROPOSAL_CHANNEL_CAPABILITIES = deepFreeze({
     HTML: "NATIVE",
     PDF: "NATIVE",
     PPTX: "UNSUPPORTED",
-    XLSX: "UNSUPPORTED",
+    /**
+     * A spreadsheet cannot carry a diagram, but requirement 8.5 mandates that
+     * the workbook manifest record the block with an explicit bilingual
+     * not-representable marker rather than blocking the whole export.
+     */
+    XLSX: "MANIFEST_ONLY",
   },
 } satisfies Record<
   ProposalBlockType,

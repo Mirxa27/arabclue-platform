@@ -264,7 +264,10 @@ describe("proposal layout catalog", () => {
     }
 
     expect(PROPOSAL_CHANNEL_CAPABILITIES.DIAGRAM.PPTX).toBe("UNSUPPORTED");
-    expect(PROPOSAL_CHANNEL_CAPABILITIES.DIAGRAM.XLSX).toBe("UNSUPPORTED");
+    // Requirement 8.5 records a diagram in the workbook manifest instead of
+    // blocking the spreadsheet export, so XLSX is manifest-only, not unsupported.
+    expect(PROPOSAL_CHANNEL_CAPABILITIES.DIAGRAM.XLSX).toBe("MANIFEST_ONLY");
+    expect(PROPOSAL_CHANNEL_CAPABILITIES.NARRATIVE.XLSX).toBe("MANIFEST_ONLY");
     expect(PROPOSAL_CHANNEL_CAPABILITIES.TABLE.PPTX).toBe("NATIVE");
   });
 });

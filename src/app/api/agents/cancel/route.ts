@@ -4,6 +4,10 @@ import { requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { agentCancelBodySchema, parseJsonBody } from "@/lib/validation";
+import {
+  analyticsRequestOrigin,
+  recordAgentRunAnalyticsEvent,
+} from "@/lib/analytics-collector";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +67,24 @@ export async function POST(req: NextRequest) {
       resource: "AgentRun",
       resourceId: runId,
       details: { cancelled: true },
+    });
+
+    // The cancellation transition has committed. The collector derives the
+    // elapsed time from the recorded start instant as a nonnegative whole number
+    // of milliseconds; a failure never changes this response (requirements 4.2,
+    // 4.4, 4.5, 4.6).
+    await recordAgentRunAnalyticsEvent({
+      eventType: "agent_run_cancelled",
+      runId,
+      origin: analyticsRequestOrigin({
+        tenantWorkspaceId: workspace.id,
+        actorUserId: session.user.id,
+      }),
+      startedAt: run.startedAt ?? run.createdAt,
+      metadata: {
+        projectId: run.projectId,
+        outcomeReason: "cancelled_by_user",
+      },
     });
 
     return NextResponse.json({ ok: true, status: "CANCELLED", runId });

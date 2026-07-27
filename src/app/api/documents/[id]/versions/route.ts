@@ -12,8 +12,15 @@ import {
   MAX_DOCUMENT_VERSION_BYTES,
   verifyDocumentVersionBytes,
 } from "@/lib/document-version-integrity";
+import {
+  analyticsRequestOrigin,
+  recordDocumentAnalyticsEvent,
+} from "@/lib/analytics-collector";
 
 export const dynamic = "force-dynamic";
+
+const MAX_PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 20;
 
 const createVersionSchema = z
   .object({
@@ -35,8 +42,9 @@ async function ownedDoc(id: string, workspaceId: string) {
 }
 
 // GET /api/documents/[id]/versions
+// Keyset pagination with bounded page size max 50
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await requireSession();
@@ -46,11 +54,68 @@ export async function GET(
   const doc = await ownedDoc(id, workspace.id);
   if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
 
+  // Parse pagination params
+  const searchParams = req.nextUrl.searchParams;
+  const limitParam = searchParams.get("limit");
+  const cursorParam = searchParams.get("cursor");
+
+  const limit = Math.min(
+    Math.max(1, limitParam ? parseInt(limitParam, 10) || DEFAULT_PAGE_SIZE : DEFAULT_PAGE_SIZE),
+    MAX_PAGE_SIZE
+  );
+  const cursor = cursorParam ? parseInt(cursorParam, 10) : null;
+
+  // Build query with keyset pagination (descending by version)
   const versions = await db.documentVersion.findMany({
-    where: { documentId: id },
+    where: {
+      documentId: id,
+      ...(cursor !== null ? { version: { lt: cursor } } : {}),
+    },
     orderBy: { version: "desc" },
+    take: limit + 1, // Fetch one extra to determine if there's a next page
+    select: {
+      id: true,
+      version: true,
+      storagePath: true,
+      sizeBytes: true,
+      changeLog: true,
+      checksum: true,
+      createdBy: true,
+      createdAt: true,
+    },
   });
-  return NextResponse.json({ versions });
+
+  // Determine if there's more data
+  const hasMore = versions.length > limit;
+  const results = hasMore ? versions.slice(0, limit) : versions;
+  const nextCursor = hasMore && results.length > 0 ? results[results.length - 1].version : null;
+
+  // Fetch author info for display
+  const authorIds = [...new Set(results.map((v) => v.createdBy).filter(Boolean))];
+  const authors = authorIds.length
+    ? await db.user.findMany({
+        where: { id: { in: authorIds } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const authorMap = new Map(authors.map((a) => [a.id, { name: a.name, email: a.email }]));
+
+  const versionsWithAuthors = results.map((v) => ({
+    id: v.id,
+    version: v.version,
+    storagePath: v.storagePath,
+    sizeBytes: v.sizeBytes,
+    changeLog: v.changeLog,
+    checksum: v.checksum,
+    createdAt: v.createdAt.toISOString(),
+    author: v.createdBy ? authorMap.get(v.createdBy) ?? null : null,
+  }));
+
+  return NextResponse.json({
+    versions: versionsWithAuthors,
+    nextCursor,
+    hasMore,
+  });
 }
 
 // POST /api/documents/[id]/versions — create a new version (server-validated path)
@@ -175,6 +240,24 @@ export async function POST(
       sizeBytes: verified.sizeBytes,
       checksum,
       parseStatus: "PENDING",
+    },
+  });
+
+  // The version row has committed. The persisted version identifier is both the
+  // mutation reference and the required version identifier of the event; a
+  // failure never changes this response (requirements 4.3, 4.4, 4.5, 4.6).
+  await recordDocumentAnalyticsEvent({
+    eventType: "document_version_created",
+    documentId: id,
+    mutationRef: version.id,
+    origin: analyticsRequestOrigin({
+      tenantWorkspaceId: workspace.id,
+      actorUserId: session.user.id,
+    }),
+    metadata: {
+      documentVersionId: version.id,
+      versionNumber: version.version,
+      sizeBytes: verified.sizeBytes,
     },
   });
 

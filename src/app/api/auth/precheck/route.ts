@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { parseJsonBody, authPrecheckSchema } from "@/lib/validation";
+import { withPublicRoute } from "@/lib/api-controller";
 import {
   describeRateLimitDenial,
   rateLimitAsync as rateLimit,
@@ -10,9 +11,17 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** POST { email, password } — validate credentials and report whether MFA is required */
+/**
+ * POST { email, password } — validate credentials and report whether MFA is required.
+ *
+ * Failure mapping is delegated to the shared bilingual mapper: a schema object
+ * the connected database lacks becomes 503 `SCHEMA_MIGRATION_PENDING`, and an
+ * unrecognized failure becomes a generic bilingual 500. Neither echoes the
+ * thrown message, so a driver error can no longer leak SQL, a column name, or a
+ * server file path to an unauthenticated caller (requirements 16.2, 18.4, 19.10).
+ */
 export async function POST(req: NextRequest) {
-  try {
+  return withPublicRoute("auth/precheck", async () => {
     await getBootstrapContext();
 
     const parsed = await parseJsonBody(req, authPrecheckSchema);
@@ -57,11 +66,5 @@ export async function POST(req: NextRequest) {
       mfaRequired: user.mfaEnabled,
       name: user.name,
     });
-  } catch (err) {
-    console.error("[auth/precheck]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
-  }
+  });
 }

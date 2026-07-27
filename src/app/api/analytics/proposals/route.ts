@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { isPrismaMissingTable } from "@/lib/prisma-missing-table";
+import { jsonApiFailure, withTenant } from "@/lib/api-controller";
+import { t } from "@/lib/i18n";
+import { calculateMedian } from "@/lib/analytics-collector";
 
 function calculateTrend(current: number, previous: number): "up" | "down" | "stable" {
   if (previous === 0) return current > 0 ? "up" : "stable";
@@ -12,72 +12,53 @@ function calculateTrend(current: number, previous: number): "up" | "down" | "sta
   return "stable";
 }
 
-function buildDegradedAnalyticsResponse(start: string, end: string) {
-  return NextResponse.json({
-    ok: true,
-    degraded: true,
-    empty: true,
-    summary: {
-      period: { start, end },
-      metrics: [
-        {
-          key: "proposals_created",
-          label: { ar: "عروض تم إنشاؤها", en: "Proposals Created" },
-          value: 0,
-          previousValue: 0,
-          trend: "stable" as const,
-        },
-        {
-          key: "proposals_exported",
-          label: { ar: "عروض تم تصديرها", en: "Proposals Exported" },
-          value: 0,
-          previousValue: 0,
-          trend: "stable" as const,
-        },
-        {
-          key: "templates_used",
-          label: { ar: "قوالب مستخدمة", en: "Templates Used" },
-          value: 0,
-          previousValue: 0,
-          trend: "stable" as const,
-        },
-        {
-          key: "proposal_views",
-          label: { ar: "مشاهدات العروض", en: "Proposal Views" },
-          value: 0,
-          previousValue: 0,
-          trend: "stable" as const,
-        },
-      ],
-      charts: {
-        proposalsOverTime: [],
-        exportsByType: [],
-        templateUsage: [],
-        sectionCompletion: [],
-      },
-    },
-  });
+function localizedLabel(key: string, fallbackAr: string, fallbackEn: string) {
+  const entry = (t as Record<string, { ar: string; en: string }>)[key];
+  if (entry && entry.ar && entry.en) return entry;
+  return { ar: fallbackAr, en: fallbackEn };
 }
 
+/**
+ * Tenant-scoped activity analytics.
+ *
+ * Session, workspace, and range validation run before any read. A missing
+ * `AnalyticsEvent` relation is mapped centrally to HTTP 503
+ * `SCHEMA_MIGRATION_PENDING`; this route never answers with synthesized or
+ * degraded metrics (requirements 16.2, 16.7, 19.1).
+ */
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+  return withTenant(
+    "session",
+    async (ctx) => {
   const { searchParams } = new URL(request.url);
   const start = searchParams.get("start");
   const end = searchParams.get("end");
 
   if (!start || !end) {
-    return NextResponse.json({ error: "Missing start/end dates" }, { status: 400 });
+    return jsonApiFailure("ANALYTICS_DATE_RANGE_REQUIRED");
   }
 
   const startDate = new Date(start);
   const endDate = new Date(end);
 
-  try {
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    return jsonApiFailure("ANALYTICS_DATE_INVALID");
+  }
+
+  if (startDate > endDate) {
+    return jsonApiFailure("ANALYTICS_DATE_RANGE_INVALID");
+  }
+
+  const diffMs = endDate.getTime() - startDate.getTime();
+  const maxMs = 366 * 24 * 60 * 60 * 1000;
+  if (diffMs > maxMs) {
+    return jsonApiFailure("ANALYTICS_RANGE_TOO_LARGE");
+  }
+
+  {
     const events = await db.analyticsEvent.findMany({
       where: {
-        workspaceId: session.user.workspaceId,
+        workspaceId: ctx.workspace.id,
         createdAt: { gte: startDate, lte: endDate },
       },
       orderBy: { createdAt: "asc" },
@@ -87,6 +68,19 @@ export async function GET(request: NextRequest) {
     const totalProposalsExported = events.filter((e) => e.eventType === "proposal_exported").length;
     const totalTemplatesUsed = events.filter((e) => e.eventType === "template_used").length;
     const totalViews = events.filter((e) => e.eventType === "proposal_viewed").length;
+    const totalAgentCompleted = events.filter((e) => e.eventType === "agent_run_completed").length;
+    const totalAgentFailed = events.filter((e) => e.eventType === "agent_run_failed").length;
+
+    const agentDurations = events
+      .filter((e) => e.eventType === "agent_run_completed")
+      .map((e) => {
+        const meta = e.metadataJson as { durationMs?: unknown } | null;
+        const d = meta?.durationMs;
+        return typeof d === "number" && Number.isFinite(d) && d >= 0 ? d : null;
+      })
+      .filter((v): v is number => v !== null);
+
+    const medianAgentDuration = calculateMedian(agentDurations);
 
     const periodMs = endDate.getTime() - startDate.getTime();
     const prevStart = new Date(startDate.getTime() - periodMs);
@@ -94,7 +88,7 @@ export async function GET(request: NextRequest) {
 
     const prevEvents = await db.analyticsEvent.findMany({
       where: {
-        workspaceId: session.user.workspaceId,
+        workspaceId: ctx.workspace.id,
         createdAt: { gte: prevStart, lte: prevEnd },
       },
     });
@@ -103,6 +97,17 @@ export async function GET(request: NextRequest) {
     const prevProposalsExported = prevEvents.filter((e) => e.eventType === "proposal_exported").length;
     const prevTemplatesUsed = prevEvents.filter((e) => e.eventType === "template_used").length;
     const prevViews = prevEvents.filter((e) => e.eventType === "proposal_viewed").length;
+    const prevAgentCompleted = prevEvents.filter((e) => e.eventType === "agent_run_completed").length;
+
+    const prevAgentDurations = prevEvents
+      .filter((e) => e.eventType === "agent_run_completed")
+      .map((e) => {
+        const meta = e.metadataJson as { durationMs?: unknown } | null;
+        const d = meta?.durationMs;
+        return typeof d === "number" && Number.isFinite(d) && d >= 0 ? d : null;
+      })
+      .filter((v): v is number => v !== null);
+    const prevMedianAgentDuration = calculateMedian(prevAgentDurations);
 
     const proposalsOverTime: { date: string; value: number }[] = [];
     const dailyMap = new Map<string, number>();
@@ -151,38 +156,68 @@ export async function GET(request: NextRequest) {
       count,
     }));
 
+    const isEmpty = events.length === 0;
+
     return NextResponse.json({
       ok: true,
+      empty: isEmpty,
       summary: {
         period: { start, end },
+        range: { start, end },
+        empty: isEmpty,
         metrics: [
           {
             key: "proposals_created",
-            label: { ar: "عروض تم إنشاؤها", en: "Proposals Created" },
+            label: localizedLabel("metric_proposals_created", "عروض تم إنشاؤها", "Proposals Created"),
             value: totalProposalsCreated,
             previousValue: prevProposalsCreated,
             trend: calculateTrend(totalProposalsCreated, prevProposalsCreated),
           },
           {
             key: "proposals_exported",
-            label: { ar: "عروض تم تصديرها", en: "Proposals Exported" },
+            label: localizedLabel("metric_proposals_exported", "عروض تم تصديرها", "Proposals Exported"),
             value: totalProposalsExported,
             previousValue: prevProposalsExported,
             trend: calculateTrend(totalProposalsExported, prevProposalsExported),
           },
           {
             key: "templates_used",
-            label: { ar: "قوالب مستخدمة", en: "Templates Used" },
+            label: localizedLabel("metric_templates_used", "قوالب مستخدمة", "Templates Used"),
             value: totalTemplatesUsed,
             previousValue: prevTemplatesUsed,
             trend: calculateTrend(totalTemplatesUsed, prevTemplatesUsed),
           },
           {
             key: "proposal_views",
-            label: { ar: "مشاهدات العروض", en: "Proposal Views" },
+            label: localizedLabel("metric_proposal_views", "مشاهدات العروض", "Proposal Views"),
             value: totalViews,
             previousValue: prevViews,
             trend: calculateTrend(totalViews, prevViews),
+          },
+          {
+            key: "agent_runs_completed",
+            label: localizedLabel("metric_agent_runs_completed", "تشغيلات الوكلاء المكتملة", "Agent Runs Completed"),
+            value: totalAgentCompleted,
+            previousValue: prevAgentCompleted,
+            trend: calculateTrend(totalAgentCompleted, prevAgentCompleted),
+          },
+          {
+            key: "agent_runs_failed",
+            label: localizedLabel("metric_agent_runs_failed", "تشغيلات فاشلة", "Failed Runs"),
+            value: totalAgentFailed,
+            previousValue: prevEvents.filter((e) => e.eventType === "agent_run_failed").length,
+            trend: calculateTrend(
+              totalAgentFailed,
+              prevEvents.filter((e) => e.eventType === "agent_run_failed").length
+            ),
+          },
+          {
+            key: "agent_median_duration",
+            label: localizedLabel("metric_agent_median_duration", "متوسط زمن التشغيل", "Median Run Duration"),
+            value: Math.round(medianAgentDuration),
+            previousValue: Math.round(prevMedianAgentDuration),
+            trend: calculateTrend(medianAgentDuration, prevMedianAgentDuration),
+            unit: "ms",
           },
         ],
         charts: {
@@ -193,11 +228,8 @@ export async function GET(request: NextRequest) {
         },
       },
     });
-  } catch (error) {
-    if (isPrismaMissingTable(error)) {
-      return buildDegradedAnalyticsResponse(start, end);
-    }
-    console.error("Analytics proposals error:", error);
-    return NextResponse.json({ error: "Failed to load analytics" }, { status: 500 });
   }
+    },
+    "analytics:proposals"
+  );
 }

@@ -3,6 +3,11 @@ import { db } from "@/lib/db";
 import { getMyFatoorahPublicConfig } from "@/lib/myfatoorah";
 import { productionInfrastructureReadiness } from "@/lib/production-readiness";
 import {
+  checkMigrationReadiness,
+  unreadableLedgerReport,
+  type MigrationReadinessReport,
+} from "@/lib/migration-readiness";
+import {
   probeDistributedRateLimitBackend,
   requiresDistributedRateLimit,
 } from "@/lib/rate-limit";
@@ -11,7 +16,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/ready — readiness probe for load balancers.
- * Checks DB connectivity and critical configuration surface (not secrets).
+ *
+ * Reports the schema-migration comparison (Requirement 16.3) separately from the
+ * liveness result served by `/api/health`, and reports a not-ready state while
+ * any declared migration is absent from the `_prisma_migrations` ledger
+ * (Requirement 16.4). Issues no data-definition statement.
  */
 export async function GET() {
   const checks: Record<string, { ok: boolean; detail?: string }> = {};
@@ -25,6 +34,16 @@ export async function GET() {
       detail: err instanceof Error ? err.message.slice(0, 120) : "unavailable",
     };
   }
+
+  // Requirement 16.3/16.4/16.8 — declared migration set vs applied ledger.
+  // Read-only comparison, bounded by a five-second deadline, never truncated.
+  const migrations: MigrationReadinessReport = checks.database.ok
+    ? await checkMigrationReadiness()
+    : unreadableLedgerReport(
+        "READINESS_DATABASE_UNREACHABLE",
+        "database unreachable; migration ledger not read"
+      );
+  checks.migrations = { ok: migrations.ok, detail: migrations.detail };
 
   checks.nextauthSecret = {
     ok: Boolean(
@@ -97,8 +116,19 @@ export async function GET() {
   return NextResponse.json(
     {
       ready,
+      code: ready ? null : (migrations.code ?? "READINESS_CHECK_FAILED"),
       service: "arabclue",
       checks,
+      // Requirement 16.3 — reported separately from liveness, never truncated.
+      schema: {
+        ok: migrations.ok,
+        code: migrations.code,
+        declaredMigrations: migrations.declaredCount,
+        appliedMigrations: migrations.appliedCount,
+        unappliedMigrations: migrations.unapplied,
+        affectedCapabilities: migrations.capabilities,
+        durationMs: migrations.durationMs,
+      },
       storage: blobConfigured
         ? "vercel_blob"
         : onVercel

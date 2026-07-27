@@ -201,6 +201,17 @@ function createFakeDatabase(): {
         return { id: `audit-${state.audits.length}`, ...args.data };
       },
     },
+    generatedContractVersion: {
+      aggregate: async () => ({ _max: { revision: null } }),
+      create: async (args: { data: Record<string, unknown>; select?: unknown }) => ({
+        id: "version-1",
+        contractId: args.data.contractId,
+        revision: 1,
+        canonicalHash: args.data.canonicalHash,
+        createdBy: args.data.createdBy,
+        createdAt: now,
+      }),
+    },
   };
 
   const database = {

@@ -99,7 +99,7 @@ export function createProposalSection(
   overrides?: Partial<ProposalSection>
 ): ProposalSection {
   const defaults = SECTION_DEFAULTS[type];
-  const sectionKey = `${type}-${Date.now().toString(36)}`;
+  const sectionKey = `${type}-${crypto.randomUUID()}`;
 
   return {
     id: overrides?.id ?? crypto.randomUUID(),
@@ -303,7 +303,7 @@ export function duplicateSection(section: ProposalSection): ProposalSection {
   return {
     ...section,
     id: crypto.randomUUID(),
-    sectionKey: `${section.sectionType}-${Date.now().toString(36)}`,
+    sectionKey: `${section.sectionType}-${crypto.randomUUID()}`,
     title: { ...section.title },
     content: { ...section.content },
     metadata: section.metadata ? { ...section.metadata } : undefined,
@@ -320,7 +320,7 @@ export function mergeTemplateSections(
     .map((s, i) => ({
       ...s,
       id: crypto.randomUUID(),
-      sectionKey: `${s.sectionType}-${Date.now().toString(36)}-${i}`,
+      sectionKey: `${s.sectionType}-${crypto.randomUUID()}-${i}`,
       sortOrder: existing.length + i,
     }));
   return [...existing, ...newSections];

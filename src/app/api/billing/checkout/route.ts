@@ -8,6 +8,7 @@ import {
 import { parseJsonBody, billingCheckoutSchema } from "@/lib/validation";
 import { sendPayment, appBaseUrl } from "@/lib/myfatoorah";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { startRecurringProfile, RecurringBillingError } from "@/lib/recurring-billing";
 import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -100,6 +101,91 @@ export async function POST(req: NextRequest) {
         data: { externalInvoiceId: invoice.invoiceId },
       });
 
+      // Try to set up recurring billing for MONTHLY/YEARLY plans
+      let recurringProfileId: string | null = null;
+      if (billingCycle === "MONTHLY" || billingCycle === "YEARLY") {
+        try {
+          // The recurring profile and its checkout intent both reference a real
+          // Subscription row. A subscription created here carries status
+          // "PENDING", which grants no entitlement (see assertWithinQuota) until
+          // confirmCheckout activates it on verified payment.
+          const now = new Date();
+          const existingSub = await db.subscription.findUnique({
+            where: { userId: session.user.id },
+            select: { id: true },
+          });
+          const subscriptionId =
+            existingSub?.id ??
+            (
+              await db.subscription.create({
+                data: {
+                  userId: session.user.id,
+                  planId: plan.id,
+                  status: "PENDING",
+                  billingCycle,
+                  currentPeriodStart: now,
+                  currentPeriodEnd: now,
+                },
+                select: { id: true },
+              })
+            ).id;
+
+          // Criterion 9.1: no amount is passed. The service copies the stored
+          // plan cycle price and currency itself.
+          const profile = await startRecurringProfile({
+            userId: session.user.id,
+            workspaceId: session.user.workspaceId,
+            subscriptionId,
+            planId: plan.id,
+            interval: billingCycle,
+            customerReference,
+            initialInvoiceId: invoice.invoiceId,
+            customerName: session.user.name || session.user.email,
+            customerEmail: session.user.email,
+          });
+          recurringProfileId = profile.id;
+
+          await audit({
+            userId: session.user.id,
+            action: AUDIT_ACTIONS.BILLING_CHANGE,
+            resource: "PaymentCheckout",
+            resourceId: checkout.id,
+            details: {
+              recurringProfileId: profile.id,
+              recurringId: profile.recurringId,
+              message: "Recurring billing profile created",
+            },
+          });
+        } catch (err) {
+          // If merchant rejects recurring (422) or not supported, log warning and continue single-cycle
+          const isRecurringRejection =
+            err instanceof RecurringBillingError &&
+            (err.httpStatus === 422 || err.code === "NO_PAYMENT_METHODS");
+
+          if (isRecurringRejection || (err instanceof Error && /recurring.*not.*available/i.test(err.message))) {
+            console.warn(
+              "[checkout] Recurring billing rejected by merchant, continuing with single-cycle:",
+              err instanceof Error ? err.message : err
+            );
+            await audit({
+              userId: session.user.id,
+              action: AUDIT_ACTIONS.BILLING_CHANGE,
+              resource: "PaymentCheckout",
+              resourceId: checkout.id,
+              details: {
+                warning: "Recurring billing not available",
+                error: err instanceof Error ? err.message : "unknown",
+                fallback: "single-cycle",
+              },
+              severity: "WARN",
+            });
+          } else {
+            // Log other errors but don't fail checkout
+            console.error("[checkout] Failed to start recurring profile:", err);
+          }
+        }
+      }
+
       await audit({
         userId: session.user.id,
         action: AUDIT_ACTIONS.BILLING_CHANGE,
@@ -110,6 +196,7 @@ export async function POST(req: NextRequest) {
           billingCycle,
           amount,
           invoiceId: invoice.invoiceId,
+          recurringProfileId,
         },
       });
 
@@ -119,6 +206,7 @@ export async function POST(req: NextRequest) {
         invoiceId: invoice.invoiceId,
         amount,
         currency: plan.currency || "SAR",
+        recurringProfileId,
       });
     } catch (err) {
       await db.paymentCheckout.update({

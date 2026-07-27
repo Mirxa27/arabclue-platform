@@ -13,6 +13,25 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// SQL-only schema objects
+// -----------------------
+// The following protections are created by
+// prisma/migrations/20260726000000_platform_completion/migration.sql because the
+// Prisma schema language cannot express expression indexes, partial indexes, or
+// CHECK constraints. They are intentionally absent from this file and must be
+// kept in sync with that migration:
+//   * User_email_normalized_key — unique on lower(btrim(email))
+//   * WorkspaceInvitation_workspaceId_normalizedEmail_active_key — unique on
+//     (workspaceId, lower(btrim(email))) where the invitation is still pending
+//   * StandardClause_catalog_clauseKey_key — unique catalog clause key for
+//     workspace-independent rows
+//   * MyFatoorahRecurringProfile_subscriptionId_current_key — unique
+//     subscription where status is DRAFT or ACTIVE
+//   * NotificationDelivery_dispatch_ready_idx — partial dispatcher claim index
+//   * Digest-version, analytics vocabulary/duration, template and contract
+//     legal-safety, recurring value-literal, rating-range, delivery-attempt,
+//     and knowledge decision-state CHECK constraints
+
 enum KnowledgeReviewStatus {
   UNREVIEWED
   APPROVED
@@ -35,6 +54,8 @@ model User {
   mustChangePassword Boolean   @default(false)
   activeWorkspaceId  String?
   lastLoginAt        DateTime?
+  emailVerified      Boolean   @default(false)
+  emailVerifiedAt    DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -56,23 +77,40 @@ model User {
   copilotActions           CopilotAction[]
   notificationDismissals   NotificationDismissal[]
   obligationUpdates        ContractObligationState[]
-  createdTemplates         ContractTemplate[]        @relation("TemplateCreator")
-  approvedTemplates        ContractTemplate[]        @relation("TemplateApprover")
+  createdTemplates         ContractTemplate[]               @relation("TemplateCreator")
+  approvedTemplates        ContractTemplate[]               @relation("TemplateApprover")
   templateVersions         ContractTemplateVersion[]
   generatedContracts       GeneratedContract[]
-  reviewedPastProjects     PastProject[]             @relation("PastProjectReviewer")
-  revokedPastProjects      PastProject[]             @relation("PastProjectRevoker")
-  reviewedCertificates     Certificate[]             @relation("CertificateReviewer")
-  revokedCertificates      Certificate[]             @relation("CertificateRevoker")
-  reviewedMethodologies    MethodologyAsset[]        @relation("MethodologyReviewer")
-  revokedMethodologies     MethodologyAsset[]        @relation("MethodologyRevoker")
-  reviewedLibraryItems      ContentLibraryItem[]      @relation("LibraryItemReviewer")
-  revokedLibraryItems       ContentLibraryItem[]      @relation("LibraryItemRevoker")
-  updatedProposalSnapshots  GeneratedProposal[]       @relation("ProposalSnapshotUpdater")
-  builderSections           ProposalBuilderSection[]
-  createdTemplatesMarket    TemplateMarketplaceEntry[]
-  collaborationComments     CollaborationComment[]
-  analyticsEvents           AnalyticsEvent[]
+  reviewedPastProjects     PastProject[]                    @relation("PastProjectReviewer")
+  revokedPastProjects      PastProject[]                    @relation("PastProjectRevoker")
+  reviewedCertificates     Certificate[]                    @relation("CertificateReviewer")
+  revokedCertificates      Certificate[]                    @relation("CertificateRevoker")
+  reviewedMethodologies    MethodologyAsset[]               @relation("MethodologyReviewer")
+  revokedMethodologies     MethodologyAsset[]               @relation("MethodologyRevoker")
+  reviewedLibraryItems     ContentLibraryItem[]             @relation("LibraryItemReviewer")
+  revokedLibraryItems      ContentLibraryItem[]             @relation("LibraryItemRevoker")
+  updatedProposalSnapshots GeneratedProposal[]              @relation("ProposalSnapshotUpdater")
+  builderSections          ProposalBuilderSection[]
+  createdTemplatesMarket   TemplateMarketplaceEntry[]
+  collaborationComments    CollaborationComment[]
+  analyticsEvents          AnalyticsEvent[]
+  verificationTokens       VerificationToken[]
+  recoveryTokens           RecoveryToken[]
+  sentInvitations          WorkspaceInvitation[]            @relation("InvitationInviter")
+  contractVersions         GeneratedContractVersion[]
+  marketplaceRatings       TemplateMarketplaceRating[]
+  proposalPresences        ProposalPresence[]
+  notificationDeliveries   NotificationDelivery[]
+  inAppNotifications       InAppNotification[]
+  recurringProfiles        MyFatoorahRecurringProfile[]
+  recurringCheckoutIntents RecurringCheckoutIntent[]        @relation("RecurringCheckoutIntentCreator")
+  marketplaceApplications  TemplateMarketplaceApplication[] @relation("MarketplaceApplicationActor")
+  submittedPastProjects    PastProject[]                    @relation("PastProjectSubmitter")
+  submittedCertificates    Certificate[]                    @relation("CertificateSubmitter")
+  submittedMethodologies   MethodologyAsset[]               @relation("MethodologySubmitter")
+  submittedLibraryItems    ContentLibraryItem[]             @relation("LibraryItemSubmitter")
+  reviewedStaffMembers     StaffMember[]                    @relation("StaffMemberReviewer")
+  submittedStaffMembers    StaffMember[]                    @relation("StaffMemberSubmitter")
 }
 
 model UserSession {
@@ -101,29 +139,37 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members            WorkspaceMember[]
-  projects           TenderProject[]
-  documents          UploadedDocument[]
-  brandProfiles      BrandProfile[]
-  pastProjects       PastProject[]
-  proposals          GeneratedProposal[]
-  certificates       Certificate[]
-  staffMembers       StaffMember[]
-  methodologyAssets  MethodologyAsset[]
-  contentLibrary     ContentLibraryItem[]
-  partnerships       Partnership[]
-  targetSectors      TargetSector[]
-  bidHistoryNotes    BidHistoryNote[]
-  approvalPolicy     ApprovalPolicy?
-  restrictions       Restriction[]
-  onboardingProgress OnboardingProgress?
-  copilotMissions         CopilotMission[]
-  copilotAttachments      CopilotAttachment[]
-  copilotActions          CopilotAction[]
-  contractTemplates       ContractTemplate[]
-  generatedContracts      GeneratedContract[]
-  templateMarketplace     TemplateMarketplaceEntry[]
-  analyticsEvents         AnalyticsEvent[]
+  members                  WorkspaceMember[]
+  projects                 TenderProject[]
+  documents                UploadedDocument[]
+  brandProfiles            BrandProfile[]
+  pastProjects             PastProject[]
+  proposals                GeneratedProposal[]
+  certificates             Certificate[]
+  staffMembers             StaffMember[]
+  methodologyAssets        MethodologyAsset[]
+  contentLibrary           ContentLibraryItem[]
+  partnerships             Partnership[]
+  targetSectors            TargetSector[]
+  bidHistoryNotes          BidHistoryNote[]
+  approvalPolicy           ApprovalPolicy?
+  restrictions             Restriction[]
+  onboardingProgress       OnboardingProgress?
+  copilotMissions          CopilotMission[]
+  copilotAttachments       CopilotAttachment[]
+  copilotActions           CopilotAction[]
+  contractTemplates        ContractTemplate[]
+  generatedContracts       GeneratedContract[]
+  templateMarketplace      TemplateMarketplaceEntry[]
+  analyticsEvents          AnalyticsEvent[]
+  invitations              WorkspaceInvitation[]
+  customClauses            StandardClause[]                 @relation("WorkspaceCustomClauses")
+  proposalPresences        ProposalPresence[]
+  inAppNotifications       InAppNotification[]
+  recurringProfiles        MyFatoorahRecurringProfile[]
+  recurringCheckoutIntents RecurringCheckoutIntent[]
+  marketplaceApplications  TemplateMarketplaceApplication[]
+  notificationDeliveries   NotificationDelivery[]
 }
 
 model WorkspaceMember {
@@ -330,10 +376,12 @@ model DocumentVersion {
   certificateEvidence Certificate[]        @relation("CertificateEvidence")
   methodologyEvidence MethodologyAsset[]   @relation("MethodologyEvidence")
   libraryItemEvidence ContentLibraryItem[] @relation("LibraryItemEvidence")
+  staffEvidence       StaffMember[]        @relation("StaffMemberEvidence")
 
   @@unique([documentId, version])
   @@unique([documentId, version, checksum])
   @@index([documentId])
+  @@index([documentId, version(sort: Desc), id], map: "DocumentVersion_documentId_version_id_cursor_idx")
 }
 
 // ─── Brand Profiles & Past Projects (RAG corpus) ────────────────────────────
@@ -385,6 +433,12 @@ model PastProject {
   reviewedById       String?
   approvedAt         DateTime?
   contentHash        String?
+  decisionStatus     String                @default("PENDING") // PENDING | APPROVED | REJECTED
+  submittedById      String?
+  submittedAt        DateTime              @default(now())
+  decisionAt         DateTime?
+  decisionReasonAr   String?               @db.Text
+  decisionReasonEn   String?               @db.Text
   revokedAt          DateTime?
   revokedById        String?
   revocationReason   String?               @db.Text
@@ -394,12 +448,14 @@ model PastProject {
   workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   brandProfile          BrandProfile?    @relation(fields: [brandProfileId], references: [id], onDelete: SetNull)
   reviewer              User?            @relation("PastProjectReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  submitter             User?            @relation("PastProjectSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
   revoker               User?            @relation("PastProjectRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
   evidenceVersionRecord DocumentVersion? @relation("PastProjectEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
   @@index([sector])
   @@index([workspaceId, reviewStatus, approved])
+  @@index([workspaceId, decisionStatus, submittedAt(sort: Desc), id])
   @@index([evidenceDocumentId, evidenceVersion])
 }
 
@@ -483,17 +539,19 @@ model GeneratedProposal {
   createdAt                      DateTime  @default(now())
   updatedAt                      DateTime  @updatedAt
 
-  workspace                   Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project                     TenderProject             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy                   User                      @relation(fields: [createdById], references: [id])
-  structuredSnapshotUpdatedBy User?                     @relation("ProposalSnapshotUpdater", fields: [structuredSnapshotUpdatedById], references: [id], onDelete: Restrict)
-  parentProposal              GeneratedProposal?        @relation("ProposalLineage", fields: [parentProposalId], references: [id], onDelete: SetNull)
-  childProposals              GeneratedProposal[]       @relation("ProposalLineage")
+  workspace                   Workspace                        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project                     TenderProject                    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy                   User                             @relation(fields: [createdById], references: [id])
+  structuredSnapshotUpdatedBy User?                            @relation("ProposalSnapshotUpdater", fields: [structuredSnapshotUpdatedById], references: [id], onDelete: Restrict)
+  parentProposal              GeneratedProposal?               @relation("ProposalLineage", fields: [parentProposalId], references: [id], onDelete: SetNull)
+  childProposals              GeneratedProposal[]              @relation("ProposalLineage")
   versions                    ProposalVersion[]
   reviews                     ProposalReview[]
   obligationStates            ContractObligationState[]
   builderSections             ProposalBuilderSection[]
   collaborationComments       CollaborationComment[]
+  presences                   ProposalPresence[]
+  marketplaceApplications     TemplateMarketplaceApplication[]
 
   @@index([workspaceId])
   @@index([projectId])
@@ -515,6 +573,7 @@ model ProposalVersion {
 
   @@unique([proposalId, version])
   @@index([proposalId])
+  @@index([proposalId, version(sort: Desc), id], map: "ProposalVersion_proposalId_version_id_cursor_idx")
 }
 
 // ─── AI Provider & Model Configuration ───────────────────────────────────────
@@ -601,6 +660,7 @@ model SubscriptionPlan {
   maxWorkspaces     Int      @default(1)
   maxTokensPerMonth Int      @default(500000) // LLM token budget
   maxStorageGb      Int      @default(5)
+  maxSeats          Int? // seat limit per Req 3.8, null = unlimited governed by plan
   // Features
   featuresJson      String? // JSON array of feature flags
   isActive          Boolean  @default(true)
@@ -608,15 +668,17 @@ model SubscriptionPlan {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  subscriptions    Subscription[]
-  paymentCheckouts PaymentCheckout[]
+  subscriptions            Subscription[]
+  paymentCheckouts         PaymentCheckout[]
+  recurringProfiles        MyFatoorahRecurringProfile[]
+  recurringCheckoutIntents RecurringCheckoutIntent[]
 }
 
 model Subscription {
   id                 String    @id @default(cuid())
   userId             String    @unique
   planId             String
-  status             String    @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELLED | TRIALING | EXPIRED
+  status             String    @default("ACTIVE") // PENDING | ACTIVE | PAST_DUE | CANCELLED | TRIALING | EXPIRED
   billingCycle       String    @default("MONTHLY") // MONTHLY | YEARLY
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
@@ -630,8 +692,10 @@ model Subscription {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan SubscriptionPlan @relation(fields: [planId], references: [id])
+  user                     User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                     SubscriptionPlan             @relation(fields: [planId], references: [id])
+  recurringProfiles        MyFatoorahRecurringProfile[]
+  recurringCheckoutIntents RecurringCheckoutIntent[]
 
   @@index([status])
 }
@@ -687,6 +751,7 @@ model PaymentCheckout {
   @@index([userId])
   @@index([status])
   @@index([invoiceId])
+  @@index([status, createdAt, id])
 }
 
 // MyFatoorah Webhook V2 durable receipt + idempotency
@@ -719,20 +784,66 @@ model PaymentWebhookEvent {
 model MyFatoorahRecurringProfile {
   id                String    @id @default(cuid())
   userId            String
+  workspaceId       String?
   subscriptionId    String?
+  planId            String?
   recurringId       String    @unique
-  status            String    @default("DRAFT") // DRAFT | ACTIVE | UNCOMPLETED | COMPLETED | CANCELED
+  status            String    @default("DRAFT") // DRAFT | ACTIVE | SUSPENDED | CANCELLED; legacy values remain readable
   recurringType     String?
   intervalDays      Int?
   retryCount        Int       @default(3)
+  amount            Float? // Legacy compatibility only; exact literal is authoritative when present
+  amountExact       String?
+  currency          String    @default("SAR")
   customerReference String?
   initialInvoiceId  String?
+  nextChargeAt      DateTime? // estimated next charge date
+  lastChargeAt      DateTime? // last successful charge
+  failedCharges     Int       @default(0)
+  lastFailureReason String?
+  lastFailureAt     DateTime?
   lastWebhookAt     DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  subscription Subscription?     @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  plan         SubscriptionPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+
   @@index([userId])
+  @@index([workspaceId, status, createdAt, id])
+  @@index([subscriptionId])
+  @@index([subscriptionId, status])
   @@index([status])
+}
+
+model RecurringCheckoutIntent {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  subscriptionId    String
+  planId            String
+  createdById       String
+  idempotencyKey    String
+  billingCycle      String
+  amountExact       String
+  currency          String
+  status            String    @default("PENDING") // PENDING | FINALIZED | FAILED | EXPIRED
+  providerReference String?
+  expiresAt         DateTime?
+  finalizedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  createdBy    User             @relation("RecurringCheckoutIntentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([subscriptionId, idempotencyKey])
+  @@index([workspaceId, status, createdAt, id])
+  @@index([status, createdAt, id])
+  @@index([providerReference])
 }
 
 // ─── Immutable Audit Trail ───────────────────────────────────────────────────
@@ -780,6 +891,12 @@ model Certificate {
   provenanceJson     String?               @db.Text
   reviewedById       String?
   approvedAt         DateTime?
+  decisionStatus     String                @default("PENDING") // PENDING | APPROVED | REJECTED
+  submittedById      String?
+  submittedAt        DateTime              @default(now())
+  decisionAt         DateTime?
+  decisionReasonAr   String?               @db.Text
+  decisionReasonEn   String?               @db.Text
   revokedAt          DateTime?
   revokedById        String?
   revocationReason   String?               @db.Text
@@ -789,33 +906,50 @@ model Certificate {
 
   workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   reviewer              User?            @relation("CertificateReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  submitter             User?            @relation("CertificateSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
   revoker               User?            @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
   evidenceVersionRecord DocumentVersion? @relation("CertificateEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
   @@index([expiresAt])
   @@index([workspaceId, reviewStatus, approved])
+  @@index([workspaceId, decisionStatus, submittedAt(sort: Desc), id])
   @@index([evidenceDocumentId, evidenceVersion])
 }
 
 model StaffMember {
-  id              String   @id @default(cuid())
-  workspaceId     String
-  name            String
-  nameAr          String?
-  roleTitle       String
-  roleTitleAr     String?
-  certifications  String?
-  cvSummary       String?
-  requirementTags String? // JSON string[] e.g. ["ISO_27001_LEAD"]
-  embeddingJson   String?
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  name               String
+  nameAr             String?
+  roleTitle          String
+  roleTitleAr        String?
+  certifications     String?
+  cvSummary          String?
+  requirementTags    String? // JSON string[] e.g. ["ISO_27001_LEAD"]
+  embeddingJson      String?
+  active             Boolean   @default(true)
+  decisionStatus     String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  submittedById      String?
+  submittedAt        DateTime  @default(now())
+  reviewedById       String?
+  decisionAt         DateTime?
+  decisionReasonAr   String?   @db.Text
+  decisionReasonEn   String?   @db.Text
+  evidenceDocumentId String?
+  evidenceVersion    Int?
+  evidenceChecksum   String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reviewer              User?            @relation("StaffMemberReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  submitter             User?            @relation("StaffMemberSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  evidenceVersionRecord DocumentVersion? @relation("StaffMemberEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
+  @@index([workspaceId, decisionStatus, submittedAt(sort: Desc), id])
+  @@index([evidenceDocumentId, evidenceVersion])
 }
 
 model MethodologyAsset {
@@ -834,6 +968,12 @@ model MethodologyAsset {
   provenanceJson     String?               @db.Text
   reviewedById       String?
   approvedAt         DateTime?
+  decisionStatus     String                @default("PENDING") // PENDING | APPROVED | REJECTED
+  submittedById      String?
+  submittedAt        DateTime              @default(now())
+  decisionAt         DateTime?
+  decisionReasonAr   String?               @db.Text
+  decisionReasonEn   String?               @db.Text
   revokedAt          DateTime?
   revokedById        String?
   revocationReason   String?               @db.Text
@@ -843,12 +983,14 @@ model MethodologyAsset {
 
   workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   reviewer              User?            @relation("MethodologyReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  submitter             User?            @relation("MethodologySubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
   revoker               User?            @relation("MethodologyRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
   evidenceVersionRecord DocumentVersion? @relation("MethodologyEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
   @@index([category])
   @@index([workspaceId, reviewStatus, approved])
+  @@index([workspaceId, decisionStatus, submittedAt(sort: Desc), id])
   @@index([evidenceDocumentId, evidenceVersion])
 }
 
@@ -871,6 +1013,12 @@ model ContentLibraryItem {
   provenanceJson     String?               @db.Text
   reviewedById       String?
   approvedAt         DateTime?
+  decisionStatus     String                @default("PENDING") // PENDING | APPROVED | REJECTED
+  submittedById      String?
+  submittedAt        DateTime              @default(now())
+  decisionAt         DateTime?
+  decisionReasonAr   String?               @db.Text
+  decisionReasonEn   String?               @db.Text
   revokedAt          DateTime?
   revokedById        String?
   revocationReason   String?               @db.Text
@@ -880,12 +1028,14 @@ model ContentLibraryItem {
 
   workspace             Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   reviewer              User?            @relation("LibraryItemReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  submitter             User?            @relation("LibraryItemSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
   revoker               User?            @relation("LibraryItemRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
   evidenceVersionRecord DocumentVersion? @relation("LibraryItemEvidence", fields: [evidenceDocumentId, evidenceVersion, evidenceChecksum], references: [documentId, version, checksum], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([workspaceId])
   @@index([category])
   @@index([workspaceId, reviewStatus, approved])
+  @@index([workspaceId, decisionStatus, submittedAt(sort: Desc), id])
   @@index([evidenceDocumentId, evidenceVersion])
 }
 
@@ -1107,6 +1257,10 @@ model ContractTemplate {
   clausesJson           String    @db.Text
   isSystem              Boolean   @default(false)
   isApproved            Boolean   @default(false)
+  isExecutable          Boolean   @default(false)
+  currentVersionNumber  Int?
+  currentVersionId      String?   @unique
+  retiredAt             DateTime?
   approvedBy            String?
   approvedAt            DateTime?
   createdBy             String
@@ -1116,24 +1270,28 @@ model ContractTemplate {
   workspace          Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   creator            User                      @relation("TemplateCreator", fields: [createdBy], references: [id])
   approver           User?                     @relation("TemplateApprover", fields: [approvedBy], references: [id])
-  versions           ContractTemplateVersion[]
+  versions           ContractTemplateVersion[] @relation("ContractTemplateVersions")
+  currentVersion     ContractTemplateVersion?  @relation("CurrentContractTemplateVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
   generatedContracts GeneratedContract[]
 
   @@unique([workspaceId, catalogKey])
   @@index([workspaceId, type, status])
   @@index([workspaceId, isSystem])
   @@index([workspaceId, lifecycle, legalReviewStatus])
+  @@index([workspaceId, lifecycle, createdAt, id])
 }
 
 model ContractTemplateVersion {
   id                    String   @id @default(cuid())
   templateId            String
   version               String
+  versionNumber         Int?
   schemaVersion         Int      @default(1)
   canonicalHash         String?
   lifecycle             String   @default("DRAFT")
   legalReviewStatus     String   @default("UNREVIEWED")
   counselReviewRequired Boolean  @default(true)
+  isExecutable          Boolean  @default(false)
   sourceStatus          String   @default("PENDING_OFFICIAL_SOURCE_REVIEW")
   provenanceJson        String?  @db.Text
   sectionsJson          String   @db.Text
@@ -1143,13 +1301,17 @@ model ContractTemplateVersion {
   createdBy             String
   createdAt             DateTime @default(now())
 
-  template           ContractTemplate    @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  creator            User                @relation(fields: [createdBy], references: [id])
-  generatedContracts GeneratedContract[]
+  template                  ContractTemplate           @relation("ContractTemplateVersions", fields: [templateId], references: [id], onDelete: Cascade)
+  currentFor                ContractTemplate?          @relation("CurrentContractTemplateVersion")
+  creator                   User                       @relation(fields: [createdBy], references: [id])
+  generatedContracts        GeneratedContract[]
+  generatedContractVersions GeneratedContractVersion[]
 
   @@unique([templateId, version])
+  @@unique([templateId, versionNumber])
   @@unique([id, templateId])
   @@index([templateId, lifecycle, legalReviewStatus])
+  @@index([templateId, versionNumber(sort: Desc), id])
 }
 
 model StandardClause {
@@ -1162,6 +1324,9 @@ model StandardClause {
   sourceStatus          String   @default("PENDING_OFFICIAL_SOURCE_REVIEW")
   provenanceJson        String?  @db.Text
   translationStatus     String   @default("DRAFT")
+  clauseKey             String?
+  workspaceId           String?
+  isCustom              Boolean  @default(false)
   category              String
   nameEn                String
   nameAr                String
@@ -1176,8 +1341,15 @@ model StandardClause {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
+  workspace Workspace? @relation("WorkspaceCustomClauses", fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, clauseKey])
+  @@index([workspaceId, isCustom])
+  @@index([clauseKey, isActive])
+  @@index([category, isActive, workspaceId])
   @@index([category, isActive])
   @@index([lifecycle, legalReviewStatus])
+  @@index([clauseKey])
 }
 
 model GeneratedContract {
@@ -1207,11 +1379,12 @@ model GeneratedContract {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
-  workspace       Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  template        ContractTemplate         @relation(fields: [templateId], references: [id])
-  templateVersion ContractTemplateVersion? @relation(fields: [templateVersionId, templateId], references: [id, templateId])
-  project         TenderProject?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  creator         User                     @relation(fields: [createdBy], references: [id])
+  workspace       Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  template        ContractTemplate           @relation(fields: [templateId], references: [id])
+  templateVersion ContractTemplateVersion?   @relation(fields: [templateVersionId, templateId], references: [id, templateId])
+  project         TenderProject?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  creator         User                       @relation(fields: [createdBy], references: [id])
+  versions        GeneratedContractVersion[]
 
   @@unique([workspaceId, clientRequestId])
   @@index([workspaceId, status])
@@ -1226,23 +1399,23 @@ model GeneratedContract {
 // =============================================================================
 
 model ProposalBuilderSection {
-  id            String   @id @default(cuid())
-  proposalId    String
-  sectionKey    String
-  sectionType   String   // cover, executive-summary, technical-approach, pricing, team, qualifications, timeline, compliance, appendix
-  sortOrder     Int
-  titleJson     Json     // { ar: string, en: string }
-  contentJson   Json     // { ar: string, en: string } - markdown content per locale
-  metadataJson  Json?    // section-specific metadata (pricing rows, team members, etc.)
-  isRequired    Boolean  @default(false)
-  isVisible     Boolean  @default(true)
-  validationJson Json?   // validation rules and current status
-  createdBy     String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(cuid())
+  proposalId     String
+  sectionKey     String
+  sectionType    String // cover, executive-summary, technical-approach, pricing, team, qualifications, timeline, compliance, appendix
+  sortOrder      Int
+  titleJson      Json // { ar: string, en: string }
+  contentJson    Json // { ar: string, en: string } - markdown content per locale
+  metadataJson   Json? // section-specific metadata (pricing rows, team members, etc.)
+  isRequired     Boolean  @default(false)
+  isVisible      Boolean  @default(true)
+  validationJson Json? // validation rules and current status
+  createdBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  proposal      GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  creator       User              @relation(fields: [createdBy], references: [id])
+  proposal GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  creator  User              @relation(fields: [createdBy], references: [id])
 
   @@unique([proposalId, sectionKey])
   @@index([proposalId, sortOrder])
@@ -1251,71 +1424,296 @@ model ProposalBuilderSection {
 
 model TemplateMarketplaceEntry {
   id              String   @id @default(cuid())
-  workspaceId     String?  // null for system templates
+  workspaceId     String? // null for system templates
   templateKey     String
-  nameJson        Json     // { ar: string, en: string }
-  descriptionJson Json     // { ar: string, en: string }
-  category        String   // construction, it, consulting, government, healthcare
+  nameJson        Json // { ar: string, en: string }
+  descriptionJson Json // { ar: string, en: string }
+  category        String // construction, it, consulting, government, healthcare
   industry        String?
-  sectionTypes    Json     // array of section types included
-  previewJson     Json?    // sample data for preview
+  sectionTypes    Json // array of section types included
+  previewJson     Json? // sample data for preview
   rating          Float    @default(0)
   ratingCount     Int      @default(0)
   downloadCount   Int      @default(0)
   usageCount      Int      @default(0)
   isPublic        Boolean  @default(false)
   isFeatured      Boolean  @default(false)
+  isRetired       Boolean  @default(false)
   version         Int      @default(1)
-  tags            Json?    // array of tags
+  tags            Json? // array of tags
   createdBy       String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  workspace       Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  creator         User       @relation(fields: [createdBy], references: [id])
+  workspace    Workspace?                       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator      User                             @relation(fields: [createdBy], references: [id])
+  ratings      TemplateMarketplaceRating[]
+  applications TemplateMarketplaceApplication[]
 
   @@unique([workspaceId, templateKey])
   @@index([category, isPublic])
   @@index([rating, downloadCount])
   @@index([isFeatured, isPublic])
+  @@index([isRetired])
+  @@index([isRetired, isPublic, createdAt, id])
 }
 
 model CollaborationComment {
-  id            String   @id @default(cuid())
-  proposalId    String
-  sectionKey    String?  // null for general comments
-  content       String   @db.Text
-  mentions      Json?    // array of user IDs mentioned
-  isResolved    Boolean  @default(false)
-  parentId      String?  // for threaded replies
-  createdBy     String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          String    @id @default(cuid())
+  proposalId  String
+  sectionKey  String? // null for general comments
+  content     String    @db.Text
+  mentions    Json? // array of user IDs mentioned
+  isResolved  Boolean   @default(false)
+  isWithdrawn Boolean   @default(false)
+  parentId    String? // for threaded replies
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  editedAt    DateTime?
 
-  proposal      GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  creator       User              @relation(fields: [createdBy], references: [id])
-  parent        CollaborationComment? @relation("CommentReplies", fields: [parentId], references: [id])
-  replies       CollaborationComment[] @relation("CommentReplies")
+  proposal GeneratedProposal      @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  creator  User                   @relation(fields: [createdBy], references: [id])
+  parent   CollaborationComment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  CollaborationComment[] @relation("CommentReplies")
 
   @@index([proposalId, sectionKey])
   @@index([proposalId, createdAt])
+  @@index([proposalId, createdAt(sort: Desc), id])
+  @@index([parentId])
   @@index([createdBy])
 }
 
 model AnalyticsEvent {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  eventType     String   // proposal_created, proposal_exported, template_used, section_added, etc.
-  entityType    String   // proposal, template, section, export
-  entityId      String
-  metadataJson  Json?    // event-specific data
-  userId        String
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  workspaceId  String
+  eventKey     String?  @unique
+  eventType    String // closed vocabulary in analytics-collector.ts
+  entityType   String
+  entityId     String
+  durationMs   Int?
+  metadataJson Json? // minimized event-specific identifiers/counts only
+  userId       String
+  createdAt    DateTime @default(now())
 
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user          User      @relation(fields: [userId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
 
   @@index([workspaceId, eventType, createdAt])
+  @@index([workspaceId, eventType, createdAt, id])
   @@index([entityType, entityId])
   @@index([userId, createdAt])
+}
+
+// ─── Platform Completion Wave 1 ────────────────────────────────────────────
+
+model VerificationToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  hashSalt    String?
+  hashVersion Int       @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, consumedAt, expiresAt])
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
+model RecoveryToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  hashSalt    String?
+  hashVersion Int       @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, consumedAt, expiresAt])
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
+model WorkspaceInvitation {
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  email              String
+  role               String    @default("MEMBER")
+  tokenHash          String    @unique
+  hashSalt           String?
+  hashVersion        Int       @default(0)
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  revokedAt          DateTime?
+  inviterId          String?
+  emailDeliveryState String    @default("PENDING")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inviter   User?     @relation("InvitationInviter", fields: [inviterId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, email])
+  @@index([workspaceId, expiresAt])
+  @@index([workspaceId, consumedAt, revokedAt, createdAt(sort: Desc), id], map: "WorkspaceInvitation_workspaceId_state_createdAt_id_idx")
+  @@index([email, consumedAt])
+  @@index([tokenHash])
+  @@index([inviterId])
+  @@index([email])
+}
+
+model GeneratedContractVersion {
+  id                    String   @id @default(cuid())
+  contractId            String
+  revision              Int
+  templateVersionId     String?
+  bindingsJson          String   @db.Text // Legacy combined binding snapshot
+  variableValuesJson    String?  @db.Text
+  selectedClauseIdsJson String?  @db.Text
+  documentSpecJson      String?  @db.Text
+  contentHtml           String   @db.Text
+  canonicalHash         String?
+  legalReviewStatus     String   @default("UNREVIEWED")
+  counselReviewRequired Boolean  @default(true)
+  isExecutable          Boolean  @default(false)
+  createdBy             String
+  createdAt             DateTime @default(now())
+
+  contract        GeneratedContract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  templateVersion ContractTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  creator         User                     @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@unique([contractId, revision])
+  @@index([contractId, revision])
+  @@index([contractId, revision(sort: Desc), id], map: "GeneratedContractVersion_contractId_revision_id_cursor_idx")
+  @@index([templateVersionId])
+  @@index([createdBy])
+}
+
+model NotificationDelivery {
+  id                 String    @id @default(cuid())
+  workspaceId        String?
+  eventId            String
+  recipientId        String
+  channel            String    @default("email")
+  status             String    @default("PENDING")
+  recipientEmail     String?
+  recipientLocale    String?
+  templateKey        String?
+  payloadJson        Json?
+  attemptCount       Int       @default(0)
+  nextAttemptAt      DateTime?
+  firstAttemptAt     DateTime?
+  lastAttemptAt      DateTime?
+  claimedAt          DateTime?
+  claimExpiresAt     DateTime?
+  claimedBy          String?
+  deliveryDeadlineAt DateTime?
+  providerMessageId  String?
+  deliveredAt        DateTime?
+  failedAt           DateTime?
+  errorCode          String?
+  errorMessage       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  recipient User       @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, recipientId])
+  @@unique([eventId, recipientId, channel])
+  @@index([workspaceId, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([eventId])
+  @@index([status, nextAttemptAt, claimExpiresAt, id])
+  @@index([claimedAt, claimExpiresAt])
+}
+
+model TemplateMarketplaceRating {
+  id        String   @id @default(cuid())
+  entryId   String
+  userId    String
+  rating    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entry TemplateMarketplaceEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  user  User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, userId])
+  @@index([entryId, rating])
+  @@index([userId])
+}
+
+model TemplateMarketplaceApplication {
+  id          String   @id @default(cuid())
+  entryId     String
+  proposalId  String
+  workspaceId String
+  appliedById String
+  createdAt   DateTime @default(now())
+
+  entry     TemplateMarketplaceEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  proposal  GeneratedProposal        @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  workspace Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  appliedBy User                     @relation("MarketplaceApplicationActor", fields: [appliedById], references: [id], onDelete: Restrict)
+
+  @@unique([entryId, proposalId])
+  @@index([workspaceId, createdAt, id])
+  @@index([proposalId])
+  @@index([appliedById])
+}
+
+model ProposalPresence {
+  id          String   @id @default(cuid())
+  proposalId  String
+  userId      String
+  workspaceId String
+  lastSeenAt  DateTime @default(now())
+  sectionKey  String?
+
+  proposal  GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, userId])
+  @@index([proposalId, lastSeenAt])
+  @@index([proposalId, lastSeenAt, id])
+  @@index([workspaceId])
+  @@index([workspaceId, lastSeenAt])
+  @@index([lastSeenAt])
+  @@index([userId])
+}
+
+model InAppNotification {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  type        String
+  titleEn     String
+  titleAr     String
+  bodyEn      String   @db.Text
+  bodyAr      String   @db.Text
+  href        String?
+  eventId     String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([workspaceId, userId, isRead])
+  @@index([userId, createdAt])
+  @@index([userId, createdAt(sort: Desc), id], map: "InAppNotification_userId_createdAt_id_cursor_idx")
+  @@index([eventId])
 }

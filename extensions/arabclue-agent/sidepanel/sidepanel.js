@@ -1,305 +1,43 @@
-import { MSG } from "../shared/messages.js";
-
-const $ = (id) => document.getElementById(id);
-const stage = $("stage");
-const canvas = $("fx");
-const cursor = $("cursor");
-const ctx = canvas.getContext("2d");
-
-let particles = [];
-let performing = false;
-let pageContext = null;
-
-function resize() {
-  const dpr = Math.min(devicePixelRatio || 1, 2);
-  const { width, height } = stage.getBoundingClientRect();
-  canvas.width = Math.floor(width * dpr);
-  canvas.height = Math.floor(height * dpr);
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-resize();
-addEventListener("resize", resize);
-
-function burst(x, y, n = 18) {
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const sp = 0.5 + Math.random() * 3;
-    particles.push({
-      x,
-      y,
-      vx: Math.cos(a) * sp,
-      vy: Math.sin(a) * sp,
-      life: 1,
-      size: 1 + Math.random() * 2.4,
-      hue: 160 + Math.random() * 40,
-    });
-  }
-}
-
-function tick() {
-  const { width, height } = stage.getBoundingClientRect();
-  ctx.clearRect(0, 0, width, height);
-  if (performing && particles.length < 80 && Math.random() > 0.55) {
-    particles.push({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: -0.2 - Math.random() * 0.5,
-      life: 1,
-      size: 0.8 + Math.random() * 1.8,
-      hue: 165 + Math.random() * 35,
-    });
-  }
-  const next = [];
-  for (const p of particles) {
-    p.life -= 0.016;
-    if (p.life <= 0) continue;
-    p.x += p.vx;
-    p.y += p.vy;
-    ctx.fillStyle = `hsla(${p.hue}, 90%, 70%, ${p.life})`;
-    ctx.shadowColor = `hsla(${p.hue}, 100%, 70%, ${p.life})`;
-    ctx.shadowBlur = 10;
-    ctx.fillRect(p.x, p.y, p.size, p.size);
-    next.push(p);
-  }
-  particles = next.slice(-140);
-  requestAnimationFrame(tick);
-}
-requestAnimationFrame(tick);
-
-stage.addEventListener("pointermove", (e) => {
-  const rect = stage.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  cursor.style.left = `${x}px`;
-  cursor.style.top = `${y}px`;
-  if (performing && Math.random() > 0.5) burst(x, y, 2);
-});
-
-function setStatus(title, text, live = false) {
-  $("statusTitle").textContent = title;
-  $("statusText").textContent = text;
-  $("pulse").classList.toggle("live", live);
-  $("orb").classList.toggle("live", live);
-  stage.classList.toggle("performing", live);
-  cursor.classList.toggle("busy", live);
-  performing = live;
-}
-
-function hostOf(url) {
-  try {
-    return new URL(url).host;
-  } catch {
-    return "—";
-  }
-}
-
-function wordCount(text) {
-  return (text || "").trim().split(/\s+/).filter(Boolean).length;
-}
-
-function cleanExcerpt(text, max = 220) {
-  const cleaned = (text || "")
-    .replace(/\s+/g, " ")
-    .replace(/(Dashboard|Voice Copilot|Projects|Documents|Proposals|Contracts|AI Agents|Settings|Admin|SAUDI PLATFORM)/gi, "")
-    .trim();
-  if (!cleaned) return "Main content ready to capture.";
-  return cleaned.length > max ? `${cleaned.slice(0, max)}…` : cleaned;
-}
-
-function showContext(context) {
-  pageContext = context;
-  $("pageTitle").textContent = context.title || "Untitled page";
-  $("pageHost").textContent = hostOf(context.url);
-  const link = $("pageUrl");
-  if (context.url) {
-    link.hidden = false;
-    link.textContent = context.url;
-    link.href = context.url;
-  } else {
-    link.hidden = true;
-  }
-
-  const fav = $("favicon");
-  if (context.favIconUrl) {
-    fav.style.backgroundImage = `url("${context.favIconUrl}")`;
-  } else {
-    fav.style.backgroundImage = "";
-  }
-
-  const words = wordCount(context.selection || context.text);
-  $("statWords").textContent = `${words} words`;
-  $("statHeads").textContent = `${(context.headings || []).length} headings`;
-  $("statSel").textContent = context.selection?.trim()
-    ? "selection ready"
-    : "no selection";
-
-  $("snippet").textContent = cleanExcerpt(
-    context.selection || context.metaDescription || context.text
-  );
-}
-
-async function send(type, payload = {}) {
-  return chrome.runtime.sendMessage({ type, ...payload });
-}
-
-async function loadSettings() {
-  const res = await send(MSG.GET_SETTINGS);
-  let base = res?.settings?.apiBase || "https://arabclue.com";
-  // Auto-heal the common bad value pasted from the app URL.
-  if (/\/app(\/|$|\?)/i.test(base) || /\/app$/i.test(base.replace(/\/$/, ""))) {
-    const fixed = await send(MSG.SET_SETTINGS, {
-      settings: { apiBase: "https://arabclue.com" },
-    });
-    base = fixed?.settings?.apiBase || "https://arabclue.com";
-    $("apiHint").textContent = "Auto-fixed API base away from /app";
-  }
-  $("apiBase").value = base;
-  const ping = await send(MSG.PING);
-  $("version").textContent = ping?.version ? `v${ping.version}` : "";
-}
-
-async function refreshQueue() {
-  const res = await send(MSG.GET_QUEUE_STATUS);
-  const panel = $("queuePanel");
-  if (!panel) return;
-  if (!res?.ok || !res.count) {
-    panel.hidden = true;
-    panel.setAttribute("hidden", "");
-    return;
-  }
-  panel.hidden = false;
-  panel.removeAttribute("hidden");
-  $("queueLabel").textContent =
-    res.count === 1
-      ? "1 capture waiting offline"
-      : `${res.count} captures waiting offline`;
-}
-
-async function capture(mode = "page") {
-  setStatus("Capturing…", "Reading the active tab.", true);
-  burst(120, 80, 28);
-  const ctxRes = await send(MSG.GET_PAGE_CONTEXT);
-  if (!ctxRes?.ok) {
-    setStatus("Capture failed", ctxRes?.error || "Could not read tab", false);
-    return;
-  }
-  showContext(ctxRes.context);
-  const text =
-    mode === "selection"
-      ? ctxRes.context.selection || ctxRes.context.text
-      : ctxRes.context.text;
-  if (!text?.trim()) {
-    setStatus("Nothing to send", "No selection or extractable page text.", false);
-    return;
-  }
-  setStatus("Beaming…", "Uplink to Mission Control…", true);
-  const ingest = await send(MSG.SEND_TO_AGENT, {
-    payload: {
-      mode,
-      title: ctxRes.context.title,
-      url: ctxRes.context.url,
-      text,
-      headings: ctxRes.context.headings,
-      metaDescription: ctxRes.context.metaDescription,
-      source: "chrome-extension",
-    },
-  });
-  if (!ingest?.ok) {
-    const hint =
-      ingest?.status === 401
-        ? "Sign in at arabclue.com in this browser, then retry."
-        : ingest?.error || "Ingest failed";
-    setStatus("Uplink failed", hint, false);
-    void refreshQueue();
-    return;
-  }
-  if (ingest.result?.queued) {
-    setStatus(
-      "Saved offline",
-      `${ingest.result.message} Keep API base as https://arabclue.com (no /app).`,
-      false
-    );
-    void refreshQueue();
-    return;
-  }
-  burst(160, 140, 42);
-  setStatus(
-    "Captured",
-    ingest.result?.autopilot?.message ||
-      ingest.result?.message ||
-      "Page beamed into Mission Control.",
-    false
-  );
-  void refreshQueue();
-}
-
-async function captureShot() {
-  setStatus("Capturing screen…", "PNG → Mission Control.", true);
-  const shot = await send(MSG.CAPTURE_SCREENSHOT);
-  if (!shot?.ok || !shot.dataUrl) {
-    setStatus("Screenshot failed", shot?.error || "No data", false);
-    return;
-  }
-  const ctxRes = await send(MSG.GET_PAGE_CONTEXT);
-  const context = ctxRes?.context || {};
-  showContext(context);
-  const ingest = await send(MSG.SEND_TO_AGENT, {
-    payload: {
-      mode: "screenshot",
-      title: context.title || "Screenshot",
-      url: context.url || "",
-      text: `Screenshot of ${context.title || "page"}\n${context.url || ""}`,
-      screenshotDataUrl: shot.dataUrl,
-      headings: context.headings || [],
-      source: "chrome-extension",
-    },
-  });
-  if (!ingest?.ok) {
-    setStatus("Uplink failed", ingest?.error || "Ingest failed", false);
-    return;
-  }
-  burst(180, 160, 48);
-  setStatus("Screenshot beamed", "Staged for classify / route.", false);
-}
-
-$("btnCapture").addEventListener("click", () => void capture("page"));
-$("btnSelection").addEventListener("click", () => void capture("selection"));
-$("btnShot").addEventListener("click", () => void captureShot());
-$("btnOpen").addEventListener("click", () => void send(MSG.OPEN_MISSION_CONTROL));
-$("btnSave").addEventListener("click", async () => {
-  const res = await send(MSG.SET_SETTINGS, {
-    settings: { apiBase: $("apiBase").value.trim() },
-  });
-  if (res?.settings?.apiBase) $("apiBase").value = res.settings.apiBase;
-  $("apiHint").textContent = `Saved · ${res?.settings?.apiBase || "https://arabclue.com"}`;
-  setStatus("Saved", "API origin updated.", false);
-});
-$("btnFlush").addEventListener("click", async () => {
-  setStatus("Retrying…", "Flushing offline queue.", true);
-  const res = await send(MSG.FLUSH_QUEUE);
-  if (res?.flushed) {
-    burst(160, 140, 40);
-    setStatus("Queue delivered", `${res.flushed} capture(s) sent.`, false);
-  } else if (res?.empty || ((res?.remaining ?? 0) === 0 && !res?.lastError)) {
-    setStatus("Queue empty", "Nothing waiting — capture a page.", false);
-  } else {
-    setStatus(
-      "Still offline",
-      res?.lastError
-        ? `${res.lastError} — API base must be https://arabclue.com (no /app).`
-        : "Will auto-retry every minute.",
-      false
-    );
-  }
-  void refreshQueue();
-});
-
-void loadSettings();
-void refreshQueue();
-setInterval(() => void refreshQueue(), 15_000);
-void send(MSG.GET_PAGE_CONTEXT).then((res) => {
-  if (res?.ok) showContext(res.context);
-});
+var c={PING:"PING",GET_SETTINGS:"GET_SETTINGS",SET_SETTINGS:"SET_SETTINGS",SCAN_ETIMAD:"SCAN_ETIMAD",STOP_SCAN:"STOP_SCAN",GET_SCAN_STATE:"GET_SCAN_STATE",GET_MATCHED_TENDERS:"GET_MATCHED_TENDERS",GET_TENDER_DETAILS:"GET_TENDER_DETAILS",DOWNLOAD_DOCUMENTS:"DOWNLOAD_DOCUMENTS",PREPARE_PROPOSAL:"PREPARE_PROPOSAL",GET_MATCH_CRITERIA:"GET_MATCH_CRITERIA",SET_MATCH_CRITERIA:"SET_MATCH_CRITERIA",OPEN_MISSION_CONTROL:"OPEN_MISSION_CONTROL",INGEST_TENDER:"INGEST_TENDER",GET_DOWNLOAD_STATUS:"GET_DOWNLOAD_STATUS",CLEAR_TENDERS:"CLEAR_TENDERS",AGENT_EVENT:"AGENT_EVENT",EXTRACT_CURRENT_PAGE:"EXTRACT_CURRENT_PAGE",GET_QUEUE_STATUS:"GET_QUEUE_STATUS",FLUSH_QUEUE:"FLUSH_QUEUE"};var h={en:{appTitle:"ArabClue Etimad Agent",appSubtitle:"Intelligent tender discovery & proposal automation",statusReady:"Ready",statusScanning:"Scanning Etimad\u2026",statusMatching:"Matching tenders\u2026",statusDownloading:"Downloading documents\u2026",statusPreparing:"Preparing proposal\u2026",statusComplete:"Complete",statusError:"Error",statusOffline:"Offline \u2014 will retry",scanStart:"Scan Etimad",scanStop:"Stop scan",scanProgress:"Page {current} of {total}",scanFound:"{count} tenders found",scanMatched:"{count} matches",scanNew:"{count} new since last scan",scanLast:"Last scan: {time}",scanNever:"Never scanned",scanAutoEnabled:"Auto-scan every {minutes} min",scanAutoDisabled:"Auto-scan disabled",tenderOpen:"Open",tenderClosingSoon:"Closing soon",tenderClosed:"Closed",tenderAwarded:"Awarded",tenderCancelled:"Cancelled",tenderValue:"Value: SAR {value}",tenderEntity:"Entity",tenderDeadline:"Deadline: {date}",tenderDaysLeft:"{days} days left",tenderDocuments:"{count} documents",tenderMatchScore:"Match: {score}%",tenderNoMatches:"No matching tenders yet. Set criteria and scan.",actionPrepareProposal:"Prepare Proposal",actionDownloadDocs:"Download Documents",actionViewDetails:"View Details",actionOpenEtimad:"Open on Etimad",actionOpenMissionControl:"Open Mission Control",actionRetryQueue:"Retry now",actionClearAll:"Clear all",criteriaTitle:"Match Criteria",criteriaCategories:"Categories",criteriaKeywords:"Keywords (English)",criteriaKeywordsAr:"Keywords (Arabic)",criteriaMinValue:"Min value (SAR)",criteriaMaxValue:"Max value (SAR)",criteriaEntities:"Government entities",criteriaMaxDays:"Max days until close",criteriaLocalContent:"Require local content",criteriaAutoDownload:"Auto-download documents",criteriaAutoProposal:"Auto-start proposal",criteriaSave:"Save criteria",criteriaSaved:"Criteria saved",downloadsTitle:"Downloads",downloadsEmpty:"No downloads yet",downloadsPending:"Pending",downloadsInProgress:"Downloading\u2026",downloadsComplete:"Complete",downloadsFailed:"Failed",settingsTitle:"Settings",settingsApiBase:"API base (origin only)",settingsLocale:"Language",settingsAutoScan:"Auto-scan interval (min)",settingsNotify:"Notify on new matches",settingsTheme:"Theme",settingsSave:"Save",settingsSaved:"Settings saved",queuePending:"{count} captures waiting offline",queueEmpty:"Queue empty",queueFlushed:"{count} sent successfully",errorAuth:"Sign in at arabclue.com first",errorNetwork:"Network error \u2014 saved offline",errorQuota:"Quota exceeded",errorNoTab:"No active tab",errorParseFailed:"Could not parse Etimad page",errorNotEtimad:"Not on an Etimad page",notifyNewMatches:"{count} new tenders match your criteria",notifyClosingSoon:"{count} tenders closing within 48 hours",notifyProposalReady:"Proposal ready for: {title}",catIT:"IT & Technology",catConstruction:"Construction",catConsulting:"Consulting",catMaintenance:"Maintenance",catSupply:"Supply",catServices:"Services",catHealthcare:"Healthcare",catEducation:"Education",catSecurity:"Security",catTransportation:"Transportation",catOther:"Other",footerVersion:"v{version}",footerOptional:"Optional \xB7 MV3"},ar:{appTitle:"\u0648\u0643\u064A\u0644 ArabClue \u0644\u0627\u0639\u062A\u0645\u0627\u062F",appSubtitle:"\u0627\u0643\u062A\u0634\u0627\u0641 \u0630\u0643\u064A \u0644\u0644\u0645\u0646\u0627\u0642\u0635\u0627\u062A \u0648\u0623\u062A\u0645\u062A\u0629 \u0625\u0639\u062F\u0627\u062F \u0627\u0644\u0639\u0631\u0648\u0636",statusReady:"\u062C\u0627\u0647\u0632",statusScanning:"\u064A\u0641\u062D\u0635 \u0627\u0639\u062A\u0645\u0627\u062F\u2026",statusMatching:"\u064A\u0637\u0627\u0628\u0642 \u0627\u0644\u0645\u0646\u0627\u0642\u0635\u0627\u062A\u2026",statusDownloading:"\u064A\u0646\u0632\u0651\u0644 \u0627\u0644\u0645\u0633\u062A\u0646\u062F\u0627\u062A\u2026",statusPreparing:"\u064A\u062D\u0636\u0651\u0631 \u0627\u0644\u0639\u0631\u0636\u2026",statusComplete:"\u0627\u0643\u062A\u0645\u0644",statusError:"\u062E\u0637\u0623",statusOffline:"\u063A\u064A\u0631 \u0645\u062A\u0635\u0644 \u2014 \u0633\u064A\u0639\u0627\u062F \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629",scanStart:"\u0641\u062D\u0635 \u0627\u0639\u062A\u0645\u0627\u062F",scanStop:"\u0625\u064A\u0642\u0627\u0641 \u0627\u0644\u0641\u062D\u0635",scanProgress:"\u0635\u0641\u062D\u0629 {current} \u0645\u0646 {total}",scanFound:"{count} \u0645\u0646\u0627\u0642\u0635\u0627\u062A",scanMatched:"{count} \u0645\u0637\u0627\u0628\u0642\u0627\u062A",scanNew:"{count} \u062C\u062F\u064A\u062F\u0629 \u0645\u0646\u0630 \u0622\u062E\u0631 \u0641\u062D\u0635",scanLast:"\u0622\u062E\u0631 \u0641\u062D\u0635: {time}",scanNever:"\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0641\u062D\u0635 \u0628\u0639\u062F",scanAutoEnabled:"\u0641\u062D\u0635 \u062A\u0644\u0642\u0627\u0626\u064A \u0643\u0644 {minutes} \u062F\u0642\u064A\u0642\u0629",scanAutoDisabled:"\u0627\u0644\u0641\u062D\u0635 \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A \u0645\u0639\u0637\u0651\u0644",tenderOpen:"\u0645\u0641\u062A\u0648\u062D",tenderClosingSoon:"\u064A\u063A\u0644\u0642 \u0642\u0631\u064A\u0628\u0627\u064B",tenderClosed:"\u0645\u063A\u0644\u0642",tenderAwarded:"\u062A\u0645\u062A \u0627\u0644\u062A\u0631\u0633\u064A\u0629",tenderCancelled:"\u0645\u0644\u063A\u0649",tenderValue:"\u0627\u0644\u0642\u064A\u0645\u0629: {value} \u0631\u064A\u0627\u0644",tenderEntity:"\u0627\u0644\u062C\u0647\u0629",tenderDeadline:"\u0627\u0644\u0645\u0648\u0639\u062F \u0627\u0644\u0646\u0647\u0627\u0626\u064A: {date}",tenderDaysLeft:"{days} \u064A\u0648\u0645 \u0645\u062A\u0628\u0642\u064A",tenderDocuments:"{count} \u0645\u0633\u062A\u0646\u062F\u0627\u062A",tenderMatchScore:"\u0627\u0644\u062A\u0637\u0627\u0628\u0642: {score}%",tenderNoMatches:"\u0644\u0627 \u062A\u0648\u062C\u062F \u0645\u0646\u0627\u0642\u0635\u0627\u062A \u0645\u0637\u0627\u0628\u0642\u0629. \u062D\u062F\u062F \u0627\u0644\u0645\u0639\u0627\u064A\u064A\u0631 \u0648\u0627\u0628\u062F\u0623 \u0627\u0644\u0641\u062D\u0635.",actionPrepareProposal:"\u0625\u0639\u062F\u0627\u062F \u0639\u0631\u0636",actionDownloadDocs:"\u062A\u0646\u0632\u064A\u0644 \u0627\u0644\u0645\u0633\u062A\u0646\u062F\u0627\u062A",actionViewDetails:"\u0639\u0631\u0636 \u0627\u0644\u062A\u0641\u0627\u0635\u064A\u0644",actionOpenEtimad:"\u0641\u062A\u062D \u0641\u064A \u0627\u0639\u062A\u0645\u0627\u062F",actionOpenMissionControl:"\u0641\u062A\u062D Mission Control",actionRetryQueue:"\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629",actionClearAll:"\u0645\u0633\u062D \u0627\u0644\u0643\u0644",criteriaTitle:"\u0645\u0639\u0627\u064A\u064A\u0631 \u0627\u0644\u0645\u0637\u0627\u0628\u0642\u0629",criteriaCategories:"\u0627\u0644\u062A\u0635\u0646\u064A\u0641\u0627\u062A",criteriaKeywords:"\u0643\u0644\u0645\u0627\u062A \u0645\u0641\u062A\u0627\u062D\u064A\u0629 (\u0625\u0646\u062C\u0644\u064A\u0632\u064A)",criteriaKeywordsAr:"\u0643\u0644\u0645\u0627\u062A \u0645\u0641\u062A\u0627\u062D\u064A\u0629 (\u0639\u0631\u0628\u064A)",criteriaMinValue:"\u0627\u0644\u062D\u062F \u0627\u0644\u0623\u062F\u0646\u0649 (\u0631\u064A\u0627\u0644)",criteriaMaxValue:"\u0627\u0644\u062D\u062F \u0627\u0644\u0623\u0639\u0644\u0649 (\u0631\u064A\u0627\u0644)",criteriaEntities:"\u0627\u0644\u062C\u0647\u0627\u062A \u0627\u0644\u062D\u0643\u0648\u0645\u064A\u0629",criteriaMaxDays:"\u0623\u0642\u0635\u0649 \u0623\u064A\u0627\u0645 \u062D\u062A\u0649 \u0627\u0644\u0625\u063A\u0644\u0627\u0642",criteriaLocalContent:"\u064A\u062A\u0637\u0644\u0628 \u0645\u062D\u062A\u0648\u0649 \u0645\u062D\u0644\u064A",criteriaAutoDownload:"\u062A\u0646\u0632\u064A\u0644 \u062A\u0644\u0642\u0627\u0626\u064A \u0644\u0644\u0645\u0633\u062A\u0646\u062F\u0627\u062A",criteriaAutoProposal:"\u0628\u062F\u0621 \u0627\u0644\u0639\u0631\u0636 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B",criteriaSave:"\u062D\u0641\u0638 \u0627\u0644\u0645\u0639\u0627\u064A\u064A\u0631",criteriaSaved:"\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0645\u0639\u0627\u064A\u064A\u0631",downloadsTitle:"\u0627\u0644\u062A\u0646\u0632\u064A\u0644\u0627\u062A",downloadsEmpty:"\u0644\u0627 \u062A\u0648\u062C\u062F \u062A\u0646\u0632\u064A\u0644\u0627\u062A",downloadsPending:"\u0641\u064A \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631",downloadsInProgress:"\u062C\u0627\u0631\u064D \u0627\u0644\u062A\u0646\u0632\u064A\u0644\u2026",downloadsComplete:"\u0627\u0643\u062A\u0645\u0644",downloadsFailed:"\u0641\u0634\u0644",settingsTitle:"\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A",settingsApiBase:"\u0631\u0627\u0628\u0637 \u0627\u0644\u062E\u0627\u062F\u0645 (\u0627\u0644\u0623\u0635\u0644 \u0641\u0642\u0637)",settingsLocale:"\u0627\u0644\u0644\u063A\u0629",settingsAutoScan:"\u0645\u062F\u0629 \u0627\u0644\u0641\u062D\u0635 \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A (\u062F\u0642\u0627\u0626\u0642)",settingsNotify:"\u0625\u0634\u0639\u0627\u0631 \u0639\u0646\u062F \u0648\u062C\u0648\u062F \u0645\u0637\u0627\u0628\u0642\u0627\u062A",settingsTheme:"\u0627\u0644\u0645\u0638\u0647\u0631",settingsSave:"\u062D\u0641\u0638",settingsSaved:"\u062A\u0645 \u0627\u0644\u062D\u0641\u0638",queuePending:"{count} \u0627\u0644\u062A\u0642\u0627\u0637\u0627\u062A \u0641\u064A \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631",queueEmpty:"\u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631 \u0641\u0627\u0631\u063A\u0629",queueFlushed:"\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 {count} \u0628\u0646\u062C\u0627\u062D",errorAuth:"\u0633\u062C\u0651\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0641\u064A arabclue.com \u0623\u0648\u0644\u0627\u064B",errorNetwork:"\u062E\u0637\u0623 \u0641\u064A \u0627\u0644\u0634\u0628\u0643\u0629 \u2014 \u062A\u0645 \u0627\u0644\u062D\u0641\u0638 \u0645\u062D\u0644\u064A\u0627\u064B",errorQuota:"\u062A\u0645 \u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D",errorNoTab:"\u0644\u0627 \u064A\u0648\u062C\u062F \u062A\u0628\u0648\u064A\u0628 \u0646\u0634\u0637",errorParseFailed:"\u062A\u0639\u0630\u0631 \u062A\u062D\u0644\u064A\u0644 \u0635\u0641\u062D\u0629 \u0627\u0639\u062A\u0645\u0627\u062F",errorNotEtimad:"\u0644\u0633\u062A \u0639\u0644\u0649 \u0635\u0641\u062D\u0629 \u0627\u0639\u062A\u0645\u0627\u062F",notifyNewMatches:"{count} \u0645\u0646\u0627\u0642\u0635\u0627\u062A \u062C\u062F\u064A\u062F\u0629 \u062A\u0637\u0627\u0628\u0642 \u0645\u0639\u0627\u064A\u064A\u0631\u0643",notifyClosingSoon:"{count} \u0645\u0646\u0627\u0642\u0635\u0627\u062A \u062A\u063A\u0644\u0642 \u062E\u0644\u0627\u0644 48 \u0633\u0627\u0639\u0629",notifyProposalReady:"\u0627\u0644\u0639\u0631\u0636 \u062C\u0627\u0647\u0632 \u0644\u0640: {title}",catIT:"\u062A\u0642\u0646\u064A\u0629 \u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A",catConstruction:"\u0625\u0646\u0634\u0627\u0621\u0627\u062A",catConsulting:"\u0627\u0633\u062A\u0634\u0627\u0631\u0627\u062A",catMaintenance:"\u0635\u064A\u0627\u0646\u0629",catSupply:"\u062A\u0648\u0631\u064A\u062F",catServices:"\u062E\u062F\u0645\u0627\u062A",catHealthcare:"\u0635\u062D\u0629",catEducation:"\u062A\u0639\u0644\u064A\u0645",catSecurity:"\u0623\u0645\u0646",catTransportation:"\u0646\u0642\u0644",catOther:"\u0623\u062E\u0631\u0649",footerVersion:"v{version}",footerOptional:"\u0627\u062E\u062A\u064A\u0627\u0631\u064A \xB7 MV3"}};function r(t,e,s){let i=h[e]?.[t]??h.en[t]??t;return s?Object.entries(s).reduce((S,[p,o])=>S.replace(new RegExp(`\\{${p}\\}`,"g"),String(o)),i):i}function D(t){try{let e=new Date(t).getTime(),s=Date.now();return Math.ceil((e-s)/(1e3*60*60*24))}catch{return-1}}function A(t,e){try{return new Date(t).toLocaleDateString(e==="ar"?"ar-SA":"en-US",{year:"numeric",month:"short",day:"numeric"})}catch{return t}}function y(t,e){let s=t.toLocaleString(e==="ar"?"ar-SA":"en-US");return e==="ar"?`${s} \u0631\u064A\u0627\u0644`:`SAR ${s}`}var n="ar",b="dashboard",d={lastScanAt:null,tendersFound:0,tendersMatched:0,isScanning:!1,currentPage:0,totalPages:0},f=[],T=null,u={categories:[],keywords:[],keywordsAr:[],autoDownloadDocuments:!1,autoStartProposal:!1},a=t=>document.getElementById(t);async function l(t,e={}){return chrome.runtime.sendMessage({type:t,...e})}async function R(){let t=await l(c.GET_SETTINGS);t?.ok&&(n=t.settings.locale||"ar");let e=await l(c.GET_MATCH_CRITERIA);e?.ok&&e.criteria&&(u=e.criteria),document.documentElement.dir=n==="ar"?"rtl":"ltr",document.documentElement.lang=n;let s=await l(c.PING),i=a("version");i&&s?.version&&(i.textContent=`v${s.version}`),I(),await g(),setInterval(g,15e3)}function I(){a("btnScan")?.addEventListener("click",U),a("btnStop")?.addEventListener("click",()=>void l(c.STOP_SCAN)),a("btnCriteria")?.addEventListener("click",()=>E("criteria")),a("btnDownloads")?.addEventListener("click",()=>E("downloads")),a("btnSettings")?.addEventListener("click",()=>E("settings")),a("btnMissionControl")?.addEventListener("click",()=>void l(c.OPEN_MISSION_CONTROL)),a("btnBack")?.addEventListener("click",()=>E("dashboard")),a("btnSaveCriteria")?.addEventListener("click",x),a("btnSaveSettings")?.addEventListener("click",G),a("btnFlush")?.addEventListener("click",k)}function E(t){b=t,document.querySelectorAll(".view").forEach(e=>e.classList.add("hidden")),a(`view-${t}`)?.classList.remove("hidden"),t==="dashboard"&&g(),t==="criteria"&&$(),t==="downloads"&&C(),t==="settings"&&H()}async function g(){let t=await l(c.GET_SCAN_STATE);t?.ok&&(d=t.state);let e=await l(c.GET_MATCHED_TENDERS);e?.ok&&(f=e.tenders||[]),P()}function P(){let t=a("statusTitle"),e=a("statusText");t&&e&&(d.isScanning?(t.textContent=r("statusScanning",n),e.textContent=r("scanProgress",n,{current:d.currentPage,total:d.totalPages||"?"})):d.error?(t.textContent=r("statusError",n),e.textContent=d.error):(t.textContent=r("statusReady",n),e.textContent=d.lastScanAt?r("scanLast",n,{time:A(d.lastScanAt,n)}):r("scanNever",n)));let s=a("stats");s&&(s.innerHTML=`
+      <span class="stat">${r("scanFound",n,{count:d.tendersFound})}</span>
+      <span class="stat">${r("scanMatched",n,{count:d.tendersMatched})}</span>
+    `);let i=a("btnScan"),S=a("btnStop");i&&S&&(i.classList.toggle("hidden",d.isScanning),S.classList.toggle("hidden",!d.isScanning),i.textContent=r("scanStart",n),S.textContent=r("scanStop",n));let p=a("tenderList");if(p){if(!f.length){p.innerHTML=`<p class="empty">${r("tenderNoMatches",n)}</p>`;return}p.innerHTML=f.map(o=>`
+    <div class="tender-card" data-ref="${o.referenceNumber}">
+      <div class="tender-header">
+        <span class="tender-score">${o.matchScore||0}%</span>
+        <span class="tender-status status-${o.status}">${r(`tender${V(o.status)}`,n)}</span>
+      </div>
+      <h3 class="tender-title">${o.titleAr||o.title}</h3>
+      <p class="tender-entity">${o.entityAr||o.entity}</p>
+      <div class="tender-meta">
+        ${o.value?`<span>${y(o.value,n)}</span>`:""}
+        ${o.closingDate?`<span>${D(o.closingDate)} ${n==="ar"?"\u064A\u0648\u0645":"days"}</span>`:""}
+        <span>${o.documents.length} ${n==="ar"?"\u0645\u0633\u062A\u0646\u062F":"docs"}</span>
+      </div>
+      <div class="tender-actions">
+        <button class="btn-action btn-prepare" data-ref="${o.referenceNumber}">${r("actionPrepareProposal",n)}</button>
+        <button class="btn-action btn-download" data-ref="${o.referenceNumber}">${r("actionDownloadDocs",n)}</button>
+      </div>
+    </div>
+  `).join(""),p.querySelectorAll(".tender-card").forEach(o=>{o.addEventListener("click",N=>{let v=N.target,_=o.getAttribute("data-ref"),m=f.find(L=>L.referenceNumber===_);m&&(v.classList.contains("btn-prepare")?M(m):v.classList.contains("btn-download")?w(m):(T=m,E("detail"),O()))})})}}function O(){if(!T)return;let t=a("detailContent");if(!t)return;let e=T;t.innerHTML=`
+    <h2>${e.titleAr||e.title}</h2>
+    <div class="detail-field"><strong>${r("tenderEntity",n)}:</strong> ${e.entityAr||e.entity}</div>
+    <div class="detail-field"><strong>Ref:</strong> ${e.referenceNumber}</div>
+    ${e.value?`<div class="detail-field"><strong>Value:</strong> ${y(e.value,n)}</div>`:""}
+    <div class="detail-field"><strong>Deadline:</strong> ${e.closingDate?A(e.closingDate,n):"\u2014"}</div>
+    <div class="detail-field"><strong>Category:</strong> ${e.category}</div>
+    ${e.location?`<div class="detail-field"><strong>Location:</strong> ${e.location}</div>`:""}
+    ${e.localContentRequired?`<div class="detail-field"><strong>Local Content:</strong> ${e.localContentMinimum||"?"}%</div>`:""}
+    ${e.qualifications.length?`<div class="detail-field"><strong>Requirements:</strong><ul>${e.qualifications.map(s=>`<li>${s}</li>`).join("")}</ul></div>`:""}
+    ${e.documents.length?`<div class="detail-field"><strong>Documents (${e.documents.length}):</strong><ul>${e.documents.map(s=>`<li>[${s.type}] ${s.name}</li>`).join("")}</ul></div>`:""}
+    <div class="detail-actions">
+      <button class="btn primary" id="btnDetailPrepare">${r("actionPrepareProposal",n)}</button>
+      <button class="btn" id="btnDetailDownload">${r("actionDownloadDocs",n)}</button>
+      <a href="${e.url}" target="_blank" class="btn ghost">${r("actionOpenEtimad",n)}</a>
+    </div>
+  `,a("btnDetailPrepare")?.addEventListener("click",()=>void M(T)),a("btnDetailDownload")?.addEventListener("click",()=>void w(T))}function $(){let t=a("criteriaForm");t&&(t.querySelector("#critKeywords").value=u.keywords.join(", "),t.querySelector("#critKeywordsAr").value=u.keywordsAr.join(", "),t.querySelector("#critMinValue").value=u.minValue?.toString()||"",t.querySelector("#critMaxValue").value=u.maxValue?.toString()||"",t.querySelector("#critMaxDays").value=u.maxDaysUntilClose?.toString()||"",t.querySelector("#critAutoDownload").checked=u.autoDownloadDocuments,t.querySelector("#critAutoProposal").checked=u.autoStartProposal)}async function x(){let t=a("criteriaForm");t&&(u={categories:u.categories,keywords:t.querySelector("#critKeywords").value.split(",").map(e=>e.trim()).filter(Boolean),keywordsAr:t.querySelector("#critKeywordsAr").value.split(",").map(e=>e.trim()).filter(Boolean),minValue:parseFloat(t.querySelector("#critMinValue").value)||void 0,maxValue:parseFloat(t.querySelector("#critMaxValue").value)||void 0,maxDaysUntilClose:parseInt(t.querySelector("#critMaxDays").value)||void 0,autoDownloadDocuments:t.querySelector("#critAutoDownload").checked,autoStartProposal:t.querySelector("#critAutoProposal").checked},await l(c.SET_MATCH_CRITERIA,{criteria:u}),E("dashboard"))}async function C(){let e=(await l(c.GET_DOWNLOAD_STATUS))?.tasks||[],s=a("downloadsList");if(s){if(!e.length){s.innerHTML=`<p class="empty">${r("downloadsEmpty",n)}</p>`;return}s.innerHTML=e.map(i=>`
+    <div class="download-item status-${i.status}">
+      <span class="download-name">${i.document.name}</span>
+      <span class="download-status">${i.status}</span>
+    </div>
+  `).join("")}}async function H(){let t=await l(c.GET_SETTINGS);if(!t?.ok)return;let e=t.settings;a("settApiBase").value=e.apiBase,a("settAutoScan").value=String(e.autoScanInterval),a("settNotify").checked=e.notifyOnMatch,a("settLocale").value=e.locale}async function G(){let t={apiBase:a("settApiBase").value,autoScanInterval:parseInt(a("settAutoScan").value)||0,notifyOnMatch:a("settNotify").checked,locale:a("settLocale").value};await l(c.SET_SETTINGS,{settings:t}),n=t.locale||n,document.documentElement.dir=n==="ar"?"rtl":"ltr",E("dashboard")}async function U(){await l(c.SCAN_ETIMAD),await g()}async function M(t){let e=a("statusTitle"),s=a("statusText");e&&(e.textContent=r("statusPreparing",n)),s&&(s.textContent=t.titleAr||t.title);let i=await l(c.PREPARE_PROPOSAL,{tender:t});i?.ok?(e&&(e.textContent=r("statusComplete",n)),s&&(s.textContent=i.result?.message||"Done")):(e&&(e.textContent=r("statusError",n)),s&&(s.textContent=i?.error||"Failed"))}async function w(t){await l(c.DOWNLOAD_DOCUMENTS,{tender:t}),E("downloads"),await C()}async function k(){await l(c.FLUSH_QUEUE),await g()}function V(t){return t.charAt(0).toUpperCase()+t.slice(1).replace(/_/g,"")}R();

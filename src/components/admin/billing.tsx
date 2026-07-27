@@ -16,7 +16,9 @@ import {
   Save,
   TrendingUp,
   Users,
+  Scale,
 } from "lucide-react";
+import { AdminBillingReconciliation } from "./billing-reconciliation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -483,6 +485,9 @@ export function AdminBilling() {
           </div>
         </Card>
       </div>
+
+      {/* Payment Reconciliation Section */}
+      <AdminBillingReconciliation />
     </div>
   );
 }

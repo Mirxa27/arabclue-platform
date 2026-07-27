@@ -154,7 +154,7 @@ export function FileIngestion() {
       }
       const arr = Array.from(fileList);
       for (const file of arr) {
-        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const id = `upload-${crypto.randomUUID()}`;
         const category = selectedCategory || guessCategory(file.name);
         const entry: UploadedFile = {
           id,

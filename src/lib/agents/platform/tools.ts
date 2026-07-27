@@ -420,7 +420,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
             createdById: ctx.userId,
             etimadRef:
               input.etimadRef ||
-              `ETM-${Date.now().toString(36).toUpperCase()}`,
+              `ETM-${crypto.randomUUID().toUpperCase()}`,
             title: input.title,
             titleAr: input.titleAr ?? null,
             category: input.category || "IT",
@@ -913,7 +913,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
               workspaceId: ctx.workspace.id,
               createdById: ctx.userId,
               etimadRef:
-                etimadRef || `ETM-${Date.now().toString(36).toUpperCase()}`,
+                etimadRef || `ETM-${crypto.randomUUID().toUpperCase()}`,
               title: title.trim(),
               titleAr: titleAr ?? null,
               category: tenderType || "IT",

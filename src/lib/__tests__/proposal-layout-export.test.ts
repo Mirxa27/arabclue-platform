@@ -474,19 +474,13 @@ describe("structured proposal multi-format export", () => {
     });
   });
 
-  test("fails XLSX explicitly instead of returning a mislabeled fallback", async () => {
-    await expect(
-      exportProposalLayout(makeSnapshot(), { channel: "XLSX" })
-    ).rejects.toMatchObject({
-      name: "ProposalLayoutExportError",
-      channel: "XLSX",
-      diagnostics: expect.arrayContaining([
-        expect.objectContaining({
-          code: "UNSUPPORTED_EXPORT_CHANNEL",
-          path: "channel",
-        }),
-      ]),
-    });
+  test("generates valid XLSX workbook with worksheets and manifest", async () => {
+    const result = await exportProposalLayout(makeSnapshot(), { channel: "XLSX" });
+    expect(result.channel).toBe("XLSX");
+    expect(result.buffer).toBeDefined();
+    expect(result.buffer).toBeInstanceOf(Buffer);
+    expect(result.mediaType).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(result.notRepresentable).toBeDefined();
   });
 
   const pdfTest =

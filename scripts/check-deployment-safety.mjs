@@ -1,9 +1,19 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
+
+/**
+ * Deployment safety gate. Run it with bun (`bun run deploy:safety`): the
+ * migration-ledger check imports the TypeScript migration registry so the
+ * runbook can never drift from `src/lib/migration-registry.ts`.
+ */
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  MIGRATION_RUNBOOK_PATH,
+  validateMigrationRunbook,
+} from "../src/lib/migration-runbook.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -26,8 +36,36 @@ export function isSensitiveEnvironmentFile(relativePath) {
   return name.startsWith(".env") && name !== ".env.example";
 }
 
+/**
+ * Requirement 16.5/16.9 — every schema-mutating command form.
+ *
+ * Covers migration apply (`migrate deploy`), migration development
+ * (`migrate dev`), reset (`migrate reset`, `db reset`), schema push
+ * (`db push`), the ledger-rewriting `migrate resolve`, arbitrary SQL through
+ * `db execute`, and the `db:*` package-script aliases for all of them.
+ */
 const databaseMutationPattern =
-  /\bprisma\s+(?:migrate\s+(?:deploy|dev)|db\s+(?:push|reset))\b|\bdb:(?:migrate|push|reset)\b/iu;
+  /\bprisma\s+(?:migrate\s+(?:deploy|dev|reset|resolve)|db\s+(?:push|reset|execute))\b|\bdb:(?:migrate|push|reset|execute)\b/iu;
+
+/**
+ * Scripts that must never issue a data-definition statement: the build script,
+ * the development script, and the start script, including every variant this
+ * repository ships and the local development setup helpers they call.
+ */
+export const SCHEMA_GUARDED_SCRIPT_NAMES = Object.freeze([
+  "build",
+  "build:vercel",
+  "build:standalone",
+  "dev",
+  "dev:log",
+  "dev:setup",
+  "dev:clean",
+  "start",
+  "start:standalone",
+]);
+
+const scriptReferencePattern =
+  /\b(?:bun|npm|pnpm|yarn)(?:\s+--\S+)*\s+run\s+([A-Za-z0-9:_-]+)/gu;
 const embeddedRoleCredentialPattern =
   /^#\s+(?:SUPER_ADMIN|ADMIN|BIDDER|REVIEWER|FINANCE):\s+\S+\s+\/\s+\S+/gmu;
 const embeddedDevelopmentIdentityPattern =
@@ -39,7 +77,61 @@ const credentialRiskPaths = [
 ];
 
 export function containsDatabaseMutation(command) {
-  return databaseMutationPattern.test(command);
+  return databaseMutationPattern.test(String(command ?? ""));
+}
+
+/**
+ * The named script and every package script it reaches through `bun run`,
+ * `npm run`, `pnpm run`, or `yarn run`, so an indirectly invoked
+ * schema-mutating command cannot hide behind one level of indirection.
+ * Cycles terminate because each script name is expanded at most once.
+ */
+export function resolveScriptCommands(scripts, name, seen = new Set()) {
+  const command = scripts?.[name];
+  if (typeof command !== "string" || seen.has(name)) return [];
+  seen.add(name);
+
+  const resolved = [{ script: name, command }];
+  scriptReferencePattern.lastIndex = 0;
+  for (const match of command.matchAll(scriptReferencePattern)) {
+    resolved.push(...resolveScriptCommands(scripts, match[1], seen));
+  }
+  return resolved;
+}
+
+/**
+ * Requirement 16.9 — the guarded scripts that contain a schema-mutating
+ * command, each named in the returned entry so the failure output can identify
+ * the offending script and the exact command that triggered the rejection.
+ */
+export function schemaMutatingScriptFindings(
+  scripts,
+  names = SCHEMA_GUARDED_SCRIPT_NAMES,
+) {
+  const findings = [];
+  for (const name of names) {
+    for (const { script, command } of resolveScriptCommands(scripts, name)) {
+      if (!containsDatabaseMutation(command)) continue;
+      findings.push({ script: name, offendingScript: script, command });
+    }
+  }
+  return findings;
+}
+
+/** Guarded script names that contain a schema-mutating command, directly or indirectly. */
+export function schemaMutatingScripts(
+  scripts,
+  names = SCHEMA_GUARDED_SCRIPT_NAMES,
+) {
+  return [
+    ...new Set(
+      schemaMutatingScriptFindings(scripts, names).map((finding) =>
+        finding.script === finding.offendingScript
+          ? finding.script
+          : `${finding.script} -> ${finding.offendingScript}`,
+      ),
+    ),
+  ];
 }
 
 export function containsEmbeddedRoleCredential(markdown) {
@@ -199,6 +291,34 @@ export function runDeploymentSafetyCheck() {
     );
   }
 
+  // Requirement 16.5/16.9 — build, development, and start scripts issue no DDL.
+  const packageScripts =
+    JSON.parse(readRepositoryFile("package.json")).scripts ?? {};
+  for (const name of SCHEMA_GUARDED_SCRIPT_NAMES) {
+    if (typeof packageScripts[name] !== "string") {
+      failures.push(
+        `package.json script "${name}" is missing; the deployment safety gate cannot verify it issues no data-definition statement`,
+      );
+    }
+  }
+  for (const finding of schemaMutatingScriptFindings(packageScripts)) {
+    const origin =
+      finding.script === finding.offendingScript
+        ? `package.json script "${finding.script}"`
+        : `package.json script "${finding.script}" through "${finding.offendingScript}"`;
+    failures.push(
+      `${origin} contains a schema-mutating command: ${finding.command.trim()}`,
+    );
+  }
+
+  // Requirement 16.6 — the runbook ledger stays generated from the registry.
+  const runbookValidation = validateMigrationRunbook(
+    readRepositoryFile(MIGRATION_RUNBOOK_PATH),
+  );
+  if (!runbookValidation.ok) {
+    failures.push(`[${runbookValidation.code}] ${runbookValidation.detail}`);
+  }
+
   const deploymentGuide = readRepositoryFile("DEPLOY_ARABCLUE_COM.md");
   if (containsEmbeddedRoleCredential(deploymentGuide)) {
     failures.push(
@@ -218,7 +338,7 @@ export function runDeploymentSafetyCheck() {
   }
 
   console.log(
-    "Deployment safety gate passed: environment files are protected, Redis, Blob, and cron authentication are configured, no role credentials are embedded, and Vercel builds are database-read-only.",
+    "Deployment safety gate passed: environment files are protected, Redis, Blob, and cron authentication are configured, no role credentials are embedded, Vercel builds and the build/development/start scripts issue no data-definition statement, and the runbook migration ledger matches the migration registry.",
   );
   return 0;
 }

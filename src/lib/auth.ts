@@ -21,6 +21,7 @@ declare module "next-auth" {
       mustChangePassword: boolean;
       avatarUrl?: string | null;
       workspaceId: string;
+      emailVerified: boolean;
     };
     mfaVerified: boolean;
     sessionToken?: string;
@@ -37,6 +38,7 @@ declare module "next-auth" {
     sessionToken: string;
     avatarUrl?: string | null;
     workspaceId?: string;
+    emailVerified: boolean;
   }
 }
 
@@ -51,7 +53,32 @@ declare module "next-auth/jwt" {
     sessionToken?: string;
     claimsRefreshedAt?: number;
     avatarUrl?: string | null;
+    emailVerified: boolean;
   }
+}
+
+/**
+ * The only paths an authenticated-but-unverified session may reach
+ * (requirement 1.5). Keep in sync with VERIFICATION_ALLOWED in src/proxy.ts:
+ * the verification surface and action, the sign-out action plus its CSRF token,
+ * and the minimum session-refresh path.
+ */
+export const VERIFICATION_ALLOWLIST = [
+  "/verify-email",
+  "/api/auth/verify-email",
+  "/api/auth/session",
+  "/api/auth/signout",
+  "/api/auth/csrf",
+];
+
+export function isVerificationAllowedPath(path: string): boolean {
+  if (!path) return false;
+  const lower = path.toLowerCase();
+  return VERIFICATION_ALLOWLIST.some((allowed) => lower.includes(allowed.toLowerCase()));
+}
+
+export function getRequestPathForVerificationCheck(): string {
+  return "";
 }
 
 const CLAIMS_REFRESH_MS = 60_000;
@@ -188,6 +215,7 @@ export const authOptions: NextAuthOptions = {
           sessionToken,
           avatarUrl: user.avatarUrl,
           workspaceId: user.activeWorkspaceId ?? undefined,
+          emailVerified: user.emailVerified,
         };
       },
     }),
@@ -207,6 +235,7 @@ export const authOptions: NextAuthOptions = {
         token.avatarUrl = user.avatarUrl ?? null;
         token.workspaceId =
           (user as { workspaceId?: string | null }).workspaceId ?? undefined;
+        token.emailVerified = (user as { emailVerified?: boolean }).emailVerified ?? false;
         token.claimsRefreshedAt = Date.now();
       }
       if (trigger === "update" && session) {
@@ -224,6 +253,9 @@ export const authOptions: NextAuthOptions = {
         }
         if (typeof session.mfaEnabled === "boolean") {
           token.mfaEnabled = session.mfaEnabled;
+        }
+        if (typeof (session as { emailVerified?: boolean }).emailVerified === "boolean") {
+          token.emailVerified = (session as { emailVerified: boolean }).emailVerified;
         }
         if ("avatarUrl" in session) {
           token.avatarUrl = (session as { avatarUrl?: string | null }).avatarUrl ?? null;
@@ -259,7 +291,7 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
-      // Refresh role / active / MFA / mustChangePassword from DB (at least every minute)
+      // Refresh role / active / MFA / mustChangePassword / emailVerified from DB (at least every minute)
       const now = Date.now();
       const stale =
         !token.claimsRefreshedAt || now - token.claimsRefreshedAt > CLAIMS_REFRESH_MS;
@@ -276,6 +308,7 @@ export const authOptions: NextAuthOptions = {
             name: true,
             avatarUrl: true,
             activeWorkspaceId: true,
+            emailVerified: true,
           },
         });
         if (!dbUser || !dbUser.active) {
@@ -290,6 +323,7 @@ export const authOptions: NextAuthOptions = {
         token.name = dbUser.name;
         token.avatarUrl = dbUser.avatarUrl;
         token.workspaceId = dbUser.activeWorkspaceId ?? token.workspaceId;
+        token.emailVerified = dbUser.emailVerified;
         token.claimsRefreshedAt = now;
       }
 
@@ -306,6 +340,7 @@ export const authOptions: NextAuthOptions = {
         mustChangePassword: !!token.mustChangePassword,
         avatarUrl: token.avatarUrl ?? null,
         workspaceId: (token.workspaceId as string | undefined) ?? "",
+        emailVerified: !!token.emailVerified,
       };
       session.mfaVerified = token.mfaVerified;
       session.sessionToken = token.sessionToken;
@@ -327,7 +362,16 @@ export function getSession() {
   return getServerSession(authOptions);
 }
 
-type SessionOpts = { allowMustChangePassword?: boolean };
+type SessionOpts = { allowMustChangePassword?: boolean; allowUnverified?: boolean };
+
+export class EmailVerificationRequiredError extends Error {
+  status = 403;
+  code = "EMAIL_VERIFICATION_REQUIRED";
+  constructor(message = "Email verification required") {
+    super(message);
+    this.name = "EmailVerificationRequiredError";
+  }
+}
 
 export async function requireSession(opts?: SessionOpts) {
   const session = await getSession();
@@ -336,6 +380,12 @@ export async function requireSession(opts?: SessionOpts) {
   }
   if (session.user.mustChangePassword && !opts?.allowMustChangePassword) {
     return null;
+  }
+  if (!opts?.allowUnverified && !session.user.emailVerified) {
+    const path = getRequestPathForVerificationCheck();
+    if (!isVerificationAllowedPath(path)) {
+      throw new EmailVerificationRequiredError();
+    }
   }
   return session;
 }
@@ -359,6 +409,12 @@ export async function requireWriter(opts?: SessionOpts) {
   const session = await requireSession(opts);
   if (!session) return null;
   if (session.user.role === "REVIEWER") return null;
+  if (!opts?.allowUnverified && !session.user.emailVerified) {
+    const path = getRequestPathForVerificationCheck();
+    if (!isVerificationAllowedPath(path)) {
+      throw new EmailVerificationRequiredError();
+    }
+  }
   return session;
 }
 

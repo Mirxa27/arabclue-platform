@@ -669,7 +669,7 @@ export function PlatformAgentConsole() {
               setFeedItems((prev) =>
                 [
                   {
-                    id: `upload-${Date.now()}`,
+                    id: `upload-${crypto.randomUUID()}`,
                     toolName: "stageMissionAttachment",
                     status: "SUCCEEDED",
                     summary:
@@ -737,7 +737,7 @@ export function PlatformAgentConsole() {
               setFeedItems((prev) =>
                 [
                   {
-                    id: `ext-${Date.now()}`,
+                    id: `ext-${crypto.randomUUID()}`,
                     toolName: "chromeExtensionIngest",
                     status: "SUCCEEDED",
                     summary:

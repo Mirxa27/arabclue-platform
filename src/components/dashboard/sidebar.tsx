@@ -32,24 +32,28 @@ import {
   LayoutList,
   Store,
   BarChart3,
+  ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ArabclueLogo } from "@/components/brand/arabclue-logo";
+import { usePendingApprovalCount } from "./knowledge-approval-queue";
 
-const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] = [
+const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard; badge?: "pending-approval" }[] = [
   { view: "overview", key: "nav_dashboard", icon: LayoutDashboard },
   { view: "copilot", key: "nav_copilot", icon: AudioLines },
   { view: "projects", key: "nav_projects", icon: FolderKanban },
   { view: "documents", key: "nav_documents", icon: FileText },
   { view: "proposals", key: "nav_proposals", icon: FileCheck2 },
   { view: "contracts", key: "nav_contracts", icon: Scale },
+  { view: "clause-library", key: "nav_clause_library", icon: Scale },
   { view: "compliance", key: "nav_compliance", icon: ShieldCheck },
   { view: "agents", key: "nav_agents", icon: Bot },
   { view: "history", key: "nav_history", icon: History },
   { view: "account", key: "nav_account", icon: Building2 },
   { view: "business-profile", key: "nav_business_profile", icon: Sparkles },
   { view: "reviews", key: "nav_reviews", icon: ScrollText },
+  { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval" },
   { view: "billing", key: "nav_billing", icon: CreditCard },
   { view: "settings", key: "nav_settings", icon: Lock },
   // Phase 4: Enhanced Proposal System
@@ -75,6 +79,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
   const isAdmin = session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
   const collapsed = variant === "drawer" ? false : sidebarCollapsed;
   const isDrawer = variant === "drawer";
+  const { data: pendingApprovalCount } = usePendingApprovalCount();
 
   const { data } = useQuery({
     queryKey: ["workspace"],
@@ -126,6 +131,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
         {NAV.map((item) => {
           const Icon = item.icon;
           const active = view === item.view;
+          const badgeCount = item.badge === "pending-approval" ? (pendingApprovalCount ?? 0) : 0;
           return (
             <button
               key={item.view}
@@ -143,7 +149,18 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
             >
               <Icon className={cn("size-[18px] shrink-0 transition-colors", active ? "text-white" : "text-white/45 group-hover:text-white/75")} />
               {!collapsed && <span className="truncate">{tr(item.key, locale)}</span>}
-              {active && !collapsed && (
+              {/* Badge for pending approval count */}
+              {badgeCount > 0 && !collapsed && (
+                <span className="ml-auto shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
+                  {badgeCount > 99 ? "99+" : badgeCount}
+                </span>
+              )}
+              {badgeCount > 0 && collapsed && (
+                <span className="absolute top-0.5 end-0.5 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center rounded-full bg-amber-500 text-[9px] font-semibold text-white">
+                  {badgeCount > 99 ? "99+" : badgeCount}
+                </span>
+              )}
+              {active && !collapsed && badgeCount === 0 && (
                 <span className="ml-auto flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-[#5e6ad2] shadow-[0_0_6px_#5e6ad2]" />
                 </span>

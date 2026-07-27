@@ -1,12 +1,7 @@
-"use client";
+import { AppRouteEntry } from "./app-route-entry";
 
-import { AppShell } from "@/components/dashboard/app-shell";
-import { DashboardViews } from "@/components/dashboard/views";
+export const dynamic = "force-dynamic";
 
 export default function WorkspacePage() {
-  return (
-    <AppShell>
-      <DashboardViews />
-    </AppShell>
-  );
+  return <AppRouteEntry segments={[]} />;
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useLocale, useUI } from "@/lib/store";
 import { DashboardSidebar } from "./sidebar";
 import { DashboardTopbar } from "./topbar";
@@ -11,6 +13,8 @@ import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { locale, dir } = useLocale();
   const { mobileNavOpen, setMobileNavOpen } = useUI();
+  const router = useRouter();
+  const { data: session } = useSession();
   useEnsureActiveProject();
 
   useEffect(() => {
@@ -18,6 +22,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     html.lang = locale;
     html.dir = dir;
   }, [locale, dir]);
+
+  useEffect(() => {
+    if (session?.user && !(session.user as any).emailVerified) {
+      router.replace("/verify-email");
+    }
+  }, [session, router]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--surface-0)] text-white selection:bg-white/10 antialiased">

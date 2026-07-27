@@ -36,6 +36,10 @@ import {
   type DocumentExportPermit,
 } from "@/lib/document-export-guard";
 import {
+  analyticsRequestOrigin,
+  recordProposalAnalyticsEvent,
+} from "@/lib/analytics-collector";
+import {
   ProposalLayoutExportError,
   exportProposalLayout,
 } from "@/lib/proposal-layout-export";
@@ -68,6 +72,7 @@ export type ProposalDownloadFormat =
   | "zip"
   | "pdf"
   | "html"
+  | "xlsx"
   | "xlsx-matrix"
   | "xlsx-boq"
   | "slides"
@@ -89,6 +94,7 @@ export function resolveProposalDownloadFormat(
     case "zip":
     case "pdf":
     case "html":
+    case "xlsx":
     case "xlsx-matrix":
     case "xlsx-boq":
     case "slides":
@@ -147,7 +153,7 @@ export function shouldMarkProposalExported(input: {
   );
 }
 
-// GET /api/proposals/[id]/download?format=zip|pdf|html|xlsx-matrix|ea-matrix|xlsx-boq|boq|slides|pptx
+// GET /api/proposals/[id]/download?format=zip|pdf|html|xlsx|xlsx-matrix|ea-matrix|xlsx-boq|boq|slides|pptx
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -165,7 +171,7 @@ export async function GET(
     return NextResponse.json(
       {
         error:
-          "Unsupported format. Expected zip, pdf, html, xlsx-matrix, xlsx-boq, slides, pptx, or manifest.",
+          "Unsupported format. Expected zip, pdf, html, xlsx, xlsx-matrix, xlsx-boq, slides, pptx, or manifest.",
         code: "UNSUPPORTED_EXPORT_FORMAT",
       },
       { status: 400 }
@@ -687,6 +693,32 @@ export async function GET(
           filename = "Technical_Proposal.html";
         }
         break;
+      case "xlsx":
+        if (structuredSnapshot === null) {
+          return NextResponse.json(
+            {
+              error:
+                "Structured XLSX export requires an immutable structured snapshot. Use xlsx-matrix or xlsx-boq for legacy proposals.",
+              code: "STRUCTURED_SNAPSHOT_REQUIRED_FOR_XLSX",
+            },
+            { status: 409, headers: { "Cache-Control": "no-store" } }
+          );
+        }
+        {
+          const xlsxLocale = exportLocale === "ar" ? "ar" : "en";
+          const artifact = await exportProposalLayout(
+            structuredSnapshot.snapshot,
+            {
+              channel: "XLSX",
+              presetKey: structuredSnapshot.presetKey,
+              locale: xlsxLocale,
+            }
+          );
+          buffer = artifact.buffer;
+          contentType = artifact.mediaType;
+          filename = "Structured_Proposal_Data.xlsx";
+        }
+        break;
       case "xlsx-matrix":
         buffer = await generateComplianceMatrixXLSX(
           proposal.project,
@@ -1000,6 +1032,34 @@ export async function GET(
               snapshotRevision: structuredSnapshot.revision,
               presetKey: structuredSnapshot.presetKey,
             }),
+      },
+    });
+
+    // The artifact has been produced and any authoritative lifecycle transition
+    // has committed. The mutation reference is the exported artifact identity —
+    // the channel plus the persisted snapshot hash, or the persisted proposal
+    // revision when no snapshot exists — so re-downloading the same artifact
+    // appends no second row while a new revision or channel does. A failure never
+    // changes this response (requirements 4.1, 4.4, 4.5, 4.6).
+    await recordProposalAnalyticsEvent({
+      eventType: "proposal_exported",
+      proposalId: id,
+      mutationRef: `${format}:${
+        structuredSnapshot?.hash ??
+        contractRenderSnapshot?.hash ??
+        String(proposal.version)
+      }`,
+      origin: analyticsRequestOrigin({
+        tenantWorkspaceId: workspace.id,
+        actorUserId: session.user.id,
+      }),
+      metadata: {
+        exportFormat: format,
+        locale: exportLocale,
+        revision:
+          structuredSnapshot?.revision ??
+          contractRenderSnapshot?.revision ??
+          proposal.version,
       },
     });
 

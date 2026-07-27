@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ArabClue Voice Agent",
-  "version": "1.1.2",
-  "description": "Give ArabClue Mission Control superpowers: capture any page, selection, or screenshot into the Voice AI agent with live glitter FX.",
+  "name": "ArabClue Etimad Agent",
+  "version": "2.0.0",
+  "description": "Intelligent Etimad tender discovery, document download, and automated proposal preparation for ArabClue.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "assets/icons/icon-16.png",
@@ -10,7 +10,7 @@
     "128": "assets/icons/icon-128.png"
   },
   "action": {
-    "default_title": "Open ArabClue Voice Agent",
+    "default_title": "Open ArabClue Etimad Agent",
     "default_icon": {
       "16": "assets/icons/icon-16.png",
       "48": "assets/icons/icon-48.png"
@@ -29,11 +29,16 @@
     "scripting",
     "storage",
     "contextMenus",
-    "alarms"
+    "alarms",
+    "notifications",
+    "downloads",
+    "tabs"
   ],
   "host_permissions": [
     "https://arabclue.com/*",
-    "https://*.arabclue.com/*"
+    "https://*.arabclue.com/*",
+    "https://tenders.etimad.sa/*",
+    "https://*.etimad.sa/*"
   ],
   "optional_host_permissions": [
     "http://*/*",
@@ -53,6 +58,24 @@
       ],
       "js": ["content/arabclue-bridge.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://tenders.etimad.sa/*",
+        "https://*.etimad.sa/*"
+      ],
+      "js": ["content/etimad-parser.js"],
+      "run_at": "document_idle"
     }
-  ]
+  ],
+  "commands": {
+    "scan-etimad": {
+      "suggested_key": { "default": "Ctrl+Shift+E", "mac": "MacCtrl+Shift+E" },
+      "description": "Scan Etimad for tenders"
+    },
+    "prepare-proposal": {
+      "suggested_key": { "default": "Ctrl+Shift+P", "mac": "MacCtrl+Shift+P" },
+      "description": "Prepare proposal from current tender"
+    }
+  }
 }

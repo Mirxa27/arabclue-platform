@@ -13,6 +13,10 @@ import { agentRunBodySchema, parseJsonBody } from "@/lib/validation";
 import { assertOnboardingReady } from "@/lib/onboarding";
 import { ApiError } from "@/lib/api-controller";
 import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
+import {
+  analyticsRequestOrigin,
+  recordAgentRunAnalyticsEvent,
+} from "@/lib/analytics-collector";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -186,6 +190,22 @@ export async function POST(req: NextRequest) {
         locale,
         regenerateMode: regenerateMode ?? "create",
         targetProposalId: targetProposalId ?? null,
+      },
+    });
+
+    // The queued run row has committed. One bounded append attempt for the start
+    // transition; a failure never changes this response (requirements 4.2, 4.4,
+    // 4.5, 4.6).
+    await recordAgentRunAnalyticsEvent({
+      eventType: "agent_run_started",
+      runId: run.run.id,
+      origin: analyticsRequestOrigin({
+        tenantWorkspaceId: workspace.id,
+        actorUserId: userId,
+      }),
+      metadata: {
+        projectId: project.id,
+        proposalId: targetProposalId ?? null,
       },
     });
 

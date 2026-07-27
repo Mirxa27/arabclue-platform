@@ -5,6 +5,10 @@ import {
   webhookEventFingerprint,
   type WebhookV2Body,
 } from "@/lib/myfatoorah";
+import {
+  handleRecurringChargeSuccess,
+  handleRecurringChargeFailure,
+} from "@/lib/recurring-billing";
 import { handleRoute, jsonOk, jsonError } from "@/lib/api-controller";
 import { db } from "@/lib/db";
 
@@ -97,6 +101,9 @@ export async function POST(req: NextRequest) {
               (data.Transaction as { Status?: string } | undefined)?.Status ??
               data.TransactionStatus ??
               null,
+            RecurringStatus:
+              (data.Recurring as { Status?: string } | undefined)?.Status ??
+              null,
           }),
         },
       }));
@@ -107,32 +114,120 @@ export async function POST(req: NextRequest) {
     });
 
     try {
-      // Recurring status updates
+      // Enhanced recurring status updates handling
       if (eventName === "RECURRING_UPDATES" && recurringId) {
-        const status = String(
-          (data.Recurring as { Status?: string } | undefined)?.Status ?? ""
-        ).toUpperCase();
+        const recurringData = data.Recurring as {
+          Id?: string;
+          Status?: string;
+          InitialInvoiceId?: string | number;
+          Value?: number;
+        } | undefined;
+
+        const status = String(recurringData?.Status ?? "").toUpperCase();
+        const initialInvoiceId = String(recurringData?.InitialInvoiceId ?? "");
+        const recurringValue = recurringData?.Value;
+
+        // Determine if this is a successful charge or failure
+        const isSuccessfulCharge =
+          status === "ACTIVE" ||
+          status === "COMPLETED" ||
+          /^(paid|success|succss)$/i.test(status);
+        const isFailedCharge =
+          status === "FAILED" ||
+          status === "UNCOMPLETED" ||
+          /^(fail|error|declined|rejected)$/i.test(status);
+        const isCanceled = status === "CANCELED" || status === "CANCELLED";
+
+        // Update profile status first
         await db.myFatoorahRecurringProfile.updateMany({
           where: { recurringId },
           data: {
-            status: status || "ACTIVE",
+            status: isCanceled ? "CANCELED" : status || "ACTIVE",
             lastWebhookAt: new Date(),
-            initialInvoiceId:
-              String(
-                (data.Recurring as { InitialInvoiceId?: string | number } | undefined)
-                  ?.InitialInvoiceId ?? ""
-              ) || undefined,
+            initialInvoiceId: initialInvoiceId || undefined,
           },
         });
+
+        // Handle successful recurring charge
+        if (isSuccessfulCharge && invoiceId) {
+          try {
+            await handleRecurringChargeSuccess({
+              recurringId,
+              invoiceId,
+              amount: recurringValue,
+              paymentId: paymentId || undefined,
+            });
+
+            await db.paymentWebhookEvent.update({
+              where: { id: eventRow.id },
+              data: {
+                processingStatus: "PROCESSED",
+                disposition: "recurring_charge_success",
+                processedAt: new Date(),
+              },
+            });
+
+            return jsonOk({
+              ok: true,
+              recurring: true,
+              action: "charge_success",
+              id: eventRow.id,
+            });
+          } catch (err) {
+            console.error("[webhook] Failed to handle recurring charge success:", err);
+            // Continue to update event status
+          }
+        }
+
+        // Handle failed recurring charge
+        if (isFailedCharge) {
+          try {
+            const failureReason =
+              (data.Transaction as { Error?: string } | undefined)?.Error ||
+              (data.Error as string | undefined) ||
+              status;
+
+            await handleRecurringChargeFailure({
+              recurringId,
+              reason: failureReason,
+            });
+
+            await db.paymentWebhookEvent.update({
+              where: { id: eventRow.id },
+              data: {
+                processingStatus: "PROCESSED",
+                disposition: "recurring_charge_failure",
+                processedAt: new Date(),
+              },
+            });
+
+            return jsonOk({
+              ok: true,
+              recurring: true,
+              action: "charge_failure",
+              id: eventRow.id,
+            });
+          } catch (err) {
+            console.error("[webhook] Failed to handle recurring charge failure:", err);
+          }
+        }
+
+        // Default: just status update
         await db.paymentWebhookEvent.update({
           where: { id: eventRow.id },
           data: {
             processingStatus: "PROCESSED",
-            disposition: `recurring_${status || "updated"}`,
+            disposition: `recurring_${status.toLowerCase() || "updated"}`,
             processedAt: new Date(),
           },
         });
-        return jsonOk({ ok: true, recurring: true, id: eventRow.id });
+
+        return jsonOk({
+          ok: true,
+          recurring: true,
+          status,
+          id: eventRow.id,
+        });
       }
 
       const invoiceStatus = String(

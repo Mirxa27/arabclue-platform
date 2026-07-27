@@ -205,7 +205,7 @@ export async function executeVoiceLiveTool(
     throw new Error(`Unknown or non-executable tool: ${toolName}`);
   }
   return tool.execute(args, {
-    toolCallId: `voice-${Date.now()}`,
+    toolCallId: `voice-${crypto.randomUUID()}`,
     messages: [],
   });
 }

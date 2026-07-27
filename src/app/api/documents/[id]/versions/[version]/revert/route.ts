@@ -39,7 +39,10 @@ export async function POST(
     where: { documentId_version: { documentId: id, version: versionNum } },
   });
   if (!target) {
-    return NextResponse.json({ error: "version not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Version not found", code: "VERSION_NOT_FOUND" },
+      { status: 404 }
+    );
   }
   if (!target.checksum || !/^[a-f0-9]{64}$/i.test(target.checksum)) {
     return NextResponse.json(

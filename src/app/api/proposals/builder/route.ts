@@ -3,6 +3,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import {
+  analyticsRequestOrigin,
+  recordProposalAnalyticsEvent,
+  recordTemplateAnalyticsEvent,
+} from "@/lib/analytics-collector";
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -142,11 +147,47 @@ export async function POST(request: NextRequest) {
       success: true,
     });
 
+    const revision = proposal.version + (proposalId ? 1 : 0);
+    // Analytics runs after the builder writes commit. One bounded attempt per
+    // committed mutation; a failure never changes this response (req 4.1, 4.4).
+    const origin = analyticsRequestOrigin({
+      tenantWorkspaceId: session.user.workspaceId,
+      actorUserId: session.user.id,
+    });
+    const locale = metadata?.locale === "en" ? "en" : "ar";
+
+    await recordProposalAnalyticsEvent({
+      eventType: proposalId ? "proposal_edited" : "proposal_created",
+      proposalId: proposal.id,
+      mutationRef: revision,
+      origin,
+      metadata: {
+        revision,
+        sectionCount: sections.length,
+        locale,
+        projectId: metadata?.projectId ?? proposal.projectId,
+      },
+    });
+
+    for (const created of createdSections) {
+      await recordTemplateAnalyticsEvent({
+        eventType: "section_added",
+        entityId: created.sectionKey,
+        mutationRef: created.id,
+        origin,
+        metadata: {
+          sectionType: created.sectionType,
+          proposalId: proposal.id,
+          locale,
+        },
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       proposalId: proposal.id,
       workspaceId: proposal.workspaceId,
-      version: proposal.version + (proposalId ? 1 : 0),
+      version: revision,
       sections: createdSections,
     });
   } catch (error) {

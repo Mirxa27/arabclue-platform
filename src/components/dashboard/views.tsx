@@ -4,8 +4,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import { useEffect, useState, startTransition, type ComponentType } from "react";
 import { useSession } from "next-auth/react";
-import { useLocale, useUI, type DashboardView } from "@/lib/store";
-import { tr } from "@/lib/i18n";
+import {
+  useLocale,
+  useUI,
+  ADMIN_VIEWS,
+  type DashboardView,
+  type RouteNoticeCode,
+} from "@/lib/store";
+import { useViewRouter } from "@/hooks/use-view-router";
+import { getCompletionErrorContract, tr } from "@/lib/i18n";
 import { PageHeader, PageSection } from "@/components/patterns";
 import { StatCards } from "./stat-cards";
 import { FileIngestion } from "./file-ingestion";
@@ -122,15 +129,16 @@ const AnalyticsView = dynamic(
     import("./analytics-dashboard").then((m) => ({ default: m.AnalyticsDashboard })),
   { loading: PanelLoading }
 );
-const ADMIN_VIEWS = new Set<DashboardView>([
-  "admin_overview",
-  "admin_ai",
-  "admin_env",
-  "admin_billing",
-  "admin_myfatoorah",
-  "admin_security",
-  "admin_audit",
-]);
+const ClauseLibraryView = dynamic(
+  () =>
+    import("./clause-browser").then((m) => ({ default: m.ClauseBrowser })),
+  { loading: PanelLoading }
+);
+const KnowledgeApprovalQueueView = dynamic(
+  () =>
+    import("./knowledge-approval-queue").then((m) => ({ default: m.KnowledgeApprovalQueue })),
+  { loading: PanelLoading }
+);
 
 /**
  * Thin view router (App Router SPA equivalent of a PageController).
@@ -144,12 +152,14 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   proposals: ProposalsView,
   contracts: ContractsView,
   compliance: ComplianceView,
+  "clause-library": ClauseLibraryRouteView,
   agents: AgentsView,
   history: HistoryView,
   brand: AccountView,
   account: AccountView,
   "business-profile": BusinessProfileView,
   reviews: ReviewsView,
+  "knowledge-approval": KnowledgeApprovalView,
   settings: SettingsView,
   billing: BillingView,
   // Phase 4: Enhanced Proposal System
@@ -165,40 +175,93 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   admin_audit: AdminAuditView,
 };
 
-export function DashboardViews() {
-  const { view, setView } = useUI();
+export function DashboardViews({
+  initialView = "overview",
+  initialProjectId = null,
+  canonicalPath = "/app",
+  initialNotice = null,
+  projectContextMissing = false,
+}: {
+  initialView?: DashboardView;
+  initialProjectId?: string | null;
+  canonicalPath?: string;
+  initialNotice?: RouteNoticeCode | null;
+  projectContextMissing?: boolean;
+}) {
+  const { view, routeNotice } = useUI();
   const { data: session } = useSession();
   const isAdmin =
     session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const q = params.get("view") as DashboardView | null;
-    if (q && q in VIEW_REGISTRY) setView(q);
-  }, [setView]);
+  // The URL is authoritative; this reconciles it with the view state.
+  const { dismissNotice } = useViewRouter({
+    initialView,
+    initialProjectId,
+    canonicalPath,
+    initialNotice,
+    projectContextMissing,
+  });
 
-  useEffect(() => {
-    if (ADMIN_VIEWS.has(view) && session && !isAdmin) {
-      setView("overview");
-    }
-  }, [view, session, isAdmin, setView]);
-
-  const safeView =
-    ADMIN_VIEWS.has(view) && session && !isAdmin ? "overview" : view;
+  // An administrator view is never mounted for a non-administrator session, so
+  // no administrator data request is issued (Requirement 14.5).
+  const safeView = ADMIN_VIEWS.has(view) && !isAdmin ? "overview" : view;
   const Content = VIEW_REGISTRY[safeView] ?? OverviewView;
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={safeView}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.22, ease: "easeOut" }}
+    <>
+      <RouteNotice code={routeNotice} onDismiss={dismissNotice} />
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={safeView}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+        >
+          <Content />
+        </motion.div>
+      </AnimatePresence>
+    </>
+  );
+}
+
+/**
+ * Bilingual notice for a URL the router could not honour
+ * (Requirements 14.4, 14.5, 14.8, 14.9). Every string comes from the
+ * Localization_Registry and the Arabic presentation is right-to-left.
+ */
+function RouteNotice({
+  code,
+  onDismiss,
+}: {
+  code: RouteNoticeCode | null;
+  onDismiss: () => void;
+}) {
+  const { locale, dir } = useLocale();
+  if (!code) return null;
+
+  const contract = getCompletionErrorContract(code);
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      dir={dir}
+      lang={locale}
+      className="mb-4 flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+    >
+      <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <p className="flex-1 text-start">{contract.message[locale]}</p>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={onDismiss}
+        className="h-auto shrink-0 px-2 py-1 text-xs"
       >
-        <Content />
-      </motion.div>
-    </AnimatePresence>
+        {tr("dismiss", locale)}
+      </Button>
+    </div>
   );
 }
 
@@ -323,6 +386,20 @@ function ContractsView() {
   );
 }
 
+function ClauseLibraryRouteView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        title={tr("clause_library_title", locale)}
+        subtitle={tr("clause_library_subtitle", locale)}
+        locale={locale}
+      />
+      <ClauseLibraryView />
+    </PageSection>
+  );
+}
+
 function ComplianceView() {
   const { locale } = useLocale();
   return (
@@ -439,6 +516,20 @@ function ReviewsView() {
         locale={locale}
       />
       <ReviewsQueue />
+    </PageSection>
+  );
+}
+
+function KnowledgeApprovalView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        title={tr("nav_knowledge_approval", locale)}
+        subtitle={tr("knowledge_approval_subtitle", locale)}
+        locale={locale}
+      />
+      <KnowledgeApprovalQueueView />
     </PageSection>
   );
 }
