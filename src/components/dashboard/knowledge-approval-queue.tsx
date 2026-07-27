@@ -101,6 +101,7 @@ export function KnowledgeApprovalQueue() {
       return (await response.json()) as PendingApprovalResponse;
     },
     staleTime: 30_000,
+    refetchInterval: 5000,
   });
 
   // Fetch available evidence documents

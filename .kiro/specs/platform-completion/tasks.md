@@ -56,7 +56,7 @@ Complete the existing Next.js 16 App Router modular monolith in place. The plan 
 - [x] Checkpoint A — Verify the foundation before domain implementation
   - Platform-completion foundation tests pass (27/27); core API boundary, migration registry, and Property 32 verified.
 
-- [~] 2. Complete account creation, recovery, and workspace invitations
+- [ ] 2. Complete account creation, recovery, and workspace invitations
   - [x] 2.1 Implement transactional registration and email verification
     - Complete the registration/verification domain service with exact field bounds, reserved-identity-before-uniqueness ordering, normalized uniqueness, rolling rate limits, and serializable user/workspace/writer-membership/token creation.
     - Issue one 24-hour salted verification token, consume it once, keep raw tokens out of persistence/API/logs, and map configured, unconfigured, failure, and 30-second timeout delivery branches to the required statuses and audits after commit.
@@ -69,7 +69,7 @@ Complete the existing Next.js 16 App Router modular monolith in place. The plan 
     - Refresh the current NextAuth session claim after successful verification and preserve anti-token-leak logging.
     - _Requirements: 1.5, 1.6, 1.7, 1.10, 18.3, 18.4, 19.4_
 
-  - [x] 2.3 Implement credential-recovery request and reset flows
+  - [ ] 2.3 Implement credential-recovery request and reset flows
     - Implement normalized anti-enumeration recovery requests, active/verified eligibility, one 60-minute salted token, invalidation of earlier tokens, email-locale selection, and exact configured/unconfigured/rate-limit behavior.
     - Place password replacement, token consumption, all session revocations, and `PASSWORD_RESET` audit creation in one serializable transaction; reject bad token/password paths without consuming the token or changing sessions.
     - Complete strict public routes and forms while excluding raw tokens from API, logs, and audits.
@@ -105,7 +105,7 @@ Complete the existing Next.js 16 App Router modular monolith in place. The plan 
     - Tag the test `Feature: platform-completion, Property 18: Consumed tokens are single-use` and run at least 100 generated cases.
     - **Validates: Requirements 1.6, 1.7, 2.3, 2.4, 3.9**
 
-- [~] 3. Complete real activity analytics collection and reporting
+- [ ] 3. Complete real activity analytics collection and reporting
   - [x] 3.1 Enforce the closed analytics vocabulary and minimized event constructor
     - Make `ANALYTICS_EVENT_TYPES` the sole Zod/type source for writers, aggregation, and UI labels.
     - Complete typed event-specific constructors that resolve one workspace/actor, accept only identifiers/counts/nonnegative integer durations, derive stable event keys, and exclude document/commercial payloads.

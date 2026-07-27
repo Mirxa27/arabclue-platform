@@ -20,18 +20,53 @@ interface LocaleState {
 /** Storage key of the persisted locale. Locale never travels in the URL. */
 export const LOCALE_STORAGE_KEY = "arabclue-locale";
 
+/** Cookie name for server-readable locale persistence. */
+export const LOCALE_COOKIE_NAME = "arabclue-locale";
+const LOCALE_COOKIE_MAX_AGE = 365 * 24 * 60 * 60; // 1 year in seconds
+
+/**
+ * Writes the locale cookie so the server can read the user's language
+ * preference on subsequent requests (server-first behavior).
+ */
+function persistLocaleCookie(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${LOCALE_COOKIE_NAME}=${locale}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; samesite=lax`;
+}
+
+/** Syncs document element attributes for immediate RTL/LTR feedback. */
+function syncDocumentAttributes(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = locale;
+  document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+}
+
 export const useLocale = create<LocaleState>()(
   persist(
     (set, get) => ({
       locale: "ar",
       dir: "rtl",
-      setLocale: (locale) => set({ locale, dir: locale === "ar" ? "rtl" : "ltr" }),
+      setLocale: (locale) => {
+        persistLocaleCookie(locale);
+        syncDocumentAttributes(locale);
+        set({ locale, dir: locale === "ar" ? "rtl" : "ltr" });
+      },
       toggle: () => {
         const next = get().locale === "ar" ? "en" : "ar";
+        persistLocaleCookie(next);
+        syncDocumentAttributes(next);
         set({ locale: next, dir: next === "ar" ? "rtl" : "ltr" });
       },
     }),
-    { name: LOCALE_STORAGE_KEY }
+    {
+      name: LOCALE_STORAGE_KEY,
+      onRehydrateStorage: () => (state) => {
+        // Ensure cookie exists after rehydration from localStorage
+        if (state) {
+          persistLocaleCookie(state.locale);
+          syncDocumentAttributes(state.locale);
+        }
+      },
+    }
   )
 );
 

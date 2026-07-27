@@ -1,0 +1,17 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Pre-deploy Build Gate",
+      "trigger": "PreToolUse",
+      "description": "Before a terminal command runs, detect deploy commands (Vercel CLI or a `deploy` package script) and run `bun run build` first. Blocks the deploy (exit 2) if the build fails. Non-deploy commands pass straight through without building. Detection and the build command are defined in scripts/predeploy-build-gate.mjs with no hardcoded machine paths.",
+      "matcher": "execute_bash",
+      "action": {
+        "type": "command",
+        "command": "node scripts/predeploy-build-gate.mjs",
+        "timeout": 1200
+      },
+      "enabled": false
+    }
+  ]
+}
