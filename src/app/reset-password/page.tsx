@@ -35,7 +35,13 @@ function ResetInner() {
     if (newPassword.length < 10 || newPassword.length > 128) { setError(ar ? "كلمة المرور 10-128 حرف" : "Password 10-128 chars"); return; }
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, newPassword }) });
+      // Domain schema validates `password` (criterion 2.9); do not invent alternate field names.
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password: newPassword }),
+      });
+
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setError(data.error || data.message || (ar ? "فشل إعادة التعيين — رمز غير صالح أو منتهي" : "Reset failed — invalid or expired token")); setLoading(false); return; }
       setMsg(ar ? "تمت إعادة التعيين — سجّل الدخول الآن" : "Password reset — please sign in");

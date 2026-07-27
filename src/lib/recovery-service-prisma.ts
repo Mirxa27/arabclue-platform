@@ -12,8 +12,11 @@
 import { db } from "./db";
 import { isEmailConfigured, sendEmail } from "./email";
 import { audit } from "./audit";
+import { createRecoveryService } from "./recovery-service";
 import type {
   RecoveryRepository,
+  RecoveryService,
+  RecoveryServiceDependencies,
   CreateRecoveryTokenInput,
   CreateRecoveryTokenOutcome,
   StoredRecoveryToken,
@@ -270,3 +273,18 @@ export const platformRecoveryAuditSink: RecoveryAuditSink = Object.freeze({
     });
   },
 });
+
+/**
+ * Production Recovery_Service wired to Prisma, Resend, and the platform audit
+ * log. Tests inject fakes through `createRecoveryService` instead.
+ */
+export function createPrismaRecoveryService(
+  overrides: Partial<RecoveryServiceDependencies> = {}
+): RecoveryService {
+  return createRecoveryService({
+    ...overrides,
+    repository: overrides.repository ?? prismaRecoveryRepository,
+    email: overrides.email ?? resendRecoveryEmailProvider,
+    audit: overrides.audit ?? platformRecoveryAuditSink,
+  });
+}
