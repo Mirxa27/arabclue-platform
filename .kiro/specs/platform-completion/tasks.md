@@ -63,17 +63,18 @@ Complete the existing Next.js 16 App Router modular monolith in place. The plan 
     - Return the exact persisted state and stable codes without rolling back account records when post-commit email fails.
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.6, 1.7, 1.8, 1.9, 1.11, 1.12, 1.13_
 
-  - [-] 2.2 Enforce unverified-session gating and expose account routes safely
+  - [x] 2.2 Enforce unverified-session gating and expose account routes safely
     - Complete `/api/auth/register`, `/verify-email`, and public account pages with strict schemas and the shared bilingual response contract.
     - Update `src/proxy.ts`, NextAuth callbacks, and server page guards so unverified users reach only verification, sign-out, and the minimum session-refresh path; deny APIs with 403 and redirect pages before protected rendering/data fetches.
     - Refresh the current NextAuth session claim after successful verification and preserve anti-token-leak logging.
     - _Requirements: 1.5, 1.6, 1.7, 1.10, 18.3, 18.4, 19.4_
 
-  - [ ] 2.3 Implement credential-recovery request and reset flows
+  - [x] 2.3 Implement credential-recovery request and reset flows
     - Implement normalized anti-enumeration recovery requests, active/verified eligibility, one 60-minute salted token, invalidation of earlier tokens, email-locale selection, and exact configured/unconfigured/rate-limit behavior.
     - Place password replacement, token consumption, all session revocations, and `PASSWORD_RESET` audit creation in one serializable transaction; reject bad token/password paths without consuming the token or changing sessions.
     - Complete strict public routes and forms while excluding raw tokens from API, logs, and audits.
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10_
+
 
   - [x] 2.4 Make invitation creation, listing, revocation, and acceptance atomic
     - Correct invitation roles and input bounds; create/revoke/replace pending invitations with seven-day salted tokens, bounded keyset pages, delivery state, owner/admin authorization, and seat-limit checks scoped to `Tenant_Context`.
@@ -372,7 +373,7 @@ Complete the existing Next.js 16 App Router modular monolith in place. The plan 
     - **Validates: Requirements 9.10, 9.12**
 
 - [ ] 8. Complete knowledge approval and collaboration lifecycle
-  - [ ] 8.1 Implement normalized knowledge projections, merged ordering, and keyset pages
+  - [x] 8.1 Implement normalized knowledge projections, merged ordering, and keyset pages
     - Map Certificate, PastProject, MethodologyAsset, ContentLibraryItem, and StaffMember to one queue row, scoped to tenant and pending state.
     - Merge/sort by submitted timestamp descending then record type/id ascending, expose default 25/max 50 pages, strict composite cursors, independent total, and explicit expiry/evidence markers.
     - _Requirements: 11.1, 11.6, 11.7_
