@@ -1,7 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { jsonApiFailure, jsonOk, withPublicRoute } from "@/lib/api-controller";
 import { createPrismaAccountService } from "@/lib/account-service-prisma";
-import type { RegistrationSuccess } from "@/lib/account-service";
+import type { AccountService, RegistrationSuccess } from "@/lib/account-service";
 import { tr } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +17,18 @@ export const dynamic = "force-dynamic";
  * post-commit email delivery live in the domain service, so this file carries
  * no user-facing literal, no raw token, and no duplicated persistence logic.
  */
-export async function POST(req: NextRequest) {
+export type RegisterRouteDependencies = Readonly<{
+  /** The Account_Service; the production service is used when omitted. */
+  service: AccountService;
+}>;
+
+export async function handleRegister(
+  req: NextRequest,
+  dependencies?: Partial<RegisterRouteDependencies>
+): Promise<NextResponse> {
+  const service = dependencies?.service ?? createPrismaAccountService();
   return withPublicRoute("auth/register", async () => {
     const payload = await readJsonBodyOrNull(req);
-    const service = createPrismaAccountService();
     const result = await service.register({
       payload,
       sourceAddress: getClientIp(req),
@@ -44,6 +52,10 @@ export async function POST(req: NextRequest) {
 
     return registrationSuccessResponse(result);
   });
+}
+
+export async function POST(req: NextRequest) {
+  return handleRegister(req);
 }
 
 /**

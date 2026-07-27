@@ -1,7 +1,23 @@
 # Implementation Plan
 
+> **RELEASE COMPLETED 2026-07-27** — commit `890c6d6` is on `main` and live at arabclue.com.
+>
+> | Gate | Result |
+> | --- | --- |
+> | Lint | 0 errors (warnings only in bundled extension JS) |
+> | Tests | 3024 pass / 13 skip / 0 fail |
+> | Build | success (font-trace verified) |
+> | Git push | `origin/cursor/e2e-completion-ab64` + fast-forward `origin/main` |
+> | Schema | 19/19 migrations applied (`platform_completion` already present) |
+> | Production | `https://arabclue-platform-b9aubqsfp-mirxa27s-projects.vercel.app` (GitHub) and `https://arabclue-platform-7z3wpns58-mirxa27s-projects.vercel.app` (CLI) Ready; aliases include arabclue.com |
+> | Smoke | `/api/health` ok; `/api/ready` ready with migrations check ok |
+> | Rollback target | `https://arabclue-platform-r9ijxyxql-mirxa27s-projects.vercel.app` |
+>
+> Residual debt (does not block this ship): historical `.env`/credential objects in Git history require a separate rewrite window + credential rotation; Production still uses memory rate limits (no `REDIS_URL`); email is degraded without Resend.
+
 [Overview]
 Verify ArabClue readiness, commit the full platform-completion workspace, push to GitHub, apply the pending Production schema migration in a controlled step, then promote the verified commit to arabclue.com on Vercel.
+
 
 This is an operational release plan, not a feature design. Live production is already serving `arabclue.com` and reports healthy liveness/readiness, but local work on `cursor/e2e-completion-ab64` is 14 commits ahead of `main` plus a large dirty tree (≈180 paths) covering platform completion, account flows, extension Etimad agents, and migration tooling. Production must not receive partial, failing, or secret-bearing state.
 

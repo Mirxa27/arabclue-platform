@@ -1,6 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { jsonApiFailure, jsonOk, withPublicRoute } from "@/lib/api-controller";
 import { createPrismaAccountService } from "@/lib/account-service-prisma";
+import type { AccountService } from "@/lib/account-service";
 import { tr } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,16 @@ export const dynamic = "force-dynamic";
  * returns HTTP 400 `VERIFICATION_TOKEN_INVALID` and mutates nothing. The token
  * is never logged or echoed back in the response.
  */
-export async function POST(req: NextRequest) {
+export type VerifyEmailRouteDependencies = Readonly<{
+  /** The Account_Service; the production service is used when omitted. */
+  service: AccountService;
+}>;
+
+export async function handleVerifyEmail(
+  req: NextRequest,
+  dependencies?: Partial<VerifyEmailRouteDependencies>
+): Promise<NextResponse> {
+  const service = dependencies?.service ?? createPrismaAccountService();
   return withPublicRoute("auth/verify-email", async () => {
     const payload = await readJsonBodyOrNull(req);
     const token =
@@ -23,7 +33,6 @@ export async function POST(req: NextRequest) {
         ? (payload as Record<string, unknown>).token
         : undefined;
 
-    const service = createPrismaAccountService();
     const result = await service.verifyEmail({
       token,
       sourceAddress: getClientIp(req),
@@ -48,6 +57,10 @@ export async function POST(req: NextRequest) {
       { status: result.status }
     );
   });
+}
+
+export async function POST(req: NextRequest) {
+  return handleVerifyEmail(req);
 }
 
 /** Best-effort source address for the rolling per-address rate limit (1.8). */
