@@ -96,41 +96,18 @@ mock.module("../db", () => ({
       findMany: mock(({ where }: { where: Record<string, unknown> }) => {
         const channel = where.channel as string | undefined;
         const status = where.status as string | undefined;
-
-        // Extract `now` from AND/OR conditions to simulate Prisma filtering
-        let now: Date | undefined;
-        const and = where.AND as Array<Record<string, unknown>> | undefined;
-        if (Array.isArray(and)) {
-          for (const cond of and) {
-            const or = cond.OR as Array<Record<string, unknown>> | undefined;
-            if (Array.isArray(or)) {
-              for (const o of or) {
-                const na = o.nextAttemptAt as { lte?: Date } | undefined;
-                if (na?.lte instanceof Date) {
-                  now = na.lte;
-                  break;
-                }
-              }
-            }
-          }
-        }
-
-        return Promise.resolve(
-          deliveryRows.filter((r) => {
-            if (channel && r.channel !== channel) return false;
-            if (status && r.status !== status) return false;
-            if (r.attemptCount >= 3) return false;
-            if (now) {
-              // nextAttemptAt: null OR <= now
-              if (r.nextAttemptAt && r.nextAttemptAt.getTime() > now.getTime()) return false;
-              // claimExpiresAt: null OR <= now
-              if (r.claimExpiresAt && r.claimExpiresAt.getTime() > now.getTime()) return false;
-              // deliveryDeadlineAt: null OR > now
-              if (r.deliveryDeadlineAt && r.deliveryDeadlineAt.getTime() <= now.getTime()) return false;
-            }
-            return true;
-          })
-        );
+        const maxAttempts = 3;
+        // Return shallow copies so in-place mutations by updateMany don't
+        // affect the snapshot the dispatcher holds (matching real Prisma).
+        const matched = deliveryRows
+          .filter(
+            (r) =>
+              (!channel || r.channel === channel) &&
+              (!status || r.status === status) &&
+              r.attemptCount < maxAttempts
+          )
+          .map((r) => ({ ...r }));
+        return Promise.resolve(matched);
       }),
       create: mock(({ data }: { data: Record<string, unknown> }) => {
         const row: DeliveryRow = {
@@ -375,9 +352,9 @@ describe("notification after-commit delivery dispatcher", () => {
     expect(row.attemptCount).toBe(1);
     expect(row.nextAttemptAt).not.toBeNull();
 
-    // Attempt 2
+    // Attempt 2 — advance past the 60s backoff window
     summary = await dispatchPendingNotificationEmails({
-      now: new Date(Date.now() + 60_000),
+      now: new Date(Date.now() + 120_000),
       send: async () => ({ ok: false, skipped: false, error: "SMTP_TIMEOUT" }),
     });
     expect(summary.retried).toBe(1);
@@ -387,9 +364,9 @@ describe("notification after-commit delivery dispatcher", () => {
     expect(row.status).toBe("PENDING");
     expect(row.attemptCount).toBe(2);
 
-    // Attempt 3 — terminal failure
+    // Attempt 3 — terminal failure (advance past 5min backoff)
     summary = await dispatchPendingNotificationEmails({
-      now: new Date(Date.now() + 360_000),
+      now: new Date(Date.now() + 600_000),
       send: async () => ({ ok: false, skipped: false, error: "SMTP_TIMEOUT" }),
     });
     expect(summary.failed).toBe(1);
@@ -534,7 +511,7 @@ describe("notification after-commit delivery dispatcher", () => {
 
     for (let i = 0; i < NOTIFICATION_MAX_ATTEMPTS; i++) {
       await dispatchPendingNotificationEmails({
-        now: new Date(Date.now() + i * 300_000),
+        now: new Date(Date.now() + (i + 1) * 600_000),
         send: async () => ({ ok: false, skipped: false, error: "FAIL" }),
       });
     }
