@@ -201,12 +201,18 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   await audit({
     userId: session.user.id,
     action: AUDIT_ACTIONS.AGENT_RUN,
-    entityType: "AgentRun",
-    entityId: run.id,
-    meta: { via: "extension-autopilot", projectId, tenderRef },
+    resource: "AgentRun",
+    resourceId: run.id,
+    details: { via: "extension-autopilot", projectId, tenderRef },
   });
 
-  void runAgentPipeline(run.id).catch((err) => {
+  void runAgentPipeline({
+    runId: run.id,
+    projectId,
+    workspaceId: tenant.workspace.id,
+    userId: session.user.id,
+    locale,
+  }).catch((err) => {
     console.error("[extension-autopilot] pipeline", err);
   });
 
