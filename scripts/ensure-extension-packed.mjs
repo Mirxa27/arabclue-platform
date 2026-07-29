@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Ensure public/downloads/arabclue-voice-agent.zip exists before next build.
+ * Ensure public/downloads/arabclue-agent.zip exists before next build.
  * Prefers a pre-packed artifact (Hostinger npm builds); otherwise runs pack via bun.
  */
 import { existsSync } from "node:fs";
@@ -13,7 +13,7 @@ const zipPath = path.join(
   root,
   "public",
   "downloads",
-  "arabclue-voice-agent.zip",
+  "arabclue-agent.zip",
 );
 
 if (existsSync(zipPath)) {

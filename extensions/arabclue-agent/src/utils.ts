@@ -113,3 +113,26 @@ export function contentHash(text: string): string {
 export function uuid(): string {
   return crypto.randomUUID();
 }
+
+/** Escape HTML for safe sidepanel rendering of page/user data */
+export function escapeHtml(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return String(raw)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Convert a data URL or raw base64 into a Blob */
+export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  if (dataUrl.startsWith("data:")) {
+    const res = await fetch(dataUrl);
+    return res.blob();
+  }
+  const binary = atob(dataUrl);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes]);
+}

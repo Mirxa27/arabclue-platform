@@ -1,8 +1,10 @@
-/** Etimad background scanning orchestrator */
+/** Etimad background scanning orchestrator — uses real IIFE content parsers */
 
 import type { EtimadTender, ScanState, ScanResult, UserMatchCriteria } from "../types";
 import { ETIMAD, STORAGE, LIMITS, ALARMS } from "../constants";
 import { filterMatches, deduplicateTenders } from "./matcher";
+import { getEtimadListUrl } from "../config/remote";
+import { runApplyFilters, runClickNextPage, runListingParser } from "./inject";
 
 let scanning = false;
 let abortScan = false;
@@ -38,42 +40,38 @@ export async function startScan(criteria: UserMatchCriteria): Promise<ScanResult
   try {
     await setScanState({ isScanning: true, currentPage: 0, error: undefined });
 
-    // Open or reuse Etimad tab
-    const tabId = await openEtimadTab();
+    const listUrl = await getEtimadListUrl();
+    const tabId = await openEtimadTab(listUrl);
 
-    // Navigate to tenders list
-    await chrome.tabs.update(tabId, { url: ETIMAD.TENDERS_LIST });
+    await chrome.tabs.update(tabId, { url: listUrl });
     await waitForTabLoad(tabId);
-    await delay(2000); // Let SPA render
+    await delay(2000);
 
-    // Scan pages
+    await runApplyFilters(tabId, criteria);
+    await delay(1500);
+
     let page = 1;
     while (page <= LIMITS.MAX_SCAN_PAGES && !abortScan) {
       await setScanState({ currentPage: page });
 
-      const tenders = await scanPage(tabId);
+      const tenders = await runListingParser(tabId);
       allTenders.push(...tenders);
 
-      // Try next page
-      const hasNext = await navigateNextPage(tabId);
+      const hasNext = await runClickNextPage(tabId);
       if (!hasNext) break;
-      
+
       page++;
       await delay(LIMITS.SCAN_PAGE_DELAY_MS);
+      await waitForTabLoad(tabId);
     }
 
-    // Deduplicate
     const unique = deduplicateTenders(allTenders);
-
-    // Match against criteria
     const matched = filterMatches(unique, criteria);
 
-    // Find new tenders since last scan
     const stored = await getStoredTenders();
-    const storedRefs = new Set(stored.map(t => t.referenceNumber));
-    const newSinceLastScan = matched.filter(t => !storedRefs.has(t.referenceNumber));
+    const storedRefs = new Set(stored.map((t) => t.referenceNumber));
+    const newSinceLastScan = matched.filter((t) => !storedRefs.has(t.referenceNumber));
 
-    // Persist results
     await storeTenders(unique);
     await storeMatched(matched);
 
@@ -108,77 +106,13 @@ export function stopScan(): void {
   abortScan = true;
 }
 
-/** Scan a single page via content script injection */
-async function scanPage(tabId: number): Promise<EtimadTender[]> {
-  try {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        // This runs in the page context — the bundled content script exposes parseTenderListingPage
-        const rows = document.querySelectorAll("table tbody tr, .tender-item, .tender-card, [data-tender-id], .card-body");
-        const tenders: any[] = [];
-        for (const row of rows) {
-          const text = row.textContent || "";
-          const refMatch = text.match(/(\d{9,12})/);
-          if (!refMatch) continue;
-          
-          const titleEl = row.querySelector("h3, h4, h5, .tender-title, .title, a[href*='Tender']");
-          const linkEl = row.querySelector("a[href*='Tender'], a[href*='Details']") as HTMLAnchorElement | null;
-          
-          tenders.push({
-            referenceNumber: refMatch[1],
-            titleAr: titleEl?.textContent?.trim() || "",
-            title: titleEl?.textContent?.trim() || "",
-            url: linkEl?.href || "",
-            extractedAt: new Date().toISOString(),
-            entity: "",
-            entityAr: "",
-            category: "other",
-            currency: "SAR",
-            publishDate: "",
-            closingDate: "",
-            status: "open",
-            documents: [],
-            qualifications: [],
-          });
-        }
-        return tenders;
-      },
-    });
-    return (result as EtimadTender[]) || [];
-  } catch {
-    return [];
-  }
-}
-
-/** Navigate to next page in the listing */
-async function navigateNextPage(tabId: number): Promise<boolean> {
-  try {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        const nextBtn = document.querySelector(
-          "a.next, .pagination .next a, [aria-label='Next'], a[rel='next'], .page-item:not(.disabled):last-child a"
-        ) as HTMLAnchorElement | null;
-        if (!nextBtn) return false;
-        const parent = nextBtn.closest(".page-item, li");
-        if (parent?.classList.contains("disabled")) return false;
-        nextBtn.click();
-        return true;
-      },
-    });
-    if (result) await delay(LIMITS.SCAN_PAGE_DELAY_MS);
-    return !!result;
-  } catch {
-    return false;
-  }
-}
-
 /** Open or reuse an Etimad tab */
-async function openEtimadTab(): Promise<number> {
-  const tabs = await chrome.tabs.query({ url: ["https://tenders.etimad.sa/*", "https://*.etimad.sa/*"] });
+async function openEtimadTab(listUrl: string): Promise<number> {
+  const tabs = await chrome.tabs.query({
+    url: ["https://tenders.etimad.sa/*", "https://*.etimad.sa/*"],
+  });
   if (tabs.length > 0 && tabs[0].id) return tabs[0].id;
-  const tab = await chrome.tabs.create({ url: ETIMAD.TENDERS_LIST, active: false });
+  const tab = await chrome.tabs.create({ url: listUrl || ETIMAD.TENDERS_LIST, active: false });
   return tab.id!;
 }
 
@@ -220,14 +154,22 @@ export async function clearTenders(): Promise<void> {
   });
 }
 
+export async function upsertMatchedTender(tender: EtimadTender): Promise<void> {
+  const matched = await getMatchedTenders();
+  const idx = matched.findIndex((t) => t.referenceNumber === tender.referenceNumber);
+  if (idx >= 0) matched[idx] = { ...matched[idx], ...tender };
+  else matched.unshift(tender);
+  await storeMatched(matched);
+}
+
 // ─── Utilities ───────────────────────────────────────────────────────
 
 function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function waitForTabLoad(tabId: number): Promise<void> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const listener = (id: number, info: chrome.tabs.TabChangeInfo) => {
       if (id === tabId && info.status === "complete") {
         chrome.tabs.onUpdated.removeListener(listener);
@@ -238,6 +180,8 @@ function waitForTabLoad(tabId: number): Promise<void> {
     setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
       resolve();
-    }, 15000);
+    }, 15_000);
   });
 }
+
+export { waitForTabLoad, delay };

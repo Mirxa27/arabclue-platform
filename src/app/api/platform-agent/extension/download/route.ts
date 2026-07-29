@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Authenticated download of the ArabClue Voice Agent Chrome extension ZIP.
+ * Authenticated download of the ArabClue Agent Chrome extension ZIP.
  * Prefers a pre-packed public artifact; falls back to on-the-fly packing.
  */
 export async function GET() {
@@ -35,7 +35,7 @@ export async function GET() {
       status: 200,
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": 'attachment; filename="arabclue-voice-agent.zip"',
+        "Content-Disposition": 'attachment; filename="arabclue-agent.zip"',
         "Cache-Control": "private, max-age=300",
         "Content-Length": String(body.byteLength),
       },

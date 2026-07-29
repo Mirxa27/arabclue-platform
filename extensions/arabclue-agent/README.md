@@ -1,109 +1,102 @@
-# ArabClue Etimad Agent — Chrome Extension (MV3)
+# ArabClue Agent — Chrome Extension (MV3)
 
-Intelligent Etimad tender discovery and automated proposal preparation for ArabClue. Scans the Saudi Etimad procurement portal, finds tenders matching your criteria, downloads documents, and triggers ArabClue's AI proposal pipeline.
+Futuristic AI browser agent for ArabClue Mission Control: **Etimad tender intelligence**, **universal page capture**, **copilot chat**, and **real document uplink**.
 
 ## What it does
 
 | Feature | Description |
 | --- | --- |
-| **Scan Etimad** | Automatically browses tenders.etimad.sa, extracts structured tender data |
+| **Scan Etimad** | Browses tenders.etimad.sa using real listing/detail parsers (IIFE content scripts) |
 | **Smart Matching** | Multi-factor scoring: category, keywords (AR/EN), value range, deadline, entity |
-| **Download Documents** | Fetches RFPs, specs, terms, qualifications from tender pages |
-| **Prepare Proposal** | One-click triggers ArabClue's AI agent pipeline for proposal generation |
-| **Auto-scan** | Background scanning every N minutes with Chrome notifications |
-| **Bilingual UI** | Full Arabic (RTL) and English side panel |
-| **Offline Queue** | Failed ingestions retry automatically |
-| **Keyboard Shortcuts** | `Ctrl+Shift+E` scan, `Ctrl+Shift+P` prepare proposal |
+| **Universal Capture** | Page text, selection, or screenshot from any tab (optional host permission) |
+| **Document Uplink** | Multipart upload to `/api/platform-agent/missions/:id/attachments` |
+| **Prepare Proposal** | Autopilot (`/missions/:id/autopilot`) with chat fallback |
+| **Copilot** | Side-panel chat to `/api/platform-agent/extension/copilot` (JSON) with AI SDK stream fallback |
+| **Remote Config** | Loads portals/categories/flags from `/api/platform-agent/extension/config` |
+| **Offline Queue** | Failed tender **and** capture ingestions retry automatically; badge + sidepanel panel |
+| **Bilingual UI** | Full Arabic (RTL) / English side panel via `i18n.ts` |
 
 ## Install
 
 ### Development (Load unpacked)
 
-1. Install dependencies and build:
-   ```bash
-   cd extensions/arabclue-agent
-   bun install
-   bun run build
-   ```
-2. Open Chrome → `chrome://extensions`
-3. Enable **Developer mode**
-4. **Load unpacked** → select `extensions/arabclue-agent`
-5. Pin the extension and click to open the **side panel**
-6. Sign in at [https://arabclue.com](https://arabclue.com)
+```bash
+cd extensions/arabclue-agent
+bun install
+bun run build
+bun run typecheck
+```
+
+1. Open Chrome → `chrome://extensions`
+2. Enable **Developer mode**
+3. **Load unpacked** → select `extensions/arabclue-agent`
+4. Pin the extension and open the **side panel**
+5. Sign in at [https://arabclue.com](https://arabclue.com) (or `http://localhost:3000` for local)
 
 ### Smart Install (from platform)
 
-While signed in to ArabClue → **Mission Control**, use **Optional install**:
-1. Download the ZIP
-2. Unzip → Load unpacked → select `arabclue-agent` folder
-3. Refresh the ArabClue tab
+While signed in → **Mission Control** → optional install → download ZIP → Load unpacked.
 
 ## Usage
 
-1. **Set Criteria** — Click ⚙️ in the side panel, add keywords (AR/EN), categories, value range
-2. **Scan** — Click "Scan Etimad" or press `Ctrl+Shift+E`
-3. **Review Matches** — Tenders are scored and sorted by relevance
-4. **Prepare Proposal** — Click "Prepare Proposal" on any tender card
-5. **Auto-mode** — Enable auto-scan + auto-download + auto-proposal in Settings
+1. **Dashboard** — Scan Etimad, review matches, extract current page
+2. **Capture** — Page / selection / screenshot into Mission Control
+3. **Copilot** — Chat with the platform agent; open last mission link
+4. **Criteria** — Keywords + category chips from remote config
+5. **Settings** — API base, locale, theme (dark/light/system), remote sync
+
+## Verify
+
+```bash
+cd extensions/arabclue-agent
+bun install && bun run build && bun run typecheck
+```
+
+Manual checks:
+
+1. Side panel shows **ArabClue Agent**, connection strip, and localized nav
+2. On Etimad detail page: context menu **Extract** / shortcut **Ctrl+Shift+P** extracts + ingests/prepares
+3. Capture view works after granting optional host permission
+4. Unsigned session shows Connect CTA (401 from config/session)
+5. Failed ingest increments queue badge and shows queue panel
 
 ## Architecture
 
 ```
 src/
-├── types.ts              # TypeScript type system
-├── constants.ts          # Message types, Etimad URLs, storage keys
-├── i18n.ts              # Bilingual AR/EN strings
-├── utils.ts             # Date parsers, SAR parser, helpers
+├── types.ts / constants.ts / i18n.ts / utils.ts
+├── config/remote.ts          # Remote config + auth probe
 ├── background/
-│   ├── service-worker.ts # Message router, alarms, context menus
-│   ├── scanner.ts       # Etimad scanning orchestrator
-│   ├── matcher.ts       # Multi-factor tender matching engine
-│   ├── downloader.ts    # Document download manager
-│   ├── ingest.ts        # ArabClue API uplink
-│   ├── queue.ts         # Offline retry queue
-│   └── notifications.ts # Chrome notifications
-├── content/
-│   ├── bridge.ts        # ArabClue ↔ extension bridge
-│   ├── etimad-parser.ts # Listing page parser
-│   ├── etimad-detail-parser.ts # Detail page parser
-│   ├── etimad-navigator.ts     # Page navigation/filters
-│   └── etimad-document-extractor.ts # Document link extraction
+│   ├── service-worker.ts     # Message router
+│   ├── scanner.ts / inject.ts
+│   ├── ingest.ts / capture.ts / queue.ts
+│   └── matcher.ts / downloader.ts / notifications.ts
+├── content/                  # IIFE classic MV3 scripts
+│   ├── bridge.ts / page-capture.ts
+│   └── etimad-*.ts
 └── sidepanel/
-    ├── sidepanel.ts     # Panel controller + view routing
-    └── fx.ts            # Visual effects
+    ├── sidepanel.ts / fx.ts
 ```
 
-## Build
+Build formats (`esbuild.config.mjs`):
 
-```bash
-bun install          # Install esbuild + typescript
-bun run build        # Build all entry points
-bun run watch        # Watch mode for development
-bun run typecheck    # Type-check without emitting
-```
+- Content scripts + bridge → **IIFE**
+- Service worker + sidepanel + shared → **ESM**
 
-Output files:
-- `background/service-worker.js`
-- `content/arabclue-bridge.js`
-- `content/etimad-parser.js` (+ detail, navigator, document-extractor)
-- `sidepanel/sidepanel.js`
-- `shared/messages.js`
+## API
 
-## Permissions
-
-- `sidePanel`, `activeTab`, `scripting`, `storage`, `contextMenus`, `alarms`, `notifications`, `downloads`, `tabs`
-- Host: `arabclue.com`, `tenders.etimad.sa`
-- Optional broader hosts for dev
-
-## API Endpoint
-
-Uplink: `POST /api/platform-agent/extension/ingest`
-
-Supports `mode: "tender"` with structured `EtimadTender` data for automated proposal pipeline triggering.
+| Endpoint | Use |
+| --- | --- |
+| `GET /api/platform-agent/extension/config` | Remote config + `{ authenticated, user? }` |
+| `POST /api/platform-agent/extension/copilot` | Non-streaming copilot `{ text, missionId? }` → `{ reply, missionId }` |
+| `POST /api/platform-agent/extension/ingest` | Tender / page / selection / screenshot |
+| `POST /api/platform-agent/missions/:id/attachments` | Multipart document upload |
+| `POST /api/platform-agent/missions/:id/autopilot` | Proposal pipeline (404 → copilot fallback) |
+| `POST /api/platform-agent/chat` | Stream fallback for copilot |
 
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+Shift+E` (Mac: `MacCtrl+Shift+E`) | Scan Etimad |
-| `Ctrl+Shift+P` (Mac: `MacCtrl+Shift+P`) | Prepare proposal |
+| `Ctrl+Shift+E` | Scan Etimad |
+| `Ctrl+Shift+P` | Extract + prepare proposal |

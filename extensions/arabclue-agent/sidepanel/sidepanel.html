@@ -1,129 +1,186 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
-    <title>ArabClue Etimad Agent</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: http://localhost:3000 http://127.0.0.1:3000; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
+    <title>ArabClue Agent</title>
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
     <div class="stage" id="stage">
       <header class="hero">
-        <div class="orb" id="orb"></div>
+        <div class="orb" id="orb" aria-hidden="true"></div>
         <div class="hero-copy">
-          <p class="eyebrow">ArabClue · اعتماد</p>
-          <h1 id="appTitle">وكيل اعتماد</h1>
-          <p class="sub" id="appSubtitle">اكتشاف ذكي للمناقصات وأتمتة إعداد العروض</p>
+          <p class="eyebrow" id="eyebrow"></p>
+          <h1 id="appTitle"></h1>
+          <p class="sub" id="appSubtitle"></p>
         </div>
       </header>
 
-      <!-- Status Panel -->
+      <section class="conn-strip" id="connStrip" aria-live="polite">
+        <span class="conn-dot" id="connDot"></span>
+        <span id="connOnlineLabel"></span>
+        <span class="sep">·</span>
+        <span id="connAuthLabel"></span>
+        <span class="sep">·</span>
+        <span id="connVersion"></span>
+        <button class="btn tiny ghost hidden" id="btnConnect" type="button"></button>
+      </section>
+
       <section class="panel status">
         <div class="pulse" id="pulse"></div>
         <div class="status-copy">
-          <strong id="statusTitle">جاهز</strong>
-          <p id="statusText">حدد المعايير وابدأ الفحص</p>
+          <strong id="statusTitle"></strong>
+          <p id="statusText"></p>
         </div>
       </section>
 
-      <!-- Dashboard View -->
+      <nav class="top-nav" id="topNav" role="tablist">
+        <button class="nav-btn active" data-view="dashboard" id="navDashboard" type="button"></button>
+        <button class="nav-btn" data-view="capture" id="navCapture" type="button"></button>
+        <button class="nav-btn" data-view="copilot" id="navCopilot" type="button"></button>
+        <button class="nav-btn" data-view="criteria" id="navCriteria" type="button"></button>
+        <button class="nav-btn" data-view="downloads" id="navDownloads" type="button"></button>
+        <button class="nav-btn" data-view="settings" id="navSettings" type="button"></button>
+      </nav>
+
+      <!-- Dashboard -->
       <div class="view" id="view-dashboard">
         <section class="scan-controls">
-          <button class="btn primary" id="btnScan">فحص اعتماد</button>
-          <button class="btn primary hidden" id="btnStop">إيقاف الفحص</button>
+          <button class="btn primary" id="btnScan" type="button"></button>
+          <button class="btn primary hidden" id="btnStop" type="button"></button>
+          <button class="btn ghost" id="btnExtract" type="button"></button>
           <div class="stats" id="stats"></div>
         </section>
 
-        <section class="tender-list" id="tenderList">
-          <p class="empty">لا توجد مناقصات مطابقة. حدد المعايير وابدأ الفحص.</p>
+        <section class="tender-list" id="tenderList"></section>
+
+        <section class="panel queue hidden" id="queuePanel">
+          <div class="meta"><span id="queueLabel"></span></div>
+          <button class="btn tiny" id="btnFlush" type="button"></button>
         </section>
 
-        <section class="panel queue" id="queuePanel" hidden>
-          <div class="meta"><span id="queueLabel">التقاطات في الانتظار</span></div>
-          <button class="btn tiny" id="btnFlush">إعادة المحاولة</button>
-        </section>
-
-        <nav class="bottom-nav">
-          <button class="nav-btn" id="btnCriteria" title="معايير المطابقة">⚙️ معايير</button>
-          <button class="nav-btn" id="btnDownloads" title="التنزيلات">📥 تنزيلات</button>
-          <button class="nav-btn" id="btnSettings" title="الإعدادات">🔧 إعدادات</button>
-          <button class="nav-btn" id="btnMissionControl" title="Mission Control">🚀 MC</button>
-        </nav>
+        <button class="btn ghost mc-btn" id="btnMissionControl" type="button"></button>
       </div>
 
-      <!-- Tender Detail View -->
+      <!-- Capture -->
+      <div class="view hidden" id="view-capture">
+        <h2 id="captureTitle"></h2>
+        <p class="hint" id="captureHint"></p>
+        <div class="capture-grid">
+          <button class="btn primary" id="btnCapturePage" type="button"></button>
+          <button class="btn" id="btnCaptureSelection" type="button"></button>
+          <button class="btn" id="btnCaptureScreenshot" type="button"></button>
+          <button class="btn ghost" id="btnGrantHost" type="button"></button>
+        </div>
+        <p class="hint" id="captureStatus"></p>
+      </div>
+
+      <!-- Copilot -->
+      <div class="view hidden" id="view-copilot">
+        <h2 id="copilotTitle"></h2>
+        <div class="chat-log" id="chatLog"></div>
+        <form class="chat-form" id="chatForm">
+          <input id="chatInput" type="text" autocomplete="off" />
+          <button class="btn primary" id="btnChatSend" type="submit"></button>
+        </form>
+        <a class="mission-link hidden" id="missionLink" href="#" target="_blank" rel="noopener"></a>
+      </div>
+
+      <!-- Tender Detail -->
       <div class="view hidden" id="view-detail">
-        <button class="btn-back" id="btnBack">← رجوع</button>
+        <button class="btn-back" id="btnBack" type="button"></button>
         <div id="detailContent"></div>
       </div>
 
-      <!-- Criteria View -->
+      <!-- Criteria -->
       <div class="view hidden" id="view-criteria">
-        <button class="btn-back" id="btnBackCriteria" onclick="document.getElementById('view-criteria').classList.add('hidden');document.getElementById('view-dashboard').classList.remove('hidden')">← رجوع</button>
-        <h2>معايير المطابقة</h2>
-        <form id="criteriaForm" onsubmit="return false">
-          <label>كلمات مفتاحية (إنجليزي)
-            <input id="critKeywords" type="text" placeholder="cloud, IT, software" />
+        <button class="btn-back" id="btnBackCriteria" type="button"></button>
+        <h2 id="criteriaHeading"></h2>
+        <form id="criteriaForm">
+          <div class="field">
+            <span class="label" id="labelCategories"></span>
+            <div class="chips" id="categoryChips"></div>
+          </div>
+          <label id="labelKeywords">
+            <span></span>
+            <input id="critKeywords" type="text" />
           </label>
-          <label>كلمات مفتاحية (عربي)
-            <input id="critKeywordsAr" type="text" placeholder="تقنية, برمجيات, سحابي" />
+          <label id="labelKeywordsAr">
+            <span></span>
+            <input id="critKeywordsAr" type="text" />
           </label>
-          <label>الحد الأدنى (ريال)
-            <input id="critMinValue" type="number" placeholder="100000" />
+          <label id="labelMinValue">
+            <span></span>
+            <input id="critMinValue" type="number" />
           </label>
-          <label>الحد الأعلى (ريال)
-            <input id="critMaxValue" type="number" placeholder="10000000" />
+          <label id="labelMaxValue">
+            <span></span>
+            <input id="critMaxValue" type="number" />
           </label>
-          <label>أقصى أيام حتى الإغلاق
-            <input id="critMaxDays" type="number" placeholder="30" />
+          <label id="labelMaxDays">
+            <span></span>
+            <input id="critMaxDays" type="number" />
           </label>
-          <label class="checkbox">
+          <label class="checkbox" id="labelAutoDownload">
             <input id="critAutoDownload" type="checkbox" />
-            تنزيل تلقائي للمستندات
+            <span></span>
           </label>
-          <label class="checkbox">
+          <label class="checkbox" id="labelAutoProposal">
             <input id="critAutoProposal" type="checkbox" />
-            بدء العرض تلقائياً
+            <span></span>
           </label>
-          <button class="btn primary" id="btnSaveCriteria" type="button">حفظ المعايير</button>
+          <button class="btn primary" id="btnSaveCriteria" type="button"></button>
         </form>
       </div>
 
-      <!-- Downloads View -->
+      <!-- Downloads -->
       <div class="view hidden" id="view-downloads">
-        <button class="btn-back" onclick="document.getElementById('view-downloads').classList.add('hidden');document.getElementById('view-dashboard').classList.remove('hidden')">← رجوع</button>
-        <h2>التنزيلات</h2>
+        <button class="btn-back" id="btnBackDownloads" type="button"></button>
+        <h2 id="downloadsHeading"></h2>
         <div id="downloadsList"></div>
       </div>
 
-      <!-- Settings View -->
+      <!-- Settings -->
       <div class="view hidden" id="view-settings">
-        <button class="btn-back" onclick="document.getElementById('view-settings').classList.add('hidden');document.getElementById('view-dashboard').classList.remove('hidden')">← رجوع</button>
-        <h2>الإعدادات</h2>
-        <form onsubmit="return false">
-          <label>API base (الأصل فقط)
+        <button class="btn-back" id="btnBackSettings" type="button"></button>
+        <h2 id="settingsHeading"></h2>
+        <form id="settingsForm">
+          <label id="labelApiBase">
+            <span></span>
             <input id="settApiBase" type="url" placeholder="https://arabclue.com" />
           </label>
-          <label>فحص تلقائي (دقائق، 0 = يدوي)
-            <input id="settAutoScan" type="number" placeholder="30" />
+          <label id="labelAutoScan">
+            <span></span>
+            <input id="settAutoScan" type="number" />
           </label>
-          <label class="checkbox">
-            <input id="settNotify" type="checkbox" checked />
-            إشعار عند وجود مطابقات جديدة
+          <label class="checkbox" id="labelNotify">
+            <input id="settNotify" type="checkbox" />
+            <span></span>
           </label>
-          <label>اللغة
+          <label id="labelLocale">
+            <span></span>
             <select id="settLocale">
               <option value="ar">العربية</option>
               <option value="en">English</option>
             </select>
           </label>
-          <button class="btn primary" id="btnSaveSettings" type="button">حفظ</button>
+          <label id="labelTheme">
+            <span></span>
+            <select id="settTheme">
+              <option value="dark" id="optThemeDark"></option>
+              <option value="light" id="optThemeLight"></option>
+              <option value="system" id="optThemeSystem"></option>
+            </select>
+          </label>
+          <button class="btn primary" id="btnSaveSettings" type="button"></button>
+          <button class="btn ghost" id="btnSyncConfig" type="button"></button>
         </form>
       </div>
 
       <footer>
-        <span>ArabClue Etimad Agent</span>
+        <span id="footerBrand"></span>
         <span id="version"></span>
       </footer>
     </div>

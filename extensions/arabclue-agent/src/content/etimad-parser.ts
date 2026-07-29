@@ -1,8 +1,9 @@
 /** Parse Etimad tender listing pages into structured EtimadTender[] */
 
-import type { EtimadTender, TenderCategory, TenderStatus, TenderDocument } from "../types";
+import type { EtimadTender, TenderCategory, TenderStatus } from "../types";
 import { CATEGORY_KEYWORDS } from "../constants";
 import { parseArabicDate, parseSARValue } from "../utils";
+import { exposeGlobals } from "./globals";
 
 /** Extract all tenders from the current Etimad listing page */
 export function parseTenderListingPage(): EtimadTender[] {
@@ -204,3 +205,12 @@ function resolveUrl(href: string): string {
     return "";
   }
 }
+
+exposeGlobals({
+  parseTenderListingPage,
+  extractTenderRow,
+  inferCategory,
+  detectTenderStatus,
+  getNextPageUrl,
+  getTotalPages,
+});

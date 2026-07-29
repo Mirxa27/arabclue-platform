@@ -300,7 +300,7 @@ export function MissionExtensionBridge({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "arabclue-voice-agent.zip";
+      a.download = "arabclue-agent.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -472,7 +472,7 @@ export function MissionExtensionBridge({
                   : `Update extension to v${metaVersion}`
                 : ar
                   ? "تثبيت اختياري لامتداد الوكيل"
-                  : "Optional Voice Agent extension"}
+                  : "Optional ArabClue Agent extension"}
             </DialogTitle>
             <DialogDescription>
               {wizardMode === "update"

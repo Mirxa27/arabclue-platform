@@ -1,4 +1,4 @@
-/** ArabClue Etimad Agent — Core Type System */
+/** ArabClue Agent — Core Type System */
 
 // ─── Etimad Tender Structure ─────────────────────────────────────────
 
@@ -131,6 +131,63 @@ export interface ProposalPrepResult {
   agentRunId?: string;
   message: string;
   error?: string;
+  queued?: boolean;
+  status?: number;
+}
+
+// ─── Universal Capture ───────────────────────────────────────────────
+
+export type CaptureMode = "page" | "selection" | "screenshot";
+
+export interface PageCapturePayload {
+  mode: CaptureMode;
+  title: string;
+  url: string;
+  text: string;
+  headings: string[];
+  metaDescription?: string;
+  screenshotDataUrl?: string;
+  source: "chrome-extension";
+}
+
+export interface AuthStatus {
+  authenticated: boolean;
+  online: boolean;
+  user?: { id?: string; name?: string; email?: string };
+  version: string;
+  apiBase: string;
+}
+
+// ─── Remote Config ───────────────────────────────────────────────────
+
+export interface PortalConfig {
+  id: string;
+  name: string;
+  baseUrl: string;
+  listUrl: string;
+  detailUrlPattern?: string;
+  originPattern?: string;
+}
+
+export interface RemoteExtensionConfig {
+  portals: PortalConfig[];
+  categories: { id: TenderCategory; labelEn: string; labelAr: string; keywords: string[] }[];
+  featureFlags: {
+    universalCapture: boolean;
+    copilot: boolean;
+    autoScan: boolean;
+    documentUpload: boolean;
+    autopilot: boolean;
+  };
+  branding: {
+    name: string;
+    taglineEn: string;
+    taglineAr: string;
+  };
+  matchCriteriaDefaults?: Partial<UserMatchCriteria>;
+  authenticated?: boolean;
+  user?: { id?: string; name?: string; email?: string };
+  fetchedAt?: string;
 }
 
 // ─── Message Types ───────────────────────────────────────────────────
@@ -155,7 +212,15 @@ export type MessageType =
   | "AGENT_EVENT"
   | "EXTRACT_CURRENT_PAGE"
   | "GET_QUEUE_STATUS"
-  | "FLUSH_QUEUE";
+  | "FLUSH_QUEUE"
+  | "CAPTURE_PAGE"
+  | "CAPTURE_SELECTION"
+  | "CAPTURE_SCREENSHOT"
+  | "COPILOT_CHAT"
+  | "GET_AUTH_STATUS"
+  | "SYNC_REMOTE_CONFIG"
+  | "REQUEST_HOST_PERMISSION"
+  | "INGEST_CAPTURE";
 
 // ─── Extension Settings ──────────────────────────────────────────────
 
@@ -183,4 +248,15 @@ export interface ExtensionResponse<T = unknown> {
 export interface MatchResult {
   score: number;
   reasons: string[];
+}
+
+// ─── Copilot ─────────────────────────────────────────────────────────
+
+export interface CopilotChatResult {
+  ok: boolean;
+  reply?: string;
+  missionId?: string;
+  missionUrl?: string;
+  error?: string;
+  streamed?: boolean;
 }

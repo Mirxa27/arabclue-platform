@@ -2,6 +2,7 @@
 
 import { ETIMAD } from "../constants";
 import type { UserMatchCriteria } from "../types";
+import { exposeGlobals } from "./globals";
 
 /** Detect if current page is on Etimad */
 export function isOnEtimadSite(): boolean {
@@ -140,3 +141,14 @@ export function getCurrentPage(): number {
   
   return 1;
 }
+
+exposeGlobals({
+  isOnEtimadSite,
+  getEtimadPageType,
+  navigateToTendersList,
+  navigateToTenderDetail,
+  clickNextPage,
+  applyFilters,
+  waitForPageLoad,
+  getCurrentPage,
+});

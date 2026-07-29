@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ArabClue Etimad Agent",
-  "version": "2.0.0",
-  "description": "Intelligent Etimad tender discovery, document download, and automated proposal preparation for ArabClue.",
+  "name": "ArabClue Agent",
+  "version": "3.1.0",
+  "description": "Futuristic AI browser agent for ArabClue Mission Control: Etimad tender intelligence, universal page capture, copilot chat, and document uplink.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "assets/icons/icon-16.png",
@@ -10,7 +10,7 @@
     "128": "assets/icons/icon-128.png"
   },
   "action": {
-    "default_title": "Open ArabClue Etimad Agent",
+    "default_title": "Open ArabClue Agent",
     "default_icon": {
       "16": "assets/icons/icon-16.png",
       "48": "assets/icons/icon-48.png"
@@ -37,6 +37,9 @@
   "host_permissions": [
     "https://arabclue.com/*",
     "https://*.arabclue.com/*",
+    "https://*.vercel.app/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
     "https://tenders.etimad.sa/*",
     "https://*.etimad.sa/*"
   ],
@@ -47,14 +50,20 @@
   "externally_connectable": {
     "matches": [
       "https://arabclue.com/*",
-      "https://*.arabclue.com/*"
+      "https://*.arabclue.com/*",
+      "https://*.vercel.app/*",
+      "http://localhost:3000/*",
+      "http://127.0.0.1:3000/*"
     ]
   },
   "content_scripts": [
     {
       "matches": [
         "https://arabclue.com/*",
-        "https://*.arabclue.com/*"
+        "https://*.arabclue.com/*",
+        "https://*.vercel.app/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
       ],
       "js": ["content/arabclue-bridge.js"],
       "run_at": "document_idle"
@@ -68,6 +77,9 @@
       "run_at": "document_idle"
     }
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https: http://localhost:3000 http://127.0.0.1:3000"
+  },
   "commands": {
     "scan-etimad": {
       "suggested_key": { "default": "Ctrl+Shift+E", "mac": "MacCtrl+Shift+E" },
@@ -75,7 +87,7 @@
     },
     "prepare-proposal": {
       "suggested_key": { "default": "Ctrl+Shift+P", "mac": "MacCtrl+Shift+P" },
-      "description": "Prepare proposal from current tender"
+      "description": "Extract and prepare proposal from current tender"
     }
   }
 }

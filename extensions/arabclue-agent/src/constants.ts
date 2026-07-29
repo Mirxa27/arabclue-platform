@@ -1,6 +1,6 @@
-/** Shared constants for ArabClue Etimad Agent */
+/** Shared constants for ArabClue Agent */
 
-import type { ExtensionSettings, MessageType } from "./types";
+import type { ExtensionSettings, MessageType, RemoteExtensionConfig, TenderCategory } from "./types";
 
 // ─── Message Type Constants ──────────────────────────────────────────
 
@@ -25,6 +25,14 @@ export const MSG: Record<MessageType, MessageType> = {
   EXTRACT_CURRENT_PAGE: "EXTRACT_CURRENT_PAGE",
   GET_QUEUE_STATUS: "GET_QUEUE_STATUS",
   FLUSH_QUEUE: "FLUSH_QUEUE",
+  CAPTURE_PAGE: "CAPTURE_PAGE",
+  CAPTURE_SELECTION: "CAPTURE_SELECTION",
+  CAPTURE_SCREENSHOT: "CAPTURE_SCREENSHOT",
+  COPILOT_CHAT: "COPILOT_CHAT",
+  GET_AUTH_STATUS: "GET_AUTH_STATUS",
+  SYNC_REMOTE_CONFIG: "SYNC_REMOTE_CONFIG",
+  REQUEST_HOST_PERMISSION: "REQUEST_HOST_PERMISSION",
+  INGEST_CAPTURE: "INGEST_CAPTURE",
 };
 
 // ─── Default Settings ────────────────────────────────────────────────
@@ -32,14 +40,14 @@ export const MSG: Record<MessageType, MessageType> = {
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   apiBase: "https://arabclue.com",
   locale: "ar",
-  autoScanInterval: 30, // minutes
+  autoScanInterval: 30,
   notifyOnMatch: true,
   autoDownload: false,
   autoProposal: false,
   theme: "dark",
 };
 
-// ─── Etimad URLs ─────────────────────────────────────────────────────
+// ─── Etimad URLs (local fallback) ────────────────────────────────────
 
 export const ETIMAD = {
   BASE: "https://tenders.etimad.sa",
@@ -59,6 +67,8 @@ export const STORAGE = {
   SCAN_STATE: "arabclue.scanState",
   DOWNLOADS: "arabclue.downloads",
   QUEUE: "arabclue.captureQueue",
+  REMOTE_CONFIG: "arabclue.remoteConfig",
+  LAST_MISSION: "arabclue.lastMissionId",
 } as const;
 
 // ─── Limits ──────────────────────────────────────────────────────────
@@ -72,6 +82,8 @@ export const LIMITS = {
   MAX_DOCUMENT_SIZE_MB: 25,
   SCAN_PAGE_DELAY_MS: 2000,
   MATCH_MIN_SCORE: 30,
+  REMOTE_CONFIG_TTL_MS: 15 * 60 * 1000,
+  PAGE_TEXT_MAX: 80_000,
 } as const;
 
 // ─── Alarms ──────────────────────────────────────────────────────────
@@ -82,7 +94,7 @@ export const ALARMS = {
   DEADLINE_CHECK: "arabclue-deadline-check",
 } as const;
 
-// ─── Category Keywords (for inference) ───────────────────────────────
+// ─── Category Keywords (for inference — fallback) ────────────────────
 
 export const CATEGORY_KEYWORDS: Record<string, string[]> = {
   IT: ["تقنية", "برمجيات", "أنظمة", "حاسب", "شبكات", "سحابي", "رقمي", "إلكتروني", "software", "cloud", "network", "digital", "IT", "systems", "computing", "cyber"],
@@ -95,4 +107,52 @@ export const CATEGORY_KEYWORDS: Record<string, string[]> = {
   education: ["تعليم", "تدريب", "جامعة", "مدرسة", "education", "training", "university"],
   security: ["أمن", "حماية", "مراقبة", "security", "protection", "surveillance"],
   transportation: ["نقل", "مواصلات", "طرق", "سكك", "transport", "roads", "railway"],
+};
+
+const FALLBACK_CATEGORIES: RemoteExtensionConfig["categories"] = (
+  [
+    ["IT", "IT & Technology", "تقنية المعلومات"],
+    ["construction", "Construction", "إنشاءات"],
+    ["consulting", "Consulting", "استشارات"],
+    ["maintenance", "Maintenance", "صيانة"],
+    ["supply", "Supply", "توريد"],
+    ["services", "Services", "خدمات"],
+    ["healthcare", "Healthcare", "صحة"],
+    ["education", "Education", "تعليم"],
+    ["security", "Security", "أمن"],
+    ["transportation", "Transportation", "نقل"],
+    ["other", "Other", "أخرى"],
+  ] as const
+).map(([id, labelEn, labelAr]) => ({
+  id: id as TenderCategory,
+  labelEn,
+  labelAr,
+  keywords: CATEGORY_KEYWORDS[id] || [],
+}));
+
+/** Built-in remote config used when the platform is offline */
+export const FALLBACK_REMOTE_CONFIG: RemoteExtensionConfig = {
+  portals: [
+    {
+      id: "etimad",
+      name: "Etimad",
+      baseUrl: ETIMAD.BASE,
+      listUrl: ETIMAD.TENDERS_LIST,
+      detailUrlPattern: "/Tender/Details",
+      originPattern: "https://(tenders.)?etimad.sa",
+    },
+  ],
+  categories: FALLBACK_CATEGORIES,
+  featureFlags: {
+    universalCapture: true,
+    copilot: true,
+    autoScan: true,
+    documentUpload: true,
+    autopilot: true,
+  },
+  branding: {
+    name: "ArabClue Agent",
+    taglineEn: "Etimad intelligence · universal capture · Mission Control copilot",
+    taglineAr: "ذكاء اعتماد · التقاط عالمي · مساعد Mission Control",
+  },
 };

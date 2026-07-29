@@ -34,11 +34,19 @@ function handlePing(): void {
 // Listen for messages from the background service worker
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type !== MSG_AGENT_EVENT) return;
+  const eventName = message.event || "extension-event";
   announce({
     type: "extension-event",
-    event: message.event,
+    event: eventName,
     data: message.data,
   });
+  if (eventName === "extension-ingest") {
+    announce({
+      type: "extension-ingest",
+      event: "extension-ingest",
+      data: message.data,
+    });
+  }
 });
 
 // Page → extension ping (custom event + postMessage)

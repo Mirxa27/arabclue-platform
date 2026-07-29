@@ -56,8 +56,8 @@ export const MISSION_CONNECTORS: MissionConnector[] = [
     id: "browser",
     label: { ar: "لقطة متصفح", en: "Browser capture" },
     description: {
-      ar: "الصق نص الصفحة أو استخدم امتداد كروم ArabClue Voice Agent",
-      en: "Paste page text or use the ArabClue Voice Agent Chrome extension",
+      ar: "الصق نص الصفحة أو استخدم امتداد كروم ArabClue Agent",
+      en: "Paste page text or use the ArabClue Agent Chrome extension",
     },
     status: "ready",
     importMode: "paste",
