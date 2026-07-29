@@ -189,7 +189,7 @@ export function MissionPipelineBar({
                     <div className={cn("h-px flex-1 transition-colors duration-500", isDone ? "bg-emerald-500/40" : "bg-black/10 dark:bg-white/10")} />
                     <div
                       className={cn(
-                        "size-1 rounded-full transition-colors duration-500 ml-1",
+                        "size-1 rounded-full transition-colors duration-500 ms-1",
                         isDone ? "bg-emerald-500" : isActive ? "bg-teal-500 animate-pulse" : "bg-zinc-300 dark:bg-white/20"
                       )}
                     />

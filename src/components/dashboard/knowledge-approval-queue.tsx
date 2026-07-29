@@ -1,9 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import {
+  useQuery,
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
+import { selectApiFailureMessage } from "@/lib/api-failure-message";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,30 +18,39 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  FileText,
   Award,
   Briefcase,
   BookOpen,
   Library,
+  Users,
   AlertTriangle,
   Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ErrorState } from "@/components/patterns";
 
-type RecordType = "CERTIFICATE" | "PAST_PROJECT" | "METHODOLOGY" | "LIBRARY";
+type RecordType =
+  | "CERTIFICATE"
+  | "PAST_PROJECT"
+  | "METHODOLOGY_ASSET"
+  | "CONTENT_LIBRARY_ITEM"
+  | "STAFF_MEMBER";
 
-interface PendingRecord {
-  id: string;
+type KnowledgeQueueRow = {
   recordType: RecordType;
-  title: string;
-  titleAr: string | null;
+  id: string;
+  titleAr: string;
+  titleEn: string;
   submitterId: string | null;
   submitterName: string | null;
   submittedAt: string;
-  expiresAt: string | null;
-  evidenceDocumentId: string | null;
-  evidenceVersion: number | null;
-}
+  expiry:
+    | { kind: "EXPIRY_DATE"; date: string; expired: boolean }
+    | { kind: "NO_EXPIRY"; markerKey: string };
+  evidence:
+    | { kind: "EVIDENCE_DOCUMENT"; documentId: string; version: number | null }
+    | { kind: "NO_EVIDENCE"; markerKey: string };
+};
 
 interface EvidenceDocument {
   id: string;
@@ -46,38 +61,35 @@ interface EvidenceDocument {
 }
 
 interface PendingApprovalResponse {
-  records: PendingRecord[];
+  records: KnowledgeQueueRow[];
   nextCursor: string | null;
   hasMore: boolean;
   total: number;
-  counts: {
-    certificates: number;
-    pastProjects: number;
-    methodologies: number;
-    library: number;
-  };
+  counts: Partial<Record<RecordType, number>>;
 }
 
-const RECORD_TYPE_ICONS: Record<RecordType, typeof FileText> = {
+const RECORD_TYPE_ICONS: Record<RecordType, typeof Award> = {
   CERTIFICATE: Award,
   PAST_PROJECT: Briefcase,
-  METHODOLOGY: BookOpen,
-  LIBRARY: Library,
+  METHODOLOGY_ASSET: BookOpen,
+  CONTENT_LIBRARY_ITEM: Library,
+  STAFF_MEMBER: Users,
 };
 
 const RECORD_TYPE_LABELS: Record<RecordType, { ar: string; en: string }> = {
   CERTIFICATE: { ar: "شهادة", en: "Certificate" },
   PAST_PROJECT: { ar: "مشروع سابق", en: "Past Project" },
-  METHODOLOGY: { ar: "منهجية", en: "Methodology" },
-  LIBRARY: { ar: "مكتبة المحتوى", en: "Content Library" },
+  METHODOLOGY_ASSET: { ar: "منهجية", en: "Methodology" },
+  CONTENT_LIBRARY_ITEM: { ar: "مكتبة المحتوى", en: "Content Library" },
+  STAFF_MEMBER: { ar: "موظف", en: "Staff Member" },
 };
 
-async function responseError(response: Response): Promise<string> {
-  const payload = (await response.json().catch(() => null)) as {
-    error?: string;
-    code?: string;
-  } | null;
-  return payload?.error ?? "Request failed";
+async function responseError(response: Response, locale: "ar" | "en"): Promise<string> {
+  const payload = await response.json().catch(() => null);
+  return (
+    selectApiFailureMessage(payload, locale) ??
+    (locale === "ar" ? "فشل الطلب" : "Request failed")
+  );
 }
 
 export function KnowledgeApprovalQueue() {
@@ -88,28 +100,36 @@ export function KnowledgeApprovalQueue() {
   const [evidenceSelections, setEvidenceSelections] = useState<
     Record<string, string>
   >({});
-  const [rejectionReasons, setRejectionReasons] = useState<
+  const [rejectionReasonsAr, setRejectionReasonsAr] = useState<
+    Record<string, string>
+  >({});
+  const [rejectionReasonsEn, setRejectionReasonsEn] = useState<
     Record<string, string>
   >({});
 
-  // Fetch pending records
-  const pendingQuery = useQuery({
+  const pendingQuery = useInfiniteQuery({
     queryKey: ["knowledge-pending-approval"],
-    queryFn: async () => {
-      const response = await fetch("/api/knowledge/pending-approval");
-      if (!response.ok) throw new Error(await responseError(response));
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams({ limit: "20" });
+      if (pageParam) params.set("cursor", pageParam);
+      const response = await fetch(
+        `/api/knowledge/pending-approval?${params.toString()}`
+      );
+      if (!response.ok) throw new Error(await responseError(response, locale));
       return (await response.json()) as PendingApprovalResponse;
     },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.nextCursor : null,
     staleTime: 30_000,
-    refetchInterval: 5000,
+    refetchInterval: 5_000,
   });
 
-  // Fetch available evidence documents
   const documentsQuery = useQuery({
     queryKey: ["knowledge-evidence-documents"],
     queryFn: async () => {
       const response = await fetch("/api/documents");
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await responseError(response, locale));
       const payload = (await response.json()) as {
         documents?: EvidenceDocument[];
       };
@@ -123,12 +143,11 @@ export function KnowledgeApprovalQueue() {
     staleTime: 30_000,
   });
 
-  // Check user permissions
   const workspaceQuery = useQuery({
     queryKey: ["workspace-review-permissions"],
     queryFn: async () => {
       const response = await fetch("/api/workspaces");
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await responseError(response, locale));
       return (await response.json()) as { membershipRole?: string };
     },
     staleTime: 30_000,
@@ -138,13 +157,8 @@ export function KnowledgeApprovalQueue() {
     workspaceQuery.data?.membershipRole ?? ""
   );
 
-  // Approval mutation
   const approveMutation = useMutation({
-    mutationFn: async ({
-      recordType,
-      recordId,
-      evidenceDocumentId,
-    }: {
+    mutationFn: async (input: {
       recordType: RecordType;
       recordId: string;
       evidenceDocumentId: string;
@@ -153,16 +167,13 @@ export function KnowledgeApprovalQueue() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          recordType,
-          recordId,
+          recordType: input.recordType,
+          recordId: input.recordId,
           decision: "APPROVE",
-          evidenceDocumentId,
+          evidenceDocumentId: input.evidenceDocumentId,
         }),
       });
-      if (!response.ok) {
-        const err = await responseError(response);
-        throw new Error(err);
-      }
+      if (!response.ok) throw new Error(await responseError(response, locale));
       return response.json();
     },
     onSuccess: () => {
@@ -185,31 +196,25 @@ export function KnowledgeApprovalQueue() {
     },
   });
 
-  // Rejection mutation
   const rejectMutation = useMutation({
-    mutationFn: async ({
-      recordType,
-      recordId,
-      reason,
-    }: {
+    mutationFn: async (input: {
       recordType: RecordType;
       recordId: string;
-      reason: string;
+      reasonAr: string;
+      reasonEn: string;
     }) => {
       const response = await fetch("/api/knowledge/pending-approval", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          recordType,
-          recordId,
+          recordType: input.recordType,
+          recordId: input.recordId,
           decision: "REJECT",
-          reason,
+          reasonAr: input.reasonAr,
+          reasonEn: input.reasonEn,
         }),
       });
-      if (!response.ok) {
-        const err = await responseError(response);
-        throw new Error(err);
-      }
+      if (!response.ok) throw new Error(await responseError(response, locale));
       return response.json();
     },
     onSuccess: () => {
@@ -232,7 +237,7 @@ export function KnowledgeApprovalQueue() {
     },
   });
 
-  const handleApprove = (record: PendingRecord) => {
+  const handleApprove = (record: KnowledgeQueueRow) => {
     const evidenceId = evidenceSelections[`${record.recordType}:${record.id}`];
     if (!evidenceId) {
       toast({
@@ -251,12 +256,26 @@ export function KnowledgeApprovalQueue() {
     });
   };
 
-  const handleReject = (record: PendingRecord) => {
-    const reason = rejectionReasons[`${record.recordType}:${record.id}`];
-    if (!reason?.trim()) {
+  const handleReject = (record: KnowledgeQueueRow) => {
+    const key = `${record.recordType}:${record.id}`;
+    const reasonAr = rejectionReasonsAr[key]?.trim() ?? "";
+    const reasonEn = rejectionReasonsEn[key]?.trim() ?? "";
+    if (reasonAr.length < 1 || reasonEn.length < 1) {
       toast({
         title:
-          locale === "ar" ? "يرجى إدخال سبب الرفض" : "Please enter a rejection reason",
+          locale === "ar"
+            ? "يرجى إدخال سبب الرفض بالعربية والإنجليزية"
+            : "Enter rejection reasons in Arabic and English",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (reasonAr.length > 1000 || reasonEn.length > 1000) {
+      toast({
+        title:
+          locale === "ar"
+            ? "سبب الرفض يجب ألا يتجاوز 1000 حرف"
+            : "Rejection reason must be at most 1000 characters",
         variant: "destructive",
       });
       return;
@@ -264,33 +283,25 @@ export function KnowledgeApprovalQueue() {
     rejectMutation.mutate({
       recordType: record.recordType,
       recordId: record.id,
-      reason: reason.trim(),
+      reasonAr,
+      reasonEn,
     });
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(locale === "ar" ? "ar-SA" : "en-US", {
+  const formatDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleDateString(locale === "ar" ? "ar-SA" : "en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
     });
-  };
 
-  const isExpiringSoon = (expiresAt: string | null) => {
-    if (!expiresAt) return false;
-    const expiry = new Date(expiresAt);
-    const now = new Date();
-    const daysUntilExpiry = Math.ceil(
-      (expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    return daysUntilExpiry <= 30 && daysUntilExpiry > 0;
-  };
-
-  const isExpired = (expiresAt: string | null) => {
-    if (!expiresAt) return false;
-    return new Date(expiresAt) < new Date();
-  };
+  const records = useMemo(
+    () => pendingQuery.data?.pages.flatMap((page) => page.records) ?? [],
+    [pendingQuery.data]
+  );
+  const total = pendingQuery.data?.pages[0]?.total ?? 0;
+  const counts = pendingQuery.data?.pages[0]?.counts ?? {};
+  const hasMore = Boolean(pendingQuery.hasNextPage);
 
   if (pendingQuery.isLoading) {
     return (
@@ -303,31 +314,32 @@ export function KnowledgeApprovalQueue() {
 
   if (pendingQuery.error) {
     return (
-      <div className="text-center py-8 text-destructive">
-        {pendingQuery.error instanceof Error
-          ? pendingQuery.error.message
-          : locale === "ar"
-            ? "فشل تحميل السجلات"
-            : "Failed to load records"}
-      </div>
+      <ErrorState
+        message={
+          pendingQuery.error instanceof Error
+            ? pendingQuery.error.message
+            : locale === "ar"
+              ? "فشل تحميل السجلات"
+              : "Failed to load records"
+        }
+        onRetry={() => void pendingQuery.refetch()}
+        retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+      />
     );
   }
 
-  const records = pendingQuery.data?.records ?? [];
-  const total = pendingQuery.data?.total ?? 0;
+  const summaryTypes: RecordType[] = [
+    "CERTIFICATE",
+    "PAST_PROJECT",
+    "METHODOLOGY_ASSET",
+    "CONTENT_LIBRARY_ITEM",
+    "STAFF_MEMBER",
+  ];
 
   return (
     <div className="space-y-4">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {(
-          [
-            ["CERTIFICATE", pendingQuery.data?.counts.certificates ?? 0],
-            ["PAST_PROJECT", pendingQuery.data?.counts.pastProjects ?? 0],
-            ["METHODOLOGY", pendingQuery.data?.counts.methodologies ?? 0],
-            ["LIBRARY", pendingQuery.data?.counts.library ?? 0],
-          ] as const
-        ).map(([type, count]) => {
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {summaryTypes.map((type) => {
           const Icon = RECORD_TYPE_ICONS[type];
           const label = RECORD_TYPE_LABELS[type];
           return (
@@ -339,7 +351,7 @@ export function KnowledgeApprovalQueue() {
                 <Icon className="size-4 text-primary" />
               </div>
               <div>
-                <div className="text-2xl font-semibold">{count}</div>
+                <div className="text-2xl font-semibold">{counts[type] ?? 0}</div>
                 <div className="text-xs text-muted-foreground">
                   {locale === "ar" ? label.ar : label.en}
                 </div>
@@ -349,8 +361,18 @@ export function KnowledgeApprovalQueue() {
         })}
       </div>
 
-      {/* Permission Warning */}
-      {!canManage && (
+      {workspaceQuery.isError ? (
+        <ErrorState
+          message={
+            locale === "ar"
+              ? "تعذر التحقق من صلاحيات مساحة العمل"
+              : "Could not verify workspace permissions"
+          }
+          onRetry={() => void workspaceQuery.refetch()}
+          retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+          className="py-4"
+        />
+      ) : !workspaceQuery.isLoading && !canManage ? (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm flex items-center gap-2">
           <AlertTriangle className="size-4 text-amber-500" />
           <span>
@@ -359,9 +381,8 @@ export function KnowledgeApprovalQueue() {
               : "Only workspace owner or admin can approve or reject records."}
           </span>
         </div>
-      )}
+      ) : null}
 
-      {/* Empty State */}
       {records.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           <CheckCircle2 className="size-12 mx-auto mb-3 text-emerald-500/50" />
@@ -370,23 +391,24 @@ export function KnowledgeApprovalQueue() {
               ? "لا توجد سجلات بانتظار الاعتماد"
               : "No records pending approval"}
           </p>
-          <p className="text-sm">
-            {locale === "ar"
-              ? "تم اعتماد جميع سجلات المعرفة"
-              : "All knowledge records have been reviewed"}
-          </p>
         </div>
       )}
 
-      {/* Records List */}
       <div className="space-y-2">
         {records.map((record) => {
           const Icon = RECORD_TYPE_ICONS[record.recordType];
           const typeLabel = RECORD_TYPE_LABELS[record.recordType];
           const key = `${record.recordType}:${record.id}`;
           const isExpanded = expandedId === key;
-          const expiringSoon = isExpiringSoon(record.expiresAt);
-          const expired = isExpired(record.expiresAt);
+          const expiryDate =
+            record.expiry.kind === "EXPIRY_DATE" ? record.expiry.date : null;
+          const expired =
+            record.expiry.kind === "EXPIRY_DATE" ? record.expiry.expired : false;
+          const expiringSoon =
+            !!expiryDate &&
+            !expired &&
+            new Date(expiryDate).getTime() - Date.now() <=
+              30 * 24 * 60 * 60 * 1000;
 
           return (
             <div
@@ -396,7 +418,6 @@ export function KnowledgeApprovalQueue() {
                 isExpanded && "ring-2 ring-primary/20"
               )}
             >
-              {/* Header Row */}
               <button
                 type="button"
                 onClick={() => setExpandedId(isExpanded ? null : key)}
@@ -407,30 +428,27 @@ export function KnowledgeApprovalQueue() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="font-medium truncate">
-                    {locale === "ar" && record.titleAr
-                      ? record.titleAr
-                      : record.title}
+                    {locale === "ar" ? record.titleAr : record.titleEn}
                   </div>
                   <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
                     <Badge variant="secondary" className="text-[10px]">
                       {locale === "ar" ? typeLabel.ar : typeLabel.en}
                     </Badge>
                     <span>{formatDate(record.submittedAt)}</span>
-                    {record.expiresAt && (
+                    {expiryDate && (
                       <span className="flex items-center gap-1">
                         <Calendar className="size-3" />
-                        {formatDate(record.expiresAt)}
+                        {formatDate(expiryDate)}
                       </span>
                     )}
                   </div>
                 </div>
-                {/* Expiry Badges */}
                 {expired && (
                   <Badge variant="destructive" className="shrink-0">
                     {locale === "ar" ? "منتهي" : "Expired"}
                   </Badge>
                 )}
-                {expiringSoon && !expired && (
+                {expiringSoon && (
                   <Badge
                     variant="outline"
                     className="shrink-0 border-amber-500 text-amber-500"
@@ -440,75 +458,84 @@ export function KnowledgeApprovalQueue() {
                 )}
               </button>
 
-              {/* Expanded Actions */}
               {isExpanded && canManage && (
                 <div className="px-4 pb-4 pt-2 border-t space-y-3">
-                  {/* Evidence Selector */}
                   <div>
                     <label className="text-xs font-medium text-muted-foreground block mb-1.5">
                       {locale === "ar" ? "مستند الدليل" : "Evidence Document"}
                     </label>
-                    <select
-                      value={evidenceSelections[key] ?? ""}
-                      onChange={(e) =>
-                        setEvidenceSelections((prev) => ({
-                          ...prev,
-                          [key]: e.target.value,
-                        }))
-                      }
-                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="">
+                    {documentsQuery.isError ? (
+                      <p className="text-xs text-destructive" role="alert">
                         {locale === "ar"
-                          ? "اختر مستند الدليل..."
-                          : "Select evidence document..."}
-                      </option>
-                      {(documentsQuery.data ?? []).map((doc) => (
-                        <option key={doc.id} value={doc.id}>
-                          {doc.originalName} · v{doc.currentVersion}
-                        </option>
-                      ))}
-                    </select>
-                    {documentsQuery.isLoading && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {locale === "ar"
-                          ? "جاري تحميل المستندات..."
-                          : "Loading documents..."}
+                          ? "تعذر تحميل مستندات الدليل."
+                          : "Could not load evidence documents."}{" "}
+                        <button
+                          type="button"
+                          className="underline underline-offset-2"
+                          onClick={() => void documentsQuery.refetch()}
+                        >
+                          {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+                        </button>
                       </p>
-                    )}
-                    {!documentsQuery.isLoading &&
-                      (documentsQuery.data?.length ?? 0) === 0 && (
-                        <p className="text-xs text-amber-500 mt-1">
+                    ) : (
+                      <select
+                        value={evidenceSelections[key] ?? ""}
+                        onChange={(e) =>
+                          setEvidenceSelections((prev) => ({
+                            ...prev,
+                            [key]: e.target.value,
+                          }))
+                        }
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">
                           {locale === "ar"
-                            ? "لا توجد مستندات مع checksum — ارفع مستنداً داعماً أولاً"
-                            : "No documents with checksum — upload a supporting document first"}
-                        </p>
-                      )}
+                            ? "اختر مستند الدليل..."
+                            : "Select evidence document..."}
+                        </option>
+                        {(documentsQuery.data ?? []).map((doc) => (
+                          <option key={doc.id} value={doc.id}>
+                            {doc.originalName} · v{doc.currentVersion}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
 
-                  {/* Rejection Reason */}
                   <div>
                     <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                      {locale === "ar" ? "سبب الرفض (إن وجد)" : "Rejection Reason (if rejecting)"}
+                      {locale === "ar"
+                        ? "سبب الرفض (إن وجد)"
+                        : "Rejection Reason (if rejecting)"}
                     </label>
                     <Input
-                      value={rejectionReasons[key] ?? ""}
+                      value={rejectionReasonsAr[key] ?? ""}
                       onChange={(e) =>
-                        setRejectionReasons((prev) => ({
+                        setRejectionReasonsAr((prev) => ({
                           ...prev,
                           [key]: e.target.value,
                         }))
                       }
-                      placeholder={
-                        locale === "ar"
-                          ? "أدخل سبب الرفض بالعربية أو الإنجليزية..."
-                          : "Enter rejection reason..."
-                      }
+                      placeholder="سبب الرفض بالعربية..."
+                      dir="rtl"
                       className="h-9 text-sm"
+                      maxLength={1000}
+                    />
+                    <Input
+                      value={rejectionReasonsEn[key] ?? ""}
+                      onChange={(e) =>
+                        setRejectionReasonsEn((prev) => ({
+                          ...prev,
+                          [key]: e.target.value,
+                        }))
+                      }
+                      placeholder="Rejection reason in English..."
+                      dir="ltr"
+                      className="h-9 text-sm mt-2"
+                      maxLength={1000}
                     />
                   </div>
 
-                  {/* Action Buttons */}
                   <div className="flex gap-2 pt-2">
                     <Button
                       size="sm"
@@ -532,7 +559,8 @@ export function KnowledgeApprovalQueue() {
                       variant="destructive"
                       className="gap-1.5"
                       disabled={
-                        !rejectionReasons[key]?.trim() ||
+                        !rejectionReasonsAr[key]?.trim() ||
+                        !rejectionReasonsEn[key]?.trim() ||
                         approveMutation.isPending ||
                         rejectMutation.isPending
                       }
@@ -560,21 +588,33 @@ export function KnowledgeApprovalQueue() {
         })}
       </div>
 
-      {/* Total Count */}
+      {hasMore && (
+        <div className="flex justify-center pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pendingQuery.isFetchingNextPage}
+            onClick={() => void pendingQuery.fetchNextPage()}
+          >
+            {pendingQuery.isFetchingNextPage ? (
+              <Loader2 className="size-3.5 animate-spin me-2" />
+            ) : null}
+            {locale === "ar" ? "تحميل المزيد" : "Load more"}
+          </Button>
+        </div>
+      )}
+
       {total > 0 && (
         <div className="text-center text-xs text-muted-foreground pt-2">
           {locale === "ar"
-            ? `${total} سجل بانتظار الاعتماد`
-            : `${total} record${total !== 1 ? "s" : ""} pending approval`}
+            ? `${records.length} من ${total} سجل بانتظار الاعتماد`
+            : `${records.length} of ${total} record${total !== 1 ? "s" : ""} pending approval`}
         </div>
       )}
     </div>
   );
 }
 
-/**
- * Hook to fetch pending approval count for sidebar badge
- */
 export function usePendingApprovalCount() {
   return useQuery({
     queryKey: ["knowledge-pending-approval-count"],

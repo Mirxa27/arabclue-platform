@@ -39,6 +39,7 @@ import { AGENTS } from "@/lib/constants";
 import type { AgentState, AgentId } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
 import { NO_DOCUMENTS_PREFLIGHT } from "@/lib/agents/run-preflight";
+import { VendorMatchAction } from "@/components/dashboard/ai-assist-actions";
 
 const AGENT_META: Record<
   AgentId,
@@ -725,6 +726,29 @@ export function AgentWorkflow() {
             {Math.round(overall)}%
           </span>
         )}
+        {activeProjectId && projectTitle ? (
+          <div className="ms-auto w-full sm:w-auto">
+            <VendorMatchAction
+              locale={locale}
+              tenderRequirements={[
+                projectTitle,
+                projectMeta?.project?.etimadRef
+                  ? `Etimad ${projectMeta.project.etimadRef}`
+                  : "",
+                ...(docsData?.documents ?? [])
+                  .slice(0, 8)
+                  .map((d) => d.originalName || d.docCategory || d.id),
+              ].filter(Boolean)}
+              vendors={[
+                {
+                  vendorId: "workspace-self",
+                  vendorName: projectTitle,
+                  vendorNameAr: projectTitle,
+                },
+              ]}
+            />
+          </div>
+        ) : null}
       </div>
 
       {activeProjectId && !docsLoading && !docsIsError && !hasDocuments ? (
@@ -805,13 +829,23 @@ export function AgentWorkflow() {
             empty={
               <EmptyState
                 icon={History}
-                title={locale === "ar" ? "لا توجد تشغيلات بعد" : "No runs yet"}
-                description={
-                  locale === "ar"
-                    ? "ابدأ تشغيل الوكلاء من مشروع نشط ليظهر هنا."
-                    : "Start agents from an active project to populate history."
-                }
+                title={tr("agent_run_history_empty_title", locale)}
+                description={tr("agent_run_history_empty_description", locale)}
                 className="py-5"
+                action={
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={handleRunClick}>
+                      {tr("agent_run_start_action", locale)}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => startTransition(() => setView("documents"))}
+                    >
+                      {tr("agent_run_upload_docs_action", locale)}
+                    </Button>
+                  </div>
+                }
               />
             }
           >

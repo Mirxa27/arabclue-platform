@@ -40,6 +40,8 @@
     "node_modules",
     "examples",
     "extensions",
-    "src/lib/__tests__"
+    "src/lib/__tests__",
+    "e2e",
+    "playwright.completion.config.ts"
   ]
 }

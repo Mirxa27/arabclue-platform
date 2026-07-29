@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { ClipboardList, Link2, Unlink } from "lucide-react";
 import type { ApiCertificate, ApiStaffMember } from "@/lib/api-types";
+import { useToast } from "@/hooks/use-toast";
 import { ListSkeleton } from "./loading-skeletons";
 
 type LinkType =
@@ -40,6 +41,7 @@ export function RequirementsMatrix() {
   const { locale } = useLocale();
   const { activeProjectId, setView } = useUI();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const ar = locale === "ar";
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -52,35 +54,49 @@ export function RequirementsMatrix() {
     },
   });
 
-  const { data: certsData } = useQuery({
+  const {
+    data: certsData,
+    isError: certsError,
+    refetch: refetchCerts,
+  } = useQuery({
     queryKey: ["certificates"],
     enabled: !!activeProjectId,
     queryFn: async () => {
       const res = await fetch("/api/certificates");
-      if (!res.ok) return { items: [] };
+      if (!res.ok) throw new Error("Failed to load certificates");
       return res.json();
     },
   });
 
-  const { data: staffData } = useQuery({
+  const {
+    data: staffData,
+    isError: staffError,
+    refetch: refetchStaff,
+  } = useQuery({
     queryKey: ["staff"],
     enabled: !!activeProjectId,
     queryFn: async () => {
       const res = await fetch("/api/staff");
-      if (!res.ok) return { items: [] };
+      if (!res.ok) throw new Error("Failed to load staff");
       return res.json();
     },
   });
 
-  const { data: libraryData } = useQuery({
+  const {
+    data: libraryData,
+    isError: libraryError,
+    refetch: refetchLibrary,
+  } = useQuery({
     queryKey: ["library"],
     enabled: !!activeProjectId,
     queryFn: async () => {
       const res = await fetch("/api/library");
-      if (!res.ok) return { items: [] };
+      if (!res.ok) throw new Error("Failed to load library");
       return res.json();
     },
   });
+
+  const evidenceUnavailable = certsError || staffError || libraryError;
 
   const patch = useMutation({
     mutationFn: async (body: {
@@ -98,6 +114,13 @@ export function RequirementsMatrix() {
     },
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["requirements", activeProjectId] }),
+    onError: (err: Error) => {
+      toast({
+        title: ar ? "تعذر تحديث المتطلب" : "Could not update requirement",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
   });
 
   if (!activeProjectId) {
@@ -174,6 +197,27 @@ export function RequirementsMatrix() {
         }
       >
         <div className="overflow-x-auto">
+          {evidenceUnavailable ? (
+            <div
+              className="mx-3 mt-3 mb-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-100"
+              role="status"
+            >
+              {ar
+                ? "تعذر تحميل بعض أدلة الحساب. قوائم الربط قد تكون غير مكتملة."
+                : "Some account evidence failed to load. Link dropdowns may be incomplete."}{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2 font-medium"
+                onClick={() => {
+                  void refetchCerts();
+                  void refetchStaff();
+                  void refetchLibrary();
+                }}
+              >
+                {ar ? "إعادة المحاولة" : "Retry"}
+              </button>
+            </div>
+          ) : null}
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-start text-muted-foreground">

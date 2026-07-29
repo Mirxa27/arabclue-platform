@@ -10,6 +10,7 @@ import {
 import {
   Download,
   FileText,
+  History,
   Loader2,
   Save,
   Scale,
@@ -22,6 +23,9 @@ import { useLocale, useUI } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { saveBlob } from "@/lib/download-artifact";
 import { ApiClientError, apiJson } from "@/lib/api-client";
+import { ContractRevisionHistory } from "./contract-revision-history";
+import { ContractAiDraftAction } from "@/components/dashboard/ai-assist-actions";
+import { ErrorState } from "@/components/patterns";
 
 interface ContractTemplateCatalogItem {
   key: string;
@@ -81,7 +85,7 @@ export function ContractTemplateCatalog() {
   const queryClient = useQueryClient();
   const retryRequestIds = useRef(new Map<string, string>());
   const [busy, setBusy] = useState<string | null>(null);
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["contract-template-catalog"],
     queryFn: async () => {
       const response = await fetch("/api/contracts/templates", {
@@ -99,6 +103,7 @@ export function ContractTemplateCatalog() {
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
+    refetch: refetchSavedDrafts,
   } = useInfiniteQuery({
     queryKey: ["contract-drafts", activeProjectId],
     initialPageParam: "",
@@ -118,6 +123,7 @@ export function ContractTemplateCatalog() {
   });
   const savedDrafts =
     savedDraftPages?.pages.flatMap((page) => page.drafts) ?? [];
+  const [historyDraftId, setHistoryDraftId] = useState<string | null>(null);
 
   const deleteDraft = useMutation({
     mutationFn: (draft: SavedContractDraft) =>
@@ -327,8 +333,14 @@ export function ContractTemplateCatalog() {
           {ar ? "جاري تحميل القوالب…" : "Loading templates…"}
         </Card>
       ) : isError ? (
-        <Card className="border-destructive/40 p-4 text-sm text-destructive">
-          {ar ? "تعذر تحميل كتالوج القوالب." : "Could not load template catalog."}
+        <Card className="border-destructive/40">
+          <ErrorState
+            message={
+              ar ? "تعذر تحميل كتالوج القوالب." : "Could not load template catalog."
+            }
+            onRetry={() => void refetch()}
+            retryLabel={ar ? "إعادة المحاولة" : "Retry"}
+          />
         </Card>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -391,6 +403,11 @@ export function ContractTemplateCatalog() {
                   )}
                   {ar ? "حفظ مسودة" : "Save draft"}
                 </Button>
+                <ContractAiDraftAction
+                  locale={locale}
+                  templateKey={template.key}
+                  projectTitle={ar ? template.name.ar : template.name.en}
+                />
               </div>
             </Card>
           ))}
@@ -418,69 +435,91 @@ export function ContractTemplateCatalog() {
           </div>
           <div className="grid gap-2 md:grid-cols-2">
             {savedDrafts.map((draft) => (
-              <Card
-                key={draft.id}
-                className="flex flex-wrap items-center justify-between gap-3 p-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-medium">
-                    {ar ? draft.titleAr : draft.title}
-                  </p>
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    {draft.templateVersionId} ·{" "}
-                    {new Intl.DateTimeFormat(ar ? "ar-SA" : "en-US", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    }).format(new Date(draft.createdAt))}
-                  </p>
-                  <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
-                    {ar
-                      ? `${draft.diagnosticCount} عناصر تحتاج الإكمال · غير قابل للتوقيع`
-                      : `${draft.diagnosticCount} completion diagnostics · non-executable`}
-                  </p>
+              <Card key={draft.id} className="p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium">
+                      {ar ? draft.titleAr : draft.title}
+                    </p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      {draft.templateVersionId} ·{" "}
+                      {new Intl.DateTimeFormat(ar ? "ar-SA" : "en-US", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(draft.createdAt))}
+                    </p>
+                    <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                      {ar
+                        ? `${draft.diagnosticCount} عناصر تحتاج الإكمال · غير قابل للتوقيع`
+                        : `${draft.diagnosticCount} completion diagnostics · non-executable`}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        busy !== null ||
+                        saveDraft.isPending ||
+                        deleteDraft.isPending
+                      }
+                      onClick={() =>
+                        setHistoryDraftId((current) =>
+                          current === draft.id ? null : draft.id
+                        )
+                      }
+                    >
+                      <History className="size-3.5" />
+                      {ar ? "السجل" : "History"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        busy !== null ||
+                        saveDraft.isPending ||
+                        deleteDraft.isPending
+                      }
+                      onClick={() => void downloadSavedDraft(draft)}
+                    >
+                      {busy === `${draft.id}:stored-html` ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Download className="size-3.5" />
+                      )}
+                      HTML
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={
+                        busy !== null ||
+                        saveDraft.isPending ||
+                        deleteDraft.isPending
+                      }
+                      aria-label={
+                        ar
+                          ? `حذف ${draft.titleAr}`
+                          : `Delete ${draft.title}`
+                      }
+                      onClick={() => confirmDeleteSavedDraft(draft)}
+                    >
+                      {deleteDraft.isPending &&
+                      deleteDraft.variables?.id === draft.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-3.5" />
+                      )}
+                      {ar ? "حذف" : "Delete"}
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={
-                      busy !== null ||
-                      saveDraft.isPending ||
-                      deleteDraft.isPending
-                    }
-                    onClick={() => void downloadSavedDraft(draft)}
-                  >
-                    {busy === `${draft.id}:stored-html` ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Download className="size-3.5" />
-                    )}
-                    HTML
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={
-                      busy !== null ||
-                      saveDraft.isPending ||
-                      deleteDraft.isPending
-                    }
-                    aria-label={
-                      ar
-                        ? `حذف ${draft.titleAr}`
-                        : `Delete ${draft.title}`
-                    }
-                    onClick={() => confirmDeleteSavedDraft(draft)}
-                  >
-                    {deleteDraft.isPending &&
-                    deleteDraft.variables?.id === draft.id ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="size-3.5" />
-                    )}
-                    {ar ? "حذف" : "Delete"}
-                  </Button>
-                </div>
+                {historyDraftId === draft.id ? (
+                  <ContractRevisionHistory
+                    contractId={draft.id}
+                    locale={ar ? "ar" : "en"}
+                  />
+                ) : null}
               </Card>
             ))}
           </div>
@@ -502,15 +541,18 @@ export function ContractTemplateCatalog() {
         </div>
       ) : null}
       {savedDraftsError ? (
-        <p
-          className="mt-3 text-xs text-destructive"
-          role="alert"
-          aria-live="polite"
-        >
-          {ar
-            ? "تعذر تحميل المسودات المحفوظة."
-            : "Saved drafts could not be loaded."}
-        </p>
+        <div className="mt-3" role="alert" aria-live="polite">
+          <ErrorState
+            message={
+              ar
+                ? "تعذر تحميل المسودات المحفوظة."
+                : "Saved drafts could not be loaded."
+            }
+            onRetry={() => void refetchSavedDrafts()}
+            retryLabel={ar ? "إعادة المحاولة" : "Retry"}
+            className="py-4"
+          />
+        </div>
       ) : null}
     </section>
   );

@@ -53,7 +53,30 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const INVITATION_TRANSACTION_MAX_WAIT_MS = 2_000;
 const INVITATION_TRANSACTION_TIMEOUT_MS = 10_000;
 
+/**
+ * State columns that identify an unconsumed, unrevoked invitation.
+ * Callers that count invitations for seat allocation must also filter
+ * `expiresAt: { gt: now }` so expired-but-still-pending invitations are
+ * excluded from the seat count (audit: data integrity).
+ */
 const PENDING_STATE = Object.freeze({ consumedAt: null, revokedAt: null });
+
+/**
+ * Full seat-count filter: pending (unconsumed + unrevoked) **and** not expired.
+ * Expired invitations (`expiresAt < now`) must never occupy a seat slot.
+ */
+function activeInvitationSeatFilter(
+  workspaceId: string,
+  now: Date,
+  excludeInvitationId?: string,
+): Readonly<Record<string, unknown>> {
+  return {
+    workspaceId,
+    ...PENDING_STATE,
+    expiresAt: { gt: now },
+    ...(excludeInvitationId ? { id: { not: excludeInvitationId } } : {}),
+  };
+}
 
 /** Prisma-backed persistence for invitation creation, listing, and acceptance. */
 export function createPrismaInvitationRepository(
@@ -168,13 +191,10 @@ async function readSeatUsage(
 ): Promise<InvitationSeatUsage> {
   const [memberCount, pendingInvitationCount, seatAllowance] = await Promise.all([
     client.workspaceMember.count({ where: { workspaceId } }),
+    // Expired invitations (expiresAt < now) are excluded from the seat count
+    // so they never block a new invitation or acceptance (audit: data integrity).
     client.workspaceInvitation.count({
-      where: {
-        workspaceId,
-        ...PENDING_STATE,
-        expiresAt: { gt: now },
-        ...(excludeInvitationId ? { id: { not: excludeInvitationId } } : {}),
-      },
+      where: activeInvitationSeatFilter(workspaceId, now, excludeInvitationId),
     }),
     readSeatAllowance(client, workspaceId),
   ]);
@@ -228,11 +248,16 @@ async function runCreateTransaction(
       // and address is invalidated before the replacement is inserted. Both
       // state columns are written so a later submission of a replaced token
       // reports the revoked condition required by criterion 3.6.
+      // Criterion 3.1: every earlier unconsumed invitation for this workspace
+      // and address is invalidated before the replacement is inserted. Both
+      // state columns are written so a later submission of a replaced token
+      // reports the revoked condition required by criterion 3.6. Expired
+      // invitations are also closed so they cannot occupy a seat slot.
       const replaced = await tx.workspaceInvitation.updateMany({
         where: {
           workspaceId: input.workspaceId,
           email: { equals: input.email, mode: "insensitive" },
-          consumedAt: null,
+          ...PENDING_STATE,
         },
         data: { revokedAt: input.createdAt, consumedAt: input.createdAt },
       });

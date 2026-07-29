@@ -40,6 +40,31 @@ export const MAX_CLAUSE_LENGTH = 20_000;
 export const MAX_CLAUSE_LIST_TAKE = 50;
 export const MAX_CLAUSE_SELECT_IDS = 100;
 
+/** Catalog-declared clause categories (requirement 5.6). */
+export const CLAUSE_CATEGORIES = [
+  "COMMERCIAL",
+  "COMPLIANCE",
+  "CONFIDENTIALITY",
+  "DATA_AND_SECURITY",
+  "EXIT",
+  "FOUNDATION",
+  "FRAMEWORK",
+  "GENERAL",
+  "GOODS",
+  "GOVERNANCE",
+  "PERFORMANCE",
+  "PROFESSIONAL_SERVICES",
+  "RISK",
+  "SAAS",
+  "SUBCONTRACT",
+] as const;
+
+export type ClauseCategory = (typeof CLAUSE_CATEGORIES)[number];
+
+export function isClauseCategory(value: string): value is ClauseCategory {
+  return (CLAUSE_CATEGORIES as readonly string[]).includes(value);
+}
+
 /** Catalog provenance name persisted with every seeded row. */
 export const CLAUSE_CATALOG_NAME = "arabclue-clause-catalog";
 /** Canonical-hash domain separator; bumped only by an intentional format change. */
@@ -61,7 +86,7 @@ const RAW_MARKUP_RE = /<[^>]*>/u;
 const TOKEN_RE = /\{\{[^{}]+\}\}/u;
 const UNSAFE_SIMPLE_RE = /[<>]/;
 
-function isUnsafeClauseText(text: string): boolean {
+export function isClauseUnsafe(text: string): boolean {
   return (
     RAW_MARKUP_RE.test(text) ||
     TOKEN_RE.test(text) ||
@@ -69,6 +94,10 @@ function isUnsafeClauseText(text: string): boolean {
     UNSAFE_SIMPLE_RE.test(text) ||
     /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/u.test(text)
   );
+}
+
+function isUnsafeClauseText(text: string): boolean {
+  return isClauseUnsafe(text);
 }
 
 /**
@@ -117,10 +146,6 @@ function deriveContentEnAr(
     en: extractPlainTextFromBlocks(clause.blocks, "en"),
     ar: extractPlainTextFromBlocks(clause.blocks, "ar"),
   };
-}
-
-export function isClauseUnsafe(text: string): boolean {
-  return isUnsafeClauseText(text);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -682,10 +707,15 @@ export async function selectClausesForTemplate(input: SelectClausesInput) {
   }
 
   if (input.templateFamily) {
-    const tmpl = (CONTRACT_TEMPLATE_CATALOG as any)[input.templateFamily];
-    if (tmpl) {
-      // Family exists, but per spec mandatory = GENERAL applicability; we already include all mandatory.
-      // Optionally filter mandatory that belong to template? Keep all.
+    const familyKey = input.templateFamily.trim();
+    // GENERAL-mandatory rows apply to every family (design §4.3). When a
+    // family is supplied it must exist in the frozen catalog.
+    if (!(familyKey in CONTRACT_TEMPLATE_CATALOG)) {
+      throw new ApiError(
+        "Unknown template family",
+        400,
+        "CLAUSE_FIELD_INVALID"
+      );
     }
   }
 
@@ -760,6 +790,13 @@ export async function createCustomClause(
   }
 
   const category = (input.category ?? "GENERAL").trim() || "GENERAL";
+  if (!isClauseCategory(category)) {
+    throw new ApiError(
+      "Clause category is not catalog-declared",
+      400,
+      "CLAUSE_FIELD_INVALID"
+    );
+  }
   const nameEn = (input.titleEn ?? "").trim() || englishText.slice(0, 100) || "Custom Clause";
   const nameAr = (input.titleAr ?? "").trim() || arabicText.slice(0, 100) || "بند مخصص";
 
@@ -770,7 +807,7 @@ export async function createCustomClause(
   });
   const order = typeof input.order === "number" ? input.order : (maxOrderRow?.order ?? 1000) + 1;
 
-  // Cryptographic identifier, never `Math.random()` (design section 3.3).
+  // Cryptographic identifier, never pseudo-random generation (design section 3.3).
   const clauseKey = createRuntimeId(
     CUSTOM_CLAUSE_KEY_PREFIX,
     runtime.randomUuid ?? undefined

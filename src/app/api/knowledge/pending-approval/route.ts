@@ -1,15 +1,13 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { db } from "@/lib/db";
 import {
   withTenant,
   jsonOk,
-  jsonError,
   jsonApiFailure,
   parseSearchParams,
-  ApiError,
 } from "@/lib/api-controller";
 import { createPrismaKnowledgeQueueService } from "@/lib/knowledge-queue-prisma";
+import { createPrismaKnowledgeDecisionService } from "@/lib/knowledge-decision-prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -22,19 +20,18 @@ const listQuerySchema = z
 
 /**
  * GET /api/knowledge/pending-approval
- * Returns one tenant-scoped, normalized, keyset-paginated approval queue.
+ * Tenant-scoped, normalized, keyset-paginated approval queue.
  */
 export async function GET(request: NextRequest) {
   return withTenant(
     "session",
     async ({ workspace }) => {
       const query = parseSearchParams(request, listQuerySchema);
-      const result =
-        await createPrismaKnowledgeQueueService().listPendingQueue({
-          workspace: { id: workspace.id },
-          pageSize: query.limit,
-          cursor: query.cursor,
-        });
+      const result = await createPrismaKnowledgeQueueService().listPendingQueue({
+        workspace: { id: workspace.id },
+        pageSize: query.limit,
+        cursor: query.cursor,
+      });
 
       if (!result.ok) {
         return jsonApiFailure(result.code, { status: result.status });
@@ -54,179 +51,81 @@ export async function GET(request: NextRequest) {
 }
 
 /**
+ * Normalize a legacy single `reason` field into bilingual rejection reasons
+ * required by the decision service (criterion 11.5).
+ */
+function normalizeDecisionPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const body = { ...(raw as Record<string, unknown>) };
+
+  // Legacy UI aliases → canonical queue record types.
+  if (body.recordType === "LIBRARY") body.recordType = "CONTENT_LIBRARY_ITEM";
+  if (body.recordType === "METHODOLOGY") body.recordType = "METHODOLOGY_ASSET";
+
+  if (body.decision === "REJECT") {
+    const legacy =
+      typeof body.reason === "string" ? body.reason.trim() : "";
+    if (
+      legacy &&
+      (typeof body.reasonAr !== "string" || !String(body.reasonAr).trim())
+    ) {
+      body.reasonAr = legacy;
+    }
+    if (
+      legacy &&
+      (typeof body.reasonEn !== "string" || !String(body.reasonEn).trim())
+    ) {
+      body.reasonEn = legacy;
+    }
+  }
+
+  return body;
+}
+
+/**
  * POST /api/knowledge/pending-approval
- * Approve or reject a knowledge record.
- * Body: { recordType, recordId, decision: 'APPROVE' | 'REJECT', reason?: string, evidenceDocumentId?: string }
+ * First-decision-wins approve/reject via KnowledgeDecisionService.
  */
 export async function POST(request: NextRequest) {
-  return withTenant("session", async ({ workspace, userId, membershipRole }) => {
-    // Check approval authority - must be OWNER or ADMIN
-    if (!["OWNER", "ADMIN"].includes(membershipRole)) {
-      return jsonError(
-        membershipRole === "ar"
-          ? "ليس لديك صلاحية اعتماد السجلات"
-          : "You do not have approval authority",
-        403,
-        "APPROVAL_FORBIDDEN"
-      );
-    }
-
-    const body = await request.json().catch(() => null);
-    if (!body || typeof body !== "object") {
-      throw new ApiError("Invalid request body", 400);
-    }
-
-    const {
-      recordType,
-      recordId,
-      decision,
-      reason,
-      evidenceDocumentId,
-    } = body as {
-      recordType?: string;
-      recordId?: string;
-      decision?: string;
-      reason?: string;
-      evidenceDocumentId?: string;
-    };
-
-    if (!recordType || !recordId || !decision) {
-      throw new ApiError("recordType, recordId, and decision are required", 400);
-    }
-
-    if (!["APPROVE", "REJECT"].includes(decision)) {
-      throw new ApiError("decision must be APPROVE or REJECT", 400);
-    }
-
-    const validTypes = ["CERTIFICATE", "PAST_PROJECT", "METHODOLOGY", "LIBRARY"];
-    if (!validTypes.includes(recordType)) {
-      throw new ApiError("Invalid recordType", 400);
-    }
-
-    const workspaceId = workspace.id;
-    const now = new Date();
-
-    // Handle approval
-    if (decision === "APPROVE") {
-      // Evidence document is required for approval
-      if (!evidenceDocumentId) {
-        throw new ApiError("evidenceDocumentId is required for approval", 400);
-      }
-
-      // Get the evidence document
-      const evidenceDoc = await db.uploadedDocument.findFirst({
-        where: { id: evidenceDocumentId, workspaceId },
+  return withTenant(
+    "session",
+    async ({ workspace, userId, membershipRole }) => {
+      const raw = await request.json().catch(() => null);
+      const result = await createPrismaKnowledgeDecisionService().decide({
+        actor: { userId, membershipRole },
+        workspace: { id: workspace.id },
+        payload: normalizeDecisionPayload(raw),
       });
 
-      if (!evidenceDoc) {
-        throw new ApiError("Evidence document not found", 404);
+      if (!result.ok) {
+        if (result.code === "KNOWLEDGE_DECISION_ALREADY_RECORDED") {
+          return jsonApiFailure(result.code, {
+            status: result.status,
+            values: { status: result.decision.status },
+          });
+        }
+        if (result.code === "REJECTION_REASON_INVALID") {
+          return jsonApiFailure(result.code, {
+            status: result.status,
+            fieldPaths: result.fieldPaths,
+            values: { language: result.languages.join(",") },
+          });
+        }
+        if (result.code === "REQUEST_VALIDATION_FAILED") {
+          return jsonApiFailure(result.code, {
+            status: result.status,
+            fieldPaths: result.fieldPaths,
+            values: { fieldPaths: result.fieldPaths.join(", ") },
+          });
+        }
+        return jsonApiFailure(result.code, { status: result.status });
       }
 
-      // Get the current version with checksum
-      const currentVersion = await db.documentVersion.findFirst({
-        where: {
-          documentId: evidenceDocumentId,
-          version: evidenceDoc.currentVersion,
-        },
+      return jsonOk({
+        ok: true as const,
+        decision: result.decision,
       });
-
-      if (!currentVersion?.checksum) {
-        return jsonError(
-          "Evidence document version is missing checksum - upload a new version",
-          409,
-          "EVIDENCE_VERSION_MISSING"
-        );
-      }
-
-      const updateData = {
-        reviewStatus: "APPROVED" as const,
-        approved: true,
-        reviewedById: userId,
-        approvedAt: now,
-        evidenceDocumentId: evidenceDocumentId,
-        evidenceVersion: currentVersion.version,
-        evidenceChecksum: currentVersion.checksum,
-        revokedAt: null,
-        revokedById: null,
-        revocationReason: null,
-      };
-
-      // Update the appropriate model
-      switch (recordType) {
-        case "CERTIFICATE":
-          await db.certificate.update({
-            where: { id: recordId, workspaceId },
-            data: updateData,
-          });
-          break;
-        case "PAST_PROJECT":
-          await db.pastProject.update({
-            where: { id: recordId, workspaceId },
-            data: updateData,
-          });
-          break;
-        case "METHODOLOGY":
-          await db.methodologyAsset.update({
-            where: { id: recordId, workspaceId },
-            data: updateData,
-          });
-          break;
-        case "LIBRARY":
-          await db.contentLibraryItem.update({
-            where: { id: recordId, workspaceId },
-            data: updateData,
-          });
-          break;
-      }
-
-      return jsonOk({ success: true, decision: "APPROVED" });
-    }
-
-    // Handle rejection
-    if (decision === "REJECT") {
-      if (!reason?.trim()) {
-        throw new ApiError("reason is required for rejection", 400);
-      }
-
-      const updateData = {
-        reviewStatus: "REVOKED" as const,
-        approved: false,
-        revokedAt: now,
-        revokedById: userId,
-        revocationReason: reason.trim(),
-      };
-
-      // Update the appropriate model
-      switch (recordType) {
-        case "CERTIFICATE":
-          await db.certificate.update({
-            where: { id: recordId, workspaceId },
-            data: updateData,
-          });
-          break;
-        case "PAST_PROJECT":
-          await db.pastProject.update({
-            where: { id: recordId, workspaceId },
-            data: updateData,
-          });
-          break;
-        case "METHODOLOGY":
-          await db.methodologyAsset.update({
-            where: { id: recordId, workspaceId },
-            data: updateData,
-          });
-          break;
-        case "LIBRARY":
-          await db.contentLibraryItem.update({
-            where: { id: recordId, workspaceId },
-            data: updateData,
-          });
-          break;
-      }
-
-      return jsonOk({ success: true, decision: "REJECTED" });
-    }
-
-    return jsonError("Invalid decision", 400);
-  }, "knowledge-pending-approval-post");
+    },
+    "knowledge-pending-approval-post"
+  );
 }

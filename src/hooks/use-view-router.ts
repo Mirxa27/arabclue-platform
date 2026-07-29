@@ -146,6 +146,10 @@ export function useViewRouter(init: ViewRouterInit) {
   /**
    * Reconciles a URL change this hook did not initiate: browser back, forward,
    * or a pasted link inside an already-loaded shell (Requirement 14.3).
+   *
+   * The popstate listener restores the view/project synchronously within the
+   * same event loop tick, well under the 300 ms requirement (Requirement 14.3).
+   * The pathname effect is the fallback for programmatic navigation.
    */
   useEffect(() => {
     if (!hydrated.current) return;
@@ -198,6 +202,67 @@ export function useViewRouter(init: ViewRouterInit) {
       replaceProject: resolution.projectId !== null,
     });
   }, [pathname, status, isAdmin, applyRoute, replacePath]);
+
+  /**
+   * Explicit popstate listener for back/forward restoration (Requirement 14.3).
+   *
+   * `usePathname()` already fires on popstate, but this listener guarantees
+   * the view/project is restored within the same event loop tick — well under
+   * the 300 ms requirement — without waiting for React's render cycle. The
+   * pathname effect above is the authoritative reconciliation; this listener
+   * is an optimization that applies the route state synchronously.
+   */
+  useEffect(() => {
+    if (!hydrated.current) return;
+    const onPopState = () => {
+      const currentPath = window.location.pathname;
+      if (ownedPath.current === currentPath) return;
+
+      const resolution = resolveAppPath(currentPath);
+      if (!resolution.matched) {
+        applyRoute({
+          view: "overview",
+          projectId: null,
+          notice: "ROUTE_VIEW_NOT_FOUND",
+          replaceProject: false,
+        });
+        return;
+      }
+
+      if (isAdminView(resolution.view) && !isAdmin) {
+        applyRoute({
+          view: "overview",
+          projectId: null,
+          notice: "ROUTE_VIEW_FORBIDDEN",
+          replaceProject: false,
+        });
+        return;
+      }
+
+      if (isProjectScopedView(resolution.view) && !resolution.projectId) {
+        const persisted = useUI.getState().activeProjectId;
+        if (!persisted) {
+          applyRoute({
+            view: "projects",
+            projectId: null,
+            notice: "ROUTE_PROJECT_REQUIRED",
+            replaceProject: false,
+          });
+          return;
+        }
+      }
+
+      ownedPath.current = currentPath;
+      applyRoute({
+        view: resolution.view,
+        projectId: resolution.projectId,
+        notice: null,
+        replaceProject: resolution.projectId !== null,
+      });
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [isAdmin, applyRoute]);
 
   /**
    * Keeps the URL in step when the active project changes while a

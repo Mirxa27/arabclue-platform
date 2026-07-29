@@ -76,6 +76,21 @@ export async function generateCompletion(
   }
 ): Promise<LLMResult> {
   const engine = opts?.engine ?? "DEFAULT";
+
+  // Unit/integration tests and offline runs can force deterministic fallbacks
+  // without touching Neon provider rows or external LLM APIs.
+  if (process.env.ARABCLUE_LLM_DETERMINISTIC === "1") {
+    return {
+      content: "",
+      provider: "none",
+      model: "none",
+      tokensUsed: 0,
+      confidence: 0,
+      fallback: true,
+      engine,
+    };
+  }
+
   const provider = await getProviderForEngine(engine);
   if (!provider) {
     return {
@@ -87,6 +102,25 @@ export async function generateCompletion(
       fallback: true,
       engine,
     };
+  }
+
+  const pid = provider.provider.toLowerCase();
+  if (pid !== "ollama") {
+    const key = await resolveProviderApiKey(
+      provider.provider,
+      provider.apiKeyEnvKey
+    );
+    if (!key) {
+      return {
+        content: "",
+        provider: provider.provider,
+        model: provider.modelId,
+        tokensUsed: 0,
+        confidence: 0,
+        fallback: true,
+        engine,
+      };
+    }
   }
 
   const temperature = opts?.temperature ?? provider.temperature;
@@ -149,8 +183,6 @@ export async function generateCompletion(
   };
 
   try {
-    const pid = provider.provider.toLowerCase();
-
     if (pid === "zai") {
       // Prefer OpenAI-compatible path when apiBase is configured (live models)
       if (provider.apiBase?.trim()) {

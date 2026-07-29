@@ -7,6 +7,7 @@ import {
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
+import { jsonApiFailure } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +18,13 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   const session = await requireSession({ allowMustChangePassword: true });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return jsonApiFailure("AUTHENTICATION_REQUIRED", { status: 401 });
 
   const rl = await rateLimit({ key: `mfa:setup:${session.user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
   if (!rl.ok) {
     const denial = describeRateLimitDenial(rl);
     return NextResponse.json(
-      { error: denial.error },
+      { error: denial.error, code: "MFA_SETUP_RATE_LIMITED" },
       {
         status: denial.status,
         headers: { "Retry-After": String(denial.retryAfterSeconds) },
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   }
 
   const user = await db.user.findUnique({ where: { id: session.user.id } });
-  if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!user) return jsonApiFailure("RESOURCE_NOT_FOUND", { status: 404 });
 
   let body: { currentToken?: string } = {};
   try {
@@ -44,10 +45,7 @@ export async function POST(req: NextRequest) {
   if (user.mfaEnabled) {
     const currentToken = body.currentToken?.trim() ?? "";
     if (!user.mfaSecret || !currentToken || !verifyMfaToken(user.mfaSecret, currentToken)) {
-      return NextResponse.json(
-        { error: "Current MFA token required to rotate MFA" },
-        { status: 403 }
-      );
+      return jsonApiFailure("MFA_ROTATION_TOKEN_REQUIRED", { status: 403 });
     }
   }
 

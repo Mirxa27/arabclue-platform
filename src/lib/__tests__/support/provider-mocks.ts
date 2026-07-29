@@ -23,10 +23,14 @@ export const PROVIDER_CREDENTIAL_ENV_KEYS = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GEMINI_API_KEY",
   "GROQ_API_KEY",
   "MISTRAL_API_KEY",
   "OPENROUTER_API_KEY",
   "ZAI_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "AUTH_TOKEN",
 ] as const;
 
 export function clearProviderCredentials(
@@ -187,6 +191,11 @@ export function assertTestNetworkTargetAllowed(
 
 export function installNoExternalNetworkGuard(): () => void {
   const originalFetch = globalThis.fetch;
+  const priorDeterministic = process.env.ARABCLUE_LLM_DETERMINISTIC;
+  // Completion tests must not hit Neon provider rows / live LLM APIs.
+  process.env.ARABCLUE_LLM_DETERMINISTIC = "1";
+  clearProviderCredentials();
+
   const guardedFetch: typeof fetch = async (input, init) => {
     assertTestNetworkTargetAllowed(input);
     return originalFetch(input, init);
@@ -195,5 +204,10 @@ export function installNoExternalNetworkGuard(): () => void {
 
   return () => {
     if (globalThis.fetch === guardedFetch) globalThis.fetch = originalFetch;
+    if (priorDeterministic === undefined) {
+      delete process.env.ARABCLUE_LLM_DETERMINISTIC;
+    } else {
+      process.env.ARABCLUE_LLM_DETERMINISTIC = priorDeterministic;
+    }
   };
 }

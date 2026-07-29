@@ -8,6 +8,7 @@ import { audit, AUDIT_ACTIONS } from "./audit";
 import { rateLimitAsync as rateLimit } from "./rate-limit";
 import type { Role } from "./types";
 import { isProductionBlockedDevelopmentIdentity } from "./production-identities";
+import { resolveEmailVerifiedClaim } from "./email-verification-policy";
 
 declare module "next-auth" {
   interface Session {
@@ -215,12 +216,12 @@ export const authOptions: NextAuthOptions = {
           sessionToken,
           avatarUrl: user.avatarUrl,
           workspaceId: user.activeWorkspaceId ?? undefined,
-          emailVerified: user.emailVerified,
+          emailVerified: resolveEmailVerifiedClaim(user.emailVerified),
         };
       },
     }),
   ],
-    callbacks: {
+  callbacks: {
     async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
@@ -235,7 +236,9 @@ export const authOptions: NextAuthOptions = {
         token.avatarUrl = user.avatarUrl ?? null;
         token.workspaceId =
           (user as { workspaceId?: string | null }).workspaceId ?? undefined;
-        token.emailVerified = (user as { emailVerified?: boolean }).emailVerified ?? false;
+        token.emailVerified = resolveEmailVerifiedClaim(
+          (user as { emailVerified?: boolean }).emailVerified
+        );
         token.claimsRefreshedAt = Date.now();
       }
       if (trigger === "update" && session) {
@@ -323,9 +326,12 @@ export const authOptions: NextAuthOptions = {
         token.name = dbUser.name;
         token.avatarUrl = dbUser.avatarUrl;
         token.workspaceId = dbUser.activeWorkspaceId ?? token.workspaceId;
-        token.emailVerified = dbUser.emailVerified;
+        token.emailVerified = resolveEmailVerifiedClaim(dbUser.emailVerified);
         token.claimsRefreshedAt = now;
       }
+
+      // Temporary skip policy: always admit sessions while the flag is on.
+      token.emailVerified = resolveEmailVerifiedClaim(!!token.emailVerified);
 
       return token;
     },
@@ -340,7 +346,7 @@ export const authOptions: NextAuthOptions = {
         mustChangePassword: !!token.mustChangePassword,
         avatarUrl: token.avatarUrl ?? null,
         workspaceId: (token.workspaceId as string | undefined) ?? "",
-        emailVerified: !!token.emailVerified,
+        emailVerified: resolveEmailVerifiedClaim(!!token.emailVerified),
       };
       session.mfaVerified = token.mfaVerified;
       session.sessionToken = token.sessionToken;
@@ -381,7 +387,10 @@ export async function requireSession(opts?: SessionOpts) {
   if (session.user.mustChangePassword && !opts?.allowMustChangePassword) {
     return null;
   }
-  if (!opts?.allowUnverified && !session.user.emailVerified) {
+  if (
+    !opts?.allowUnverified &&
+    !resolveEmailVerifiedClaim(session.user.emailVerified)
+  ) {
     const path = getRequestPathForVerificationCheck();
     if (!isVerificationAllowedPath(path)) {
       throw new EmailVerificationRequiredError();
@@ -409,7 +418,10 @@ export async function requireWriter(opts?: SessionOpts) {
   const session = await requireSession(opts);
   if (!session) return null;
   if (session.user.role === "REVIEWER") return null;
-  if (!opts?.allowUnverified && !session.user.emailVerified) {
+  if (
+    !opts?.allowUnverified &&
+    !resolveEmailVerifiedClaim(session.user.emailVerified)
+  ) {
     const path = getRequestPathForVerificationCheck();
     if (!isVerificationAllowedPath(path)) {
       throw new EmailVerificationRequiredError();

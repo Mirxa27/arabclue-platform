@@ -64,12 +64,16 @@ export async function POST(req: NextRequest) {
  * raw token — only the token identifier and its timestamps.
  */
 function registrationSuccessResponse(result: RegistrationSuccess) {
+  // Trust the Account_Service snapshot — do not re-apply process.env skip policy
+  // here (local .env SKIP_EMAIL_VERIFICATION must not rewrite injected-test results).
+  const verificationRequired = !result.account.emailVerified;
   return jsonOk(
     {
       ok: true as const,
       code: result.code,
       message: { ar: tr(result.code, "ar"), en: tr(result.code, "en") },
-      emailDelivery: result.emailDelivery,
+      emailDelivery: verificationRequired ? result.emailDelivery : "SKIPPED",
+      verificationRequired,
       account: result.account,
     },
     { status: result.status }

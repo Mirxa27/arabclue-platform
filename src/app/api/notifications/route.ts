@@ -2,9 +2,34 @@ import { db } from "@/lib/db";
 import { withTenant, jsonOk } from "@/lib/api-controller";
 import { computeOnboardingSteps } from "@/lib/onboarding";
 import { onboardingNotificationId } from "@/lib/notification-ids";
+import { isPrismaMissingTable } from "@/lib/prisma-missing-table";
 import type { ApiNotification } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
+
+function severityForTransactionalType(
+  type: string
+): ApiNotification["severity"] {
+  switch (type) {
+    case "SUBSCRIPTION_PAST_DUE":
+    case "SUBSCRIPTION_FAILED":
+      return "CRITICAL";
+    case "REVIEW_REQUESTED":
+      return "WARN";
+    case "REVIEW_DECISION":
+      return "INFO";
+    default:
+      return "INFO";
+  }
+}
+
+function normalizeHref(href: string | null | undefined): string | undefined {
+  if (!href) return undefined;
+  if (href.startsWith("/app")) return href;
+  if (href.startsWith("?view=")) return href;
+  if (href.startsWith("/")) return href;
+  return `?view=${href.replace(/^view=/, "")}`;
+}
 
 export async function GET() {
   return withTenant("session", async ({ workspace, userId }) => {
@@ -37,6 +62,45 @@ export async function GET() {
 
     const dismissed = new Set(dismissals.map((d) => d.notificationId));
     const items: ApiNotification[] = [];
+
+    // Persisted transactional inbox (requirement 17.4 / 11.4). Soft-skip when
+    // the platform-completion migration has not been applied yet so derived
+    // cert/review/onboarding alerts remain available.
+    try {
+      const inbox = await db.inAppNotification.findMany({
+        where: {
+          workspaceId: workspace.id,
+          userId,
+          isRead: false,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      });
+
+      for (const row of inbox) {
+        if (dismissed.has(row.id)) continue;
+        const type = row.type as ApiNotification["type"];
+        items.push({
+          id: row.id,
+          type:
+            type === "REVIEW_REQUESTED" ||
+            type === "REVIEW_DECISION" ||
+            type === "SUBSCRIPTION_PAST_DUE" ||
+            type === "SUBSCRIPTION_FAILED"
+              ? type
+              : "INFO",
+          severity: severityForTransactionalType(row.type),
+          title: row.titleEn,
+          titleAr: row.titleAr,
+          body: row.bodyEn,
+          bodyAr: row.bodyAr,
+          href: normalizeHref(row.href),
+          createdAt: row.createdAt.toISOString(),
+        });
+      }
+    } catch (err) {
+      if (!isPrismaMissingTable(err)) throw err;
+    }
 
     for (const c of certs) {
       if (!c.expiresAt) continue;
@@ -98,6 +162,11 @@ export async function GET() {
         });
       }
     }
+
+    items.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
     return jsonOk({ items, count: items.length });
   }, "notifications");

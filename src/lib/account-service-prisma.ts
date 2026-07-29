@@ -121,7 +121,8 @@ async function runAccountTransaction(
             role: input.platformRole,
             active: true,
             locale: input.locale,
-            emailVerified: false,
+            emailVerified: input.emailVerified === true,
+            emailVerifiedAt: input.emailVerified === true ? input.createdAt : null,
             mustChangePassword: false,
           },
           select: { id: true },
@@ -177,6 +178,8 @@ async function runAccountTransaction(
             hashSalt: input.verificationToken.hashSalt,
             hashVersion: input.verificationToken.hashVersion,
             expiresAt: input.verificationToken.expiresAt,
+            consumedAt:
+              input.emailVerified === true ? input.createdAt : null,
           },
           select: { id: true },
         });

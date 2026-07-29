@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -72,6 +72,28 @@ export function TemplateMarketplaceCard({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [hoverRating, setHoverRating] = useState(0);
   const isWorkspaceTemplate = template.source === "workspace";
+
+  type MarketplaceDetail = TemplateMarketplaceItem & {
+    publisher?: { name: string; nameAr: string | null } | null;
+  };
+
+  const detailQuery = useQuery({
+    queryKey: ["template-marketplace-detail", template.id],
+    enabled: previewOpen,
+    queryFn: async () => {
+      const res = await fetch(`/api/templates/marketplace/${template.id}`);
+      const body = (await res.json().catch(() => ({}))) as {
+        entry?: MarketplaceDetail;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(body.error || "Failed to load template detail");
+      }
+      return body.entry!;
+    },
+  });
+
+  const detail: MarketplaceDetail = detailQuery.data ?? template;
 
   const applyDraftAndOpenBuilder = (data: UseTemplateResponse) => {
     const title = data.draft?.title ?? template.name;
@@ -370,45 +392,77 @@ export function TemplateMarketplaceCard({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {template.name[locale as "ar" | "en"]}
+              {detail.name[locale as "ar" | "en"]}
             </DialogTitle>
             <DialogDescription>
-              {template.description[locale as "ar" | "en"]}
+              {detail.description[locale as "ar" | "en"]}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              {ar ? "أقسام القالب" : "Template sections"}
+          {detailQuery.isLoading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              {ar ? "جاري التحميل…" : "Loading…"}
+            </div>
+          ) : detailQuery.isError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {detailQuery.error instanceof Error
+                ? detailQuery.error.message
+                : ar
+                  ? "فشل تحميل التفاصيل"
+                  : "Failed to load detail"}
             </p>
-            <ol className="space-y-1.5">
-              {template.sectionTypes.map((type, index) => (
-                <li
-                  key={`${type}-${index}`}
-                  className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm"
-                >
-                  <span className="text-[10px] text-muted-foreground tabular-nums">
-                    {index + 1}
-                  </span>
-                  {getSectionLabel(type, locale as "ar" | "en")}
-                </li>
-              ))}
-            </ol>
-            <Button
-              className="mt-2 w-full gap-1.5"
-              onClick={() => {
-                setPreviewOpen(false);
-                useTemplateMutation.mutate();
-              }}
-              disabled={useTemplateMutation.isPending}
-            >
-              {useTemplateMutation.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Plus className="size-3.5" />
-              )}
-              {ar ? "استخدام هذا القالب" : "Use this template"}
-            </Button>
-          </div>
+          ) : (
+            <div className="space-y-3">
+              {detail.publisher ? (
+                <p className="text-xs text-muted-foreground">
+                  {ar ? "الناشر: " : "Publisher: "}
+                  {ar
+                    ? detail.publisher.nameAr || detail.publisher.name
+                    : detail.publisher.name}
+                </p>
+              ) : null}
+              {detail.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {detail.tags.map((tag) => (
+                    <Badge key={tag} variant="outline" className="text-[10px]">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              <p className="text-xs font-medium text-muted-foreground">
+                {ar ? "أقسام القالب" : "Template sections"}
+              </p>
+              <ol className="space-y-1.5">
+                {detail.sectionTypes.map((type, index) => (
+                  <li
+                    key={`${type}-${index}`}
+                    className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm"
+                  >
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      {index + 1}
+                    </span>
+                    {getSectionLabel(type, locale as "ar" | "en")}
+                  </li>
+                ))}
+              </ol>
+              <Button
+                className="mt-2 w-full gap-1.5"
+                onClick={() => {
+                  setPreviewOpen(false);
+                  useTemplateMutation.mutate();
+                }}
+                disabled={useTemplateMutation.isPending}
+              >
+                {useTemplateMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Plus className="size-3.5" />
+                )}
+                {ar ? "استخدام هذا القالب" : "Use this template"}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

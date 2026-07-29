@@ -475,12 +475,31 @@ describe("structured proposal multi-format export", () => {
   });
 
   test("generates valid XLSX workbook with worksheets and manifest", async () => {
-    const result = await exportProposalLayout(makeSnapshot(), { channel: "XLSX" });
+    const ExcelJS = (await import("exceljs")).default;
+    const { workbookContainsNoFormulas } = await import(
+      "../proposal-workbook-xlsx"
+    );
+    const result = await exportProposalLayout(makeSnapshot(), {
+      channel: "XLSX",
+      locale: "ar",
+    });
     expect(result.channel).toBe("XLSX");
     expect(result.buffer).toBeDefined();
     expect(result.buffer).toBeInstanceOf(Buffer);
-    expect(result.mediaType).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(result.buffer.byteLength).toBeGreaterThan(0);
+    expect(result.mediaType).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
     expect(result.notRepresentable).toBeDefined();
+    expect(result.metadata.planHash.length).toBeGreaterThan(0);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(result.buffer as never);
+    expect(wb.worksheets.length).toBeGreaterThanOrEqual(1);
+    // Manifest sheet is always first (Requirement 8.4).
+    expect(wb.worksheets[0]!.name.length).toBeGreaterThan(0);
+    expect(wb.worksheets[0]!.name.length).toBeLessThanOrEqual(31);
+    expect(await workbookContainsNoFormulas(result.buffer)).toBe(true);
   });
 
   const pdfTest =

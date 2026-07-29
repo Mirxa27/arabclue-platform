@@ -30,6 +30,7 @@ import { ListSkeleton } from "./loading-skeletons";
 import { EmptyState, ErrorState } from "@/components/patterns";
 import type { ApiComplianceCheck } from "@/lib/api-types";
 import { ArrowRight, Upload } from "lucide-react";
+import { ComplianceAnalyzeAction } from "@/components/dashboard/ai-assist-actions";
 const FW_ICONS: Record<string, LucideIcon> = {
   NCA_ECC1: ShieldCheck,
   NCA_CCC1: Cloud,
@@ -110,13 +111,38 @@ export function ComplianceMonitor() {
             </p>
           </div>
         </div>
-        <div className="text-end">
-          <div className={cn("text-2xl font-bold tabular-nums", pct === 100 ? "text-emerald-600" : "text-chart-1")}>
-            {isLoading ? "—" : `${pct}%`}
+        <div className="flex flex-col items-end gap-2">
+          <div className="text-end">
+            <div className={cn("text-2xl font-bold tabular-nums", pct === 100 ? "text-emerald-600" : "text-chart-1")}>
+              {isLoading ? "—" : `${pct}%`}
+            </div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+              {locale === "ar" ? "نسبة الامتثال" : "Compliance score"}
+            </div>
           </div>
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-            {locale === "ar" ? "نسبة الامتثال" : "Compliance score"}
-          </div>
+          <ComplianceAnalyzeAction
+            locale={locale}
+            documentType="TENDER"
+            documentText={
+              Object.values(grouped)
+                .flat()
+                .map((c) =>
+                  [
+                    c.controlId,
+                    c.title,
+                    c.status,
+                    c.evidence ?? "",
+                    c.remediation ?? "",
+                  ]
+                    .filter(Boolean)
+                    .join(" — "),
+                )
+                .join("\n") ||
+              (locale === "ar"
+                ? "لا توجد صفوف امتثال بعد. حلّل سياق المناقصة النشطة عند توفر الأدلة."
+                : "No compliance rows yet. Analyze active tender context when evidence is available.")
+            }
+          />
         </div>
       </div>
 

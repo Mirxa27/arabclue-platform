@@ -36,12 +36,11 @@ export function PackagesSection({
     <section
       id={id}
       className={cn(
-        "relative scroll-mt-24 border-b border-white/10 overflow-hidden",
+        "marketing-dark-island relative scroll-mt-24 border-b border-white/10 overflow-hidden bg-[oklch(0.13_0.02_260)]",
         compact ? "py-12 sm:py-16" : "py-16 sm:py-20 lg:py-28"
       )}
     >
-      <div className="absolute inset-0 -z-10 bg-[oklch(0.13_0.02_260)]" />
-      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-[oklch(0.16_0.025_260/.55)] to-transparent" />
+      <div className="absolute inset-0 z-0 bg-gradient-to-b from-transparent via-[oklch(0.16_0.025_260/.55)] to-transparent pointer-events-none" />
       <motion.div
         aria-hidden
         className="absolute left-1/2 top-1/2 -z-10 h-[860px] w-[860px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[40px]"
@@ -50,7 +49,7 @@ export function PackagesSection({
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
       />
 
-      <div className="mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto max-w-[1280px] 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 lg:gap-10">
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -130,7 +129,7 @@ export function PackagesSection({
             return (
               <motion.div
                 key={plan.code}
-                initial={{ opacity: 0, y: 24 }}
+                initial={{ opacity: 1, y: 16 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={SCROLL_VIEWPORT}
                 transition={{ delay: i * 0.09, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}

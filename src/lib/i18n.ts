@@ -25,6 +25,60 @@ export const localizationRegistry = {
   nav_account: { ar: "إعداد الحساب", en: "Account Setup" },
   nav_business_profile: { ar: "ملف الشركة", en: "Business Profile" },
   nav_copilot: { ar: "الوكيل الصوتي", en: "Voice Copilot" },
+
+  // Copilot processing view (Mission Control)
+  copilot_proc_title: { ar: "حالة المعالجة", en: "Processing status" },
+  copilot_proc_idle: {
+    ar: "جاهز — أرسل رسالة لبدء التشغيل",
+    en: "Ready — send a message to start",
+  },
+  copilot_proc_queued: {
+    ar: "في قائمة الانتظار — جارٍ تجهيز الطلب…",
+    en: "Queued — preparing your request…",
+  },
+  copilot_proc_streaming: {
+    ar: "يبث الرد لحظياً…",
+    en: "Streaming response…",
+  },
+  copilot_proc_generating: {
+    ar: "يولّد المستندات والمعاينات الحية…",
+    en: "Generating documents and live previews…",
+  },
+  copilot_proc_finalizing: {
+    ar: "يُنهي الخطوة ويحفظ النتيجة…",
+    en: "Finalizing and saving the result…",
+  },
+  copilot_proc_completed: {
+    ar: "اكتملت المعالجة",
+    en: "Processing complete",
+  },
+  copilot_proc_error: {
+    ar: "تعذّرت المعالجة — يمكنك إعادة المحاولة",
+    en: "Processing failed — you can retry",
+  },
+  copilot_proc_error_offline: {
+    ar: "انقطع الاتصال أثناء البث — حُفظت المسودة الجزئية",
+    en: "Connection lost mid-stream — partial draft preserved",
+  },
+  copilot_proc_error_timeout: {
+    ar: "انتهت المهلة — أوقفنا التشغيل لحماية الجلسة",
+    en: "Timed out — the run was stopped to protect the session",
+  },
+  copilot_proc_cancel: { ar: "إيقاف", en: "Cancel" },
+  copilot_proc_retry: { ar: "إعادة المحاولة", en: "Retry" },
+  copilot_proc_elapsed: { ar: "الوقت {{time}}", en: "Elapsed {{time}}" },
+  copilot_proc_tokens: { ar: "{{count}} رمز", en: "{{count}} tokens" },
+  copilot_proc_progress: { ar: "{{pct}}%", en: "{{pct}}%" },
+  copilot_proc_preview_empty: {
+    ar: "معاينة البث تظهر هنا دون إزاحة للتخطيط",
+    en: "Stream preview appears here without layout shift",
+  },
+  copilot_proc_offline_badge: { ar: "بدون اتصال", en: "Offline" },
+  copilot_proc_restored: {
+    ar: "استُعيدت مسودة جزئية",
+    en: "Restored partial draft",
+  },
+
   nav_agents: { ar: "وكلاء الذكاء", en: "AI Agents" },
   nav_history: { ar: "الإصدارات", en: "Version History" },
   nav_billing: { ar: "الاشتراك والدفع", en: "Billing" },
@@ -134,6 +188,7 @@ export const localizationRegistry = {
 
   nav_contracts: { ar: "العقود", en: "Contracts" },
   nav_clause_library: { ar: "مكتبة البنود", en: "Clause Library" },
+  nav_template_editor: { ar: "محرر القوالب", en: "Template Editor" },
 
   // Addressable views
   view_unknown_redirect: { 
@@ -204,7 +259,9 @@ export const localizationRegistry = {
   search_placeholder: { ar: "بحث في المشاريع والمستندات...", en: "Search projects & documents..." },
   dismiss: { ar: "إخفاء", en: "Dismiss" },
   rtl_toggle: { ar: "EN", en: "ع" },
-  theme_toggle: { ar: "الوضع الليلي", en: "Dark Mode" },
+  theme_toggle: { ar: "تبديل المظهر", en: "Toggle theme" },
+  theme_switch_to_light: { ar: "التبديل إلى الوضع الفاتح", en: "Switch to light mode" },
+  theme_switch_to_dark: { ar: "التبديل إلى الوضع الداكن", en: "Switch to dark mode" },
   loading: { ar: "جاري التحميل...", en: "Loading..." },
   no_data: { ar: "لا توجد بيانات", en: "No data available" },
   vision2030: { ar: "رؤية 2030", en: "Vision 2030" },
@@ -325,10 +382,42 @@ export const localizationRegistry = {
   auth_forgot_title: { ar: "استعادة كلمة المرور", en: "Forgot password" },
   auth_forgot_subtitle: { ar: "أدخل بريدك لإرسال رابط الاستعادة", en: "Enter your email to receive a reset link" },
   auth_forgot_btn: { ar: "إرسال رابط الاستعادة", en: "Send reset link" },
+  auth_forgot_expiry_hint: {
+    ar: "رابط الاستعادة صالح لمدة 60 دقيقة، ويلزم أن يكون البريد مؤكداً",
+    en: "The reset link is valid for 60 minutes and requires a verified email",
+  },
   auth_reset_title: { ar: "إعادة تعيين كلمة المرور", en: "Reset password" },
+  auth_reset_subtitle: {
+    ar: "اختر كلمة مرور جديدة بين 10 و 128 حرفاً",
+    en: "Choose a new password between 10 and 128 characters",
+  },
   auth_reset_btn: { ar: "تعيين كلمة مرور جديدة", en: "Set new password" },
   auth_reset_success: { ar: "تمت إعادة التعيين، سجّل الدخول", en: "Password reset, please sign in" },
+  auth_new_password: { ar: "كلمة المرور الجديدة", en: "New password" },
+  auth_confirm_password: { ar: "تأكيد كلمة المرور", en: "Confirm password" },
+  auth_password_mismatch: {
+    ar: "كلمتا المرور غير متطابقتين",
+    en: "Passwords do not match",
+  },
+  auth_reset_token_label: { ar: "رمز الاستعادة", en: "Reset token" },
+  auth_reset_token_placeholder: {
+    ar: "الصق الرمز من البريد",
+    en: "Paste token from email",
+  },
+  auth_back_to_signin: { ar: "العودة لتسجيل الدخول", en: "Back to sign in" },
+  auth_token_required: { ar: "الرمز مطلوب", en: "Token required" },
   auth_invite_title: { ar: "قبول دعوة مساحة العمل", en: "Accept workspace invitation" },
+  auth_invite_badge: { ar: "دعوة مساحة عمل", en: "Workspace invitation" },
+  auth_invite_subtitle: {
+    ar: "الرابط صالح 7 أيام — إذا كنت مسجلاً دخولك، سيتم ربط البريد تلقائياً",
+    en: "Link valid 7 days — if signed in, email is matched automatically",
+  },
+  auth_invite_token_label: { ar: "رمز الدعوة", en: "Invite token" },
+  auth_invite_token_placeholder: {
+    ar: "الصق رمز الدعوة",
+    en: "Paste invite token",
+  },
+  auth_invite_current_account: { ar: "البريد الحالي", en: "current account" },
   auth_invite_accept_btn: { ar: "قبول الدعوة", en: "Accept invitation" },
   auth_resend_verification: { ar: "إعادة إرسال رسالة التحقق", en: "Resend verification" },
   auth_verify_action: { ar: "تحقق", en: "Verify" },
@@ -821,6 +910,168 @@ export const localizationRegistry = {
     ar: "تم تطبيق التسوية مسبقاً",
     en: "Reconciliation already applied",
   },
+  reconcile_col_age: {
+    ar: "العمر (دقيقة)",
+    en: "Age (min)",
+  },
+  reconcile_col_provider_value: {
+    ar: "قيمة المزود",
+    en: "Provider Value",
+  },
+  reconcile_col_provider_currency: {
+    ar: "عملة المزود",
+    en: "Provider Currency",
+  },
+  reconcile_col_mismatch: {
+    ar: "عدم تطابق",
+    en: "Mismatch",
+  },
+  reconcile_bulk_apply_btn: {
+    ar: "تطبيق الكل",
+    en: "Apply All",
+  },
+  reconcile_apply_selected_btn: {
+    ar: "تطبيق المحدد",
+    en: "Apply Selected",
+  },
+  reconcile_select_all: {
+    ar: "تحديد الكل",
+    en: "Select All",
+  },
+  reconcile_selected_count: {
+    ar: "{{count}} محدد",
+    en: "{{count}} selected",
+  },
+  reconcile_bulk_results: {
+    ar: "تطبيق: {{applied}}، أخطاء: {{errors}}، مُطبّقة مسبقاً: {{already}}",
+    en: "Applied: {{applied}}, Errors: {{errors}}, Already applied: {{already}}",
+  },
+  reconcile_total_pending: {
+    ar: "إجمالي المعلّق: {{count}}",
+    en: "Total pending: {{count}}",
+  },
+  reconcile_next_page: {
+    ar: "الصفحة التالية",
+    en: "Next Page",
+  },
+  reconcile_amount_mismatch: {
+    ar: "عدم تطابق المبلغ",
+    en: "Amount mismatch",
+  },
+  reconcile_yes: { ar: "نعم", en: "Yes" },
+  reconcile_no: { ar: "لا", en: "No" },
+  reconcile_provider_timeout: {
+    ar: "انتهت مهلة المزود",
+    en: "Provider timeout",
+  },
+  reconcile_unresolved_preserved: {
+    ar: "العمليات غير المحلومة محفوظة",
+    en: "Unresolved items preserved",
+  },
+  reconcile_rows_updated: {
+    ar: "تم تحديث الصفوف",
+    en: "Rows updated",
+  },
+  reconcile_apply_all_success: {
+    ar: "تم تطبيق التسوية على {{count}} عملية",
+    en: "Reconciliation applied to {{count}} checkout(s)",
+  },
+  reconcile_confirm_apply_all: {
+    ar: "هل تريد تطبيق التسوية على جميع العناصر المتطابقة؟",
+    en: "Apply reconciliation to all matching items?",
+  },
+  reconcile_confirm_apply_selected: {
+    ar: "هل تريد تطبيق التسوية على {{count}} عنصر محدد؟",
+    en: "Apply reconciliation to {{count}} selected item(s)?",
+  },
+  reconcile_provider_not_paid: {
+    ar: "حالة المزود ليست مدفوع",
+    en: "Provider state is not PAID",
+  },
+  reconcile_checkout_not_found: {
+    ar: "العملية غير موجودة",
+    en: "Checkout not found",
+  },
+  reconcile_no_invoice_id: {
+    ar: "لا يوجد معرف فاتورة للتحقق",
+    en: "No invoice ID to verify",
+  },
+  reconcile_apply_success_single: {
+    ar: "تم تطبيق التسوية على العملية {{checkoutId}}",
+    en: "Reconciliation applied to checkout {{checkoutId}}",
+  },
+  reconcile_bulk_apply_success: {
+    ar: "تم تطبيق التسوية المجمعة بنجاح",
+    en: "Bulk reconciliation applied successfully",
+  },
+  reconcile_bulk_apply_error: {
+    ar: "فشل تطبيق التسوية المجمعة",
+    en: "Failed to apply bulk reconciliation",
+  },
+  reconcile_apply_error: {
+    ar: "فشل تطبيق التسوية على العملية {{checkoutId}}",
+    en: "Failed to apply reconciliation to checkout {{checkoutId}}",
+  },
+  reconcile_provider_unresolved_msg: {
+    ar: "تعذر حسم حالة المزود",
+    en: "Provider state unresolved",
+  },
+  reconcile_provider_mismatch_msg: {
+    ar: "بيانات المزود لا تطابق",
+    en: "Provider data mismatch",
+  },
+  reconcile_already_applied_msg: {
+    ar: "تم تطبيق التسوية مسبقاً",
+    en: "Reconciliation already applied",
+  },
+  reconcile_loading_report: {
+    ar: "جارٍ تحميل تقرير التسوية",
+    en: "Loading reconciliation report",
+  },
+  reconcile_applying: {
+    ar: "جارٍ التطبيق",
+    en: "Applying",
+  },
+  reconcile_applying_bulk: {
+    ar: "جارٍ تطبيق التسوية على {{count}} عملية",
+    en: "Applying reconciliation to {{count}} checkout(s)",
+  },
+  reconcile_empty_hint: {
+    ar: "لا توجد عمليات دفع معلّقة تحتاج تسوية",
+    en: "No pending checkouts require reconciliation",
+  },
+  reconcile_provider_error: {
+    ar: "خطأ في الاتصال بالمزود",
+    en: "Provider connection error",
+  },
+  reconcile_unconfigured_msg: {
+    ar: "مزود الفوترة غير مُهيأ",
+    en: "Provider Not Configured",
+  },
+  reconcile_error_msg: {
+    ar: "خطأ",
+    en: "Error",
+  },
+  reconcile_last_checked: {
+    ar: "آخر فحص:",
+    en: "Last checked:",
+  },
+  reconcile_scanned_label: {
+    ar: "{{count}} عملية تم فحصها",
+    en: "{{count}} checkout(s) scanned",
+  },
+  reconcile_of_label: {
+    ar: "من",
+    en: "of",
+  },
+  reconcile_state_mismatch: {
+    ar: "عدم تطابق",
+    en: "Mismatch",
+  },
+  reconcile_none_label: {
+    ar: "—",
+    en: "—",
+  },
 
   // Knowledge Approval Queue (Req 11)
   knowledge_approval_subtitle: {
@@ -949,6 +1200,18 @@ export const localizationRegistry = {
     ar: "تحرير التعليق",
     en: "Editing comment",
   },
+  comment_empty_title: {
+    ar: "لا توجد تعليقات بعد",
+    en: "No comments yet",
+  },
+  comments_load_failed: {
+    ar: "تعذر تحميل التعليقات",
+    en: "Unable to load comments",
+  },
+  comments_unavailable_schema: {
+    ar: "التعليقات غير متاحة على قاعدة البيانات الحالية بعد",
+    en: "Collaboration comments are not available on this database yet.",
+  },
   presence_online: {
     ar: "متصل",
     en: "online",
@@ -982,6 +1245,38 @@ export const localizationRegistry = {
   version_search_placeholder: {
     ar: "بحث بالاسم...",
     en: "Search by name...",
+  },
+  version_history_empty_title: {
+    ar: "لا يوجد سجل إصدارات بعد",
+    en: "No version history yet",
+  },
+  version_history_empty_description: {
+    ar: "ارفع مستندات أو أنشئ عروضاً لتتبع الإصدارات هنا.",
+    en: "Upload documents or create proposals to track versions here.",
+  },
+  documents_matrix_empty_title: {
+    ar: "لا توجد مستندات بعد",
+    en: "No documents yet",
+  },
+  documents_matrix_empty_description: {
+    ar: "ارفع مستندات المناقصة أو افتح مشروعاً نشطاً.",
+    en: "Upload tender documents or open an active project.",
+  },
+  agent_run_history_empty_title: {
+    ar: "لا توجد تشغيلات بعد",
+    en: "No runs yet",
+  },
+  agent_run_history_empty_description: {
+    ar: "ارفع مستندات المناقصة ثم شغّل الوكلاء من مشروع نشط.",
+    en: "Upload tender documents, then start agents from an active project.",
+  },
+  agent_run_start_action: {
+    ar: "تشغيل الوكلاء",
+    en: "Start agents",
+  },
+  agent_run_upload_docs_action: {
+    ar: "رفع المستندات",
+    en: "Upload documents",
   },
   version_load_failed: {
     ar: "تعذر تحميل الإصدارات",
@@ -1274,6 +1569,11 @@ export const localizationRegistry = {
   marketplace_retire_action: { ar: "إيقاف القالب", en: "Retire template" },
   marketplace_apply_action: { ar: "تطبيق القالب على العرض", en: "Apply template to proposal" },
   marketplace_empty: { ar: "لا توجد قوالب منشورة", en: "No published templates" },
+  marketplace_filter_empty: {
+    ar: "لا توجد قوالب مطابقة للفلاتر",
+    en: "No templates match your filters",
+  },
+  marketplace_clear_filters: { ar: "مسح الفلاتر", en: "Clear filters" },
   marketplace_publisher: { ar: "مساحة العمل الناشرة", en: "Publisher workspace" },
   marketplace_lifecycle_state: { ar: "حالة القالب", en: "Template lifecycle state" },
   marketplace_section_outline: { ar: "مخطط الأقسام", en: "Section outline" },
@@ -1290,6 +1590,55 @@ export const localizationRegistry = {
   // Platform completion: minimized notification content
   notification_inbox_title: { ar: "الإشعارات", en: "Notifications" },
   notification_inbox_empty: { ar: "لا توجد إشعارات جديدة", en: "No new notifications" },
+  notification_inbox_unavailable: {
+    ar: "تعذر تحميل الإشعارات",
+    en: "Unable to load notifications",
+  },
+  ai_assist_optimize_proposal: {
+    ar: "تحسين العرض بالذكاء",
+    en: "Optimize proposal with AI",
+  },
+  ai_assist_analyze_compliance: {
+    ar: "تحليل الامتثال بالذكاء",
+    en: "Analyze compliance with AI",
+  },
+  ai_assist_draft_contract: {
+    ar: "مسودة عقد بالذكاء",
+    en: "AI contract draft assist",
+  },
+  ai_assist_match_vendors: {
+    ar: "مطابقة الموردين",
+    en: "Match vendors",
+  },
+  ai_assist_failed: {
+    ar: "تعذر إكمال طلب الذكاء الاصطناعي. أعد المحاولة.",
+    en: "AI request failed. Please try again.",
+  },
+  ai_assist_done: { ar: "اكتمل التحليل", en: "Analysis complete" },
+  ai_assist_score: {
+    ar: "الدرجة {{score}}",
+    en: "Score {{score}}",
+  },
+  ai_assist_win_prob: {
+    ar: "احتمال الفوز {{pct}}%",
+    en: "Win probability {{pct}}%",
+  },
+  ai_assist_compliance_summary: {
+    ar: "درجة {{score}} · {{findings}} نتيجة · {{gaps}} فجوة",
+    en: "Score {{score}} · {{findings}} findings · {{gaps}} gaps",
+  },
+  ai_assist_contract_summary: {
+    ar: "{{clauses}} بند · {{issues}} ملاحظة تحقق",
+    en: "{{clauses}} clauses · {{issues}} validation notes",
+  },
+  ai_assist_vendor_top: {
+    ar: "أفضل مطابقة: {{name}} ({{score}})",
+    en: "Top match: {{name}} ({{score}})",
+  },
+  ai_assist_vendor_need_context: {
+    ar: "يلزم متطلبات مناقصة ومورد واحد على الأقل",
+    en: "Need tender requirements and at least one vendor",
+  },
   notification_open_action: { ar: "فتح السجل المرتبط", en: "Open related record" },
   notification_review_requested_event: { ar: "طلب مراجعة عرض", en: "Proposal review requested" },
   notification_review_approved_event: { ar: "تم اعتماد العرض", en: "Proposal approved" },
@@ -1453,6 +1802,30 @@ export const localizationRegistry = {
   LOCALIZATION_PLACEHOLDER_MISMATCH: { ar: "تعذر تنسيق النص المحلي بسبب اختلاف المتغيرات", en: "Localized text could not be formatted because placeholders differ" },
   INTERNAL_ERROR: { ar: "تعذر إكمال الطلب بسبب خطأ داخلي", en: "The request could not be completed because of an internal error" },
 
+  // MFA and password error codes (audit: i18n — replace hardcoded English)
+  MFA_NOT_SET_UP: { ar: "لم يتم إعداد المصادقة الثنائية", en: "MFA is not set up" },
+  MFA_TOKEN_INVALID: { ar: "رمز المصادقة الثنائية غير صالح", en: "Invalid MFA token" },
+  MFA_ROTATION_TOKEN_REQUIRED: {
+    ar: "يلزم رمز المصادقة الثنائية الحالي لتدوير المفتاح",
+    en: "Current MFA token required to rotate MFA",
+  },
+  PASSWORD_INCORRECT: { ar: "كلمة المرور الحالية غير صحيحة", en: "Current password is incorrect" },
+  AVATAR_TOO_LARGE: { ar: "حجم الصورة يجب أن يكون أقل من ٢ ميجابايت", en: "Avatar must be under 2MB" },
+  EMAIL_ALREADY_IN_USE: { ar: "البريد الإلكتروني مستخدم بالفعل", en: "Email already in use" },
+  CANNOT_DEACTIVATE_OWN_ACCOUNT: {
+    ar: "لا يمكنك تعطيل حسابك الخاص",
+    en: "Cannot deactivate your own account",
+  },
+  DATABASE_URL_PROTECTED: {
+    ar: "لا يمكن تغيير DATABASE_URL عبر واجهة برمجة التطبيقات في الإنتاج",
+    en: "DATABASE_URL cannot be changed via API in production",
+  },
+  PROVIDER_NOT_FOUND: { ar: "المزود غير موجود", en: "Provider not found" },
+  INVALID_JSON_BODY: { ar: "صيغة JSON غير صالحة", en: "Invalid JSON body" },
+  INVALID_REQUEST: { ar: "طلب غير صالح", en: "Invalid request" },
+  INVALID_VERSION: { ar: "رقم الإصدار غير صالح", en: "Invalid version" },
+  NO_BRAND_PROFILE: { ar: "لا يوجد ملف تعريف علامة تجارية", en: "No brand profile" },
+
   // Action prefixes used by the stable bilingual error contract builder
   error_action_register_account: { ar: "تعذر إنشاء الحساب", en: "Unable to create the account" },
   error_action_verify_email: { ar: "تعذر التحقق من البريد الإلكتروني", en: "Unable to verify the email address" },
@@ -1477,6 +1850,8 @@ export const localizationRegistry = {
   error_action_access_resource: { ar: "تعذر الوصول إلى المورد", en: "Unable to access the resource" },
   error_action_validate_document_language: { ar: "تعذر التحقق من لغة المستند", en: "Unable to validate the document language" },
   error_action_complete_request: { ar: "تعذر إكمال الطلب", en: "Unable to complete the request" },
+  error_action_manage_mfa: { ar: "تعذر تنفيذ إجراء المصادقة الثنائية", en: "Unable to complete the MFA action" },
+  error_action_change_password: { ar: "تعذر تغيير كلمة المرور", en: "Unable to change the password" },
 } as const satisfies Dict;
 
 /** Compatibility alias for existing callers that index the dictionary with API codes. */
@@ -1857,7 +2232,8 @@ export const COMPLETION_TRANSLATION_KEY_MANIFEST = {
   ],
   commentsPresence: [
     "comment_edited", "comment_withdrawn", "comment_edited_at", "comment_content_hint",
-    "comment_save_edit", "comment_cancel_edit", "comment_delete_confirm", "presence_viewers_count",
+    "comment_save_edit", "comment_cancel_edit", "comment_delete_confirm", "comment_empty_title",
+    "comments_load_failed", "comments_unavailable_schema", "presence_viewers_count",
     "presence_total_count", "presence_last_heartbeat", "presence_offline", "presence_stream_failed",
   ],
   historyRouting: [
@@ -1868,7 +2244,8 @@ export const COMPLETION_TRANSLATION_KEY_MANIFEST = {
   ],
   marketplace: [
     "marketplace_title", "marketplace_detail_title", "marketplace_publish_action",
-    "marketplace_retire_action", "marketplace_apply_action", "marketplace_empty", "marketplace_publisher",
+    "marketplace_retire_action", "marketplace_apply_action", "marketplace_empty",
+    "marketplace_filter_empty", "marketplace_clear_filters", "marketplace_publisher",
     "marketplace_lifecycle_state", "marketplace_section_outline", "marketplace_apply_success",
     "marketplace_state_published", "marketplace_state_retired", "marketplace_rating_unrated",
     "marketplace_average_rating_value", "marketplace_section_outline_entry",
@@ -1878,12 +2255,19 @@ export const COMPLETION_TRANSLATION_KEY_MANIFEST = {
     "readiness_missing_migrations", "readiness_capabilities", "readiness_checked_at", "readiness_retry_action",
   ],
   notifications: [
-    "notification_inbox_title", "notification_inbox_empty", "notification_open_action",
+    "notification_inbox_title", "notification_inbox_empty", "notification_inbox_unavailable",
+    "notification_open_action",
     "notification_review_requested_event", "notification_review_approved_event",
     "notification_review_rejected_event", "notification_subscription_past_due_event",
     "notification_subscription_failed_event", "notification_minimized_subject", "notification_minimized_body",
     "notification_delivery_pending", "notification_delivery_sent", "notification_delivery_failed",
     "notification_delivery_unconfigured",
+  ],
+  aiAssist: [
+    "ai_assist_optimize_proposal", "ai_assist_analyze_compliance", "ai_assist_draft_contract",
+    "ai_assist_match_vendors", "ai_assist_failed", "ai_assist_done", "ai_assist_score",
+    "ai_assist_win_prob", "ai_assist_compliance_summary", "ai_assist_contract_summary",
+    "ai_assist_vendor_top", "ai_assist_vendor_need_context",
   ],
   integrityErrors: [
     "REQUEST_VALIDATION_FAILED", "AUTHENTICATION_REQUIRED", "WORKSPACE_ROLE_FORBIDDEN",
@@ -1940,6 +2324,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   TEMPLATE_SUBMISSION_INVALID: { actionKey: "error_action_manage_template", messageKey: "TEMPLATE_SUBMISSION_INVALID" },
   TEMPLATE_KEY_IN_USE: { actionKey: "error_action_manage_template", messageKey: "TEMPLATE_KEY_IN_USE" },
   TEMPLATE_VERSION_CONFLICT: { actionKey: "error_action_manage_template", messageKey: "TEMPLATE_VERSION_CONFLICT" },
+  TEMPLATE_VERSION_NOT_FOUND: { actionKey: "error_action_manage_template", messageKey: "TEMPLATE_VERSION_NOT_FOUND" },
   CONTRACT_REVISION_NOT_FOUND: { actionKey: "error_action_load_contract_history", messageKey: "CONTRACT_REVISION_NOT_FOUND" },
   CONTRACT_REVISION_INTEGRITY_FAILURE: { actionKey: "error_action_load_contract_history", messageKey: "CONTRACT_REVISION_INTEGRITY_FAILURE" },
   STRUCTURED_SNAPSHOT_REQUIRED: { actionKey: "error_action_export_xlsx", messageKey: "STRUCTURED_SNAPSHOT_REQUIRED" },
@@ -1995,6 +2380,20 @@ export const COMPLETION_ERROR_CONTRACTS = {
   LOCALIZATION_KEY_MISSING: { actionKey: "error_action_complete_request", messageKey: "LOCALIZATION_KEY_MISSING" },
   LOCALIZATION_PLACEHOLDER_MISMATCH: { actionKey: "error_action_complete_request", messageKey: "LOCALIZATION_PLACEHOLDER_MISMATCH" },
   INTERNAL_ERROR: { actionKey: "error_action_complete_request", messageKey: "INTERNAL_ERROR" },
+  // MFA and password error codes (audit: i18n — replace hardcoded English)
+  MFA_NOT_SET_UP: { actionKey: "error_action_manage_mfa", messageKey: "MFA_NOT_SET_UP" },
+  MFA_TOKEN_INVALID: { actionKey: "error_action_manage_mfa", messageKey: "MFA_TOKEN_INVALID" },
+  MFA_ROTATION_TOKEN_REQUIRED: { actionKey: "error_action_manage_mfa", messageKey: "MFA_ROTATION_TOKEN_REQUIRED" },
+  PASSWORD_INCORRECT: { actionKey: "error_action_change_password", messageKey: "PASSWORD_INCORRECT" },
+  AVATAR_TOO_LARGE: { actionKey: "error_action_complete_request", messageKey: "AVATAR_TOO_LARGE" },
+  EMAIL_ALREADY_IN_USE: { actionKey: "error_action_complete_request", messageKey: "EMAIL_ALREADY_IN_USE" },
+  CANNOT_DEACTIVATE_OWN_ACCOUNT: { actionKey: "error_action_complete_request", messageKey: "CANNOT_DEACTIVATE_OWN_ACCOUNT" },
+  DATABASE_URL_PROTECTED: { actionKey: "error_action_complete_request", messageKey: "DATABASE_URL_PROTECTED" },
+  PROVIDER_NOT_FOUND: { actionKey: "error_action_complete_request", messageKey: "PROVIDER_NOT_FOUND" },
+  INVALID_JSON_BODY: { actionKey: "error_action_validate_request", messageKey: "INVALID_JSON_BODY" },
+  INVALID_REQUEST: { actionKey: "error_action_validate_request", messageKey: "INVALID_REQUEST" },
+  INVALID_VERSION: { actionKey: "error_action_complete_request", messageKey: "INVALID_VERSION" },
+  NO_BRAND_PROFILE: { actionKey: "error_action_complete_request", messageKey: "NO_BRAND_PROFILE" },
 } as const satisfies Readonly<Record<string, ErrorContractDefinition>>;
 
 export type CompletionErrorCode = keyof typeof COMPLETION_ERROR_CONTRACTS;

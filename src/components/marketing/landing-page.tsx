@@ -310,16 +310,7 @@ function HeroBackground() {
     <div aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none select-none">
       {/* Base + mesh */}
       <div className="absolute inset-0 aurora-mesh opacity-90" />
-      <div
-        className="absolute inset-0"
-        style={{
-          background: `
-            radial-gradient(ellipse 90% 70% at 72% 8%, oklch(0.30 0.07 220 / 0.58) 0%, transparent 58%),
-            radial-gradient(ellipse 75% 60% at 12% 70%, oklch(0.33 0.06 200 / 0.34) 0%, transparent 56%),
-            radial-gradient(ellipse 50% 40% at 50% -10%, oklch(0.58 0.11 70 / 0.14) 0%, transparent 62%)
-          `,
-        }}
-      />
+      <div className="absolute inset-0 hero-radial-wash" />
       {/* Aurora blobs — Glassmorphism 2.0 + Aurora UI */}
       <motion.div
         className="absolute -top-[12%] -right-[14%] w-[clamp(420px,45vw,720px)] h-[clamp(420px,45vw,720px)] rounded-full blur-[32px]"
@@ -334,7 +325,7 @@ function HeroBackground() {
         transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
       />
       {/* Grid — subtle */}
-      <div className="absolute inset-0 opacity-[0.16] [mask-image:linear-gradient(to_bottom,black_18%,transparent_92%)]">
+      <div className="hero-grid-mask absolute inset-0 opacity-[0.16] [mask-image:linear-gradient(to_bottom,black_18%,transparent_92%)]">
         <div className="h-full w-full bg-[linear-gradient(to_right,oklch(1_0_0/_0.07)_1px,transparent_1px),linear-gradient(to_bottom,oklch(1_0_0/_0.05)_1px,transparent_1px)] bg-[size:48px_48px]" />
       </div>
       {/* Particles — spatial depth */}
@@ -342,14 +333,14 @@ function HeroBackground() {
         {Array.from({ length: 16 }).map((_, i) => (
           <motion.span
             key={i}
-            className="absolute h-1 w-1 rounded-full bg-white/30"
+            className="absolute h-1 w-1 rounded-full bg-white/30 dark:bg-white/30"
             style={{ left: `${(i * 37) % 100}%`, top: `${(i * 57) % 100}%` }}
-            animate={{ y: [0, -10 - (i % 5) * 3, 0], opacity: [0.2, 0.8, 0.2] }}
+            animate={{ y: [0, -10 - (i % 5) * 3, 0], opacity: [0.15, 0.55, 0.15] }}
             transition={{ duration: 3.5 + (i % 5), delay: (i % 7) * 0.25, repeat: Infinity, ease: "easeInOut" }}
           />
         ))}
       </div>
-      <div className="absolute inset-0 bg-gradient-to-t from-[oklch(0.11_0.02_260)] via-transparent to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[var(--marketing-bg)] via-transparent to-transparent" />
     </div>
   );
 }
@@ -392,7 +383,7 @@ function ProductMock() {
   }, []);
 
   return (
-    <div className="relative w-full [perspective:1200px]">
+    <div className="marketing-dark-island relative w-full [perspective:1200px]">
       <div className="absolute -inset-7 -z-10 rounded-[34px] bg-gradient-to-br from-cyan-400/18 via-teal-300/12 to-amber-200/12 blur-2xl" />
       <TiltCard intensity={0.9} className="relative">
         <motion.div
@@ -511,7 +502,7 @@ function ProductMock() {
                     { nameEn: "Drafting agent", nameAr: "وكيل الصياغة", time: "now", icon: Sparkles, color: "text-amber-200" },
                     { nameEn: "Estimator guard", nameAr: "حارس التسعير", time: "standby", icon: Lock, color: "text-emerald-200" },
                   ].map((a, i) => (
-                    <motion.div key={a.nameEn} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 + i * 0.12 }} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5 hover:bg-white/[0.06] transition-colors">
+                    <motion.div key={a.nameEn} initial={false} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 + i * 0.12 }} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5 hover:bg-white/[0.06] transition-colors">
                       <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] ring-1 ring-white/[0.08] ${a.color} shrink-0`}>
                         <a.icon className="h-4 w-4" />
                       </div>
@@ -608,16 +599,14 @@ function LandingContent() {
           <div className="container-premium py-10 sm:py-14 lg:py-16 xl:py-20">
             <div className="grid grid-cols-1 lg:grid-cols-[1.08fr_0.92fr] gap-10 lg:gap-12 xl:gap-16 items-center">
               <div className="min-w-0">
-                <motion.div initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3.5 py-1.5 backdrop-blur-md glass-2">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-300" />
-                  </span>
-                  <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-white/70">{ar ? "مبني لمناقصات المملكة • سير عمل يراعي الامتثال" : "Built for KSA procurement • compliance-aware workflow"}</span>
-                  <span className="ml-1 hidden sm:inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">
-                    <Sparkles className="h-3 w-3" /> {ar ? "جديد" : "New"}
-                  </span>
-                </motion.div>
+                <motion.p
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                  className="text-[12px] sm:text-[13px] font-semibold tracking-[0.18em] uppercase text-cyan-100/70"
+                >
+                  {ar ? "أراب كلاو · لمناقصات اعتماد" : "Arabclue · for Etimad tenders"}
+                </motion.p>
 
                 <div className="mt-6 sm:mt-8">
                   <h1 className="text-balance font-[800] leading-[0.9] tracking-[-0.05em] text-white fluid-h1">
@@ -635,8 +624,10 @@ function LandingContent() {
                   </h1>
                 </div>
 
-                <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }} className="mt-5 sm:mt-6 max-w-[54ch] text-[15px] sm:text-[16.5px] leading-[1.72] tracking-[-0.01em] text-white/70 text-pretty">
-                  {ar ? "مساعد ذكاء اصطناعي لمناقصات اعتماد: يستوعب الكراسة ثنائية اللغة، ويساعد على صياغة عرض فني يراعي متطلبات الامتثال، ويبني الهيكل المالي مع حماية تسعير صارمة — وفريقك يبقى صاحب القرار الأخير." : "AI teammate for Etimad tenders: ingests bilingual RFPs, helps draft compliance-aware technical proposals, and builds financial structure with strict pricing guardrails — your team stays in full control."}
+                <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }} className="mt-5 sm:mt-6 max-w-[52ch] text-[15px] sm:text-[16.5px] leading-[1.72] tracking-[-0.01em] text-white/70 text-pretty">
+                  {ar
+                    ? "يستوعب الكراسة ثنائية اللغة، يساعد على صياغة عرض فني يراعي الامتثال، ويبني الهيكل المالي دون أن يلمس الأسعار — قرار التسعير والتقديم يبقى لفريقك."
+                    : "Ingest bilingual RFPs, draft compliance-aware technical proposals, and build the financial structure without touching prices — your team keeps pricing and submission control."}
                 </motion.p>
 
                 <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay: 0.52 }} className="mt-8 sm:mt-9 flex flex-wrap items-center gap-3">
@@ -724,12 +715,15 @@ function LandingContent() {
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/30 whitespace-nowrap">{ar ? "ضوابط سير عمل لمشتريات المملكة" : "Workflow controls for KSA procurement"}</p>
             <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
               {TRUST_PILLS.map((pill) => (
-                <motion.span key={pill.en} initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={SCROLL_VIEWPORT} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-medium text-white/60 hover:bg-white/[0.06] transition-colors">
+                <span
+                  key={pill.en}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-medium text-white/60 hover:bg-white/[0.06] transition-colors"
+                >
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-300/80" />
                   {ar ? pill.ar : pill.en}
-                </motion.span>
+                </span>
               ))}
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-200/15 to-cyan-200/15 px-3.5 py-1.5 text-[11px] font-semibold text-amber-100/80 ring-1 ring-amber-200/15">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500/15 to-cyan-500/15 px-3.5 py-1.5 text-[11px] font-semibold text-amber-900 dark:text-amber-100/80 ring-1 ring-amber-600/25 dark:ring-amber-200/15">
                 <Globe2 className="h-3.5 w-3.5" />
                 {ar ? "ثنائي اللغة • عربي وإنجليزي" : "Bilingual • AR & EN"}
               </span>
@@ -746,7 +740,7 @@ function LandingContent() {
 
       {/* Before/After — bento comparison */}
       <section className="relative border-b border-[var(--hairline)] py-14 sm:py-18 lg:py-24 overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-[oklch(0.14_0.02_260/.6)] to-transparent" />
+        <div className="absolute inset-0 -z-10 marketing-band-wash" />
         <div className="container-premium">
           <div className="grid lg:grid-cols-2 gap-6 lg:gap-8 items-stretch">
             <motion.div initial={{ opacity: 0, y: 16, x: ar ? 16 : -16 }} whileInView={{ opacity: 1, y: 0, x: 0 }} viewport={SCROLL_VIEWPORT} className="relative rounded-[24px] border border-[var(--hairline)] bg-white/[0.03] p-[1px] overflow-hidden">
@@ -819,14 +813,17 @@ function LandingContent() {
               { value: 3, suffix: "", labelEn: "Guided stages", labelAr: "مراحل موجهة", subEn: "Upload, draft, review", subAr: "رفع وصياغة ومراجعة" },
               { value: 1, suffix: "", labelEn: "Human pricing path", labelAr: "مسار تسعير بشري", subEn: "Reviewer-gated", subAr: "خاضع للمراجعة" },
               { value: 0, suffix: "", labelEn: "AI price suggestions", labelAr: "اقتراحات أسعار AI", subEn: "Architecturally blocked", subAr: "محظورة معمارياً" },
-            ].map((stat, i) => (
-              <motion.div key={stat.labelEn} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: i * 0.07 }} className="group rounded-[20px] border border-[var(--hairline)] bg-white/[0.03] p-5 sm:p-6 backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/10 transition-all hover:-translate-y-0.5">
+            ].map((stat) => (
+              <div
+                key={stat.labelEn}
+                className="group rounded-[20px] border border-[var(--hairline)] bg-white/[0.03] p-5 sm:p-6 backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/10 transition-all hover:-translate-y-0.5"
+              >
                 <p className="text-[26px] sm:text-[28px] font-bold tracking-tight text-white group-hover:text-cyan-100 transition-colors">
                   <AnimatedCounter value={stat.value} suffix={stat.suffix} />
                 </p>
                 <p className="mt-1 text-[13px] font-semibold text-white/75">{ar ? stat.labelAr : stat.labelEn}</p>
                 <p className="mt-1 text-[11px] leading-relaxed text-white/40">{ar ? stat.subAr : stat.subEn}</p>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>
@@ -847,7 +844,7 @@ function LandingContent() {
             <motion.path d={ar ? "M 0 60 Q 300 0, 600 60 T 1200 60" : "M 0 60 Q 300 120, 600 60 T 1200 60"} stroke="url(#beamGrad)" strokeWidth="2" fill="none" initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={SCROLL_VIEWPORT} transition={{ duration: 1.8, ease: "easeInOut" }} />
           </svg>
         </div>
-        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-[oklch(0.14_0.03_240/.38)] to-transparent" />
+        <div className="absolute inset-0 -z-10 marketing-band-wash-soft" />
         <div className="container-premium relative z-10">
           <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} className="mx-auto max-w-[760px] text-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3.5 py-1 backdrop-blur">
@@ -929,7 +926,7 @@ function LandingContent() {
                     transition={{ delay: i * 0.07 }}
                     className={`${f.span} group relative rounded-[22px] border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-[1px] hover:from-white/[0.10] hover:to-white/[0.04] transition-all`}
                   >
-                    <div className="rounded-[21px] bg-[oklch(0.14_0.02_260)]/80 p-5 sm:p-6 backdrop-blur-xl h-full flex flex-col min-h-[180px]">
+                    <div className="marketing-dark-island rounded-[21px] bg-[oklch(0.14_0.02_260)]/80 p-5 sm:p-6 backdrop-blur-xl h-full flex flex-col min-h-[180px]">
                       <div className="flex items-center justify-between">
                         <motion.div whileHover={{ rotate: 8 }} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06] text-white/70 ring-1 ring-white/10 group-hover:bg-white/[0.09] group-hover:text-white transition-colors">
                           <Icon className="h-5 w-5" />
@@ -943,7 +940,7 @@ function LandingContent() {
                 );
               })}
               <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} transition={{ delay: 0.32 }} className="bento-span-12 group relative rounded-[22px] border border-amber-200/15 bg-gradient-to-br from-amber-200/[0.08] via-white/[0.04] to-cyan-200/[0.06] p-[1px] overflow-hidden">
-                <div className="rounded-[21px] bg-[oklch(0.16_0.02_260)]/80 p-5 sm:p-6 backdrop-blur-xl flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+                <div className="marketing-dark-island rounded-[21px] bg-[oklch(0.16_0.02_260)]/80 p-5 sm:p-6 backdrop-blur-xl flex flex-col sm:flex-row gap-5 items-start sm:items-center">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-200/20 to-cyan-200/20 text-amber-100 ring-1 ring-amber-200/20">
                     <Users className="h-6 w-6" />
                   </div>
@@ -963,10 +960,9 @@ function LandingContent() {
       </section>
 
       {/* Trust guard */}
-      <section className="relative py-16 sm:py-20 lg:py-24 border-b border-[var(--hairline)] overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-[oklch(0.14_0.025_220)]" />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-br from-amber-200/[0.06] via-transparent to-cyan-200/[0.06]" />
-        <div className="container-premium">
+      <section className="marketing-dark-island relative py-16 sm:py-20 lg:py-24 border-b border-[var(--hairline)] overflow-hidden bg-[oklch(0.14_0.025_220)]">
+        <div className="absolute inset-0 z-0 pointer-events-none bg-gradient-to-br from-amber-200/[0.06] via-transparent to-cyan-200/[0.06]" />
+        <div className="container-premium relative z-10">
           <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-12 items-center">
             <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} className="relative">
               <div className="inline-flex items-center gap-2 rounded-full border border-amber-200/20 bg-amber-200/10 px-3.5 py-1.5">
@@ -1204,9 +1200,13 @@ function LandingContent() {
   );
 }
 
-export function LandingPage() {
+export function LandingPage({
+  initialLocale = "ar",
+}: {
+  initialLocale?: "ar" | "en";
+}) {
   return (
-    <PublicShell variant="dark">
+    <PublicShell variant="dark" initialLocale={initialLocale}>
       <LandingContent />
     </PublicShell>
   );

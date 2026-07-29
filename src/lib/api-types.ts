@@ -313,7 +313,15 @@ export type ApiProposalReview = {
 
 export type ApiNotification = {
   id: string;
-  type: "CERT_EXPIRY" | "PENDING_REVIEW" | "ONBOARDING" | "INFO";
+  type:
+    | "CERT_EXPIRY"
+    | "PENDING_REVIEW"
+    | "ONBOARDING"
+    | "INFO"
+    | "REVIEW_REQUESTED"
+    | "REVIEW_DECISION"
+    | "SUBSCRIPTION_PAST_DUE"
+    | "SUBSCRIPTION_FAILED";
   severity: "INFO" | "WARN" | "CRITICAL";
   title: string;
   titleAr: string;

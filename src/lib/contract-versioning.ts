@@ -12,6 +12,10 @@ import { z } from "zod";
 import { db } from "./db";
 import { AUDIT_ACTIONS, audit } from "./audit";
 import { computeCanonicalHash } from "./document-templates/contract-templates";
+import {
+  decodeContractRevisionCursor,
+  encodeContractRevisionCursor,
+} from "./version-history-cursor";
 
 export const MAX_CONTRACT_VERSION_LIST_LIMIT = 50;
 
@@ -42,6 +46,12 @@ export interface CreateContractVersionInput {
   readonly documentSpec: unknown;
   readonly contentHtml: string;
   readonly createdBy: string;
+  readonly templateVersionId?: string | null;
+  readonly selectedClauseIds?: readonly string[];
+  readonly variableValues?: Readonly<Record<string, unknown>> | null;
+  readonly legalReviewStatus?: string;
+  readonly counselReviewRequired?: boolean;
+  readonly isExecutable?: boolean;
 }
 
 export interface ContractVersionSummary {
@@ -105,17 +115,39 @@ export const contractRevisionCompareQuerySchema = z
 // ─── Canonical Hash Computation ──────────────────────────────────────────────
 
 /**
- * Compute a canonical hash from bindings and document spec.
- * This serves as the integrity fingerprint for a contract version.
+ * Canonical integrity fingerprint for a contract revision.
+ *
+ * Schema v1 (legacy): bindings + documentSpec only.
+ * Schema v2: also hashes sorted selected clause IDs, template version id,
+ * and variable values (design §4.4 / Req 7.1).
  */
-function computeVersionCanonicalHash(input: {
+export function computeVersionCanonicalHash(input: {
   readonly bindings: unknown;
   readonly documentSpec: unknown;
+  readonly selectedClauseIds?: readonly string[] | null;
+  readonly templateVersionId?: string | null;
+  readonly variableValues?: unknown;
 }): string {
+  const hasExtended =
+    input.selectedClauseIds != null ||
+    input.templateVersionId != null ||
+    input.variableValues != null;
+
+  if (!hasExtended) {
+    return computeCanonicalHash({
+      schemaVersion: 1,
+      bindings: input.bindings,
+      documentSpec: input.documentSpec,
+    });
+  }
+
   return computeCanonicalHash({
-    schemaVersion: 1,
+    schemaVersion: 2,
     bindings: input.bindings,
     documentSpec: input.documentSpec,
+    selectedClauseIds: [...(input.selectedClauseIds ?? [])].sort(),
+    templateVersionId: input.templateVersionId ?? null,
+    variableValues: input.variableValues ?? null,
   });
 }
 
@@ -129,9 +161,14 @@ async function createContractVersionInternal(
   input: CreateContractVersionInput,
   tx: Pick<PrismaClient, "generatedContractVersion">
 ): Promise<ContractVersionSummary> {
+  const selectedClauseIds = input.selectedClauseIds ?? [];
+  const variableValues = input.variableValues ?? input.bindings;
   const canonicalHash = computeVersionCanonicalHash({
     bindings: input.bindings,
     documentSpec: input.documentSpec,
+    selectedClauseIds,
+    templateVersionId: input.templateVersionId ?? null,
+    variableValues,
   });
 
   // Get max existing revision
@@ -146,12 +183,18 @@ async function createContractVersionInternal(
     data: {
       contractId: input.contractId,
       revision: nextRevision,
+      templateVersionId: input.templateVersionId ?? null,
       bindingsJson: JSON.stringify(input.bindings),
+      variableValuesJson: JSON.stringify(variableValues),
+      selectedClauseIdsJson: JSON.stringify(selectedClauseIds),
       documentSpecJson: input.documentSpec
         ? JSON.stringify(input.documentSpec)
         : null,
       contentHtml: input.contentHtml,
       canonicalHash,
+      legalReviewStatus: input.legalReviewStatus ?? "UNREVIEWED",
+      counselReviewRequired: input.counselReviewRequired ?? true,
+      isExecutable: input.isExecutable ?? false,
       createdBy: input.createdBy,
     },
     select: {
@@ -172,6 +215,74 @@ async function createContractVersionInternal(
     createdBy: version.createdBy,
     createdAt: version.createdAt.toISOString(),
   };
+}
+
+/**
+ * Append the next immutable revision only when the canonical hash changes.
+ * Same-hash submissions retain prior revisions and return the current tip.
+ */
+export async function appendContractRevisionIfChanged(
+  input: CreateContractVersionInput,
+  database: PrismaClient | Pick<PrismaClient, "generatedContractVersion"> = db
+): Promise<{
+  readonly appended: boolean;
+  readonly version: ContractVersionSummary;
+}> {
+  const run = async (
+    tx: Pick<PrismaClient, "generatedContractVersion">
+  ) => {
+    const latest = await tx.generatedContractVersion.findFirst({
+      where: { contractId: input.contractId },
+      orderBy: [{ revision: "desc" }, { id: "desc" }],
+      select: {
+        id: true,
+        contractId: true,
+        revision: true,
+        canonicalHash: true,
+        createdBy: true,
+        createdAt: true,
+        selectedClauseIdsJson: true,
+        templateVersionId: true,
+        variableValuesJson: true,
+        bindingsJson: true,
+        documentSpecJson: true,
+      },
+    });
+
+    const selectedClauseIds = input.selectedClauseIds ?? [];
+    const variableValues = input.variableValues ?? input.bindings;
+    const nextHash = computeVersionCanonicalHash({
+      bindings: input.bindings,
+      documentSpec: input.documentSpec,
+      selectedClauseIds,
+      templateVersionId: input.templateVersionId ?? null,
+      variableValues,
+    });
+
+    if (latest && latest.canonicalHash === nextHash) {
+      return {
+        appended: false as const,
+        version: {
+          id: latest.id,
+          contractId: latest.contractId,
+          revision: latest.revision,
+          canonicalHash: latest.canonicalHash ?? nextHash,
+          createdBy: latest.createdBy,
+          createdAt: latest.createdAt.toISOString(),
+        },
+      };
+    }
+
+    const version = await createContractVersionInternal(input, tx);
+    return { appended: true as const, version };
+  };
+
+  if ("$transaction" in database && typeof database.$transaction === "function") {
+    return (database as PrismaClient).$transaction(run, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+  }
+  return run(database);
 }
 
 /**
@@ -231,21 +342,22 @@ export async function listContractVersions(
     );
   }
 
-  // Resolve cursor position if provided
+  // Resolve strict scoped keyset cursor when provided
   let cursorPosition: { readonly revision: number } | null = null;
   if (input.cursor) {
-    const cursorVersion = await database.generatedContractVersion.findFirst({
-      where: { contractId: input.contractId, id: input.cursor },
-      select: { revision: true },
-    });
-    if (!cursorVersion) {
+    const decoded = decodeContractRevisionCursor(
+      input.cursor,
+      input.workspaceId,
+      input.contractId
+    );
+    if (!decoded) {
       throw new ContractVersioningError(
         "Contract revision cursor not found.",
         "CONTRACT_REVISION_CURSOR_NOT_FOUND",
         404
       );
     }
-    cursorPosition = cursorVersion;
+    cursorPosition = { revision: decoded.revision };
   }
 
   const records = await database.generatedContractVersion.findMany({
@@ -277,10 +389,16 @@ export async function listContractVersions(
     createdAt: record.createdAt.toISOString(),
   }));
 
+  const last = pageRecords.at(-1);
   return {
     versions,
     nextCursor:
-      records.length > take ? (pageRecords.at(-1)?.id ?? null) : null,
+      records.length > take && last
+        ? encodeContractRevisionCursor(input.workspaceId, input.contractId, {
+            revision: last.revision,
+            id: last.id,
+          })
+        : null,
   };
 }
 
@@ -353,8 +471,48 @@ export async function getContractVersion(
     }
   }
 
-  // Verify canonical hash integrity
-  const computedHash = computeVersionCanonicalHash({ bindings, documentSpec });
+  let selectedClauseIds: string[] | null = null;
+  let variableValues: unknown = null;
+  if (version.selectedClauseIdsJson) {
+    try {
+      const parsed = JSON.parse(version.selectedClauseIdsJson) as unknown;
+      selectedClauseIds = Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === "string")
+        : [];
+    } catch {
+      throw new ContractVersioningError(
+        "Contract revision clause snapshot is corrupted.",
+        "CONTRACT_REVISION_INTEGRITY_FAILURE",
+        409
+      );
+    }
+  }
+  if (version.variableValuesJson) {
+    try {
+      variableValues = JSON.parse(version.variableValuesJson);
+    } catch {
+      throw new ContractVersioningError(
+        "Contract revision variable snapshot is corrupted.",
+        "CONTRACT_REVISION_INTEGRITY_FAILURE",
+        409
+      );
+    }
+  }
+
+  // Verify canonical hash integrity (v1 legacy or v2 extended).
+  const computedHash = computeVersionCanonicalHash({
+    bindings,
+    documentSpec,
+    ...(selectedClauseIds != null ||
+    version.templateVersionId != null ||
+    variableValues != null
+      ? {
+          selectedClauseIds: selectedClauseIds ?? [],
+          templateVersionId: version.templateVersionId,
+          variableValues: variableValues ?? bindings,
+        }
+      : {}),
+  });
   if (version.canonicalHash && computedHash !== version.canonicalHash) {
     throw new ContractVersioningError(
       "Contract revision integrity check failed — stored hash does not match computed hash.",
@@ -459,8 +617,9 @@ function extractSectionsForDiff(documentSpec: unknown): readonly BilingualSectio
 
 /**
  * Compute article-level diff between two versions.
+ * Exported for Property 10 (self-comparison) and unit tests.
  */
-function computeArticleDiff(
+export function computeArticleDiff(
   oldSections: readonly BilingualSection[],
   newSections: readonly BilingualSection[],
   language: "arabic" | "english"
@@ -500,12 +659,24 @@ export async function compareContractRevisions(
   },
   database: PrismaClient = db
 ): Promise<ContractRevisionComparison> {
+  // Self-comparison is valid: every article is unchanged (Property 10 / 7.3).
   if (input.revA === input.revB) {
-    throw new ContractVersioningError(
-      "Cannot compare a revision with itself.",
-      "CONTRACT_REVISION_COMPARISON_INVALID",
-      422
+    const version = await getContractVersion(
+      {
+        contractId: input.contractId,
+        workspaceId: input.workspaceId,
+        revision: input.revA,
+      },
+      database
     );
+    const sections = extractSectionsForDiff(version.documentSpec);
+    return {
+      contractId: input.contractId,
+      revisionA: input.revA,
+      revisionB: input.revB,
+      arabic: computeArticleDiff(sections, sections, "arabic"),
+      english: computeArticleDiff(sections, sections, "english"),
+    };
   }
 
   // Fetch both versions with integrity check

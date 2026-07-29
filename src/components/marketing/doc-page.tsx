@@ -70,7 +70,7 @@ function DocBody({
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   return (
-    <div className="w-full overflow-clip">
+    <div className="marketing-dark-island w-full overflow-clip">
       {/* Hero — premium editorial */}
       <section className="relative overflow-hidden border-b border-[var(--hairline)]">
         <div className="absolute inset-0 -z-10 bg-[oklch(0.11_0.02_260)]" />

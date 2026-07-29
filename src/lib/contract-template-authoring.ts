@@ -27,6 +27,12 @@ import {
   type WorkspaceTemplateValidationFailure,
   type WorkspaceTemplateVariable,
 } from "./contract-template-schema";
+import {
+  decodeWorkspaceTemplateCursor,
+  decodeWorkspaceTemplateVersionCursor,
+  encodeWorkspaceTemplateCursor,
+  encodeWorkspaceTemplateVersionCursor,
+} from "./version-history-cursor";
 
 export {
   TEMPLATE_CONTENT_SCHEMA_VERSION,
@@ -159,6 +165,32 @@ function advanceVersion(current: string): string {
   return `${current}.1`;
 }
 
+/**
+ * Authoritative numeric progression for workspace template versions
+ * (design §4.4 — create exactly current+1).
+ */
+export function nextTemplateVersionNumber(
+  current: number | null | undefined
+): number {
+  const n = typeof current === "number" && Number.isFinite(current) ? current : 0;
+  return Math.max(0, Math.trunc(n)) + 1;
+}
+
+/** Same-hash updates append no version row (Property 25). */
+export function shouldAppendTemplateVersion(
+  currentHash: string | null | undefined,
+  nextHash: string
+): boolean {
+  return (currentHash ?? "") !== nextHash;
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Validation bridge
 // ────────────────────────────────────────────────────────────────────────────
@@ -227,7 +259,7 @@ export async function createWorkspaceTemplate(
         throw templateValidationError(templateKeyInUseFailure(submission.key));
       }
 
-      // Create template
+      // Create template + immutable version 1 atomically (criterion 6.2).
       const template = await tx.contractTemplate.create({
         data: {
           workspaceId: input.workspaceId,
@@ -238,6 +270,7 @@ export async function createWorkspaceTemplate(
           descriptionEn: null,
           descriptionAr: null,
           version: "1.0",
+          currentVersionNumber: 1,
           schemaVersion: content.schemaVersion,
           canonicalHash,
           lifecycle: "DRAFT",
@@ -261,11 +294,11 @@ export async function createWorkspaceTemplate(
         },
       });
 
-      // Create initial version
-      await tx.contractTemplateVersion.create({
+      const versionRow = await tx.contractTemplateVersion.create({
         data: {
           templateId: template.id,
           version: "1.0",
+          versionNumber: 1,
           schemaVersion: content.schemaVersion,
           canonicalHash,
           lifecycle: "DRAFT",
@@ -288,7 +321,10 @@ export async function createWorkspaceTemplate(
         },
       });
 
-      return template;
+      return tx.contractTemplate.update({
+        where: { id: template.id },
+        data: { currentVersionId: versionRow.id },
+      });
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
@@ -360,43 +396,74 @@ export async function updateWorkspaceTemplate(
       const newTitleAr = input.update.titleAr ?? template.nameAr;
       const newTitleEn = input.update.titleEn ?? template.nameEn;
 
-      // Compute new version
+      // Same-hash no-op: return the current version unchanged (criteria 6.2, 6.4).
+      if (!shouldAppendTemplateVersion(template.canonicalHash, canonicalHash)) {
+        if (
+          newTitleAr === template.nameAr &&
+          newTitleEn === template.nameEn
+        ) {
+          return template;
+        }
+        return tx.contractTemplate.update({
+          where: { id: template.id },
+          data: { nameAr: newTitleAr, nameEn: newTitleEn },
+        });
+      }
+
+      const nextNumber = nextTemplateVersionNumber(
+        template.currentVersionNumber
+      );
       const newVersion = advanceVersion(template.version);
 
-      // Create new version row (retain earlier versions)
-      await tx.contractTemplateVersion.create({
-        data: {
-          templateId: template.id,
-          version: newVersion,
-          schemaVersion: content.schemaVersion,
-          canonicalHash,
-          lifecycle: "DRAFT",
-          legalReviewStatus: safety.legalReviewStatus,
-          counselReviewRequired: safety.counselReviewRequired,
-          isExecutable: safety.isExecutable,
-          sourceStatus: "WORKSPACE_AUTHORED",
-          provenanceJson: json({
+      let versionRow;
+      try {
+        versionRow = await tx.contractTemplateVersion.create({
+          data: {
+            templateId: template.id,
+            version: newVersion,
+            versionNumber: nextNumber,
             schemaVersion: content.schemaVersion,
-            source: "workspace-authoring",
-            workspaceId: input.workspaceId,
-            updatedBy: input.userId,
-            previousVersion: template.version,
-          }),
-          sectionsJson: json(content.sections),
-          variablesJson: json(content.variables),
-          clausesJson: json(content.clauseBindings),
-          changeNote: input.update.changeNote ?? null,
-          createdBy: input.userId,
-        },
-      });
+            canonicalHash,
+            lifecycle: "DRAFT",
+            legalReviewStatus: safety.legalReviewStatus,
+            counselReviewRequired: safety.counselReviewRequired,
+            isExecutable: safety.isExecutable,
+            sourceStatus: "WORKSPACE_AUTHORED",
+            provenanceJson: json({
+              schemaVersion: content.schemaVersion,
+              source: "workspace-authoring",
+              workspaceId: input.workspaceId,
+              updatedBy: input.userId,
+              previousVersion: template.version,
+              previousVersionNumber: template.currentVersionNumber,
+            }),
+            sectionsJson: json(content.sections),
+            variablesJson: json(content.variables),
+            clausesJson: json(content.clauseBindings),
+            changeNote: input.update.changeNote ?? null,
+            createdBy: input.userId,
+          },
+        });
+      } catch (error) {
+        if (isUniqueConstraintError(error)) {
+          throw new ApiError(
+            "Template update conflicts with a concurrent version",
+            409,
+            "TEMPLATE_VERSION_CONFLICT",
+            { values: { version: String(nextNumber) } }
+          );
+        }
+        throw error;
+      }
 
-      // Update template to point to new version
-      const updated = await tx.contractTemplate.update({
+      return tx.contractTemplate.update({
         where: { id: template.id },
         data: {
           nameAr: newTitleAr,
           nameEn: newTitleEn,
           version: newVersion,
+          currentVersionNumber: nextNumber,
+          currentVersionId: versionRow.id,
           canonicalHash,
           legalReviewStatus: safety.legalReviewStatus,
           counselReviewRequired: safety.counselReviewRequired,
@@ -406,8 +473,6 @@ export async function updateWorkspaceTemplate(
           clausesJson: json(content.clauseBindings),
         },
       });
-
-      return updated;
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
@@ -520,15 +585,19 @@ export async function listWorkspaceTemplates(
   const baseWhere: Prisma.ContractTemplateWhereInput = {
     workspaceId: input.workspaceId,
     isSystem: false,
-    ...(input.lifecycle ? { lifecycle: input.lifecycle } : {}),
+    // Default list excludes retired templates (criterion 6.8 / 6.11).
+    ...(input.lifecycle
+      ? { lifecycle: input.lifecycle }
+      : { lifecycle: { not: "RETIRED" } }),
   };
 
-  let cursorPosition: { readonly id: string; readonly createdAt: Date } | null = null;
+  let cursorPosition: { readonly id: string; readonly createdAt: Date } | null =
+    null;
   if (input.cursor) {
-    cursorPosition = await database.contractTemplate.findFirst({
-      where: { ...baseWhere, id: input.cursor },
-      select: { id: true, createdAt: true },
-    });
+    cursorPosition = decodeWorkspaceTemplateCursor(
+      input.cursor,
+      input.workspaceId
+    );
     if (!cursorPosition) {
       throw new ApiError("Cursor not found", 404, "TEMPLATE_CURSOR_NOT_FOUND");
     }
@@ -570,9 +639,16 @@ export async function listWorkspaceTemplates(
     updatedAt: t.updatedAt.toISOString(),
   }));
 
+  const last = pageRecords.at(-1);
   return {
     templates,
-    nextCursor: records.length > input.limit ? (pageRecords.at(-1)?.id ?? null) : null,
+    nextCursor:
+      records.length > input.limit && last
+        ? encodeWorkspaceTemplateCursor(input.workspaceId, {
+            createdAt: last.createdAt,
+            id: last.id,
+          })
+        : null,
   };
 }
 
@@ -606,12 +682,14 @@ export async function listTemplateVersions(
     templateId: input.templateId,
   };
 
-  let cursorPosition: { readonly id: string; readonly createdAt: Date } | null = null;
+  let cursorPosition: { readonly id: string; readonly createdAt: Date } | null =
+    null;
   if (input.cursor) {
-    cursorPosition = await database.contractTemplateVersion.findFirst({
-      where: { ...baseWhere, id: input.cursor },
-      select: { id: true, createdAt: true },
-    });
+    cursorPosition = decodeWorkspaceTemplateVersionCursor(
+      input.cursor,
+      input.workspaceId,
+      input.templateId
+    );
     if (!cursorPosition) {
       throw new ApiError("Cursor not found", 404, "VERSION_CURSOR_NOT_FOUND");
     }
@@ -660,9 +738,17 @@ export async function listTemplateVersions(
     createdAt: v.createdAt.toISOString(),
   }));
 
+  const last = pageRecords.at(-1);
   return {
     versions,
-    nextCursor: records.length > input.limit ? (pageRecords.at(-1)?.id ?? null) : null,
+    nextCursor:
+      records.length > input.limit && last
+        ? encodeWorkspaceTemplateVersionCursor(
+            input.workspaceId,
+            input.templateId,
+            { createdAt: last.createdAt, id: last.id }
+          )
+        : null,
   };
 }
 

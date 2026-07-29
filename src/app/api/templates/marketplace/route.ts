@@ -13,6 +13,7 @@ import {
 } from "@/lib/api-controller";
 import type { TemplateMarketplaceItem } from "@/lib/proposal-builder-types";
 import { isTemplateCategory } from "@/lib/template-marketplace-catalog";
+import { ensureSystemMarketplaceCatalogSeeded } from "@/lib/marketplace-catalog-seed";
 
 function parseSectionTypes(value: unknown): TemplateMarketplaceItem["sectionTypes"] {
   if (!Array.isArray(value)) return [];
@@ -56,6 +57,9 @@ const marketplaceCreateSchema = z
 
 export async function GET(request: NextRequest) {
   return withTenant("session", async (ctx: TenantHandlerContext) => {
+    // Persist frozen system catalog before listing (idempotent).
+    await ensureSystemMarketplaceCatalogSeeded();
+
     const parsed = parseSearchParams(request, marketplaceListSchema);
 
     const category = parsed.category && isTemplateCategory(parsed.category) ? parsed.category : null;

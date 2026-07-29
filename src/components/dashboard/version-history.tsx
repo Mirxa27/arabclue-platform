@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { useLocale } from "@/lib/store";
+import { startTransition, useCallback, useMemo, useState } from "react";
+import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -50,7 +50,7 @@ type ProposalVersionWithAuthor = ApiProposalVersion & {
 
 type VersionsResponse<T> = {
   versions: T[];
-  nextCursor: number | null;
+  nextCursor: string | null;
   hasMore: boolean;
 };
 
@@ -88,13 +88,13 @@ function DocumentVersionItem({
     queryKey: ["document-versions", doc.id],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({ limit: "20" });
-      if (pageParam) params.set("cursor", String(pageParam));
+      if (pageParam) params.set("cursor", pageParam);
       const res = await fetch(`/api/documents/${doc.id}/versions?${params}`);
       if (!res.ok) throw new Error("Failed to load versions");
       return res.json() as Promise<VersionsResponse<DocumentVersionWithAuthor>>;
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    initialPageParam: null as number | null,
+    initialPageParam: null as string | null,
     enabled: expanded,
   });
 
@@ -251,13 +251,13 @@ function ProposalVersionItem({
     queryKey: ["proposal-versions", proposal.id],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({ limit: "20" });
-      if (pageParam) params.set("cursor", String(pageParam));
+      if (pageParam) params.set("cursor", pageParam);
       const res = await fetch(`/api/proposals/${proposal.id}/versions?${params}`);
       if (!res.ok) throw new Error("Failed to load versions");
       return res.json() as Promise<VersionsResponse<ProposalVersionWithAuthor>>;
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    initialPageParam: null as number | null,
+    initialPageParam: null as string | null,
     enabled: expanded,
   });
 
@@ -383,6 +383,7 @@ function ProposalVersionItem({
 
 export function VersionHistory() {
   const { locale } = useLocale();
+  const { setView } = useUI();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
@@ -446,6 +447,35 @@ export function VersionHistory() {
     );
     return expanded ? filtered : filtered.slice(0, 6);
   }, [proposalsData, search, expanded]);
+
+  const versionHistoryEmpty = (
+    <EmptyState
+      icon={History}
+      title={tr("version_history_empty_title", locale)}
+      description={tr("version_history_empty_description", locale)}
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => startTransition(() => setView("documents"))}>
+            {tr("nav_documents", locale)}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => startTransition(() => setView("proposals"))}
+          >
+            {tr("nav_proposals", locale)}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => startTransition(() => setView("agents"))}
+          >
+            {tr("nav_agents", locale)}
+          </Button>
+        </div>
+      }
+    />
+  );
 
   // Compare query (supports both docs and proposals)
   const { data: compareData, isLoading: compareLoading } = useQuery({
@@ -605,7 +635,7 @@ export function VersionHistory() {
               onRetry={() => docsRefetch()}
               locale={locale}
               loading={<ListSkeleton rows={3} />}
-              empty={<EmptyState icon={History} title={tr("no_data", locale)} />}
+              empty={versionHistoryEmpty}
             >
               <div className="p-4 space-y-4">
                 {docs.map((d) => (
@@ -636,7 +666,7 @@ export function VersionHistory() {
               onRetry={() => proposalsRefetch()}
               locale={locale}
               loading={<ListSkeleton rows={3} />}
-              empty={<EmptyState icon={History} title={tr("no_data", locale)} />}
+              empty={versionHistoryEmpty}
             >
               <div className="p-4 space-y-4">
                 {proposals.map((p) => (

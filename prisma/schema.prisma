@@ -1642,6 +1642,9 @@ model TemplateMarketplaceRating {
   id        String   @id @default(cuid())
   entryId   String
   userId    String
+  /// 1–5 integer rating. DB-level CHECK constraint enforced in
+  /// prisma/migrations/20260729100000_marketplace_rating_check/migration.sql
+  /// App-level validation: z.number().int().min(1).max(5) in the rate route.
   rating    Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -299,9 +299,9 @@ export function AdminMyFatoorah() {
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
             {save.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              <Loader2 className="h-4 w-4 animate-spin me-2" />
             ) : (
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="h-4 w-4 me-2" />
             )}
             Save
           </Button>
@@ -311,9 +311,9 @@ export function AdminMyFatoorah() {
             disabled={testConn.isPending}
           >
             {testConn.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              <Loader2 className="h-4 w-4 animate-spin me-2" />
             ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="h-4 w-4 me-2" />
             )}
             Connection test
           </Button>
@@ -322,7 +322,7 @@ export function AdminMyFatoorah() {
             onClick={() => testSig.mutate()}
             disabled={testSig.isPending}
           >
-            <CheckCircle2 className="h-4 w-4 mr-2" />
+            <CheckCircle2 className="h-4 w-4 me-2" />
             Webhook signature test
           </Button>
         </div>

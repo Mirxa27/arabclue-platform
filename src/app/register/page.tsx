@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -13,12 +13,9 @@ import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { selectApiFailureMessage } from "@/lib/api-failure-message";
-import type { Locale } from "@/lib/types";
-
 function RegisterFormInner() {
   const router = useRouter();
-  const { locale: storedLocale } = useLocale();
-  const [locale, setLocale] = useState<Locale>(storedLocale ?? "ar");
+  const { locale, toggle } = useLocale();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -27,11 +24,6 @@ function RegisterFormInner() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const ar = locale === "ar";
-
-  useEffect(() => {
-    document.documentElement.dir = ar ? "rtl" : "ltr";
-    document.documentElement.lang = locale;
-  }, [locale, ar]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,14 +53,23 @@ function RegisterFormInner() {
         setLoading(false);
         return;
       }
-      // 201 (email sent) and 202 (unconfigured / send-failed) all leave the
-      // account created and unverified; the account-verification surface is the
-      // single next step in every case.
+      // When verification is temporarily skipped, send the user straight to sign-in.
+      const verificationRequired =
+        (data as { verificationRequired?: boolean }).verificationRequired !== false &&
+        (data as { account?: { emailVerified?: boolean } }).account?.emailVerified !== true;
       setSuccess(
-        selectApiFailureMessage(data, locale) ?? tr("auth_register_check_email", locale)
+        selectApiFailureMessage(data, locale) ??
+          (verificationRequired
+            ? tr("auth_register_check_email", locale)
+            : tr("account_registration_success", locale))
       );
       setTimeout(
-        () => router.replace("/verify-email?email=" + encodeURIComponent(email.trim())),
+        () =>
+          router.replace(
+            verificationRequired
+              ? "/verify-email?email=" + encodeURIComponent(email.trim())
+              : "/login"
+          ),
         1500
       );
     } catch {
@@ -89,7 +90,7 @@ function RegisterFormInner() {
           <ArabclueLogo className="size-10 rounded-xl" />
           <div>
             <p className="font-[family-name:var(--font-ibm-arabic)] text-[18px] font-bold leading-none">أراب كلاو</p>
-            <p className="text-[11px] tracking-[0.15em] uppercase text-white/50">Arabclue SaaS</p>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-white/50">Arabclue</p>
           </div>
         </Link>
         <div className="mt-16">
@@ -128,7 +129,7 @@ function RegisterFormInner() {
           <div className="flex items-center justify-between p-6">
             <Link href="/" className="lg:hidden flex items-center gap-2"><ArabclueLogo className="size-8 rounded-lg" /><span className="font-[family-name:var(--font-ibm-arabic)] text-sm font-bold">أراب كلاو</span></Link>
             <div className="flex items-center gap-2 ms-auto">
-              <button onClick={() => setLocale(ar ? "en" : "ar")} className="h-9 rounded-full border border-border bg-card px-3.5 text-[12px] font-bold flex items-center gap-1.5"><Globe className="size-3.5" />{ar ? "EN" : "عربي"}</button>
+              <button onClick={toggle} className="h-9 rounded-full border border-border bg-card px-3.5 text-[12px] font-bold flex items-center gap-1.5"><Globe className="size-3.5" />{ar ? "EN" : "عربي"}</button>
               <Button asChild variant="ghost" size="sm" className="rounded-full"><Link href="/">{ar ? "الرئيسية" : "Home"}</Link></Button>
             </div>
           </div>

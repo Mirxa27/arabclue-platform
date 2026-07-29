@@ -3,14 +3,23 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toErrorResponse } from "@/lib/api-controller";
+import {
+  PRESENCE_STALE_THRESHOLD_MS,
+  PRESENCE_VIEWER_CAP,
+  capPresenceViewers,
+} from "@/lib/collaboration-presence";
 
-// In-memory store for SSE connections (per-process; Vercel will have one per edge function instance)
-const presenceSubscribers = new Map<string, Set<ReadableStreamDefaultController>>();
+/** Presence rows older than this are pruned on every read/write. */
+const STALE_THRESHOLD_MS = PRESENCE_STALE_THRESHOLD_MS;
 
-// Stale threshold: 60 seconds
-const STALE_THRESHOLD_MS = 60 * 1000;
+type PresenceViewer = Readonly<{
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  sectionKey: string | null;
+  lastSeenAt: string;
+}>;
 
-/** Clean up stale presence records for a proposal */
 async function cleanupStalePresence(proposalId: string): Promise<void> {
   const threshold = new Date(Date.now() - STALE_THRESHOLD_MS);
   await db.proposalPresence
@@ -23,47 +32,63 @@ async function cleanupStalePresence(proposalId: string): Promise<void> {
     .catch(() => undefined);
 }
 
-/** Broadcast presence update to all SSE subscribers for a proposal */
-function broadcastPresenceUpdate(
-  proposalId: string,
-  eventType: "join" | "leave" | "update",
-  presence: {
-    userId: string;
-    name: string;
-    avatarUrl?: string | null;
-    sectionKey?: string | null;
-  }
-): void {
-  const subscribers = presenceSubscribers.get(proposalId);
-  if (!subscribers || subscribers.size === 0) return;
+async function loadViewers(proposalId: string): Promise<{
+  viewers: PresenceViewer[];
+  total: number;
+}> {
+  const currentViewers = await db.proposalPresence.findMany({
+    where: { proposalId },
+    include: {
+      user: { select: { id: true, name: true, avatarUrl: true } },
+    },
+    orderBy: { lastSeenAt: "desc" },
+  });
 
-  const message = `event: presence\ndata: ${JSON.stringify({
-    type: eventType,
-    presence,
-  })}\n\n`;
-
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(message);
-
-  for (const controller of subscribers) {
-    try {
-      controller.enqueue(encoded);
-    } catch {
-      // Controller may be closed
-    }
-  }
+  const mapped = currentViewers.map((v) => ({
+    userId: v.userId,
+    name: v.user.name,
+    avatarUrl: v.user.avatarUrl,
+    sectionKey: v.sectionKey,
+    lastSeenAt: v.lastSeenAt.toISOString(),
+  }));
+  const capped = capPresenceViewers(
+    mapped.map((v) => ({ ...v, lastSeenAt: v.lastSeenAt })),
+    PRESENCE_VIEWER_CAP
+  );
+  return {
+    viewers: capped.viewers,
+    total: capped.total,
+  };
 }
 
+function snapshotResponse(viewers: PresenceViewer[], total: number) {
+  return NextResponse.json({
+    viewers,
+    total,
+    serverTime: new Date().toISOString(),
+  });
+}
+
+/**
+ * GET — durable presence snapshot for a proposal.
+ * Clients poll this endpoint (≤ every 3s). Process-local SSE was removed so
+ * multi-instance deployments share one Prisma-backed source of truth.
+ */
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const { searchParams } = new URL(request.url);
   const proposalId = searchParams.get("proposalId");
   const workspaceId = searchParams.get("workspaceId");
 
   if (!proposalId || !workspaceId) {
-    return NextResponse.json({ error: "Missing proposalId or workspaceId" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing proposalId or workspaceId" },
+      { status: 400 }
+    );
   }
 
   if (workspaceId !== session.user.workspaceId) {
@@ -80,121 +105,53 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Clean up stale presence records
     await cleanupStalePresence(proposalId);
-
-    // Fetch current viewers
-    const currentViewers = await db.proposalPresence.findMany({
-      where: { proposalId },
-      include: {
-        user: { select: { id: true, name: true, avatarUrl: true } },
-      },
-    });
-
-    const viewerList = currentViewers.map((v) => ({
-      userId: v.userId,
-      name: v.user.name,
-      avatarUrl: v.user.avatarUrl,
-      sectionKey: v.sectionKey,
-      lastSeenAt: v.lastSeenAt.toISOString(),
-    }));
-
-    // Create SSE stream
-    let controllerRef: ReadableStreamDefaultController | null = null;
-    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-
-    const stream = new ReadableStream({
-      start(controller) {
-        controllerRef = controller;
-
-        // Send connected event
-        controller.enqueue(
-          new TextEncoder().encode(`data: ${JSON.stringify({ type: "connected" })}\n\n`)
-        );
-
-        // Send initial viewer list within 2 seconds of connect
-        controller.enqueue(
-          new TextEncoder().encode(
-            `event: presence\ndata: ${JSON.stringify({
-              type: "init",
-              viewers: viewerList,
-            })}\n\n`
-          )
-        );
-
-        // Register subscriber
-        if (!presenceSubscribers.has(proposalId)) {
-          presenceSubscribers.set(proposalId, new Set());
-        }
-        presenceSubscribers.get(proposalId)!.add(controller);
-
-        // Heartbeat every 30s
-        heartbeatInterval = setInterval(() => {
-          try {
-            controller.enqueue(
-              new TextEncoder().encode(`data: ${JSON.stringify({ type: "heartbeat" })}\n\n`)
-            );
-          } catch {
-            // Controller closed
-          }
-        }, 30000);
-      },
-      cancel() {
-        // Clean up on disconnect
-        if (heartbeatInterval) clearInterval(heartbeatInterval);
-        if (controllerRef) {
-          const subscribers = presenceSubscribers.get(proposalId);
-          if (subscribers) {
-            subscribers.delete(controllerRef);
-            if (subscribers.size === 0) {
-              presenceSubscribers.delete(proposalId);
-            }
-          }
-        }
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    const { viewers, total } = await loadViewers(proposalId);
+    return snapshotResponse(viewers, total);
   } catch (error) {
-    // A missing ProposalPresence relation and every other unexpected failure
-    // map through the central bilingual ApiFailure mapper: HTTP 503
-    // SCHEMA_MIGRATION_PENDING (naming the relation) or a generic 500 that
-    // leaks no SQL, provider payload, or tenant value (requirements 16.2,
-    // 16.7, 19.10).
     return toErrorResponse(error, "collaboration:presence:get");
   }
 }
 
+/**
+ * POST — join / heartbeat / leave. Heartbeats should be rate-limited by clients
+ * to ~30s; every write also prunes stale rows.
+ */
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   try {
-    const body = (await request.json().catch(() => null)) as {
+    // sendBeacon may post as text/plain; accept JSON string bodies too.
+    const raw = await request.text();
+    let body: {
       proposalId?: string;
       type?: string;
       sectionKey?: string | null;
-    } | null;
+    } | null = null;
+    try {
+      body = raw ? (JSON.parse(raw) as typeof body) : null;
+    } catch {
+      body = null;
+    }
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
     const { proposalId, type, sectionKey } = body;
 
     if (!proposalId || !type) {
-      return NextResponse.json({ error: "Missing proposalId or type" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing proposalId or type" },
+        { status: 400 }
+      );
     }
 
     if (!["join", "heartbeat", "leave"].includes(type)) {
       return NextResponse.json({ error: "Invalid type" }, { status: 400 });
     }
 
-    // Validate proposal access
     const proposal = await db.generatedProposal.findUnique({
       where: { id: proposalId },
       select: { workspaceId: true },
@@ -213,80 +170,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    if (type === "join") {
-      // Upsert presence record
-      await db.proposalPresence.upsert({
-        where: {
-          proposalId_userId: {
-            proposalId,
-            userId: session.user.id,
-          },
-        },
-        create: {
-          proposalId,
-          userId: session.user.id,
-          workspaceId: session.user.workspaceId,
-          sectionKey: sectionKey ?? null,
-          lastSeenAt: new Date(),
-        },
-        update: {
-          sectionKey: sectionKey ?? null,
-          lastSeenAt: new Date(),
-        },
-      });
-
-      // Broadcast join
-      broadcastPresenceUpdate(proposalId, "join", {
-        userId: user.id,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-        sectionKey: sectionKey ?? null,
-      });
-
-      return NextResponse.json({ ok: true, type: "joined" });
-    }
-
-    if (type === "heartbeat") {
-      // Update lastSeenAt and optionally sectionKey
-      await db.proposalPresence.update({
-        where: {
-          proposalId_userId: {
-            proposalId,
-            userId: session.user.id,
-          },
-        },
-        data: {
-          lastSeenAt: new Date(),
-          ...(sectionKey !== undefined && { sectionKey: sectionKey ?? null }),
-        },
-      }).catch(() => {
-        // If record doesn't exist, create it (user rejoining)
-        return db.proposalPresence.create({
-          data: {
-            proposalId,
-            userId: session.user.id,
-            workspaceId: session.user.workspaceId,
-            sectionKey: sectionKey ?? null,
-            lastSeenAt: new Date(),
-          },
-        });
-      });
-
-      // Broadcast update if sectionKey changed
-      if (sectionKey !== undefined) {
-        broadcastPresenceUpdate(proposalId, "update", {
-          userId: user.id,
-          name: user.name,
-          avatarUrl: user.avatarUrl,
-          sectionKey: sectionKey ?? null,
-        });
-      }
-
-      return NextResponse.json({ ok: true, type: "heartbeat" });
-    }
+    await cleanupStalePresence(proposalId);
 
     if (type === "leave") {
-      // Delete presence record
       await db.proposalPresence
         .delete({
           where: {
@@ -296,23 +182,45 @@ export async function POST(request: NextRequest) {
             },
           },
         })
-        .catch(() => undefined); // Ignore if doesn't exist
+        .catch(() => undefined);
 
-      // Broadcast leave
-      broadcastPresenceUpdate(proposalId, "leave", {
-        userId: user.id,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
+      const left = await loadViewers(proposalId);
+      return NextResponse.json({
+        ok: true,
+        type: "left",
+        viewers: left.viewers,
+        total: left.total,
       });
-
-      return NextResponse.json({ ok: true, type: "left" });
     }
 
-    return NextResponse.json({ ok: true });
+    await db.proposalPresence.upsert({
+      where: {
+        proposalId_userId: {
+          proposalId,
+          userId: session.user.id,
+        },
+      },
+      create: {
+        proposalId,
+        userId: session.user.id,
+        workspaceId: session.user.workspaceId,
+        sectionKey: sectionKey ?? null,
+        lastSeenAt: new Date(),
+      },
+      update: {
+        lastSeenAt: new Date(),
+        ...(sectionKey !== undefined ? { sectionKey: sectionKey ?? null } : {}),
+      },
+    });
+
+    const snapshot = await loadViewers(proposalId);
+    return NextResponse.json({
+      ok: true,
+      type: type === "join" ? "joined" : "heartbeat",
+      viewers: snapshot.viewers,
+      total: snapshot.total,
+    });
   } catch (error) {
-    // Persistence failures (including a missing ProposalPresence relation) map
-    // through the central bilingual ApiFailure mapper rather than a route-local
-    // body (requirements 16.2, 16.7, 19.10).
     return toErrorResponse(error, "collaboration:presence:post");
   }
 }

@@ -3,10 +3,7 @@ import { db } from "@/lib/db";
 import { jsonApiFailure, withTenant } from "@/lib/api-controller";
 import { t } from "@/lib/i18n";
 import {
-  ANALYTICS_EVENT_TYPES,
-  ANALYTICS_AGENT_TERMINAL_EVENT_TYPES,
-  ANALYTICS_AGENT_START_EVENT_TYPE,
-  medianDurationMs,
+  aggregateAnalyticsEvents,
   type AnalyticsEventType,
 } from "@/lib/analytics-collector";
 import { isPrismaMissingTable } from "@/lib/prisma-missing-table";
@@ -77,52 +74,12 @@ export async function GET(request: NextRequest) {
           orderBy: { createdAt: "asc" },
         });
 
-        // Count every vocabulary event type (criterion 4.10)
-        const countsByType = new Map<AnalyticsEventType, number>();
-        for (const eventType of ANALYTICS_EVENT_TYPES) {
-          countsByType.set(eventType, 0);
-        }
-        for (const event of events) {
-          const current = countsByType.get(event.eventType as AnalyticsEventType);
-          if (current !== undefined) {
-            countsByType.set(event.eventType as AnalyticsEventType, current + 1);
-          }
-        }
-
-        // Agent run duration pairing: earliest start to earliest terminal per run
-        const agentStartTimes = new Map<string, number>();
-        const agentTerminalTimes = new Map<string, number>();
-
-        for (const event of events) {
-          if (event.eventType === ANALYTICS_AGENT_START_EVENT_TYPE) {
-            const existing = agentStartTimes.get(event.entityId);
-            if (existing === undefined || event.createdAt.getTime() < existing) {
-              agentStartTimes.set(event.entityId, event.createdAt.getTime());
-            }
-          }
-          if (
-            (ANALYTICS_AGENT_TERMINAL_EVENT_TYPES as readonly string[]).includes(
-              event.eventType
-            )
-          ) {
-            const existing = agentTerminalTimes.get(event.entityId);
-            if (existing === undefined || event.createdAt.getTime() < existing) {
-              agentTerminalTimes.set(event.entityId, event.createdAt.getTime());
-            }
-          }
-        }
-
-        const agentDurations: number[] = [];
-        for (const [runId, startTime] of agentStartTimes) {
-          const terminalTime = agentTerminalTimes.get(runId);
-          if (terminalTime !== undefined) {
-            const duration = Math.round(terminalTime - startTime);
-            if (duration >= 0) agentDurations.push(duration);
-          }
-        }
-
-        // Median reported as null when unavailable (criterion 4.8)
-        const medianAgentDuration = medianDurationMs(agentDurations);
+        // Pure aggregation — Property 16 reference model (criteria 4.7, 4.8, 4.10)
+        const aggregation = aggregateAnalyticsEvents(events);
+        const countsByType = new Map<AnalyticsEventType, number>(
+          Object.entries(aggregation.countsByType) as [AnalyticsEventType, number][]
+        );
+        const medianAgentDuration = aggregation.medianAgentDurationMs;
 
         // Previous period: adjacent equal-duration [prevStart, prevEnd)
         const periodMs = endDate.getTime() - startDate.getTime();
@@ -136,47 +93,14 @@ export async function GET(request: NextRequest) {
           },
         });
 
-        const prevCountsByType = new Map<AnalyticsEventType, number>();
-        for (const eventType of ANALYTICS_EVENT_TYPES) {
-          prevCountsByType.set(eventType, 0);
-        }
-        for (const event of prevEvents) {
-          const current = prevCountsByType.get(event.eventType as AnalyticsEventType);
-          if (current !== undefined) {
-            prevCountsByType.set(event.eventType as AnalyticsEventType, current + 1);
-          }
-        }
-
-        // Previous period agent durations
-        const prevAgentStartTimes = new Map<string, number>();
-        const prevAgentTerminalTimes = new Map<string, number>();
-        for (const event of prevEvents) {
-          if (event.eventType === ANALYTICS_AGENT_START_EVENT_TYPE) {
-            const existing = prevAgentStartTimes.get(event.entityId);
-            if (existing === undefined || event.createdAt.getTime() < existing) {
-              prevAgentStartTimes.set(event.entityId, event.createdAt.getTime());
-            }
-          }
-          if (
-            (ANALYTICS_AGENT_TERMINAL_EVENT_TYPES as readonly string[]).includes(
-              event.eventType
-            )
-          ) {
-            const existing = prevAgentTerminalTimes.get(event.entityId);
-            if (existing === undefined || event.createdAt.getTime() < existing) {
-              prevAgentTerminalTimes.set(event.entityId, event.createdAt.getTime());
-            }
-          }
-        }
-        const prevAgentDurations: number[] = [];
-        for (const [runId, startTime] of prevAgentStartTimes) {
-          const terminalTime = prevAgentTerminalTimes.get(runId);
-          if (terminalTime !== undefined) {
-            const duration = Math.round(terminalTime - startTime);
-            if (duration >= 0) prevAgentDurations.push(duration);
-          }
-        }
-        const prevMedianAgentDuration = medianDurationMs(prevAgentDurations);
+        const prevAggregation = aggregateAnalyticsEvents(prevEvents);
+        const prevCountsByType = new Map<AnalyticsEventType, number>(
+          Object.entries(prevAggregation.countsByType) as [
+            AnalyticsEventType,
+            number,
+          ][]
+        );
+        const prevMedianAgentDuration = prevAggregation.medianAgentDurationMs;
 
         // Proposals over time (daily buckets)
         const proposalsOverTime: { date: string; value: number }[] = [];

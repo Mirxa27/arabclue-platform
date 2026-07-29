@@ -29,6 +29,7 @@ export type DashboardView =
   | "contracts"
   | "compliance"
   | "clause-library"
+  | "template-editor"
   | "brand"
   | "account"
   | "business-profile"
@@ -76,6 +77,7 @@ export const VIEW_PATHS: Readonly<Record<DashboardView, string>> = Object.freeze
   contracts: "contracts",
   compliance: "compliance",
   "clause-library": "clause-library",
+  "template-editor": "template-editor",
   agents: "agents",
   history: "history",
   brand: "brand",

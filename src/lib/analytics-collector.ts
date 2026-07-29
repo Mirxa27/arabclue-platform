@@ -1137,3 +1137,76 @@ export function medianDurationMs(values: readonly number[]): number | null {
 export function calculateMedian(values: number[]): number {
   return medianDurationMs(values) ?? 0;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Pure aggregation (Requirements 4.7, 4.8, 4.10 — Property 16)               */
+/* -------------------------------------------------------------------------- */
+
+export type AnalyticsAggregateEvent = Readonly<{
+  eventType: string;
+  entityId: string;
+  createdAt: Date;
+  metadataJson?: unknown;
+}>;
+
+export type AnalyticsAggregationResult = Readonly<{
+  countsByType: Readonly<Record<AnalyticsEventType, number>>;
+  medianAgentDurationMs: number | null;
+  agentDurationSampleSize: number;
+}>;
+
+/**
+ * Tenant-scoped reference aggregation over an already-filtered event set.
+ * Counts every vocabulary type (zero when absent) and pairs the earliest start
+ * with the earliest terminal event per agent run for the median duration.
+ */
+export function aggregateAnalyticsEvents(
+  events: readonly AnalyticsAggregateEvent[]
+): AnalyticsAggregationResult {
+  const countsByType = {} as Record<AnalyticsEventType, number>;
+  for (const eventType of ANALYTICS_EVENT_TYPES) {
+    countsByType[eventType] = 0;
+  }
+
+  const agentStartTimes = new Map<string, number>();
+  const agentTerminalTimes = new Map<string, number>();
+
+  for (const event of events) {
+    if (isAnalyticsEventType(event.eventType)) {
+      countsByType[event.eventType] += 1;
+    }
+
+    if (event.eventType === ANALYTICS_AGENT_START_EVENT_TYPE) {
+      const existing = agentStartTimes.get(event.entityId);
+      const at = event.createdAt.getTime();
+      if (existing === undefined || at < existing) {
+        agentStartTimes.set(event.entityId, at);
+      }
+    }
+    if (
+      (ANALYTICS_AGENT_TERMINAL_EVENT_TYPES as readonly string[]).includes(
+        event.eventType
+      )
+    ) {
+      const existing = agentTerminalTimes.get(event.entityId);
+      const at = event.createdAt.getTime();
+      if (existing === undefined || at < existing) {
+        agentTerminalTimes.set(event.entityId, at);
+      }
+    }
+  }
+
+  const agentDurations: number[] = [];
+  for (const [runId, startTime] of agentStartTimes) {
+    const terminalTime = agentTerminalTimes.get(runId);
+    if (terminalTime === undefined) continue;
+    const duration = Math.round(terminalTime - startTime);
+    if (duration >= 0) agentDurations.push(duration);
+  }
+
+  return Object.freeze({
+    countsByType: Object.freeze(countsByType),
+    medianAgentDurationMs: medianDurationMs(agentDurations),
+    agentDurationSampleSize: agentDurations.length,
+  });
+}

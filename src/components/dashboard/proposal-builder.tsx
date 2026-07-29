@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ErrorState } from "@/components/patterns";
 import {
   type ProposalSection,
   type ProposalMetadata,
@@ -111,7 +112,12 @@ export function ProposalBuilder() {
   }, [activeProjectId, sessionWorkspaceId]);
 
   // Load proposal if editing
-  const { data: proposalData, isLoading: isLoadingProposal } = useQuery({
+  const {
+    data: proposalData,
+    isLoading: isLoadingProposal,
+    isError: isProposalLoadError,
+    refetch: refetchProposal,
+  } = useQuery({
     queryKey: ["proposal-builder", metadata.proposalId],
     queryFn: async () => {
       if (!metadata.proposalId) return null;
@@ -276,6 +282,22 @@ export function ProposalBuilder() {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (metadata.proposalId && isProposalLoadError) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <ErrorState
+          message={
+            ar
+              ? "تعذر تحميل مسودة العرض"
+              : "Could not load proposal draft"
+          }
+          onRetry={() => void refetchProposal()}
+          retryLabel={ar ? "إعادة المحاولة" : "Retry"}
+        />
       </div>
     );
   }

@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { ProposalOptimizeAction } from "@/components/dashboard/ai-assist-actions";
 import {
   letterheadCompanyName,
   type LetterheadBrand,
@@ -142,12 +143,21 @@ export function ProposalEditorDialog({
     },
   });
 
-  const { data: brandData } = useQuery<BrandResponse>({
+  const {
+    data: brandData,
+    isError: brandError,
+    refetch: refetchBrand,
+  } = useQuery<BrandResponse>({
     queryKey: ["brand"],
     enabled: open,
     queryFn: async () => {
       const res = await fetch("/api/brand");
-      if (!res.ok) return { brandProfile: null, company: null };
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? "Failed to load brand");
+      }
       return res.json();
     },
   });
@@ -584,6 +594,18 @@ export function ProposalEditorDialog({
               onOpenValidation={() => setMode("validation")}
               className="shrink-0"
             />
+            {brandError ? (
+              <ErrorState
+                message={
+                  locale === "ar"
+                    ? "تعذر تحميل هوية العلامة للترويسة"
+                    : "Could not load brand for letterhead"
+                }
+                onRetry={() => void refetchBrand()}
+                retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+                className="shrink-0 py-3"
+              />
+            ) : null}
             <div className="flex flex-wrap items-center gap-2 shrink-0">              <div className="flex rounded-md border p-0.5 flex-wrap">
                 {(
                   [
@@ -711,6 +733,10 @@ export function ProposalEditorDialog({
                 <Sparkles className="size-3" />
                 {locale === "ar" ? "تطبيق" : "Apply skill"}
               </Button>
+              <ProposalOptimizeAction
+                locale={locale}
+                contentMd={markdown}
+              />
               <Button
                 size="sm"
                 variant="outline"

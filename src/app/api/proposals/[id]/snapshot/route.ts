@@ -6,6 +6,10 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext } from "@/lib/workspace-context";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import {
+  analyticsRequestOrigin,
+  recordProposalAnalyticsEvent,
+} from "@/lib/analytics-collector";
+import {
   MAX_PROPOSAL_SNAPSHOT_BODY_BYTES,
   canonicalizeProposalSnapshot,
   claimedStructuredKnowledgeIds,
@@ -193,6 +197,26 @@ const defaultDependencies: ProposalSnapshotRouteDependencies = {
         presetKey: input.presetKey,
       },
     });
+
+    const proposal = await db.generatedProposal.findUnique({
+      where: { id: input.proposalId },
+      select: { workspaceId: true, projectId: true },
+    });
+    if (proposal) {
+      await recordProposalAnalyticsEvent({
+        eventType: "proposal_edited",
+        proposalId: input.proposalId,
+        mutationRef: `snapshot:r${input.revision}:${input.hash}`,
+        origin: analyticsRequestOrigin({
+          tenantWorkspaceId: proposal.workspaceId,
+          actorUserId: input.userId,
+        }),
+        metadata: {
+          revision: input.revision,
+          projectId: proposal.projectId,
+        },
+      });
+    }
   },
 };
 

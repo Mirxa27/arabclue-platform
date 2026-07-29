@@ -16,6 +16,7 @@ import {
   Landmark,
   Heart,
   Package,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +34,10 @@ import type {
 } from "@/lib/proposal-builder-types";
 import { getDefaultSections } from "@/lib/proposal-builder-engine";
 import { writePendingProposalBuilderDraft } from "@/lib/proposal-builder-draft";
+import { tr } from "@/lib/i18n";
 import { TemplateMarketplaceCard } from "./template-marketplace-card";
+import { MarketplacePublishDialog } from "./marketplace-publish-dialog";
+import { EmptyState } from "@/components/patterns";
 
 const CATEGORY_ICONS: Record<TemplateCategory, typeof FileText> = {
   construction: Building2,
@@ -63,6 +67,7 @@ export function TemplateMarketplace() {
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
 
   function openBlankProposal() {
     const sections = getDefaultSections();
@@ -97,6 +102,18 @@ export function TemplateMarketplace() {
 
   const templates: TemplateMarketplaceItem[] = data?.templates ?? [];
 
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
+    selectedCategory !== null ||
+    filters.isFeatured === true ||
+    (filters.sortBy !== undefined && filters.sortBy !== "newest");
+
+  function clearFilters() {
+    setSearchQuery("");
+    setSelectedCategory(null);
+    setFilters({ sortBy: "newest" });
+  }
+
   return (
     <div className="flex h-[calc(100dvh-10rem)] flex-col gap-4">
       {/* Header */}
@@ -111,11 +128,28 @@ export function TemplateMarketplace() {
               : "Browse and use ready-made proposal templates"}
           </p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={openBlankProposal}>
-          <Plus className="size-4" />
-          {ar ? "عرض فارغ" : "Blank proposal"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => setPublishOpen(true)}
+          >
+            <Upload className="size-4" />
+            {tr("marketplace_publish_action", locale)}
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={openBlankProposal}>
+            <Plus className="size-4" />
+            {ar ? "عرض فارغ" : "Blank proposal"}
+          </Button>
+        </div>
       </div>
+
+      <MarketplacePublishDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        locale={locale === "en" ? "en" : "ar"}
+      />
 
       {/* Filters */}
       <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur-xl sm:flex-row sm:items-center">
@@ -237,12 +271,37 @@ export function TemplateMarketplace() {
             </Button>
           </div>
         ) : templates.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
-            <FileText className="size-12 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              {ar ? "لا توجد قوالب مطابقة" : "No matching templates found"}
-            </p>
-          </div>
+          <EmptyState
+            className="flex h-64 flex-col items-center justify-center"
+            icon={FileText}
+            title={
+              hasActiveFilters
+                ? tr("marketplace_filter_empty", locale)
+                : tr("marketplace_empty", locale)
+            }
+            description={
+              hasActiveFilters
+                ? ar
+                  ? "جرّب توسيع البحث أو مسح الفلاتر."
+                  : "Try broadening your search or clearing filters."
+                : ar
+                  ? "انشر قالباً أو ابدأ بعرض فارغ."
+                  : "Publish a template or start from a blank proposal."
+            }
+            action={
+              <div className="flex flex-wrap gap-2">
+                {hasActiveFilters ? (
+                  <Button type="button" size="sm" variant="outline" onClick={clearFilters}>
+                    {tr("marketplace_clear_filters", locale)}
+                  </Button>
+                ) : null}
+                <Button type="button" size="sm" onClick={() => setPublishOpen(true)}>
+                  <Upload className="size-3.5 me-1" />
+                  {tr("marketplace_publish_action", locale)}
+                </Button>
+              </div>
+            }
+          />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {templates.map((template) => (

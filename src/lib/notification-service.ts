@@ -14,7 +14,7 @@
  */
 
 import { db } from "./db";
-import { isEmailConfigured } from "./email";
+import { isEmailConfigured, sendEmail } from "./email";
 import { tr } from "./i18n";
 import { utcDeadline } from "./time";
 import type { Locale } from "./types";
@@ -573,4 +573,272 @@ export async function notifySubscriptionFailed(opts: {
     href: "/app?view=billing",
     workspaceId: opts.workspaceId,
   });
+}
+
+// ─── Outbox dispatcher (cron) ────────────────────────────────────────────────
+
+/** Max provider attempts per delivery row (requirement 17.5). */
+export const NOTIFICATION_MAX_ATTEMPTS = 3;
+
+/** Claim lease so concurrent cron instances do not double-send. */
+export const NOTIFICATION_CLAIM_LEASE_MS = 60_000;
+
+/** Provider send timeout (requirement 17.5). */
+export const NOTIFICATION_PROVIDER_TIMEOUT_MS = 10_000;
+
+/** Retry backoff steps after attempt 1 and 2 (within the 30-minute deadline). */
+const RETRY_BACKOFF_MS = [60_000, 5 * 60_000] as const;
+
+export type DispatchPendingNotificationsResult = {
+  claimed: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  retried: number;
+  errors: string[];
+};
+
+type OutboxPayload = {
+  subjectKey?: string;
+  bodyKey?: string;
+  bodyParams?: Record<string, string>;
+  href?: string | null;
+};
+
+function parseOutboxPayload(value: unknown): OutboxPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const record = value as Record<string, unknown>;
+  const bodyParams =
+    record.bodyParams &&
+    typeof record.bodyParams === "object" &&
+    !Array.isArray(record.bodyParams)
+      ? Object.fromEntries(
+          Object.entries(record.bodyParams as Record<string, unknown>).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string"
+          )
+        )
+      : {};
+  return {
+    subjectKey:
+      typeof record.subjectKey === "string" ? record.subjectKey : undefined,
+    bodyKey: typeof record.bodyKey === "string" ? record.bodyKey : undefined,
+    bodyParams,
+    href: typeof record.href === "string" ? record.href : null,
+  };
+}
+
+/**
+ * Claim PENDING/retryable email outbox rows and send them via Resend.
+ * Uses conditional claim leases (skip-locked style) so multiple cron instances
+ * do not double-deliver. Terminal after three attempts or after the 30-minute
+ * deliveryDeadlineAt (requirements 17.4–17.6).
+ */
+export async function dispatchPendingNotificationEmails(options?: {
+  readonly batchSize?: number;
+  readonly workerId?: string;
+  readonly now?: Date;
+  readonly send?: typeof sendEmail;
+}): Promise<DispatchPendingNotificationsResult> {
+  const batchSize = Math.min(Math.max(options?.batchSize ?? 25, 1), 100);
+  const workerId = options?.workerId ?? `cron-${crypto.randomUUID()}`;
+  const now = options?.now ?? new Date();
+  const send = options?.send ?? sendEmail;
+  const result: DispatchPendingNotificationsResult = {
+    claimed: 0,
+    sent: 0,
+    failed: 0,
+    skipped: 0,
+    retried: 0,
+    errors: [],
+  };
+
+  if (!isEmailConfigured()) {
+    // Mark due PENDING rows SKIPPED without a network call when Resend is unset.
+    const unconfigured = await db.notificationDelivery.updateMany({
+      where: {
+        channel: "email",
+        status: "PENDING",
+        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      },
+      data: {
+        status: "SKIPPED",
+        errorCode: "EMAIL_UNCONFIGURED",
+        errorMessage: "RESEND_API_KEY not configured",
+        lastAttemptAt: now,
+        failedAt: now,
+      },
+    });
+    result.skipped = unconfigured.count;
+    return result;
+  }
+
+  const candidates = await db.notificationDelivery.findMany({
+    where: {
+      channel: "email",
+      status: "PENDING",
+      attemptCount: { lt: NOTIFICATION_MAX_ATTEMPTS },
+      AND: [
+        { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
+        { OR: [{ claimExpiresAt: null }, { claimExpiresAt: { lte: now } }] },
+        {
+          OR: [
+            { deliveryDeadlineAt: null },
+            { deliveryDeadlineAt: { gt: now } },
+          ],
+        },
+      ],
+    },
+    orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
+    take: batchSize,
+  });
+
+  for (const row of candidates) {
+    const claimExpiresAt = new Date(now.getTime() + NOTIFICATION_CLAIM_LEASE_MS);
+    const claimed = await db.notificationDelivery.updateMany({
+      where: {
+        id: row.id,
+        status: "PENDING",
+        attemptCount: row.attemptCount,
+        OR: [{ claimExpiresAt: null }, { claimExpiresAt: { lte: now } }],
+      },
+      data: {
+        claimedAt: now,
+        claimExpiresAt,
+        claimedBy: workerId,
+        firstAttemptAt: row.firstAttemptAt ?? now,
+        lastAttemptAt: now,
+        attemptCount: { increment: 1 },
+      },
+    });
+
+    if (claimed.count !== 1) continue;
+    result.claimed += 1;
+
+    const attemptNumber = row.attemptCount + 1;
+    const payload = parseOutboxPayload(row.payloadJson);
+    const subjectKey = payload.subjectKey ?? row.templateKey;
+    const bodyKey = payload.bodyKey;
+    const locale = (row.recipientLocale as Locale) || "ar";
+
+    if (!row.recipientEmail || !subjectKey || !bodyKey) {
+      await db.notificationDelivery.update({
+        where: { id: row.id },
+        data: {
+          status: "FAILED",
+          errorCode: "OUTBOX_PAYLOAD_INVALID",
+          errorMessage: "Missing recipient email or template keys",
+          failedAt: now,
+          claimedAt: null,
+          claimExpiresAt: null,
+          claimedBy: null,
+        },
+      });
+      result.failed += 1;
+      result.errors.push(`${row.id}: OUTBOX_PAYLOAD_INVALID`);
+      continue;
+    }
+
+    const content = composeContent(
+      subjectKey,
+      bodyKey,
+      locale,
+      payload.bodyParams
+    );
+    const subject = content.subject.slice(0, 150);
+    const body =
+      locale === "ar" ? content.bodyAr : content.bodyEn;
+    const html = formatEmailHtml(body, payload.href ?? undefined);
+
+    let sendResult: Awaited<ReturnType<typeof sendEmail>>;
+    try {
+      sendResult = await Promise.race([
+        send({
+          to: row.recipientEmail,
+          subject,
+          html,
+          text: body,
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error("NOTIFICATION_PROVIDER_TIMEOUT")),
+            NOTIFICATION_PROVIDER_TIMEOUT_MS
+          );
+        }),
+      ]);
+    } catch (err) {
+      sendResult = {
+        ok: false,
+        skipped: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    if (sendResult.ok) {
+      await db.notificationDelivery.update({
+        where: { id: row.id },
+        data: {
+          status: "SENT",
+          providerMessageId: sendResult.id,
+          deliveredAt: new Date(),
+          errorCode: null,
+          errorMessage: null,
+          claimedAt: null,
+          claimExpiresAt: null,
+          claimedBy: null,
+          nextAttemptAt: null,
+        },
+      });
+      result.sent += 1;
+      continue;
+    }
+
+    if ("skipped" in sendResult && sendResult.skipped) {
+      await db.notificationDelivery.update({
+        where: { id: row.id },
+        data: {
+          status: "SKIPPED",
+          errorCode: "EMAIL_UNCONFIGURED",
+          errorMessage: sendResult.reason,
+          failedAt: new Date(),
+          claimedAt: null,
+          claimExpiresAt: null,
+          claimedBy: null,
+        },
+      });
+      result.skipped += 1;
+      continue;
+    }
+
+    const terminal =
+      attemptNumber >= NOTIFICATION_MAX_ATTEMPTS ||
+      (row.deliveryDeadlineAt !== null &&
+        row.deliveryDeadlineAt.getTime() <= Date.now());
+    const backoff =
+      RETRY_BACKOFF_MS[Math.min(attemptNumber - 1, RETRY_BACKOFF_MS.length - 1)] ??
+      RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1]!;
+    const nextAttemptAt = new Date(Date.now() + backoff);
+
+    await db.notificationDelivery.update({
+      where: { id: row.id },
+      data: {
+        status: terminal ? "FAILED" : "PENDING",
+        errorCode: "EMAIL_SEND_FAILED",
+        errorMessage: sendResult.error,
+        failedAt: terminal ? new Date() : null,
+        nextAttemptAt: terminal ? null : nextAttemptAt,
+        claimedAt: null,
+        claimExpiresAt: null,
+        claimedBy: null,
+      },
+    });
+
+    if (terminal) {
+      result.failed += 1;
+    } else {
+      result.retried += 1;
+    }
+    result.errors.push(`${row.id}: ${sendResult.error}`);
+  }
+
+  return result;
 }

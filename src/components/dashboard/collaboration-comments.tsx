@@ -29,6 +29,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { CollaborationComment } from "@/lib/proposal-builder-types";
+import { tr } from "@/lib/i18n";
+import { selectApiFailureMessage } from "@/lib/api-failure-message";
+import type { Locale } from "@/lib/types";
+import { EmptyState, QueryState } from "@/components/patterns";
 
 export function CollaborationComments({
   proposalId,
@@ -42,6 +46,7 @@ export function CollaborationComments({
   currentUserId?: string;
 }) {
   const ar = locale === "ar";
+  const loc = locale as Locale;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [newComment, setNewComment] = useState("");
@@ -50,15 +55,27 @@ export function CollaborationComments({
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   // Fetch comments
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["comments", proposalId, sectionKey],
     queryFn: async () => {
       if (!proposalId) return { comments: [] };
       const params = new URLSearchParams({ proposalId });
       if (sectionKey) params.set("sectionKey", sectionKey);
       const res = await fetch(`/api/collaboration/comments?${params}`);
-      if (!res.ok) throw new Error("Failed to fetch comments");
-      return res.json() as Promise<{ comments: CollaborationComment[] }>;
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+      };
+      if (!res.ok) {
+        const apiMsg = selectApiFailureMessage(body, loc);
+        throw new Error(
+          apiMsg ||
+            (res.status === 501
+              ? tr("comments_unavailable_schema", loc)
+              : tr("comments_load_failed", loc))
+        );
+      }
+      return body as { comments: CollaborationComment[] };
     },
     enabled: !!proposalId,
   });
@@ -265,18 +282,22 @@ export function CollaborationComments({
 
       {/* Comments list */}
       <div className="flex-1 overflow-y-auto p-4">
-        {isLoading ? (
-          <div className="flex h-32 items-center justify-center">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : comments.length === 0 ? (
-          <div className="flex h-32 flex-col items-center justify-center gap-2 text-center">
-            <MessageSquare className="size-8 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground">
-              {ar ? "لا توجد تعليقات بعد" : "No comments yet"}
-            </p>
-          </div>
-        ) : (
+        <QueryState
+          isLoading={isLoading}
+          isError={isError}
+          errorMessage={
+            error instanceof Error ? error.message : tr("comments_load_failed", loc)
+          }
+          isEmpty={comments.length === 0}
+          onRetry={() => void refetch()}
+          locale={loc}
+          empty={
+            <EmptyState
+              icon={MessageSquare}
+              title={tr("comment_empty_title", loc)}
+            />
+          }
+        >
           <div className="space-y-4">
             {comments
               .filter((c) => !c.parentId)
@@ -295,7 +316,7 @@ export function CollaborationComments({
                 />
               ))}
           </div>
-        )}
+        </QueryState>
       </div>
 
       {/* Edit modal */}
@@ -472,14 +493,14 @@ function CommentItem({
           </span>
           {editedAt && (
             <span className="text-[9px] text-muted-foreground italic">
-              ({ar ? "تم التحرير" : "edited"})
+              ({tr("comment_edited", locale as "ar" | "en")})
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
           {isWithdrawn ? (
             <Badge variant="outline" className="gap-1 text-[9px] text-muted-foreground">
-              {ar ? "محذوف" : "Withdrawn"}
+              {tr("comment_withdrawn", locale as "ar" | "en")}
             </Badge>
           ) : comment.isResolved ? (
             <Badge variant="outline" className="gap-1 border-emerald-500/50 text-[9px] text-emerald-600">
@@ -539,7 +560,7 @@ function CommentItem({
       {/* Comment content */}
       {isWithdrawn ? (
         <p className="text-sm italic text-muted-foreground">
-          {ar ? "[تم حذف هذا التعليق]" : "[This comment has been deleted]"}
+          {tr("comment_deleted_placeholder", locale as "ar" | "en")}
         </p>
       ) : (
         <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
@@ -580,13 +601,13 @@ function CommentItem({
                   </span>
                   {replyEdited && (
                     <span className="text-[8px] text-muted-foreground italic">
-                      ({ar ? "تم التحرير" : "edited"})
+                      ({tr("comment_edited", locale as "ar" | "en")})
                     </span>
                   )}
                 </div>
                 {replyWithdrawn ? (
                   <p className="text-xs italic text-muted-foreground">
-                    {ar ? "[تم حذف هذا الرد]" : "[This reply has been deleted]"}
+                    {tr("comment_reply_deleted_placeholder", locale as "ar" | "en")}
                   </p>
                 ) : (
                   <p className="text-xs whitespace-pre-wrap">{reply.content}</p>

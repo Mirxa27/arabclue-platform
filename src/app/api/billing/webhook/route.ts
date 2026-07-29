@@ -138,15 +138,17 @@ export async function POST(req: NextRequest) {
           /^(fail|error|declined|rejected)$/i.test(status);
         const isCanceled = status === "CANCELED" || status === "CANCELLED";
 
-        // Update profile status first
-        await db.myFatoorahRecurringProfile.updateMany({
-          where: { recurringId },
-          data: {
-            status: isCanceled ? "CANCELED" : status || "ACTIVE",
-            lastWebhookAt: new Date(),
-            initialInvoiceId: initialInvoiceId || undefined,
-          },
-        });
+        // Do not mutate profile status before charge handlers — handlers own
+        // state transitions, amount/currency checks, and idempotent billing rows.
+        if (initialInvoiceId) {
+          await db.myFatoorahRecurringProfile.updateMany({
+            where: { recurringId },
+            data: {
+              lastWebhookAt: new Date(),
+              initialInvoiceId,
+            },
+          });
+        }
 
         // Handle successful recurring charge
         if (isSuccessfulCharge && invoiceId) {
@@ -212,7 +214,36 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Default: just status update
+        // Provider-side cancellation — apply only via the cancel transition.
+        if (isCanceled) {
+          await db.myFatoorahRecurringProfile.updateMany({
+            where: {
+              recurringId,
+              status: { in: ["ACTIVE", "SUSPENDED", "DRAFT", "Active", "Suspended"] },
+            },
+            data: {
+              status: "CANCELLED",
+              nextChargeAt: null,
+              lastWebhookAt: new Date(),
+            },
+          });
+          await db.paymentWebhookEvent.update({
+            where: { id: eventRow.id },
+            data: {
+              processingStatus: "PROCESSED",
+              disposition: "recurring_cancelled",
+              processedAt: new Date(),
+            },
+          });
+          return jsonOk({
+            ok: true,
+            recurring: true,
+            action: "cancelled",
+            id: eventRow.id,
+          });
+        }
+
+        // Default: acknowledge without inventing a profile state change
         await db.paymentWebhookEvent.update({
           where: { id: eventRow.id },
           data: {

@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { Circle } from "lucide-react";
+import { AlertCircle, Circle } from "lucide-react";
 import type { CollaborationPresence } from "@/lib/proposal-builder-types";
+import { tr } from "@/lib/i18n";
+import type { Locale } from "@/lib/types";
 
 const PRESENCE_COLORS = [
   "bg-blue-500",
@@ -14,8 +16,29 @@ const PRESENCE_COLORS = [
   "bg-cyan-500",
 ];
 
-// Heartbeat interval: 30 seconds
+/** Heartbeat writes — keep under the 60s stale prune window. */
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;
+/** Durable snapshot poll — at most every three seconds (spec 8.6). */
+const POLL_INTERVAL_MS = 3 * 1000;
+
+type PresenceSnapshot = Readonly<{
+  viewers: Array<{
+    userId: string;
+    name: string;
+    avatarUrl?: string | null;
+    sectionKey?: string | null;
+    lastSeenAt?: string;
+  }>;
+}>;
+
+function toPresenceList(viewers: PresenceSnapshot["viewers"]): CollaborationPresence[] {
+  return viewers.map((v) => ({
+    userId: v.userId,
+    name: v.name,
+    avatarUrl: v.avatarUrl ?? undefined,
+    sectionKey: v.sectionKey ?? undefined,
+  }));
+}
 
 export function CollaborationPresenceBar({
   proposalId,
@@ -28,20 +51,35 @@ export function CollaborationPresenceBar({
   locale: string;
   currentSectionKey?: string | null;
 }) {
-  const ar = locale === "ar";
+  const loc = locale as Locale;
   const [presenceList, setPresenceList] = useState<CollaborationPresence[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const [presenceUnavailable, setPresenceUnavailable] = useState(false);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSectionKeyRef = useRef<string | null | undefined>(currentSectionKey);
+  const mountedRef = useRef(true);
 
-  // Send presence update to server
+  const applyViewers = useCallback((viewers: PresenceSnapshot["viewers"]) => {
+    if (!mountedRef.current) return;
+    setPresenceList(toPresenceList(viewers));
+    setIsConnected(true);
+    setPresenceUnavailable(false);
+  }, []);
+
+  const markPresenceUnavailable = useCallback(() => {
+    if (!mountedRef.current) return;
+    setPresenceList([]);
+    setIsConnected(false);
+    setPresenceUnavailable(true);
+  }, []);
+
   const sendPresence = useCallback(
     async (type: "join" | "heartbeat" | "leave", sectionKey?: string | null) => {
       if (!proposalId) return;
 
       try {
-        await fetch("/api/collaboration/presence", {
+        const res = await fetch("/api/collaboration/presence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -50,108 +88,80 @@ export function CollaborationPresenceBar({
             sectionKey: sectionKey ?? undefined,
           }),
         });
+        if (!res.ok) {
+          markPresenceUnavailable();
+          return;
+        }
+        const data = (await res.json()) as PresenceSnapshot & { ok?: boolean };
+        if (Array.isArray(data.viewers)) {
+          applyViewers(data.viewers);
+        }
       } catch {
-        // Ignore errors silently
+        markPresenceUnavailable();
       }
     },
-    [proposalId]
+    [proposalId, applyViewers, markPresenceUnavailable]
   );
 
-  // Track section key changes and send heartbeat with update
+  const pollSnapshot = useCallback(async () => {
+    if (!proposalId) return;
+    try {
+      const res = await fetch(
+        `/api/collaboration/presence?proposalId=${encodeURIComponent(proposalId)}&workspaceId=${encodeURIComponent(workspaceId)}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) {
+        markPresenceUnavailable();
+        return;
+      }
+      const data = (await res.json()) as PresenceSnapshot;
+      if (Array.isArray(data.viewers)) {
+        applyViewers(data.viewers);
+      }
+    } catch {
+      markPresenceUnavailable();
+    }
+  }, [proposalId, workspaceId, applyViewers, markPresenceUnavailable]);
+
   useEffect(() => {
     if (currentSectionKey !== lastSectionKeyRef.current && isConnected) {
       lastSectionKeyRef.current = currentSectionKey;
-      sendPresence("heartbeat", currentSectionKey);
+      void sendPresence("heartbeat", currentSectionKey);
     }
   }, [currentSectionKey, isConnected, sendPresence]);
 
   useEffect(() => {
     if (!proposalId) return;
+    mountedRef.current = true;
 
-    // Join presence
-    sendPresence("join", currentSectionKey);
+    void sendPresence("join", currentSectionKey);
+    void pollSnapshot();
 
-    // SSE connection for presence updates
-    const eventSource = new EventSource(
-      `/api/collaboration/presence?proposalId=${proposalId}&workspaceId=${workspaceId}`
-    );
-    eventSourceRef.current = eventSource;
-
-    eventSource.onopen = () => setIsConnected(true);
-    eventSource.onerror = () => setIsConnected(false);
-
-    // Handle initial viewer list
-    eventSource.addEventListener("presence", (event) => {
-      try {
-        const data = JSON.parse(event.data) as
-          | {
-              type: "init";
-              viewers: Array<{
-                userId: string;
-                name: string;
-                avatarUrl?: string | null;
-                sectionKey?: string | null;
-                lastSeenAt: string;
-              }>;
-            }
-          | {
-              type: "join" | "leave" | "update";
-              presence: CollaborationPresence;
-            };
-
-        if (data.type === "init") {
-          // Initial viewer list from server
-          setPresenceList(
-            data.viewers.map((v) => ({
-              userId: v.userId,
-              name: v.name,
-              avatarUrl: v.avatarUrl ?? undefined,
-              sectionKey: v.sectionKey ?? undefined,
-            }))
-          );
-        } else if (data.type === "leave") {
-          setPresenceList((prev) => prev.filter((p) => p.userId !== data.presence.userId));
-        } else if (data.type === "join" || data.type === "update") {
-          setPresenceList((prev) => {
-            const existing = prev.findIndex((p) => p.userId === data.presence.userId);
-            if (existing >= 0) {
-              const updated = [...prev];
-              updated[existing] = data.presence;
-              return updated;
-            }
-            return [...prev, data.presence];
-          });
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    });
-
-    // Heartbeat interval
     heartbeatIntervalRef.current = setInterval(() => {
-      sendPresence("heartbeat", lastSectionKeyRef.current);
+      void sendPresence("heartbeat", lastSectionKeyRef.current);
     }, HEARTBEAT_INTERVAL_MS);
 
-    // Cleanup on unmount
-    return () => {
-      // Send leave signal
-      sendPresence("leave");
+    pollIntervalRef.current = setInterval(() => {
+      void pollSnapshot();
+    }, POLL_INTERVAL_MS);
 
+    return () => {
+      mountedRef.current = false;
+      void sendPresence("leave");
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
       }
-
-      eventSource.close();
-      eventSourceRef.current = null;
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
     };
-  }, [proposalId, workspaceId, sendPresence, currentSectionKey]);
+  }, [proposalId, workspaceId, sendPresence, pollSnapshot, currentSectionKey]);
 
-  // Send leave on page unload
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (proposalId) {
-        // Use sendBeacon for reliable delivery on page unload
         const data = JSON.stringify({
           proposalId,
           type: "leave",
@@ -166,6 +176,18 @@ export function CollaborationPresenceBar({
 
   if (!proposalId) return null;
 
+  if (presenceUnavailable) {
+    return (
+      <div
+        className="flex items-center gap-2 rounded-md border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200"
+        role="status"
+      >
+        <AlertCircle className="size-3.5 shrink-0" />
+        <span>{tr("PRESENCE_UNAVAILABLE", loc)}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-2">
       <div className="flex -space-x-2 rtl:space-x-reverse">
@@ -179,6 +201,7 @@ export function CollaborationPresenceBar({
             title={`${presence.name}${presence.sectionKey ? ` (${presence.sectionKey})` : ""}`}
           >
             {presence.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={presence.avatarUrl}
                 alt={presence.name}
@@ -197,15 +220,12 @@ export function CollaborationPresenceBar({
       </div>
       {presenceList.length > 0 && (
         <span className="text-xs text-muted-foreground">
-          {presenceList.length} {ar ? "متصل" : "online"}
+          {presenceList.length} {tr("presence_online", loc)}
         </span>
       )}
-      <Circle
-        className={cn(
-          "size-2",
-          isConnected ? "fill-emerald-500 text-emerald-500" : "fill-muted-foreground text-muted-foreground"
-        )}
-      />
+      {isConnected ? (
+        <Circle className="size-2 fill-emerald-500 text-emerald-500" />
+      ) : null}
     </div>
   );
 }

@@ -117,3 +117,85 @@ Live editing, redesign, and release loop:
 | Bilingual front-to-front viewer | Dashboard → Contracts |
 | Pre-draft research panel | Registry findings + certainty tags |
 | HTML / PDF export | `GET /api/proposals/:id/download?format=html\|pdf` (type `CONTRACT`) |
+
+## Futuristic AI Capabilities (v2)
+
+Four native AI capabilities extending the existing agent system with generative intelligence.
+All modules live in `src/lib/ai/` and use the existing LLM provider system (`src/lib/llm/`).
+All features gracefully degrade to deterministic fallbacks when no LLM is configured.
+All AI-generated content carries provenance metadata and passes validation gates.
+
+### 1. Generative AI for Bilingual Contract Drafting
+
+**Module:** `src/lib/ai/contract-drafting-assistant.ts`
+**API:** `POST /api/ai/contract-draft`
+
+- **Context-aware clause generation** — generates bilingual (AR/EN) clause suggestions using the contract template catalog and LLM
+- **Intelligent variable inference** — analyzes project/tender data and suggests template variable values
+- **Risk-aware drafting** — flags high-risk clauses (liability, termination, IP, data protection) based on Saudi procurement law
+- **Bilingual consistency validation** — ensures generated Arabic and English clauses are semantically equivalent
+- All output passes through `validateContractDraft` validation gate
+- Provenance metadata on every clause (`AI_GENERATED` or `DETERMINISTIC_FALLBACK`)
+- Uses LAW engine; falls back to template catalog when LLM unavailable
+
+### 2. Intelligent Proposal Optimization
+
+**Module:** `src/lib/ai/proposal-optimizer.ts`
+**API:** `POST /api/ai/proposal-optimize`
+
+- **Scoring engine** — scores proposals on coverage, compliance, clarity, and competitiveness (0-100 each)
+- **Improvement suggestions** — generates specific, actionable suggestions referencing requirement IDs
+- **Section optimization** — rewrites weak sections using LLM with evidence-backed content
+- **Win probability estimation** — based on historical data and requirement coverage
+- No pricing suggestions (existing guardrail maintained)
+- Bilingual suggestions (EN/AR)
+- Uses DRAFTING engine; deterministic scoring when LLM unavailable
+
+### 3. Automated Procurement Compliance Analysis
+
+**Module:** `src/lib/ai/compliance-analyzer.ts`
+**API:** `POST /api/ai/compliance-analyze`
+
+- **Real-time compliance scanning** — scans documents against Saudi procurement regulations (GTPL, PDPL, NCA ECC/CCC)
+- **Gap analysis** — identifies missing compliance requirements with severity (CRITICAL/MAJOR/MINOR)
+- **Regulatory update detection** — checks registry review dates for stale entries
+- **Compliance scorecard** — detailed pass/fail/warning per requirement with bilingual report
+- Uses existing `procurement-rules.ts` for rule definitions and `saudi-law-research.ts` for law references
+- No fabricated regulatory requirements — evidence-backed only
+- Uses COMPLIANCE engine; deterministic matrix when LLM unavailable
+
+### 4. Predictive Vendor Matching
+
+**Module:** `src/lib/ai/vendor-matching-engine.ts`
+**API:** `POST /api/ai/vendor-match`
+
+- **Vendor capability profiling** — builds capability profiles from qualification dossier data
+- **Tender-vendor matching** — scores how well vendor capabilities match tender requirements
+- **Success prediction** — predicts likelihood of winning based on historical patterns
+- **Gap recommendations** — suggests capability improvements for better matching
+- Uses existing `qualification.ts` for dossier assessment
+- No fabricated vendor data — uses only provided vendor information
+- All predictions include confidence scores
+- Bilingual matching reports (EN/AR)
+- Respects tenant isolation (workspaceId scoping)
+- Uses DEFAULT engine; deterministic matching when LLM unavailable
+
+### Architecture Principles
+
+- **Zero fabrication** — uses only existing libraries and patterns from the codebase
+- **Zero hardcoded prompts** — system prompts assembled from registry constants
+- **Graceful degradation** — all AI features work without LLM configuration
+- **Provenance tracking** — all AI-generated content marked with `AiProvenance` metadata
+- **Validation gates** — all AI output passes through existing validation gates
+- **Tenant isolation** — all AI features respect workspace boundaries
+- **No pricing** — existing guardrail maintained across all AI modules
+- **Full bilingual** — all AI output supports Arabic and English
+- **Strict type safety** — full TypeScript with strict mode
+
+### Test Coverage
+
+Tests in `src/lib/__tests__/ai/`:
+- `contract-drafting-assistant.test.ts` — clause generation, variable inference, consistency validation, provenance
+- `proposal-optimizer.test.ts` — scoring, suggestions, section optimization, win probability, no-pricing guardrail
+- `compliance-analyzer.test.ts` — compliance scanning, gap analysis, regulatory updates, scorecard, no-fabrication
+- `vendor-matching-engine.test.ts` — vendor matching, success prediction, capability profiling, gap recommendations

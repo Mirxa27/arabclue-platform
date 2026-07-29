@@ -15,14 +15,12 @@ import {
   selectApiFailureCode,
   selectApiFailureMessage,
 } from "@/lib/api-failure-message";
-import type { Locale } from "@/lib/types";
 
 function VerifyInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { locale: storedLocale } = useLocale();
+  const { locale, toggle } = useLocale();
   const { status: sessionStatus, update: refreshSession } = useSession();
-  const [locale, setLocale] = useState<Locale>(storedLocale ?? "ar");
   const [status, setStatus] = useState<
     "idle" | "verifying" | "success" | "error"
   >("idle");
@@ -30,11 +28,6 @@ function VerifyInner() {
   const ar = locale === "ar";
   const tokenFromUrl = searchParams.get("token")?.trim() ?? "";
   const emailHint = searchParams.get("email")?.trim() ?? "";
-
-  useEffect(() => {
-    document.documentElement.dir = ar ? "rtl" : "ltr";
-    document.documentElement.lang = locale;
-  }, [locale, ar]);
 
   const verify = useCallback(
     async (token: string) => {
@@ -94,7 +87,7 @@ function VerifyInner() {
           </span>
         </Link>
         <button
-          onClick={() => setLocale(ar ? "en" : "ar")}
+          onClick={toggle}
           className="h-9 rounded-full border border-border bg-card px-3.5 text-[12px] font-bold flex items-center gap-1.5"
         >
           <Globe className="size-3.5" />

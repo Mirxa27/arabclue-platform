@@ -12,6 +12,7 @@ import {
   type RouteNoticeCode,
 } from "@/lib/store";
 import { useViewRouter } from "@/hooks/use-view-router";
+import { ViewNavigationProvider } from "@/components/dashboard/view-navigation";
 import { getCompletionErrorContract, tr } from "@/lib/i18n";
 import { PageHeader, PageSection } from "@/components/patterns";
 import { StatCards } from "./stat-cards";
@@ -134,6 +135,13 @@ const ClauseLibraryView = dynamic(
     import("./clause-browser").then((m) => ({ default: m.ClauseBrowser })),
   { loading: PanelLoading }
 );
+const TemplateEditorView = dynamic(
+  () =>
+    import("./workspace-template-editor").then((m) => ({
+      default: m.WorkspaceTemplateEditor,
+    })),
+  { loading: PanelLoading }
+);
 const KnowledgeApprovalQueueView = dynamic(
   () =>
     import("./knowledge-approval-queue").then((m) => ({ default: m.KnowledgeApprovalQueue })),
@@ -153,6 +161,7 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   contracts: ContractsView,
   compliance: ComplianceView,
   "clause-library": ClauseLibraryRouteView,
+  "template-editor": TemplateEditorRouteView,
   agents: AgentsView,
   history: HistoryView,
   brand: AccountView,
@@ -194,7 +203,7 @@ export function DashboardViews({
     session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
 
   // The URL is authoritative; this reconciles it with the view state.
-  const { dismissNotice } = useViewRouter({
+  const { dismissNotice, navigateToView } = useViewRouter({
     initialView,
     initialProjectId,
     canonicalPath,
@@ -208,7 +217,7 @@ export function DashboardViews({
   const Content = VIEW_REGISTRY[safeView] ?? OverviewView;
 
   return (
-    <>
+    <ViewNavigationProvider navigateToView={navigateToView}>
       <RouteNotice code={routeNotice} onDismiss={dismissNotice} />
       <AnimatePresence mode="wait">
         <motion.div
@@ -221,7 +230,7 @@ export function DashboardViews({
           <Content />
         </motion.div>
       </AnimatePresence>
-    </>
+    </ViewNavigationProvider>
   );
 }
 
@@ -396,6 +405,24 @@ function ClauseLibraryRouteView() {
         locale={locale}
       />
       <ClauseLibraryView />
+    </PageSection>
+  );
+}
+
+function TemplateEditorRouteView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        title={tr("template_editor_title", locale)}
+        subtitle={
+          locale === "ar"
+            ? "إنشاء وتحديث وإحالة قوالب عقود مساحة العمل مع سجل إصدارات"
+            : "Create, update, and retire workspace contract templates with version history"
+        }
+        locale={locale}
+      />
+      <TemplateEditorView />
     </PageSection>
   );
 }

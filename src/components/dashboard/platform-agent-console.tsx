@@ -19,6 +19,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useCopilotProcessing } from "@/hooks/use-copilot-processing";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
 import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
 import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
@@ -31,6 +32,7 @@ import { MissionPulseWidget } from "./mission-pulse-widget";
 import { MissionControlShell } from "./mission-control-shell";
 import { MissionStage } from "./mission-stage";
 import { MissionConversation } from "./mission-conversation";
+import { CopilotProcessingView } from "./copilot-processing-view";
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -342,6 +344,26 @@ export function PlatformAgentConsole() {
     theaterTools.some(
       (t) => isToolRunning(t.state) || Boolean("preliminary" in t && t.preliminary)
     );
+
+  const processing = useCopilotProcessing({
+    chatStatus: status,
+    error,
+    messages: messages as Array<{
+      id: string;
+      role: string;
+      parts: Array<{ type: string; text?: string }>;
+    }>,
+    tools: theaterTools.map((t) => ({
+      name: t.name,
+      state: t.state,
+      preliminary: "preliminary" in t ? Boolean(t.preliminary) : undefined,
+    })),
+    missionId,
+    stop,
+    retryLast: async (text) => {
+      await sendMessage({ text });
+    },
+  });
 
   // Live UI follow-along from tool outputs
   useEffect(() => {
@@ -762,7 +784,11 @@ export function PlatformAgentConsole() {
         mode === "live" && liveConfig?.enabled ? undefined : (
           <div className="flex w-full min-w-0 max-w-full flex-col gap-2.5">
             {error ? (
-              <div className="rounded-[12px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300">
+              <div
+                className="rounded-[12px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300"
+                role="alert"
+                aria-live="assertive"
+              >
                 {error.message}
               </div>
             ) : null}
@@ -867,6 +893,17 @@ export function PlatformAgentConsole() {
                   ar
                     ? "جرّب: «اعرض مشاريعي»، «أنشئ مناقصة»، «شغّل الوكلاء» — شريط الحالة ونشاط الأدوات يوضحان كل خطوة."
                     : "Try: “List my projects”, “Create a tender”, “Run the agents” — the status bar and activity pane show every step."
+                }
+                processingSlot={
+                  <CopilotProcessingView
+                    locale={locale}
+                    snapshot={processing.snapshot}
+                    streamPreview={processing.partialText}
+                    restoredFromStorage={processing.restoredFromStorage}
+                    online={processing.online}
+                    onCancel={processing.onCancel}
+                    onRetry={processing.onRetry}
+                  />
                 }
               />
             }

@@ -12,17 +12,14 @@ function PricingContent() {
 
   return (
     <div>
-      <section className="relative overflow-hidden border-b border-white/10">
+      <section className="marketing-dark-island relative overflow-hidden border-b border-white/10 bg-[oklch(0.12_0.02_240)]">
         <div
-          className="absolute inset-0 -z-10"
+          className="absolute inset-0 z-0 pointer-events-none"
           style={{
-            background: `
-              radial-gradient(ellipse 70% 50% at 80% 0%, oklch(0.28 0.06 220 / 0.45), transparent),
-              oklch(0.12 0.02 240)
-            `,
+            background: `radial-gradient(ellipse 70% 50% at 80% 0%, oklch(0.28 0.06 220 / 0.45), transparent)`,
           }}
         />
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-16 pb-12 sm:pt-20">
+        <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6 pt-16 pb-12 sm:pt-20">
           <motion.p
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -53,7 +50,7 @@ function PricingContent() {
 
       <PackagesSection compact />
 
-      <section className="border-t border-white/10 py-12">
+      <section className="marketing-dark-island border-t border-white/10 py-12 bg-[oklch(0.12_0.02_240)]">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 flex flex-wrap gap-3">
           <Button
             asChild

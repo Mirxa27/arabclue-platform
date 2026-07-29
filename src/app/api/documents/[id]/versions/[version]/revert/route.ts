@@ -9,6 +9,10 @@ import {
   MAX_DOCUMENT_VERSION_BYTES,
   verifyDocumentVersionBytes,
 } from "@/lib/document-version-integrity";
+import {
+  analyticsRequestOrigin,
+  recordDocumentAnalyticsEvent,
+} from "@/lib/analytics-collector";
 
 export const dynamic = "force-dynamic";
 class DocumentVersionConflictError extends Error {}
@@ -148,6 +152,19 @@ export async function POST(
       newVersion: created.version,
       checksum: actualChecksum,
       parseStatus: "PENDING",
+    },
+  });
+
+  await recordDocumentAnalyticsEvent({
+    eventType: "document_version_created",
+    documentId: id,
+    mutationRef: `revert:v${created.version}:from:${versionNum}`,
+    origin: analyticsRequestOrigin({
+      tenantWorkspaceId: workspace.id,
+      actorUserId: userId,
+    }),
+    metadata: {
+      documentVersionId: created.id,
     },
   });
 

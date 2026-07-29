@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import Script from "next/script";
 import { Geist, Geist_Mono, IBM_Plex_Sans_Arabic, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,6 +10,9 @@ import { AuthSessionProvider } from "@/components/providers/session-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { rootMetadata } from "@/lib/seo";
 import { LOCALE_COOKIE_NAME } from "@/lib/store";
+
+/** Mirrors next-themes class strategy: swap `light`/`dark` on <html> before paint. */
+const THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement,c=d.classList;c.remove('light','dark');var e=localStorage.getItem('theme');var t=(!e||e==='system')?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):e;c.add(t);d.style.colorScheme=t;}catch(e){}})();`;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,6 +38,9 @@ const ibmArabic = IBM_Plex_Sans_Arabic({
 
 export const metadata: Metadata = rootMetadata;
 
+/** Locale is cookie-driven; keep the document shell request-dynamic. */
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -49,12 +56,10 @@ export default async function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${ibmArabic.variable} antialiased bg-background text-foreground`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="light"
-          enableSystem
-          disableTransitionOnChange
-        >
+        <Script id="arabclue-theme-init" strategy="beforeInteractive">
+          {THEME_INIT_SCRIPT}
+        </Script>
+        <ThemeProvider>
           <AuthSessionProvider>
             <QueryProvider>
               {children}

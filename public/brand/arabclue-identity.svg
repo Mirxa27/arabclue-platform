@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" width="100%" height="100%">
+  <defs>
+    <radialGradient id="appleBg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#1C1C1E" />
+      <stop offset="100%" stop-color="#0A0A0C" />
+    </radialGradient>
+    <linearGradient id="appleGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F5E0B3" />
+      <stop offset="50%" stop-color="#D4AF37" />
+      <stop offset="100%" stop-color="#AA7C11" />
+    </linearGradient>
+    <linearGradient id="iconBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2C2C2E" />
+      <stop offset="100%" stop-color="#151517" />
+    </linearGradient>
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <rect width="600" height="450" fill="url(#appleBg)" rx="16" />
+
+  <g transform="translate(220, 50)">
+    <rect width="160" height="160" rx="36" fill="url(#iconBg)" stroke="rgba(255, 255, 255, 0.1)" stroke-width="1.5" filter="url(#softGlow)"/>
+    <g transform="translate(80, 72)">
+      <path d="M 0 -42 C 18 -42, 38 -22, 38 6 A 38 38 0 1 1 -38 6 C -38 -22, -18 -42, 0 -42 Z"
+            fill="none" stroke="url(#appleGold)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="27" y1="33" x2="43" y2="49" stroke="url(#appleGold)" stroke-width="7.5" stroke-linecap="round"/>
+      <circle cx="0" cy="0" r="9.5" fill="url(#appleGold)"/>
+      <path d="M -5.5 0 L 5.5 0 L 7.5 18 L -7.5 18 Z" fill="url(#appleGold)"/>
+    </g>
+  </g>
+
+  <g transform="translate(300, 265)" text-anchor="middle">
+    <text font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', 'Arial', sans-serif" font-size="32" font-weight="600" letter-spacing="3">
+      <tspan fill="#FFFFFF">Arab</tspan><tspan fill="url(#appleGold)">Clue</tspan>
+    </text>
+    <text y="26" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif" font-size="10" font-weight="500" fill="#8E8E93" letter-spacing="5">
+      INTELLIGENCE REDEFINED
+    </text>
+  </g>
+
+  <g transform="translate(60, 360)">
+    <text x="0" y="-12" font-family="sans-serif" font-size="9" fill="#636366" letter-spacing="1">APP FAVICON (32px)</text>
+    <rect x="0" y="0" width="36" height="36" rx="9" fill="url(#iconBg)" stroke="rgba(255,255,255,0.1)"/>
+    <g transform="translate(18, 16) scale(0.22)">
+      <path d="M 0 -42 C 18 -42, 38 -22, 38 6 A 38 38 0 1 1 -38 6 C -38 -22, -18 -42, 0 -42 Z" fill="none" stroke="url(#appleGold)" stroke-width="12"/>
+      <line x1="27" y1="33" x2="43" y2="49" stroke="url(#appleGold)" stroke-width="12" stroke-linecap="round"/>
+      <circle cx="0" cy="0" r="9.5" fill="url(#appleGold)"/>
+      <path d="M -5.5 0 L 5.5 0 L 7.5 18 L -7.5 18 Z" fill="url(#appleGold)"/>
+    </g>
+  </g>
+
+  <g transform="translate(400, 360)">
+    <text x="0" y="-12" font-family="sans-serif" font-size="9" fill="#636366" letter-spacing="1">LIGHT MODE HEADER</text>
+    <rect x="0" y="0" width="140" height="36" rx="9" fill="#F2F2F7"/>
+    <g transform="translate(22, 18) scale(0.18)">
+      <path d="M 0 -42 C 18 -42, 38 -22, 38 6 A 38 38 0 1 1 -38 6 C -38 -22, -18 -42, 0 -42 Z" fill="none" stroke="#1C1C1E" stroke-width="12"/>
+      <line x1="27" y1="33" x2="43" y2="49" stroke="#1C1C1E" stroke-width="12" stroke-linecap="round"/>
+      <circle cx="0" cy="0" r="9.5" fill="#1C1C1E"/>
+      <path d="M -5.5 0 L 5.5 0 L 7.5 18 L -7.5 18 Z" fill="#1C1C1E"/>
+    </g>
+    <text x="46" y="22" font-family="-apple-system, sans-serif" font-size="13" font-weight="600" fill="#1C1C1E" letter-spacing="1">ArabClue</text>
+  </g>
+</svg>
