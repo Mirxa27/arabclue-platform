@@ -14,8 +14,7 @@
  * call or shared-database mutation.
  */
 
-import type { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { systemUtcClock, utcNow, type UtcClock } from "./time";
 
 /* -------------------------------------------------------------------------- */
