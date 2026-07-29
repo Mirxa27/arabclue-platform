@@ -8,7 +8,6 @@ import {
   RETURN_TO_MAX_AGE_SECONDS,
   signReturnTo,
 } from "@/lib/return-to";
-import { isEmailVerificationSkipped } from "@/lib/email-verification-policy";
 
 /** Path of the account-verification surface unverified sessions are held to. */
 const VERIFICATION_SURFACE_PATH = "/verify-email";
@@ -45,6 +44,15 @@ function isPublicPath(path: string): boolean {
   if (path.startsWith("/favicon")) return true;
   // Demo EN|AR sample tender/contract PDFs (public/samples)
   if (path === "/samples" || path.startsWith("/samples/")) return true;
+  // Chrome extension auth probe + remote config (returns authenticated:false when unsigned)
+  if (path === "/api/platform-agent/extension/config") return true;
+  // Pre-packed extension ZIP for Load unpacked (authenticated download API remains available)
+  if (
+    path === "/downloads/arabclue-agent.zip" ||
+    path === "/downloads/arabclue-voice-agent.zip"
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -124,12 +132,7 @@ export default withAuth(
     // Gate unverified sessions (requirement 1.5): deny every other authenticated
     // API with a bilingual 403 EMAIL_VERIFICATION_REQUIRED, and redirect every
     // other authenticated page to the verification surface before it renders.
-    // Temporary: SKIP_EMAIL_VERIFICATION=true disables this gate.
-    if (
-      !isEmailVerificationSkipped() &&
-      token?.emailVerified === false &&
-      !isVerificationAllowedPath(path)
-    ) {
+    if (token?.emailVerified === false && !isVerificationAllowedPath(path)) {
       if (path.startsWith("/api/")) {
         return NextResponse.json(
           bilingualFailureBody("EMAIL_VERIFICATION_REQUIRED"),
