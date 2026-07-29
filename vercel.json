@@ -24,7 +24,7 @@
     },
     {
       "path": "/api/cron/notification-dispatch",
-      "schedule": "* * * * *"
+      "schedule": "30 5 * * *"
     }
   ]
 }
