@@ -94,16 +94,42 @@ mock.module("../db", () => ({
         return Promise.resolve(findDelivery(key.eventId, key.recipientId, key.channel) ?? null);
       }),
       findMany: mock(({ where }: { where: Record<string, unknown> }) => {
-        // Simple filter: channel=email, status=PENDING, attemptCount < max
         const channel = where.channel as string | undefined;
         const status = where.status as string | undefined;
+
+        // Extract `now` from AND/OR conditions to simulate Prisma filtering
+        let now: Date | undefined;
+        const and = where.AND as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(and)) {
+          for (const cond of and) {
+            const or = cond.OR as Array<Record<string, unknown>> | undefined;
+            if (Array.isArray(or)) {
+              for (const o of or) {
+                const na = o.nextAttemptAt as { lte?: Date } | undefined;
+                if (na?.lte instanceof Date) {
+                  now = na.lte;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
         return Promise.resolve(
-          deliveryRows.filter(
-            (r) =>
-              (!channel || r.channel === channel) &&
-              (!status || r.status === status) &&
-              r.attemptCount < 3
-          )
+          deliveryRows.filter((r) => {
+            if (channel && r.channel !== channel) return false;
+            if (status && r.status !== status) return false;
+            if (r.attemptCount >= 3) return false;
+            if (now) {
+              // nextAttemptAt: null OR <= now
+              if (r.nextAttemptAt && r.nextAttemptAt.getTime() > now.getTime()) return false;
+              // claimExpiresAt: null OR <= now
+              if (r.claimExpiresAt && r.claimExpiresAt.getTime() > now.getTime()) return false;
+              // deliveryDeadlineAt: null OR > now
+              if (r.deliveryDeadlineAt && r.deliveryDeadlineAt.getTime() <= now.getTime()) return false;
+            }
+            return true;
+          })
         );
       }),
       create: mock(({ data }: { data: Record<string, unknown> }) => {
