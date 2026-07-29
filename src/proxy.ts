@@ -8,6 +8,7 @@ import {
   RETURN_TO_MAX_AGE_SECONDS,
   signReturnTo,
 } from "@/lib/return-to";
+import { isEmailVerificationSkipped } from "@/lib/email-verification-policy";
 
 /** Path of the account-verification surface unverified sessions are held to. */
 const VERIFICATION_SURFACE_PATH = "/verify-email";
@@ -123,7 +124,12 @@ export default withAuth(
     // Gate unverified sessions (requirement 1.5): deny every other authenticated
     // API with a bilingual 403 EMAIL_VERIFICATION_REQUIRED, and redirect every
     // other authenticated page to the verification surface before it renders.
-    if (token?.emailVerified === false && !isVerificationAllowedPath(path)) {
+    // Temporary: SKIP_EMAIL_VERIFICATION=true disables this gate.
+    if (
+      !isEmailVerificationSkipped() &&
+      token?.emailVerified === false &&
+      !isVerificationAllowedPath(path)
+    ) {
       if (path.startsWith("/api/")) {
         return NextResponse.json(
           bilingualFailureBody("EMAIL_VERIFICATION_REQUIRED"),
