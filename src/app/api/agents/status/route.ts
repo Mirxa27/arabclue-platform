@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
-import { runAgentPipeline } from "@/lib/agents/orchestrator";
+import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
 import {
   isAgentRunStale,
   parseAgentRunConfig,
@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
             overallProgress: 0,
           },
         });
-        void runAgentPipeline({
+        scheduleAgentPipeline({
           runId,
           projectId: cfg.projectId,
           workspaceId: cfg.workspaceId,
@@ -103,9 +103,11 @@ export async function GET(req: NextRequest) {
           locale: cfg.locale,
           regenerateMode: cfg.regenerateMode,
           targetProposalId: cfg.targetProposalId,
-        })
-          .catch((err) => console.error("[agents/status resume]", err))
-          .finally(() => resumeLocks.delete(runId));
+          logLabel: "[agents/status resume]",
+        });
+        // Clear lock after a short delay so concurrent polls don't double-resume
+        // while after() is still scheduling the same run.
+        setTimeout(() => resumeLocks.delete(runId), 5_000);
 
         run = await db.agentRun.findUnique({
           where: { id: runId },

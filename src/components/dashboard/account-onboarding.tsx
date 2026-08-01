@@ -257,8 +257,30 @@ export function AccountOnboarding() {
         })}
       </div>
 
-      {step === "brand" || step === "trackRecord" ? (
+      {step === "brand" ? (
         <BrandSetup />
+      ) : step === "trackRecord" ? (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm space-y-2">
+            <p className="font-medium">
+              {locale === "ar"
+                ? "المشاريع السابقة تحتاج اعتماداً بمراجع إثبات"
+                : "Past projects need approval with evidence provenance"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {locale === "ar"
+                ? "أضف بطاقات المشاريع ثم اعتمدها من قائمة اعتماد المعرفة حتى يُفتح مسار توليد العروض."
+                : "Add project cards, then approve them in Knowledge Approval so proposal generation unlocks."}
+            </p>
+            <Button
+              size="sm"
+              onClick={() => startTransition(() => setView("knowledge-approval"))}
+            >
+              {locale === "ar" ? "فتح اعتماد المعرفة" : "Open Knowledge Approval"}
+            </Button>
+          </div>
+          <BrandSetup />
+        </div>
       ) : step === "legal" ? (
         <LegalPanel workspace={data?.workspace} />
       ) : step === "humanCapital" ? (

@@ -4,15 +4,16 @@ import { seedComplianceChecks } from "@/lib/bootstrap";
 import { AGENTS } from "@/lib/constants";
 import { tr } from "@/lib/i18n";
 import type { AgentState } from "@/lib/types";
-import { runAgentPipeline } from "@/lib/agents/orchestrator";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { agentRunBodySchema, parseJsonBody } from "@/lib/validation";
-import { assertOnboardingReady } from "@/lib/onboarding";
+import { assertOnboardingReady, computeOnboardingSteps } from "@/lib/onboarding";
 import { ApiError } from "@/lib/api-controller";
 import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
+import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
+import { isAgentRunStale } from "@/lib/proposal-studio";
 import {
   analyticsRequestOrigin,
   recordAgentRunAnalyticsEvent,
@@ -62,8 +63,17 @@ export async function POST(req: NextRequest) {
       await assertOnboardingReady(workspace.id);
     } catch (e) {
       if (e instanceof ApiError) {
+        const onboarding =
+          e.code === "ONBOARDING_INCOMPLETE"
+            ? await computeOnboardingSteps(workspace.id).catch(() => null)
+            : null;
         return NextResponse.json(
-          { error: e.message, code: e.code },
+          {
+            error: e.message,
+            code: e.code,
+            missing: onboarding?.missing ?? undefined,
+            readyForProposals: onboarding?.readyForProposals ?? false,
+          },
           { status: e.status }
         );
       }
@@ -95,7 +105,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Atomic race guard: only one QUEUED/RUNNING run per project
+    // Atomic race guard: only one QUEUED/RUNNING run per project.
+    // Auto-fail stale runs so a dead serverless invocation cannot block forever.
     const active = await db.agentRun.findFirst({
       where: {
         projectId: project.id,
@@ -104,14 +115,38 @@ export async function POST(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
     if (active) {
-      return NextResponse.json(
-        {
-          error: "An agent run is already in progress for this project",
-          runId: active.id,
-          status: active.status,
-        },
-        { status: 409 }
-      );
+      const stale = isAgentRunStale({
+        status: active.status,
+        createdAt: active.createdAt,
+        startedAt: active.startedAt,
+        updatedAt: active.updatedAt,
+        overallProgress: active.overallProgress,
+      });
+      if (stale) {
+        await db.agentRun.updateMany({
+          where: {
+            id: active.id,
+            status: { in: ["QUEUED", "RUNNING"] },
+          },
+          data: {
+            status: "FAILED",
+            errorMessage:
+              "Agent run timed out without progress (stale serverless invocation). Start a new run.",
+            completedAt: new Date(),
+          },
+        });
+      } else {
+        return NextResponse.json(
+          {
+            error: "An agent run is already in progress for this project",
+            code: "AGENT_RUN_IN_PROGRESS",
+            runId: active.id,
+            status: active.status,
+            stale: false,
+          },
+          { status: 409 }
+        );
+      }
     }
 
     if (tenderType && tenderType !== project.category) {
@@ -209,7 +244,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    void runAgentPipeline({
+    scheduleAgentPipeline({
       runId: run.run.id,
       projectId: project.id,
       workspaceId: workspace.id,
@@ -217,7 +252,8 @@ export async function POST(req: NextRequest) {
       locale,
       regenerateMode,
       targetProposalId: targetProposalId ?? null,
-    }).catch((err) => console.error("[agents/run pipeline]", err));
+      logLabel: "[agents/run pipeline]",
+    });
 
     return NextResponse.json({
       runId: run.run.id,

@@ -384,15 +384,49 @@ export function AgentWorkflow() {
         body: JSON.stringify({ projectId: activeProjectId, tenderType, locale }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string;
+          runId?: string;
+          missing?: string[];
+        };
         if (err.code === NO_DOCUMENTS_PREFLIGHT.code) {
-          throw new Error(
-            locale === "ar"
-              ? "ارفع مستندات المناقصة قبل تشغيل الوكلاء"
-              : err.error ?? NO_DOCUMENTS_PREFLIGHT.error
+          throw Object.assign(
+            new Error(
+              locale === "ar"
+                ? "ارفع مستندات المناقصة قبل تشغيل الوكلاء"
+                : err.error ?? NO_DOCUMENTS_PREFLIGHT.error
+            ),
+            { code: err.code }
           );
         }
-        throw new Error(err.error ?? "run failed");
+        if (err.code === "ONBOARDING_INCOMPLETE") {
+          const missing = Array.isArray(err.missing)
+            ? err.missing.join(", ")
+            : "";
+          throw Object.assign(
+            new Error(
+              locale === "ar"
+                ? `أكمل إعداد الحساب أولاً${missing ? `: ${missing}` : ""}`
+                : err.error ??
+                    `Complete account onboarding first${missing ? `: ${missing}` : ""}`
+            ),
+            { code: err.code, missing: err.missing }
+          );
+        }
+        if (res.status === 409 && err.runId) {
+          throw Object.assign(
+            new Error(
+              locale === "ar"
+                ? "يوجد تشغيل نشط — أوقفه أو انتظر اكتماله"
+                : err.error ?? "An agent run is already in progress"
+            ),
+            { code: err.code ?? "AGENT_RUN_IN_PROGRESS", runId: err.runId }
+          );
+        }
+        throw Object.assign(new Error(err.error ?? "run failed"), {
+          code: err.code,
+        });
       }
       return res.json();
     },
@@ -428,16 +462,20 @@ export function AgentWorkflow() {
       qc.invalidateQueries({ queryKey: ["stats"] });
       qc.invalidateQueries({ queryKey: ["agent-runs"] });
     },
-    onError: (err: Error) => {
-      if (err.message.includes("project") || err.message.includes("مشروع")) {
+    onError: (err: Error & { code?: string; runId?: string }) => {
+      if (err.code === "ONBOARDING_INCOMPLETE") {
+        startTransition(() => setView("account"));
+      } else if (err.message.includes("project") || err.message.includes("مشروع")) {
         startTransition(() => setView("projects"));
-      }
-      if (
+      } else if (
         err.message.includes("document") ||
         err.message.includes("مستند") ||
         err.message.includes("ارفع")
       ) {
         startTransition(() => setView("documents"));
+      }
+      if (err.code === "AGENT_RUN_IN_PROGRESS" && err.runId) {
+        setRunId(err.runId);
       }
       toast({
         title: locale === "ar" ? "تعذر التشغيل" : "Could not start",
