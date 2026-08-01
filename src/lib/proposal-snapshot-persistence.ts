@@ -816,7 +816,11 @@ export type ProposalDownloadEngineSelection =
     }>
   | Readonly<{
       kind: "STRUCTURED";
-      channel: "HTML" | "PDF" | "PPTX";
+      channel: "HTML" | "PDF" | "PPTX" | "XLSX";
+    }>
+  | Readonly<{
+      /** Structured snapshot required; packages built from structured + live sheets. */
+      kind: "STRUCTURED_SUPPLEMENTAL";
     }>
   | Readonly<{
       kind: "STRUCTURED_FORMAT_UNSUPPORTED";
@@ -834,6 +838,16 @@ export function selectProposalDownloadEngine(
   if (format === "html") return { kind: "STRUCTURED", channel: "HTML" };
   if (format === "pdf") return { kind: "STRUCTURED", channel: "PDF" };
   if (format === "pptx") return { kind: "STRUCTURED", channel: "PPTX" };
+  if (format === "xlsx") return { kind: "STRUCTURED", channel: "XLSX" };
+  if (
+    format === "zip" ||
+    format === "xlsx-matrix" ||
+    format === "xlsx-boq" ||
+    format === "slides" ||
+    format === "manifest"
+  ) {
+    return { kind: "STRUCTURED_SUPPLEMENTAL" };
+  }
   return { kind: "STRUCTURED_FORMAT_UNSUPPORTED" };
 }
 

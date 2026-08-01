@@ -262,7 +262,10 @@ export async function GET(
 
   let structuredSnapshot: CanonicalProposalSnapshot | null = null;
   let structuredApprovedEvidenceIds: readonly string[] = [];
-  if (exportEngine.kind === "STRUCTURED") {
+  if (
+    exportEngine.kind === "STRUCTURED" ||
+    exportEngine.kind === "STRUCTURED_SUPPLEMENTAL"
+  ) {
     const validation = validatePersistedProposalSnapshot(
       proposal.structuredSnapshot,
       {
@@ -956,6 +959,36 @@ export async function GET(
                 .replace(/\s+/g, "_")
                 .replace(/_+/g, "_") || "Contract_Package";
             filename = `${companySlug}_Contract_Package.zip`;
+          }
+        } else if (structuredSnapshot !== null) {
+          const { generateStructuredBidPackageZIP } = await import(
+            "@/lib/structured-bid-package"
+          );
+          buffer = await generateStructuredBidPackageZIP({
+            snapshot: structuredSnapshot.snapshot,
+            presetKey: structuredSnapshot.presetKey,
+            proposalId: proposal.id,
+            proposalVersion: proposal.version,
+            project: proposal.project,
+            brand,
+            checks,
+            boqItems: boqItems ?? [],
+            validation: gateReport,
+            company: companyLetterhead,
+            locale: exportLocale,
+          });
+          contentType = "application/zip";
+          {
+            const companyName = letterheadCompanyName(
+              exportLocale,
+              brand,
+              companyLetterhead
+            );
+            const companySlug =
+              sanitizeFilename(companyName)
+                .replace(/\s+/g, "_")
+                .replace(/_+/g, "_") || "Bid_Package";
+            filename = `${companySlug}_Structured_Bid_Package.zip`;
           }
         } else {
           buffer = await generateBidPackageZIP(
