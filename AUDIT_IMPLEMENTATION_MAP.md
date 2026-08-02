@@ -266,7 +266,7 @@
 
 ### Issue 3: Notification Delivery Async ✅ RESOLVED
 **File**: src/lib/notification-service.ts
-**Status**: Async outbox fully implemented — PENDING rows written after commit, claimed/sent by `/api/cron/notification-dispatch` with bounded retries; covered by `notification-delivery.test.ts`
+**Status**: Async outbox fully implemented — PENDING rows written after commit, claimed/sent by `/api/cron/notification-dispatch` with bounded retries; covered by `src/lib/__tests-isolated/notification-delivery.test.ts`
 
 ### Issue 4: Email Verification Gating ✅ RESOLVED
 **File**: src/lib/email-verification-policy.ts + `/api/business-profile/export`
@@ -286,7 +286,7 @@
 
 - [x] Apply pending migrations: `bun run prisma migrate deploy` — **DONE 2026-08-02 (all 20 applied; schema up to date)**
 - [ ] Validate webhook idempotency keys in production — code-level coverage complete (`property-13-recurring-webhook-idempotence`, `property-14-reconciliation-idempotence`); live provider validation needs merchant credentials
-- [x] Monitor NotificationDelivery outbox queue — **DONE**: async cron dispatcher (`/api/cron/notification-dispatch`) + after-commit outbox, covered by `notification-delivery.test.ts` (12 tests, part of the 84-test isolated pass)
+- [x] Monitor NotificationDelivery outbox queue — **DONE**: async cron dispatcher (`/api/cron/notification-dispatch`) + after-commit outbox, covered by `src/lib/__tests-isolated/notification-delivery.test.ts` (12 tests, part of the 84-test isolated pass)
 - [x] Add rate limit to proposal downloads — **DONE**: `rateLimitAsync({ limit: 10, windowMs: 60_000 })` in `/api/proposals/[id]/download` (10 per minute per user, sliding window)
 - [ ] Load test analytics with 1M+ events — operational; requires production-scale data
 - [ ] Test XLSX export with 10K+ row proposals — operational; requires production-scale data
