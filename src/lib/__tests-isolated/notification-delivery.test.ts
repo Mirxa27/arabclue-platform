@@ -10,7 +10,7 @@
  * DB and Resend are mocked so no network or shared database is touched.
  */
 
-import { describe, expect, test, mock, beforeEach } from "bun:test";
+import { beforeAll, describe, expect, test, mock, beforeEach } from "bun:test";
 
 // ─── Mock state ─────────────────────────────────────────────────────────────
 
@@ -83,6 +83,12 @@ function findDelivery(
 
 // ─── Mock modules ────────────────────────────────────────────────────────────
 
+type NotificationServiceModule = typeof import("../notification-service");
+let sendTransactionalNotification: NotificationServiceModule["sendTransactionalNotification"];
+let dispatchPendingNotificationEmails: NotificationServiceModule["dispatchPendingNotificationEmails"];
+let NOTIFICATION_MAX_ATTEMPTS: NotificationServiceModule["NOTIFICATION_MAX_ATTEMPTS"];
+
+beforeAll(async () => {
 mock.module("../db", () => ({
   db: {
     notificationDelivery: {
@@ -245,11 +251,9 @@ mock.module("../email", () => ({
 }));
 
 // Import after mocks are registered
-const {
-  sendTransactionalNotification,
-  dispatchPendingNotificationEmails,
-  NOTIFICATION_MAX_ATTEMPTS,
-} = await import("../notification-service");
+({ sendTransactionalNotification, dispatchPendingNotificationEmails, NOTIFICATION_MAX_ATTEMPTS } =
+  await import("../notification-service"));
+});
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 

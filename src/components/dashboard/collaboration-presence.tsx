@@ -201,7 +201,6 @@ export function CollaborationPresenceBar({
             title={`${presence.name}${presence.sectionKey ? ` (${presence.sectionKey})` : ""}`}
           >
             {presence.avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={presence.avatarUrl}
                 alt={presence.name}

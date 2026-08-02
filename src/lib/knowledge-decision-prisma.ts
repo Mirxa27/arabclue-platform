@@ -85,7 +85,6 @@ export function createPrismaKnowledgeDecisionRepository(
         return client.$transaction(
           async (tx) => {
             const name = delegateFor(input.recordType);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const model = (tx as any)[name] as {
               findFirst: (args: unknown) => Promise<{
                 id: string;

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
 // In-memory mock state for db
@@ -6,6 +6,12 @@ let mockSub: any = null;
 let mockUser: any = null;
 let updateManyCalls: Array<{ userId: string; field: string; amount: number }> = [];
 
+type QuotasModule = typeof import("../quotas");
+let assertWithinQuota: QuotasModule["assertWithinQuota"];
+let bumpUsage: QuotasModule["bumpUsage"];
+let QuotaExceededError: QuotasModule["QuotaExceededError"];
+
+beforeAll(async () => {
 mock.module("../db", () => ({
   db: {
     subscription: {
@@ -23,9 +29,10 @@ mock.module("../db", () => ({
   },
 }));
 
-const { assertWithinQuota, bumpUsage, QuotaExceededError } = await import(
+({ assertWithinQuota, bumpUsage, QuotaExceededError } = await import(
   "../quotas"
-);
+));
+});
 
 function resetMockState() {
   mockSub = null;

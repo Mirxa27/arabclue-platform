@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
 let queryRawCalls = 0;
@@ -7,12 +7,7 @@ let queryRawImpl: () => Promise<any> = () => {
   return Promise.resolve([{ "?column?": 1 }]);
 };
 
-// Mock db with controllable $queryRawUnsafe
-mock.module("../db", () => ({
-  db: {
-    $queryRawUnsafe: mock(() => queryRawImpl()),
-  },
-}));
+let db: any;
 
 // Override any previous mock of ../ensure-db with a fresh implementation
 // that replicates the real caching behavior
@@ -28,9 +23,6 @@ async function doEnsure(): Promise<void> {
   await db.$queryRawUnsafe(`SELECT 1`);
 }
 
-// Import db after mock is set up
-const { db } = await import("../db");
-
 function ensureDatabaseReady(): Promise<void> {
   if (!ensurePromise) {
     ensurePromise = doEnsure().catch((err) => {
@@ -41,10 +33,22 @@ function ensureDatabaseReady(): Promise<void> {
   return ensurePromise;
 }
 
-// Mock the real module with our fresh implementation
-mock.module("../ensure-db", () => ({
-  ensureDatabaseReady: ensureDatabaseReady,
-}));
+beforeAll(async () => {
+  // Mock db with controllable $queryRawUnsafe
+  mock.module("../db", () => ({
+    db: {
+      $queryRawUnsafe: mock(() => queryRawImpl()),
+    },
+  }));
+
+  // Import db after mock is set up
+  ({ db } = await import("../db"));
+
+  // Mock the real module with our fresh implementation
+  mock.module("../ensure-db", () => ({
+    ensureDatabaseReady: ensureDatabaseReady,
+  }));
+});
 
 describe("ensureDatabaseReady", () => {
   test("throws when DATABASE_URL is not a postgres URL", async () => {

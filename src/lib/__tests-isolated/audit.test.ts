@@ -1,9 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
 let createCalls: any[] = [];
 let webhookCalled = false;
 
+type AuditModule = typeof import("../audit");
+let audit: AuditModule["audit"];
+let AUDIT_ACTIONS: AuditModule["AUDIT_ACTIONS"];
+
+beforeAll(async () => {
 mock.module("../db", () => ({
   db: {
     auditLog: {
@@ -22,7 +27,8 @@ mock.module("../outbound-webhook", () => ({
   }),
 }));
 
-const { audit, AUDIT_ACTIONS } = await import("../audit");
+({ audit, AUDIT_ACTIONS } = await import("../audit"));
+});
 
 function resetState() {
   createCalls = [];

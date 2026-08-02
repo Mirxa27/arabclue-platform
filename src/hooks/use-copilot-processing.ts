@@ -173,7 +173,9 @@ export function useCopilotProcessing(
   }, [busy, turnStartedAt, args.error, timedOut, args.messages]);
 
   const stopRef = useRef(args.stop);
-  stopRef.current = args.stop;
+  useEffect(() => {
+    stopRef.current = args.stop;
+  }, [args.stop]);
 
   // Elapsed + timeout + terminal hold tick
   useEffect(() => {

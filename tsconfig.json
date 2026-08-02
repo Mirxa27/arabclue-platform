@@ -41,6 +41,7 @@
     "examples",
     "extensions",
     "src/lib/__tests__",
+    "src/lib/__tests-isolated",
     "e2e",
     "playwright.completion.config.ts"
   ]

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
 // Mock db with in-memory state
@@ -11,6 +11,11 @@ let createManyCalls: any[] = [];
 let deleteManyCalls: any[] = [];
 let updateCalls: any[] = [];
 
+type RequirementsModule = typeof import("../requirements");
+let persistTenderRequirements: RequirementsModule["persistTenderRequirements"];
+let applyCoveragePlanToRequirements: RequirementsModule["applyCoveragePlanToRequirements"];
+
+beforeAll(async () => {
 mock.module("../db", () => ({
   db: {
     certificate: {
@@ -75,9 +80,10 @@ mock.module("../agents/coverage", () => ({
   }),
 }));
 
-const { persistTenderRequirements, applyCoveragePlanToRequirements } = await import(
+({ persistTenderRequirements, applyCoveragePlanToRequirements } = await import(
   "../requirements"
-);
+));
+});
 
 function resetState() {
   mockCerts = [];

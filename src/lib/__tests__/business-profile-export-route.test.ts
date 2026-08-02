@@ -86,7 +86,7 @@ function profileFixture(): BusinessProfileSnapshot {
 }
 
 interface RouteHarnessState {
-  session: { userId: string } | null;
+  session: { userId: string; emailVerified: boolean } | null;
   profile: BusinessProfileSnapshot;
   profileLoadCount: number;
   legacyHtmlLocales: Array<"ar" | "en">;
@@ -102,7 +102,7 @@ function routeHarness(): {
   readonly state: RouteHarnessState;
 } {
   const state: RouteHarnessState = {
-    session: { userId: "user-001" },
+    session: { userId: "user-001", emailVerified: true },
     profile: profileFixture(),
     profileLoadCount: 0,
     legacyHtmlLocales: [],

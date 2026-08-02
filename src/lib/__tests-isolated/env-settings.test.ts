@@ -1,6 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
+type EnvSettingsModule = typeof import("../env-settings");
+let getDecryptedEnv: EnvSettingsModule["getDecryptedEnv"];
+let getProviderApiKey: EnvSettingsModule["getProviderApiKey"];
+let resolveProviderApiKey: EnvSettingsModule["resolveProviderApiKey"];
+
+beforeAll(async () => {
 // Mock the db module to avoid hitting the real database
 mock.module("../db", () => ({
   db: {
@@ -37,8 +43,9 @@ mock.module("../llm/model-catalog", () => ({
   }),
 }));
 
-const { getDecryptedEnv, getProviderApiKey, resolveProviderApiKey } =
-  await import("../env-settings");
+({ getDecryptedEnv, getProviderApiKey, resolveProviderApiKey } =
+  await import("../env-settings"));
+});
 
 describe("getDecryptedEnv", () => {
   test("returns process.env value when present", async () => {

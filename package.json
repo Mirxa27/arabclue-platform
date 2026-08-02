@@ -32,7 +32,7 @@
     "start:standalone": "NODE_ENV=production node .next/standalone/server.js",
     "postinstall": "prisma generate",
     "lint": "eslint .",
-    "test": "bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__",
+    "test": "bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests-isolated && bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__",
     "test:completion": "bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__/platform-completion",
     "test:completion:db": "COMPLETION_USE_TEST_DATABASE=1 bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__/platform-completion",
     "test:e2e:completion": "playwright test --config playwright.completion.config.ts",

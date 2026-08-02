@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
 // Mock state
@@ -13,6 +13,13 @@ let mockStarterPlan: any = null;
 let mockApprovalPolicy: any = null;
 let mockOnboardingProgress: any = null;
 
+type BootstrapModule = typeof import("../bootstrap");
+let getBootstrapContext: BootstrapModule["getBootstrapContext"];
+let resetBootstrapCache: BootstrapModule["resetBootstrapCache"];
+let seedOnboardingDefaults: BootstrapModule["seedOnboardingDefaults"];
+let seedComplianceChecks: BootstrapModule["seedComplianceChecks"];
+
+beforeAll(async () => {
 mock.module("../db", () => ({
   db: {
     workspace: {
@@ -144,8 +151,9 @@ mock.module("../production-identities", () => ({
   isProductionRuntime: mock(() => false),
 }));
 
-const { getBootstrapContext, resetBootstrapCache, seedOnboardingDefaults, seedComplianceChecks } =
-  await import("../bootstrap");
+({ getBootstrapContext, resetBootstrapCache, seedOnboardingDefaults, seedComplianceChecks } =
+  await import("../bootstrap"));
+});
 
 function resetState() {
   mockWorkspace = null;
