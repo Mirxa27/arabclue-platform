@@ -33,7 +33,7 @@ describe("extension i18n", () => {
   });
 
   test("t() falls back to English for missing keys", () => {
-    expect(t("appTitle", "en")).toBe("ArabClue Etimad Agent");
-    expect(t("appTitle", "ar")).toBe("وكيل ArabClue لاعتماد");
+    expect(t("appTitle", "en")).toBe("ArabClue Agent");
+    expect(t("appTitle", "ar")).toBe("وكيل ArabClue");
   });
 });

@@ -3,7 +3,9 @@
 @import "./design-tokens.css";
 @import "./bilingual-layout.css";
 
-@custom-variant dark (&:is(.dark *));
+/* Class strategy for next-themes (html.dark). Official Tailwind v4 form —
+   :where keeps zero specificity so dark: utilities don't override light ones. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --color-background: var(--background);
@@ -71,17 +73,17 @@
   --leading-display: 0.92;
   --leading-tight: 1.08;
 
-  /* Marketing dark premium — surface ladder (Linear style) */
-  --marketing-bg: oklch(0.13 0.02 260);
-  --marketing-bg-soft: oklch(0.14 0.02 260);
-  --surface-0: #08090a;
-  --surface-1: #0f1011;
-  --surface-2: #141516;
-  --surface-3: #18191a;
-  --surface-4: #1c1f27;
-  --hairline: #23252a;
-  --hairline-light: #2a2d36;
-  --hairline-strong: #34343a;
+  /* Marketing premium — surface ladder (Linear style) — LIGHT values */
+  --marketing-bg: oklch(0.991 0.002 240);
+  --marketing-bg-soft: oklch(0.97 0.004 240);
+  --surface-0: #ffffff;
+  --surface-1: #f8f9fb;
+  --surface-2: #f1f3f6;
+  --surface-3: #e8eaef;
+  --surface-4: #dfe2e8;
+  --hairline: #e2e4e8;
+  --hairline-light: #d1d4da;
+  --hairline-strong: #b8bcc4;
 
   /* Accent system — mono base + one chromatic (cyan + warm amber as secondary) */
   --accent-cyan: oklch(0.72 0.12 195);
@@ -90,13 +92,13 @@
   --accent-lavender: #5e6ad2;
   --accent-emerald: #10b981;
 
-  /* Glass 2.0 — depth-based transparency */
-  --glass-bg: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-  --glass-bg-strong: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
-  --glass-border: rgba(255,255,255,0.10);
-  --glass-border-strong: rgba(255,255,255,0.14);
-  --glass-shadow: 0 0 0 1px rgba(255,255,255,0.06) inset, 0 8px 32px rgba(0,0,0,0.35);
-  --glass-shadow-strong: 0 0 0 1px rgba(255,255,255,0.08) inset, 0 16px 48px rgba(0,0,0,0.45);
+  /* Glass 2.0 — depth-based transparency — LIGHT */
+  --glass-bg: linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.01));
+  --glass-bg-strong: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02));
+  --glass-border: rgba(0,0,0,0.08);
+  --glass-border-strong: rgba(0,0,0,0.12);
+  --glass-shadow: 0 0 0 1px rgba(0,0,0,0.04) inset, 0 8px 32px rgba(0,0,0,0.08);
+  --glass-shadow-strong: 0 0 0 1px rgba(0,0,0,0.06) inset, 0 16px 48px rgba(0,0,0,0.12);
 
   /* Aurora tokens */
   --aurora-1: oklch(0.7 0.15 250);
@@ -181,6 +183,26 @@
   --aurora-3: oklch(0.58 0.2 290);
   --glow-primary: oklch(0.64 0.19 262 / 0.4);
   --glow-cyan: oklch(0.7 0.15 200 / 0.35);
+
+  /* Dark surface ladder — overrides light :root values */
+  --marketing-bg: oklch(0.13 0.02 260);
+  --marketing-bg-soft: oklch(0.14 0.02 260);
+  --surface-0: #08090a;
+  --surface-1: #0f1011;
+  --surface-2: #141516;
+  --surface-3: #18191a;
+  --surface-4: #1c1f27;
+  --hairline: #23252a;
+  --hairline-light: #2a2d36;
+  --hairline-strong: #34343a;
+
+  /* Glass 2.0 — dark depth-based transparency */
+  --glass-bg: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+  --glass-bg-strong: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+  --glass-border: rgba(255,255,255,0.10);
+  --glass-border-strong: rgba(255,255,255,0.14);
+  --glass-shadow: 0 0 0 1px rgba(255,255,255,0.06) inset, 0 8px 32px rgba(0,0,0,0.35);
+  --glass-shadow-strong: 0 0 0 1px rgba(255,255,255,0.08) inset, 0 16px 48px rgba(0,0,0,0.45);
 }
 
 @layer base {
@@ -195,6 +217,10 @@
     text-rendering: optimizeLegibility;
     font-variant-ligatures: common-ligatures;
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
   body {
     @apply bg-background text-foreground;
@@ -342,7 +368,48 @@
       radial-gradient(at 18% 22%, oklch(0.68 0.15 250 / 0.22) 0px, transparent 52%),
       radial-gradient(at 82% 18%, oklch(0.75 0.12 200 / 0.18) 0px, transparent 58%),
       radial-gradient(at 48% 78%, oklch(0.72 0.15 290 / 0.14) 0px, transparent 54%),
-      linear-gradient(180deg, var(--marketing-bg) 0%, oklch(0.16 0.025 265) 100%);
+      linear-gradient(180deg, var(--marketing-bg) 0%, var(--marketing-bg-soft) 100%);
+  }
+  /* Light: keep aurora soft — never fade into a dark navy band. */
+  html:not(.dark) .aurora-mesh {
+    background:
+      radial-gradient(at 18% 22%, oklch(0.72 0.12 220 / 0.14) 0px, transparent 52%),
+      radial-gradient(at 82% 18%, oklch(0.78 0.10 195 / 0.12) 0px, transparent 58%),
+      radial-gradient(at 48% 78%, oklch(0.80 0.08 80 / 0.10) 0px, transparent 54%),
+      linear-gradient(180deg, var(--marketing-bg) 0%, oklch(0.975 0.006 240) 100%);
+  }
+  .hero-radial-wash {
+    background:
+      radial-gradient(ellipse 90% 70% at 72% 8%, oklch(0.30 0.07 220 / 0.58) 0%, transparent 58%),
+      radial-gradient(ellipse 75% 60% at 12% 70%, oklch(0.33 0.06 200 / 0.34) 0%, transparent 56%),
+      radial-gradient(ellipse 50% 40% at 50% -10%, oklch(0.58 0.11 70 / 0.14) 0%, transparent 62%);
+  }
+  html:not(.dark) .hero-radial-wash {
+    background:
+      radial-gradient(ellipse 90% 70% at 72% 8%, oklch(0.78 0.08 220 / 0.22) 0%, transparent 58%),
+      radial-gradient(ellipse 75% 60% at 12% 70%, oklch(0.82 0.06 195 / 0.16) 0%, transparent 56%),
+      radial-gradient(ellipse 50% 40% at 50% -10%, oklch(0.88 0.08 80 / 0.18) 0%, transparent 62%);
+  }
+  html:not(.dark) .hero-grid-mask {
+    opacity: 0.08;
+  }
+  html:not(.dark) .hero-grid-mask > div {
+    background-image:
+      linear-gradient(to right, oklch(0.25 0.02 260 / 0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.25 0.02 260 / 0.06) 1px, transparent 1px);
+  }
+  /* Soft mid-band washes — stay subtle on light marketing pages. */
+  .marketing-band-wash {
+    background-image: linear-gradient(to bottom, transparent, oklch(0.14 0.02 260 / 0.55), transparent);
+  }
+  .marketing-band-wash-soft {
+    background-image: linear-gradient(to bottom, transparent, oklch(0.14 0.03 240 / 0.38), transparent);
+  }
+  html:not(.dark) .marketing-band-wash {
+    background-image: linear-gradient(to bottom, transparent, oklch(0.94 0.01 240 / 0.7), transparent);
+  }
+  html:not(.dark) .marketing-band-wash-soft {
+    background-image: linear-gradient(to bottom, transparent, oklch(0.96 0.008 220 / 0.55), transparent);
   }
 
   /* Grain / noise for depth — subtle */
@@ -485,8 +552,177 @@
     background: var(--marketing-bg);
     color: white;
   }
-  .marketing-dark-plane .text-white { color: white !important; }
-  .marketing-dark-plane .border-white\/10 { border-color: oklch(1 0 0 / 0.1) !important; }
+  .dark .marketing-dark-plane .text-white { color: white !important; }
+  .dark .marketing-dark-plane .border-white\/10 { border-color: oklch(1 0 0 / 0.1) !important; }
+
+  /* Light theme: remap landing/marketing white-on-dark utilities so the
+     theme toggle is honest without rewriting every marketing section.
+     Intentional dark surfaces use `.marketing-dark-island` to opt out. */
+  html:not(.dark) .marketing-dark-plane {
+    background: var(--background);
+    color: var(--foreground);
+  }
+  html:not(.dark) .marketing-dark-plane .text-white {
+    color: var(--foreground) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/95 {
+    color: color-mix(in oklab, var(--foreground) 92%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/90 {
+    color: color-mix(in oklab, var(--foreground) 88%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/85 {
+    color: color-mix(in oklab, var(--foreground) 84%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/80 {
+    color: color-mix(in oklab, var(--foreground) 82%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/75 {
+    color: color-mix(in oklab, var(--foreground) 78%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/70 {
+    color: color-mix(in oklab, var(--foreground) 74%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/60 {
+    color: color-mix(in oklab, var(--foreground) 68%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/55 {
+    color: color-mix(in oklab, var(--foreground) 64%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/50 {
+    color: color-mix(in oklab, var(--foreground) 60%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/45 {
+    color: color-mix(in oklab, var(--foreground) 58%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/40 {
+    color: color-mix(in oklab, var(--foreground) 56%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/35 {
+    color: color-mix(in oklab, var(--foreground) 52%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/30 {
+    color: color-mix(in oklab, var(--foreground) 48%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-white\/25 {
+    color: color-mix(in oklab, var(--foreground) 44%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .border-white\/10,
+  html:not(.dark) .marketing-dark-plane .border-white\/15,
+  html:not(.dark) .marketing-dark-plane .border-white\/5,
+  html:not(.dark) .marketing-dark-plane .border-white\/\[0\.07\],
+  html:not(.dark) .marketing-dark-plane .border-white\/\[0\.08\],
+  html:not(.dark) .marketing-dark-plane .border-white\/\[0\.12\] {
+    border-color: var(--border) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .bg-white\/\[0\.03\],
+  html:not(.dark) .marketing-dark-plane .bg-white\/\[0\.04\],
+  html:not(.dark) .marketing-dark-plane .bg-white\/\[0\.05\],
+  html:not(.dark) .marketing-dark-plane .bg-white\/\[0\.06\],
+  html:not(.dark) .marketing-dark-plane .bg-white\/\[0\.07\],
+  html:not(.dark) .marketing-dark-plane .bg-white\/\[0\.08\],
+  html:not(.dark) .marketing-dark-plane .bg-white\/5 {
+    background-color: color-mix(in oklab, var(--foreground) 6%, transparent) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .bg-white {
+    background-color: var(--foreground) !important;
+    color: var(--background) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-black {
+    color: var(--background) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .text-amber-100,
+  html:not(.dark) .marketing-dark-plane .text-amber-100\/80,
+  html:not(.dark) .marketing-dark-plane .text-amber-200 {
+    color: oklch(0.42 0.12 75) !important;
+  }
+  html:not(.dark) .marketing-dark-plane .bg-clip-text {
+    -webkit-text-fill-color: unset !important;
+    color: var(--foreground) !important;
+    background-image: none !important;
+  }
+
+  /* Product mock / pricing cards / other intentional dark chrome.
+     isolation keeps absolute -z-10 washes inside the island so they don't
+     paint behind the light marketing plane background. */
+  .marketing-dark-island {
+    color: white;
+    isolation: isolate;
+  }
+  html:not(.dark) .marketing-dark-island .text-white {
+    color: white !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/95 {
+    color: oklch(1 0 0 / 0.95) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/90 {
+    color: oklch(1 0 0 / 0.9) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/85 {
+    color: oklch(1 0 0 / 0.85) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/80 {
+    color: oklch(1 0 0 / 0.8) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/75 {
+    color: oklch(1 0 0 / 0.75) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/70 {
+    color: oklch(1 0 0 / 0.7) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/60 {
+    color: oklch(1 0 0 / 0.6) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/55 {
+    color: oklch(1 0 0 / 0.55) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/50 {
+    color: oklch(1 0 0 / 0.5) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/45 {
+    color: oklch(1 0 0 / 0.45) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/40 {
+    color: oklch(1 0 0 / 0.4) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/35 {
+    color: oklch(1 0 0 / 0.35) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/30 {
+    color: oklch(1 0 0 / 0.3) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-white\/25 {
+    color: oklch(1 0 0 / 0.25) !important;
+  }
+  html:not(.dark) .marketing-dark-island .border-white\/10,
+  html:not(.dark) .marketing-dark-island .border-white\/15,
+  html:not(.dark) .marketing-dark-island .border-white\/5,
+  html:not(.dark) .marketing-dark-island .border-white\/\[0\.07\],
+  html:not(.dark) .marketing-dark-island .border-white\/\[0\.08\],
+  html:not(.dark) .marketing-dark-island .border-white\/\[0\.12\] {
+    border-color: oklch(1 0 0 / 0.1) !important;
+  }
+  html:not(.dark) .marketing-dark-island .bg-white\/\[0\.03\],
+  html:not(.dark) .marketing-dark-island .bg-white\/\[0\.04\],
+  html:not(.dark) .marketing-dark-island .bg-white\/\[0\.05\],
+  html:not(.dark) .marketing-dark-island .bg-white\/\[0\.06\],
+  html:not(.dark) .marketing-dark-island .bg-white\/\[0\.07\],
+  html:not(.dark) .marketing-dark-island .bg-white\/\[0\.08\],
+  html:not(.dark) .marketing-dark-island .bg-white\/5 {
+    background-color: oklch(1 0 0 / 0.06) !important;
+  }
+  html:not(.dark) .marketing-dark-island .bg-white {
+    background-color: white !important;
+    color: oklch(0.14 0.02 260) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-black {
+    color: oklch(0.14 0.02 260) !important;
+  }
+  html:not(.dark) .marketing-dark-island .text-amber-100,
+  html:not(.dark) .marketing-dark-island .text-amber-100\/80,
+  html:not(.dark) .marketing-dark-island .text-amber-200 {
+    color: oklch(0.92 0.08 95) !important;
+  }
 }
 
 /* Keyframes — spatial & aurora */
@@ -638,5 +874,7 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+  /* Framer-motion will respect reducedMotion="user" via MotionConfig */
 }

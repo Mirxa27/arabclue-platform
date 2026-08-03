@@ -45,7 +45,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "extensions/arabclue-agent/content/*.js", "extensions/arabclue-agent/background/*.js", "extensions/arabclue-agent/sidepanel/*.js", "extensions/arabclue-agent/shared/*.js"]
 }];
 
 export default eslintConfig;

@@ -135,10 +135,24 @@ export const PUBLIC_MARKETING_PAGES: PublicPageMeta[] = [
   },
 ];
 
+/**
+ * Public account surfaces (no session required).
+ * Kept separate from marketing pages so footer/sitemap stay product-facing
+ * while proxy allowlisting still admits register/recovery/verification/invite.
+ */
+export const PUBLIC_AUTH_PAGE_PATHS = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+  "/invite",
+] as const;
+
 /** Paths that must be reachable without authentication. */
 export const PUBLIC_PAGE_PATHS = [
   ...PUBLIC_MARKETING_PAGES.map((p) => p.path),
-  "/login",
+  ...PUBLIC_AUTH_PAGE_PATHS,
   "/billing/callback",
 ] as const;
 

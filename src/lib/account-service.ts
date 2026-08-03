@@ -48,6 +48,7 @@ import {
   isProductionBlockedDevelopmentIdentity,
   type IdentityRuntimeEnvironment,
 } from "./production-identities";
+import { isEmailVerificationSkipped } from "./email-verification-policy";
 import { buildWorkspaceSlug, getAppBaseUrl } from "./tokens";
 import { systemRandomUuid, type RandomUuid } from "./runtime-id";
 import { hashPassword } from "./password";
@@ -267,6 +268,8 @@ export type CreateAccountRecordsInput = Readonly<{
   membershipRole: string;
   createdAt: Date;
   verificationToken: AccountTokenDigest;
+  /** When true, persist the user as already verified and still store a consumed token. */
+  emailVerified?: boolean;
 }>;
 
 export type CreatedAccountRecords = Readonly<{
@@ -450,7 +453,7 @@ export type RegisteredAccountState = Readonly<{
   workspaceName: string;
   workspaceSlug: string;
   locale: Locale;
-  emailVerified: false;
+  emailVerified: boolean;
   verificationTokenId: string;
   verificationTokenCreatedAt: string;
   verificationTokenExpiresAt: string;
@@ -600,6 +603,9 @@ export function createAccountService(
     const createdAt = utcNow(clock);
     const expiresAt = addUtcMilliseconds(createdAt, VERIFICATION_TOKEN_TTL_MS);
     const workspaceSlug = buildWorkspaceSlug(request.workspaceName, randomUuid);
+    const skipVerification = isEmailVerificationSkipped(
+      identityEnvironment as NodeJS.ProcessEnv
+    );
 
     let created: CreatedAccountRecords;
     try {
@@ -613,6 +619,7 @@ export function createAccountService(
         workspaceSlug,
         membershipRole: REGISTRATION_MEMBERSHIP_ROLE,
         createdAt,
+        emailVerified: skipVerification,
         verificationToken: {
           tokenHash: issued.tokenHash,
           hashSalt: issued.hashSalt,
@@ -641,7 +648,7 @@ export function createAccountService(
       workspaceName: request.workspaceName,
       workspaceSlug,
       locale: request.locale,
-      emailVerified: false,
+      emailVerified: skipVerification,
       verificationTokenId: created.verificationTokenId,
       verificationTokenCreatedAt: createdAt.toISOString(),
       verificationTokenExpiresAt: expiresAt.toISOString(),
@@ -660,6 +667,17 @@ export function createAccountService(
         workspaceId: account.workspaceId,
       },
     });
+
+    // Temporary policy: skip token email delivery entirely while the flag is on.
+    if (skipVerification) {
+      return {
+        ok: true,
+        status: 201,
+        code: "REGISTRATION_CREATED",
+        emailDelivery: "SENT",
+        account,
+      };
+    }
 
     const delivery = await deliverVerificationEmail({
       account,

@@ -133,6 +133,12 @@ export type ProjectCreateBody = z.infer<typeof projectCreateSchema>;
 export const billingCheckoutSchema = z.object({
   planId: z.string().min(1),
   billingCycle: z.enum(["MONTHLY", "YEARLY"]),
+  /**
+   * `recurring` (default) requires a MyFatoorah recurring profile for
+   * MONTHLY/YEARLY plans. `single` explicitly opts into one-cycle checkout
+   * without creating a renewal profile.
+   */
+  billingMode: z.enum(["recurring", "single"]).default("recurring"),
   locale: localeSchema.optional(),
 });
 

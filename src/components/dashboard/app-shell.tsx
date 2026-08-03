@@ -30,7 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [session, router]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--surface-0)] text-white selection:bg-white/10 antialiased">
+    <div className="min-h-screen flex flex-col bg-[var(--surface-0)] text-foreground selection:bg-foreground/10 antialiased">
       {/* Subtle aurora backdrop for dashboard */}
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(94,106,210,0.12),transparent_60%)]" />
@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
           <SheetContent
             side={locale === "ar" ? "right" : "left"}
-            className="p-0 w-[min(100%,18rem)] sm:max-w-[18rem] gap-0 bg-[var(--surface-0)] text-white border-[var(--hairline)] [&>button]:text-white/60"
+            className="p-0 w-[min(100%,18rem)] sm:max-w-[18rem] gap-0 bg-[var(--surface-0)] text-foreground border-[var(--hairline)] [&>button]:text-foreground/60"
           >
             <SheetHeader className="sr-only">
               <SheetTitle>{locale === "ar" ? "التنقل" : "Navigation"}</SheetTitle>

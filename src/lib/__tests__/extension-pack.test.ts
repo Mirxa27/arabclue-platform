@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { buildStoreZip, packExtensionZipToBuffer } from "@/lib/extension-pack";
+import {
+  EXTENSION_ZIP_FILENAME,
+  EXTENSION_ZIP_RELATIVE,
+  buildStoreZip,
+  packExtensionZipToBuffer,
+} from "@/lib/extension-pack";
 
 describe("extension packer", () => {
+  test("exports arabclue-agent.zip path constants", () => {
+    expect(EXTENSION_ZIP_FILENAME).toBe("arabclue-agent.zip");
+    expect(EXTENSION_ZIP_RELATIVE).toBe("downloads/arabclue-agent.zip");
+  });
+
   test("builds a valid store zip with PK headers", () => {
     const buf = buildStoreZip(
       [

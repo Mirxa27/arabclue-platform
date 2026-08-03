@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import { createPageMetadata } from "@/lib/seo";
 import { LandingPage } from "@/components/marketing/landing-page";
+import { LOCALE_COOKIE_NAME } from "@/lib/store";
 
 export const metadata = createPageMetadata({
   title: "ArabClue",
@@ -11,6 +13,9 @@ export const metadata = createPageMetadata({
   path: "/",
 });
 
-export default function HomePage() {
-  return <LandingPage />;
+export default async function HomePage() {
+  const cookieStore = await cookies();
+  const initialLocale =
+    cookieStore.get(LOCALE_COOKIE_NAME)?.value === "en" ? "en" : "ar";
+  return <LandingPage initialLocale={initialLocale} />;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { MessageSquareText, Sparkles } from "lucide-react";
@@ -25,6 +25,7 @@ export function MissionConversation({
   performing,
   emptyHint,
   assistantLabel,
+  processingSlot,
   className,
 }: {
   locale: "ar" | "en";
@@ -33,6 +34,8 @@ export function MissionConversation({
   performing?: boolean;
   emptyHint: string;
   assistantLabel: string;
+  /** Reserved processing panel (stable layout; replaces bounce placeholder). */
+  processingSlot?: ReactNode;
   className?: string;
 }) {
   const ar = locale === "ar";
@@ -128,25 +131,13 @@ export function MissionConversation({
           </motion.div>
         ) : null}
 
-        {performing && messages.length > 0 && messages[messages.length - 1]?.role === "user" ? (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.15 }}
-            className="me-auto max-w-[85%] rounded-[16px] border border-teal-500/20 bg-white/80 dark:bg-zinc-800/70 backdrop-blur px-3.5 py-2.5 sm:px-4 sm:py-3 shadow-[0_0_20px_-12px_rgba(20,184,166,0.3)]"
-          >
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-teal-700 dark:text-teal-300">{assistantLabel}</div>
-            <div className="flex items-center gap-2.5">
-              <div className="flex gap-1">
-                <span className="size-1.5 rounded-full bg-teal-500 animate-[bounce_1s_ease-in-out_infinite]" />
-                <span className="size-1.5 rounded-full bg-teal-500 animate-[bounce_1s_ease-in-out_0.15s_infinite]" />
-                <span className="size-1.5 rounded-full bg-teal-500 animate-[bounce_1s_ease-in-out_0.3s_infinite]" />
-              </div>
-              <span className="text-[12px] text-zinc-600 dark:text-zinc-400">{ar ? "يعالج ويجهز المعاينات الحية…" : "Processing & preparing live previews…"}</span>
-            </div>
-          </motion.div>
-        ) : null}
       </div>
+
+      {processingSlot ? (
+        <div className="relative mt-3 shrink-0" data-testid="copilot-processing-slot">
+          {processingSlot}
+        </div>
+      ) : null}
     </div>
   );
 }

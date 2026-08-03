@@ -8,6 +8,7 @@ import {
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
 import { parseJsonBody, profileUpdateSchema } from "@/lib/validation";
+import { jsonApiFailure } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const session = await requireSession({ allowMustChangePassword: true });
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED", { status: 401 });
   }
 
   const user = await db.user.findUnique({
@@ -34,7 +35,7 @@ export async function GET() {
     },
   });
   if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    return jsonApiFailure("RESOURCE_NOT_FOUND", { status: 404 });
   }
   return NextResponse.json({ user });
 }
@@ -47,7 +48,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const session = await requireSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return jsonApiFailure("AUTHENTICATION_REQUIRED", { status: 401 });
     }
 
     const rl = await rateLimit({
@@ -58,7 +59,7 @@ export async function PATCH(req: NextRequest) {
     if (!rl.ok) {
       const denial = describeRateLimitDenial(rl);
       return NextResponse.json(
-        { error: denial.error },
+        { error: denial.error, code: "PROFILE_UPDATE_RATE_LIMITED" },
         {
           status: denial.status,
           headers: { "Retry-After": String(denial.retryAfterSeconds) },
@@ -72,7 +73,7 @@ export async function PATCH(req: NextRequest) {
     const { name, email, locale, currentPassword } = parsed.data;
     const existing = await db.user.findUnique({ where: { id: session.user.id } });
     if (!existing) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return jsonApiFailure("RESOURCE_NOT_FOUND", { status: 404 });
     }
 
     const data: {
@@ -89,14 +90,11 @@ export async function PATCH(req: NextRequest) {
       if (nextEmail !== existing.email) {
         const ok = await verifyPassword(currentPassword ?? "", existing.passwordHash);
         if (!ok) {
-          return NextResponse.json(
-            { error: "Current password is incorrect" },
-            { status: 400 }
-          );
+          return jsonApiFailure("PASSWORD_INCORRECT", { status: 400 });
         }
         const taken = await db.user.findUnique({ where: { email: nextEmail } });
         if (taken && taken.id !== existing.id) {
-          return NextResponse.json({ error: "Email already in use" }, { status: 409 });
+          return jsonApiFailure("EMAIL_ALREADY_IN_USE", { status: 409 });
         }
         data.email = nextEmail;
       }
@@ -141,9 +139,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ user: updated });
   } catch (err) {
     console.error("[auth/profile PATCH]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return jsonApiFailure("INTERNAL_ERROR", { status: 500 });
   }
 }

@@ -6,6 +6,10 @@ import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context"
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
 import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "@/lib/contract-render-snapshot";
+import {
+  analyticsRequestOrigin,
+  recordProposalAnalyticsEvent,
+} from "@/lib/analytics-collector";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +106,20 @@ export async function POST(
     resource: "GeneratedProposal",
     resourceId: id,
     details: { revertedFrom: versionNum, newVersion: nextVersion },
+  });
+
+  await recordProposalAnalyticsEvent({
+    eventType: "proposal_edited",
+    proposalId: id,
+    mutationRef: `revert:v${nextVersion}:from:${versionNum}`,
+    origin: analyticsRequestOrigin({
+      tenantWorkspaceId: workspace.id,
+      actorUserId: userId,
+    }),
+    metadata: {
+      revision: nextVersion,
+      projectId: updated.projectId,
+    },
   });
 
   return NextResponse.json({

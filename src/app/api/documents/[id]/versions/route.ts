@@ -16,6 +16,10 @@ import {
   analyticsRequestOrigin,
   recordDocumentAnalyticsEvent,
 } from "@/lib/analytics-collector";
+import {
+  decodeDocumentVersionCursor,
+  encodeDocumentVersionCursor,
+} from "@/lib/version-history-cursor";
 
 export const dynamic = "force-dynamic";
 
@@ -63,13 +67,30 @@ export async function GET(
     Math.max(1, limitParam ? parseInt(limitParam, 10) || DEFAULT_PAGE_SIZE : DEFAULT_PAGE_SIZE),
     MAX_PAGE_SIZE
   );
-  const cursor = cursorParam ? parseInt(cursorParam, 10) : null;
+
+  let cursorVersion: number | null = null;
+  if (cursorParam) {
+    cursorVersion = decodeDocumentVersionCursor(
+      cursorParam,
+      workspace.id,
+      id
+    );
+    if (cursorVersion === null) {
+      return NextResponse.json(
+        {
+          error: "Version history cursor is invalid",
+          code: "VERSION_CURSOR_INVALID",
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   // Build query with keyset pagination (descending by version)
   const versions = await db.documentVersion.findMany({
     where: {
       documentId: id,
-      ...(cursor !== null ? { version: { lt: cursor } } : {}),
+      ...(cursorVersion !== null ? { version: { lt: cursorVersion } } : {}),
     },
     orderBy: { version: "desc" },
     take: limit + 1, // Fetch one extra to determine if there's a next page
@@ -88,7 +109,11 @@ export async function GET(
   // Determine if there's more data
   const hasMore = versions.length > limit;
   const results = hasMore ? versions.slice(0, limit) : versions;
-  const nextCursor = hasMore && results.length > 0 ? results[results.length - 1].version : null;
+  const last = results[results.length - 1];
+  const nextCursor =
+    hasMore && last
+      ? encodeDocumentVersionCursor(workspace.id, id, last.version)
+      : null;
 
   // Fetch author info for display
   const authorIds = [...new Set(results.map((v) => v.createdBy).filter(Boolean))];

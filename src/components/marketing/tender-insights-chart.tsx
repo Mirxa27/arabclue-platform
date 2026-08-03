@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { SCROLL_VIEWPORT } from "@/lib/animation";
 import {
   Bar,
   BarChart,
@@ -43,7 +44,7 @@ function TooltipCard({
   const row = payload[0].payload;
   const ar = locale === "ar";
   return (
-    <div className="rounded-lg border border-white/15 bg-[oklch(0.16_0.02_240)]/95 px-3 py-2 text-xs text-white shadow-xl backdrop-blur">
+    <div className="marketing-dark-island rounded-lg border border-white/15 bg-[oklch(0.16_0.02_240)]/95 px-3 py-2 text-xs text-white shadow-xl backdrop-blur">
       <p className="font-semibold">{row.name}</p>
       <p className="mt-1 text-white/70">
         {formatBudgetCompact(row.value, locale)}
@@ -72,9 +73,11 @@ export function TenderInsightsChart() {
   const locale = usePublicLocale();
   const ar = locale === "ar";
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setState({ kind: "loading" });
     void (async () => {
       try {
         const res = await fetch("/api/stats/tender-insights", {
@@ -124,7 +127,7 @@ export function TenderInsightsChart() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadToken]);
 
   const rows: ChartRow[] =
     state.kind === "ready"
@@ -142,7 +145,7 @@ export function TenderInsightsChart() {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
+        viewport={SCROLL_VIEWPORT}
         className="overflow-hidden rounded-2xl border border-white/12 bg-white/[0.03] backdrop-blur-sm"
       >
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-5 py-4 sm:px-6">
@@ -198,7 +201,7 @@ export function TenderInsightsChart() {
               </Link>
             </div>
           ) : state.kind === "error" ? (
-            <div className="flex h-72 flex-col items-center justify-center gap-2 text-center">
+            <div className="flex h-72 flex-col items-center justify-center gap-3 text-center">
               <p className="text-sm text-white/60">
                 {ar
                   ? "تعذّر تحميل رؤى المناقصات."
@@ -207,6 +210,13 @@ export function TenderInsightsChart() {
               <p className="font-mono text-[11px] text-white/30">
                 {state.message}
               </p>
+              <button
+                type="button"
+                onClick={() => setReloadToken((n) => n + 1)}
+                className="rounded-full border border-white/15 bg-white/[0.06] px-4 py-1.5 text-xs font-medium text-white/80 hover:bg-white/[0.10] hover:text-white transition-colors"
+              >
+                {ar ? "إعادة المحاولة" : "Retry"}
+              </button>
             </div>
           ) : state.kind === "empty" ? (
             <div className="flex h-72 flex-col items-center justify-center gap-2 text-center">

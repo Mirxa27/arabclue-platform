@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import {
   Plus,
   Sparkles,
   Loader2,
+  Archive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +70,30 @@ export function TemplateMarketplaceCard({
   const queryClient = useQueryClient();
   const { setView, activeProjectId } = useUI();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [hoverRating, setHoverRating] = useState(0);
+  const isWorkspaceTemplate = template.source === "workspace";
+
+  type MarketplaceDetail = TemplateMarketplaceItem & {
+    publisher?: { name: string; nameAr: string | null } | null;
+  };
+
+  const detailQuery = useQuery({
+    queryKey: ["template-marketplace-detail", template.id],
+    enabled: previewOpen,
+    queryFn: async () => {
+      const res = await fetch(`/api/templates/marketplace/${template.id}`);
+      const body = (await res.json().catch(() => ({}))) as {
+        entry?: MarketplaceDetail;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(body.error || "Failed to load template detail");
+      }
+      return body.entry!;
+    },
+  });
+
+  const detail: MarketplaceDetail = detailQuery.data ?? template;
 
   const applyDraftAndOpenBuilder = (data: UseTemplateResponse) => {
     const title = data.draft?.title ?? template.name;
@@ -131,6 +156,74 @@ export function TemplateMarketplaceCard({
             : ar
               ? "فشل استخدام القالب"
               : "Failed to use template",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Rate mutation
+  const rateMutation = useMutation({
+    mutationFn: async (rating: number) => {
+      const res = await fetch(`/api/templates/marketplace/${template.id}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Failed to rate template");
+      }
+      return res.json() as Promise<{ userRating: number; averageRating: number; ratingCount: number }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["template-marketplace"] });
+      toast({
+        title: ar ? "تم التقييم" : "Rating submitted",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: ar ? "خطأ" : "Error",
+        description:
+          err instanceof Error
+            ? err.message
+            : ar
+              ? "فشل التقييم"
+              : "Failed to rate",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Retire mutation
+  const retireMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/templates/marketplace/${template.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+        throw new Error(body.error || "Failed to retire template");
+      }
+      return res.json() as Promise<{ retired?: boolean; alreadyRetired?: boolean }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["template-marketplace"] });
+      toast({
+        title: data.alreadyRetired
+          ? ar ? "القالب متقاعد بالفعل" : "Template already retired"
+          : ar ? "تم تقاعد القالب" : "Template retired",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: ar ? "خطأ" : "Error",
+        description:
+          err instanceof Error
+            ? err.message
+            : ar
+              ? "فشل التقاعد"
+              : "Failed to retire",
         variant: "destructive",
       });
     },
@@ -230,20 +323,30 @@ export function TemplateMarketplaceCard({
         <div className="flex-1" />
 
         <div className="flex items-center justify-between border-t border-border/30 pt-3">
-          <div className="flex items-center gap-1">
-            <Star
-              className={cn(
-                "size-3.5",
-                template.rating > 0
-                  ? "fill-amber-400 text-amber-400"
-                  : "text-muted-foreground/50"
-              )}
-            />
-            <span className="text-xs font-medium">
-              {template.rating > 0 ? template.rating.toFixed(1) : "—"}
-            </span>
+          <div className="flex items-center gap-0.5">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                className="p-0.5 transition-colors"
+                disabled={rateMutation.isPending}
+                onMouseEnter={() => setHoverRating(star)}
+                onMouseLeave={() => setHoverRating(0)}
+                onClick={() => rateMutation.mutate(star)}
+                aria-label={ar ? `تقييم ${star} نجوم` : `Rate ${star} stars`}
+              >
+                <Star
+                  className={cn(
+                    "size-3",
+                    (hoverRating || template.rating) >= star
+                      ? "fill-amber-400 text-amber-400"
+                      : "text-muted-foreground/30"
+                  )}
+                />
+              </button>
+            ))}
             {template.ratingCount > 0 && (
-              <span className="text-[10px] text-muted-foreground">
+              <span className="text-[10px] text-muted-foreground ms-1">
                 ({template.ratingCount})
               </span>
             )}
@@ -262,51 +365,104 @@ export function TemplateMarketplaceCard({
             v{template.version}
           </Badge>
         </div>
+
+        {/* Retire button for workspace templates */}
+        {isWorkspaceTemplate && (
+          <div className="mt-2 border-t border-border/30 pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full gap-1.5 text-xs text-muted-foreground hover:text-destructive"
+              disabled={retireMutation.isPending}
+              onClick={() => retireMutation.mutate()}
+            >
+              {retireMutation.isPending ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Archive className="size-3" />
+              )}
+              {ar ? "تقاعد القالب" : "Retire template"}
+            </Button>
+          </div>
+        )}
       </div>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {template.name[locale as "ar" | "en"]}
+              {detail.name[locale as "ar" | "en"]}
             </DialogTitle>
             <DialogDescription>
-              {template.description[locale as "ar" | "en"]}
+              {detail.description[locale as "ar" | "en"]}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              {ar ? "أقسام القالب" : "Template sections"}
+          {detailQuery.isLoading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              {ar ? "جاري التحميل…" : "Loading…"}
+            </div>
+          ) : detailQuery.isError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {detailQuery.error instanceof Error
+                ? detailQuery.error.message
+                : ar
+                  ? "فشل تحميل التفاصيل"
+                  : "Failed to load detail"}
             </p>
-            <ol className="space-y-1.5">
-              {template.sectionTypes.map((type, index) => (
-                <li
-                  key={`${type}-${index}`}
-                  className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm"
-                >
-                  <span className="text-[10px] text-muted-foreground tabular-nums">
-                    {index + 1}
-                  </span>
-                  {getSectionLabel(type, locale as "ar" | "en")}
-                </li>
-              ))}
-            </ol>
-            <Button
-              className="mt-2 w-full gap-1.5"
-              onClick={() => {
-                setPreviewOpen(false);
-                useTemplateMutation.mutate();
-              }}
-              disabled={useTemplateMutation.isPending}
-            >
-              {useTemplateMutation.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Plus className="size-3.5" />
-              )}
-              {ar ? "استخدام هذا القالب" : "Use this template"}
-            </Button>
-          </div>
+          ) : (
+            <div className="space-y-3">
+              {detail.publisher ? (
+                <p className="text-xs text-muted-foreground">
+                  {ar ? "الناشر: " : "Publisher: "}
+                  {ar
+                    ? detail.publisher.nameAr || detail.publisher.name
+                    : detail.publisher.name}
+                </p>
+              ) : null}
+              {detail.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {detail.tags.map((tag) => (
+                    <Badge key={tag} variant="outline" className="text-[10px]">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              <p className="text-xs font-medium text-muted-foreground">
+                {ar ? "أقسام القالب" : "Template sections"}
+              </p>
+              <ol className="space-y-1.5">
+                {detail.sectionTypes.map((type, index) => (
+                  <li
+                    key={`${type}-${index}`}
+                    className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm"
+                  >
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      {index + 1}
+                    </span>
+                    {getSectionLabel(type, locale as "ar" | "en")}
+                  </li>
+                ))}
+              </ol>
+              <Button
+                className="mt-2 w-full gap-1.5"
+                onClick={() => {
+                  setPreviewOpen(false);
+                  useTemplateMutation.mutate();
+                }}
+                disabled={useTemplateMutation.isPending}
+              >
+                {useTemplateMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Plus className="size-3.5" />
+                )}
+                {ar ? "استخدام هذا القالب" : "Use this template"}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/proposals/[id]/versions/[version]
- * Retrieve a single proposal version by version number.
+ * Immutable proposal revision detail (full markdown + author metadata).
  */
 export async function GET(
   _req: NextRequest,
@@ -18,72 +18,68 @@ export async function GET(
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const { workspace } = await getTenantContext(session.user.id);
-    const { id, version: versionStr } = await params;
-    const versionNum = Number(versionStr);
 
-    if (!Number.isInteger(versionNum) || versionNum < 1) {
-      return NextResponse.json(
-        { error: "Invalid version number", code: "INVALID_VERSION" },
-        { status: 400 }
-      );
+    const { workspace } = await getTenantContext(session.user.id);
+    const { id, version: versionRaw } = await params;
+    const versionNum = Number.parseInt(versionRaw, 10);
+    if (!Number.isFinite(versionNum) || versionNum < 1) {
+      return NextResponse.json({ error: "Invalid version" }, { status: 400 });
     }
 
-    // Validate proposal exists and belongs to workspace
     const proposal = await db.generatedProposal.findUnique({
       where: { id },
-      select: { id: true, workspaceId: true },
+      select: {
+        id: true,
+        workspaceId: true,
+        title: true,
+        titleAr: true,
+        version: true,
+        status: true,
+      },
     });
     if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
 
-    // Fetch the specific version
-    const version = await db.proposalVersion.findUnique({
-      where: { proposalId_version: { proposalId: id, version: versionNum } },
-      select: {
-        id: true,
-        version: true,
-        contentMd: true,
-        changeLog: true,
-        locale: true,
-        createdBy: true,
-        createdAt: true,
+    const row = await db.proposalVersion.findUnique({
+      where: {
+        proposalId_version: {
+          proposalId: id,
+          version: versionNum,
+        },
       },
     });
-
-    if (!version) {
-      return NextResponse.json(
-        { error: "Version not found", code: "VERSION_NOT_FOUND" },
-        { status: 404 }
-      );
+    if (!row) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
     }
 
-    // Fetch author info
-    let author: { name: string; email: string } | null = null;
-    if (version.createdBy) {
-      const user = await db.user.findUnique({
-        where: { id: version.createdBy },
-        select: { name: true, email: true },
-      });
-      if (user) {
-        author = { name: user.name, email: user.email };
-      }
-    }
+    const author = row.createdBy
+      ? await db.user.findUnique({
+          where: { id: row.createdBy },
+          select: { id: true, name: true, email: true },
+        })
+      : null;
 
     return NextResponse.json({
+      proposal: {
+        id: proposal.id,
+        title: proposal.title,
+        titleAr: proposal.titleAr,
+        currentVersion: proposal.version,
+        status: proposal.status,
+      },
       version: {
-        id: version.id,
-        version: version.version,
-        contentMd: version.contentMd,
-        changeLog: version.changeLog,
-        locale: version.locale,
-        createdAt: version.createdAt.toISOString(),
+        id: row.id,
+        version: row.version,
+        contentMd: row.contentMd,
+        changeLog: row.changeLog,
+        locale: row.locale,
+        createdAt: row.createdAt.toISOString(),
         author,
       },
     });
   } catch (err) {
-    console.error("[proposals version GET single]", err);
+    console.error("[proposals version detail GET]", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "unknown" },
       { status: 500 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { startTransition } from "react";
 import { create } from "zustand";
 import { persist, type PersistOptions } from "zustand/middleware";
 import type { Locale } from "@/lib/types";
@@ -20,18 +21,124 @@ interface LocaleState {
 /** Storage key of the persisted locale. Locale never travels in the URL. */
 export const LOCALE_STORAGE_KEY = "arabclue-locale";
 
+/** Cookie name for server-readable locale persistence. */
+export const LOCALE_COOKIE_NAME = "arabclue-locale";
+const LOCALE_COOKIE_MAX_AGE = 365 * 24 * 60 * 60; // 1 year in seconds
+
+/**
+ * Writes the locale cookie so the server can read the user's language
+ * preference on subsequent requests (server-first behavior).
+ */
+export function persistLocaleCookie(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${LOCALE_COOKIE_NAME}=${locale}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; samesite=lax`;
+}
+
+/** Syncs document element attributes for immediate RTL/LTR feedback. */
+export function syncDocumentAttributes(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = locale;
+  document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+}
+
+/**
+ * Persist locale to cookie + primary storage key (and a one-generation
+ * marketing-key mirror so older public pages keep reading the same preference).
+ */
+export function persistLocalePreference(locale: Locale): void {
+  if (typeof window !== "undefined") {
+    // Zustand `persist` owns LOCALE_STORAGE_KEY as JSON `{ state, version }`.
+    // Never overwrite that blob with a bare "ar"/"en" string — it breaks rehydrate
+    // and onRehydrateStorage then resets the cookie back to Arabic.
+    const dir = locale === "ar" ? "rtl" : "ltr";
+    let payload = JSON.stringify({ state: { locale, dir }, version: 0 });
+    const existing = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+    if (existing) {
+      try {
+        const parsed = JSON.parse(existing) as {
+          state?: Record<string, unknown>;
+          version?: number;
+        };
+        if (parsed && typeof parsed === "object" && parsed.state) {
+          payload = JSON.stringify({
+            ...parsed,
+            state: { ...parsed.state, locale, dir },
+          });
+        }
+      } catch {
+        // Corrupt / legacy bare value — replace with a fresh persist payload.
+      }
+    }
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, payload);
+    // Compat mirror — remove once marketing pages exclusively use the store key.
+    window.localStorage.setItem("arabclue-marketing-locale", locale);
+  }
+  persistLocaleCookie(locale);
+  syncDocumentAttributes(locale);
+}
+
+/**
+ * Yield past the current interaction frame before writing storage / flipping
+ * `document.dir`. Synchronous RTL/LTR reflow inside a click handler is a
+ * common INP regression on large bilingual trees.
+ */
+export function scheduleLocalePersistence(locale: Locale): void {
+  if (typeof window === "undefined") {
+    persistLocalePreference(locale);
+    return;
+  }
+  window.requestAnimationFrame(() => {
+    window.setTimeout(() => persistLocalePreference(locale), 0);
+  });
+}
+
+/** Read the persisted locale preference with Arabic default. */
+export function readPersistedLocale(): Locale {
+  if (typeof window === "undefined") return "ar";
+  const primary = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+  if (primary === "ar" || primary === "en") return primary;
+  if (primary) {
+    try {
+      const fromPersist = (JSON.parse(primary) as { state?: { locale?: string } })
+        ?.state?.locale;
+      if (fromPersist === "ar" || fromPersist === "en") return fromPersist;
+    } catch {
+      // ignore corrupt payload
+    }
+  }
+  const legacy = window.localStorage.getItem("arabclue-marketing-locale");
+  if (legacy === "ar" || legacy === "en") return legacy;
+  return "ar";
+}
+
 export const useLocale = create<LocaleState>()(
   persist(
     (set, get) => ({
       locale: "ar",
       dir: "rtl",
-      setLocale: (locale) => set({ locale, dir: locale === "ar" ? "rtl" : "ltr" }),
+      setLocale: (locale) => {
+        startTransition(() => {
+          set({ locale, dir: locale === "ar" ? "rtl" : "ltr" });
+        });
+        scheduleLocalePersistence(locale);
+      },
       toggle: () => {
         const next = get().locale === "ar" ? "en" : "ar";
-        set({ locale: next, dir: next === "ar" ? "rtl" : "ltr" });
+        startTransition(() => {
+          set({ locale: next, dir: next === "ar" ? "rtl" : "ltr" });
+        });
+        scheduleLocalePersistence(next);
       },
     }),
-    { name: LOCALE_STORAGE_KEY }
+    {
+      name: LOCALE_STORAGE_KEY,
+      onRehydrateStorage: () => (state) => {
+        // Ensure cookie exists after rehydration from localStorage
+        if (state) {
+          persistLocalePreference(state.locale);
+        }
+      },
+    }
   )
 );
 

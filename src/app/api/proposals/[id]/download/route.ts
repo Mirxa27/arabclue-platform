@@ -13,6 +13,11 @@ import {
   type SlidesMetrics,
 } from "@/lib/generators";
 import { requireSession } from "@/lib/auth";
+import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
+import {
+  rateLimitAsync,
+  describeRateLimitDenial,
+} from "@/lib/rate-limit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import {
   assertExportAllowed,
@@ -162,8 +167,32 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { workspace } = await getTenantContext(session.user.id);
+  if (!resolveEmailVerifiedClaim(session.user.emailVerified)) {
+    return NextResponse.json(
+      { error: "EMAIL_VERIFICATION_REQUIRED" },
+      { status: 403, headers: { "Cache-Control": "no-store" } }
+    );
+  }
   const { id } = await params;
+  const rl = await rateLimitAsync({
+    key: `proposal-download:${session.user.id}`,
+    limit: 10,
+    windowMs: 60 * 1000,
+  });
+  if (!rl.ok) {
+    const denial = describeRateLimitDenial(rl);
+    return NextResponse.json(
+      { error: denial.error },
+      {
+        status: denial.status,
+        headers: {
+          "Retry-After": String(denial.retryAfterSeconds),
+          "Cache-Control": "no-store",
+        },
+      }
+    );
+  }
+  const { workspace } = await getTenantContext(session.user.id);
   let format = resolveProposalDownloadFormat(
     req.nextUrl.searchParams.get("format")
   );
@@ -233,7 +262,10 @@ export async function GET(
 
   let structuredSnapshot: CanonicalProposalSnapshot | null = null;
   let structuredApprovedEvidenceIds: readonly string[] = [];
-  if (exportEngine.kind === "STRUCTURED") {
+  if (
+    exportEngine.kind === "STRUCTURED" ||
+    exportEngine.kind === "STRUCTURED_SUPPLEMENTAL"
+  ) {
     const validation = validatePersistedProposalSnapshot(
       proposal.structuredSnapshot,
       {
@@ -623,6 +655,7 @@ export async function GET(
     let buffer: Buffer;
     let contentType: string;
     let filename: string;
+    let layoutPlanHash: string | null = null;
 
     switch (format) {
       case "pdf":
@@ -717,6 +750,7 @@ export async function GET(
           buffer = artifact.buffer;
           contentType = artifact.mediaType;
           filename = "Structured_Proposal_Data.xlsx";
+          layoutPlanHash = artifact.metadata.planHash;
         }
         break;
       case "xlsx-matrix":
@@ -926,6 +960,36 @@ export async function GET(
                 .replace(/_+/g, "_") || "Contract_Package";
             filename = `${companySlug}_Contract_Package.zip`;
           }
+        } else if (structuredSnapshot !== null) {
+          const { generateStructuredBidPackageZIP } = await import(
+            "@/lib/structured-bid-package"
+          );
+          buffer = await generateStructuredBidPackageZIP({
+            snapshot: structuredSnapshot.snapshot,
+            presetKey: structuredSnapshot.presetKey,
+            proposalId: proposal.id,
+            proposalVersion: proposal.version,
+            project: proposal.project,
+            brand,
+            checks,
+            boqItems: boqItems ?? [],
+            validation: gateReport,
+            company: companyLetterhead,
+            locale: exportLocale,
+          });
+          contentType = "application/zip";
+          {
+            const companyName = letterheadCompanyName(
+              exportLocale,
+              brand,
+              companyLetterhead
+            );
+            const companySlug =
+              sanitizeFilename(companyName)
+                .replace(/\s+/g, "_")
+                .replace(/_+/g, "_") || "Bid_Package";
+            filename = `${companySlug}_Structured_Bid_Package.zip`;
+          }
         } else {
           buffer = await generateBidPackageZIP(
             proposal,
@@ -1110,6 +1174,9 @@ export async function GET(
               ),
               "X-Proposal-Layout-Preset": structuredSnapshot.presetKey,
               "X-Proposal-Lifecycle": exportLifecycle.lifecycle,
+              ...(layoutPlanHash
+                ? { "X-Proposal-Plan-Hash": layoutPlanHash }
+                : {}),
             }),
       },
     });

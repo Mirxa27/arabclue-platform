@@ -35,33 +35,34 @@ export function AnalyticsCharts({
   summary: AnalyticsSummary;
   locale: string;
 }) {
+  const loc = locale as Locale;
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <ChartCard
-        title={tr("chart_proposalsOverTime", locale as Locale)}
-        subtitle={tr("chart_axis_date", locale as Locale)}
+        title={tr("chart_proposalsOverTime", loc)}
+        subtitle={tr("chart_axis_date", loc)}
         className="lg:col-span-2"
       >
         <TimeSeriesChart data={summary.charts.proposalsOverTime} locale={locale} />
       </ChartCard>
 
       <ChartCard
-        title={tr("chart_exportsByType", locale as Locale)}
-        subtitle={tr("chart_axis_category", locale as Locale)}
+        title={tr("chart_exportsByType", loc)}
+        subtitle={tr("chart_axis_category", loc)}
       >
         <CategoryBarChart data={summary.charts.exportsByType} locale={locale} />
       </ChartCard>
 
       <ChartCard
-        title={tr("chart_templateUsage", locale as Locale)}
-        subtitle={tr("chart_axis_count", locale as Locale)}
+        title={tr("chart_templateUsage", loc)}
+        subtitle={tr("chart_axis_count", loc)}
       >
         <CategoryPieChart data={summary.charts.templateUsage} locale={locale} />
       </ChartCard>
 
       <ChartCard
-        title={tr("chart_sectionCompletion", locale as Locale)}
-        subtitle={tr("chart_axis_category", locale as Locale)}
+        title={tr("chart_sectionCompletion", loc)}
+        subtitle={tr("chart_axis_category", loc)}
         className="lg:col-span-2"
       >
         <CategoryBarChart data={summary.charts.sectionCompletion} locale={locale} horizontal />
@@ -104,10 +105,11 @@ function TimeSeriesChart({
   data: TimeSeriesPoint[];
   locale: string;
 }) {
+  const loc = locale as Locale;
   const ar = locale === "ar";
 
   if (data.length === 0) {
-    return <EmptyChartState message={tr("analytics_no_data", locale as Locale)} />;
+    return <EmptyChartState message={tr("analytics_no_data", loc)} />;
   }
 
   const chartData = data.map((point) => ({
@@ -167,8 +169,10 @@ function CategoryBarChart({
   locale: string;
   horizontal?: boolean;
 }) {
+  const loc = locale as Locale;
+
   if (data.length === 0) {
-    return <EmptyChartState message={tr("analytics_no_data", locale as Locale)} />;
+    return <EmptyChartState message={tr("analytics_no_data", loc)} />;
   }
 
   const chartData = data.map((item) => ({
@@ -230,8 +234,8 @@ function CategoryBarChart({
           ))}
         </Bar>
       </BarChart>
-    </ResponsiveContainer>
-  );
+      </ResponsiveContainer>
+    );
 }
 
 function CategoryPieChart({
@@ -241,8 +245,10 @@ function CategoryPieChart({
   data: CategoryCount[];
   locale: string;
 }) {
+  const loc = locale as Locale;
+
   if (data.length === 0) {
-    return <EmptyChartState message={tr("analytics_no_data", locale as Locale)} />;
+    return <EmptyChartState message={tr("analytics_no_data", loc)} />;
   }
 
   const chartData = data.map((item) => ({

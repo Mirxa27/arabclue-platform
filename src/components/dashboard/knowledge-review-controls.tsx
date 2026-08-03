@@ -221,14 +221,27 @@ export function KnowledgeReviewControls({
           >
             {locale === "ar" ? "اعتماد الدليل" : "Approve evidence"}
           </Button>
-          {!documentsQuery.isLoading &&
-            (documentsQuery.data?.length ?? 0) === 0 && (
-              <p className="text-[10px] text-muted-foreground">
-                {locale === "ar"
-                  ? "ارفع مستنداً داعماً في المستندات أولاً."
-                  : "Upload a supporting document in Documents first."}
-              </p>
-            )}
+          {documentsQuery.isError ? (
+            <p className="text-[10px] text-destructive" role="alert">
+              {locale === "ar"
+                ? "تعذر تحميل مستندات الدليل."
+                : "Could not load evidence documents."}{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                onClick={() => void documentsQuery.refetch()}
+              >
+                {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+              </button>
+            </p>
+          ) : !documentsQuery.isLoading &&
+            (documentsQuery.data?.length ?? 0) === 0 ? (
+            <p className="text-[10px] text-muted-foreground">
+              {locale === "ar"
+                ? "ارفع مستنداً داعماً في المستندات أولاً."
+                : "Upload a supporting document in Documents first."}
+            </p>
+          ) : null}
         </div>
       )}
     </div>

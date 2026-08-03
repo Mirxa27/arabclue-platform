@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { startTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
+import { resolveDashboardNavigation } from "@/lib/dashboard-navigate";
 import { tr } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +35,7 @@ import {
   Store,
   BarChart3,
   ClipboardCheck,
+  FileStack,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -47,6 +50,7 @@ const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard; bad
   { view: "proposals", key: "nav_proposals", icon: FileCheck2 },
   { view: "contracts", key: "nav_contracts", icon: Scale },
   { view: "clause-library", key: "nav_clause_library", icon: Scale },
+  { view: "template-editor", key: "nav_template_editor", icon: FileStack },
   { view: "compliance", key: "nav_compliance", icon: ShieldCheck },
   { view: "agents", key: "nav_agents", icon: Bot },
   { view: "history", key: "nav_history", icon: History },
@@ -74,12 +78,33 @@ const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboar
 
 export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" | "drawer" }) {
   const { locale } = useLocale();
-  const { view, setView, sidebarCollapsed, toggleSidebar } = useUI();
+  const router = useRouter();
+  const { view, activeProjectId, applyRoute, sidebarCollapsed, toggleSidebar } =
+    useUI();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
   const collapsed = variant === "drawer" ? false : sidebarCollapsed;
   const isDrawer = variant === "drawer";
   const { data: pendingApprovalCount } = usePendingApprovalCount();
+
+  function goToView(target: DashboardView) {
+    const decision = resolveDashboardNavigation({
+      target,
+      isAdmin,
+      activeProjectId,
+    });
+    startTransition(() => {
+      applyRoute({
+        view: decision.view,
+        projectId: activeProjectId,
+        notice: decision.notice,
+        replaceProject: false,
+      });
+      if (decision.path !== window.location.pathname) {
+        router.push(decision.path, { scroll: false });
+      }
+    });
+  }
 
   const { data } = useQuery({
     queryKey: ["workspace"],
@@ -98,7 +123,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
       dir={locale === "ar" ? "rtl" : "ltr"}
       className={cn(
         "relative shrink-0 flex flex-col border-e transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        "bg-[var(--surface-0)] text-white selection:bg-white/10",
+        "bg-[var(--surface-0)] text-foreground selection:bg-foreground/10",
         "border-[var(--hairline)]",
         isDrawer ? "h-full w-full border-e-0" : collapsed ? "w-[72px]" : "w-[272px]"
       )}
@@ -107,15 +132,15 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
       <div className="h-[64px] flex items-center gap-3 px-4 border-b border-[var(--hairline)] shrink-0">
         <div className="relative shrink-0">
           <ArabclueLogo className="size-[36px] rounded-[10px] shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_16px_rgba(0,0,0,0.24)]" />
-          <span className="pointer-events-none absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
+          <span className="pointer-events-none absolute -top-1 -end-1 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <div className="text-[14px] font-[650] tracking-[-0.02em] text-white truncate leading-[1.1]">{tr("appName", locale)}</div>
-            <div className="text-[11px] font-[500] tracking-[-0.01em] text-white/45 truncate flex items-center gap-1">
+            <div className="text-[14px] font-[650] tracking-[-0.02em] text-foreground truncate leading-[1.1]">{tr("appName", locale)}</div>
+            <div className="text-[11px] font-[500] tracking-[-0.01em] text-foreground/45 truncate flex items-center gap-1">
               {locale === "ar" ? "منصة سعودية" : "Saudi Platform"}
-              <span className="inline-flex h-1 w-1 rounded-full bg-white/20" />
-              <span className="text-emerald-300/70">PDPL</span>
+              <span className="inline-flex h-1 w-1 rounded-full bg-foreground/20" />
+              <span className="text-emerald-700 dark:text-emerald-300/80">PDPL</span>
             </div>
           </div>
         )}
@@ -135,23 +160,23 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
           return (
             <button
               key={item.view}
-              onClick={() => startTransition(() => setView(item.view))}
+              onClick={() => goToView(item.view)}
               title={tr(item.key, locale)}
               className={cn(
                 "group relative w-full flex items-center gap-2.5 px-2.5 h-[34px] rounded-[8px] text-[13px] font-[450] tracking-[-0.01em] transition-all duration-[140ms] outline-none",
                 "focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.12_195)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--surface-0)]",
                 "active:scale-[0.98]",
                 active
-                  ? "bg-white/[0.08] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_1px_0_0_rgba(255,255,255,0.06)]"
-                  : "text-white/55 hover:text-white/85 hover:bg-white/[0.06] active:bg-white/[0.08]",
+                  ? "bg-foreground/[0.08] text-foreground shadow-[0_0_0_1px_rgba(0,0,0,0.06)_inset] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_1px_0_0_rgba(255,255,255,0.06)]"
+                  : "text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] active:bg-foreground/[0.08]",
                 collapsed && "justify-center px-2"
               )}
             >
-              <Icon className={cn("size-[18px] shrink-0 transition-colors", active ? "text-white" : "text-white/45 group-hover:text-white/75")} />
+              <Icon className={cn("size-[18px] shrink-0 transition-colors", active ? "text-foreground" : "text-foreground/45 group-hover:text-foreground/75")} />
               {!collapsed && <span className="truncate">{tr(item.key, locale)}</span>}
               {/* Badge for pending approval count */}
               {badgeCount > 0 && !collapsed && (
-                <span className="ml-auto shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
+                <span className="ms-auto shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
                   {badgeCount > 99 ? "99+" : badgeCount}
                 </span>
               )}
@@ -161,7 +186,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
                 </span>
               )}
               {active && !collapsed && badgeCount === 0 && (
-                <span className="ml-auto flex items-center gap-1">
+                <span className="ms-auto flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-[#5e6ad2] shadow-[0_0_6px_#5e6ad2]" />
                 </span>
               )}
@@ -175,7 +200,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
         {isAdmin && (
           <>
             {!collapsed ? (
-              <div className="pt-5 pb-2 px-2.5 flex items-center gap-2 text-[11px] font-[650] uppercase tracking-[0.08em] text-white/25">
+              <div className="pt-5 pb-2 px-2.5 flex items-center gap-2 text-[11px] font-[650] uppercase tracking-[0.08em] text-foreground/25">
                 <Lock className="size-3" />
                 {tr("nav_admin", locale)}
                 <div className="h-px flex-1 bg-[var(--hairline)]" />
@@ -189,14 +214,14 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
               return (
                 <button
                   key={item.view}
-                  onClick={() => startTransition(() => setView(item.view))}
+                  onClick={() => goToView(item.view)}
                   title={tr(item.key, locale)}
                   className={cn(
                     "group w-full flex items-center gap-2.5 px-2.5 h-[32px] rounded-[8px] text-[13px] font-[450] tracking-[-0.01em] transition-all duration-150 outline-none",
                     "focus-visible:ring-2 focus-visible:ring-amber-300",
                     active
                       ? "bg-amber-500/10 text-amber-100 border border-amber-500/15 shadow-[0_0_0_1px_rgba(245,158,11,0.12)_inset]"
-                      : "text-white/50 hover:text-white/80 hover:bg-white/[0.06]",
+                      : "text-foreground/50 hover:text-foreground/80 hover:bg-foreground/[0.06]",
                     collapsed && "justify-center"
                   )}
                 >
@@ -216,9 +241,9 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
             <div className="flex items-center gap-2 mb-1.5">
               <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
               <span className="text-[11px] font-[700] uppercase tracking-[0.08em] text-emerald-200/80">Vision 2030</span>
-              <Zap className="size-3 text-emerald-300/50 ml-auto" />
+              <Zap className="size-3 text-emerald-300/50 ms-auto" />
             </div>
-            <p className="text-[11px] leading-[1.5] text-white/50">
+            <p className="text-[11px] leading-[1.5] text-foreground/50">
               {locale === "ar" ? "متوافق مع رؤية 2030 — C1 • PDPL • NCA" : "Vision 2030 aligned — C1 • PDPL • NCA essentials"}
             </p>
           </div>
@@ -230,7 +255,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
         <button
           onClick={toggleSidebar}
           className={cn(
-            "absolute top-1/2 -translate-y-1/2 z-20 size-6 rounded-full bg-[var(--surface-2)] border border-[var(--hairline)] flex items-center justify-center text-white/50 hover:text-white hover:bg-[var(--surface-3)] hover:border-[var(--hairline-light)] transition-all active:scale-[0.92]",
+            "absolute top-1/2 -translate-y-1/2 z-20 size-6 rounded-full bg-[var(--surface-2)] border border-[var(--hairline)] flex items-center justify-center text-foreground/50 hover:text-foreground hover:bg-[var(--surface-3)] hover:border-[var(--hairline-light)] transition-all active:scale-[0.92]",
             "shadow-[0_2px_8px_rgba(0,0,0,0.24)]",
             locale === "ar" ? "-start-3" : "-end-3"
           )}
@@ -281,13 +306,13 @@ function WorkspaceSwitcher({
 
   return (
     <div className="px-3 py-3 border-b border-[var(--hairline)] space-y-2.5">
-      <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-[10px] bg-white/[0.05] border border-white/[0.06] hover:bg-white/[0.07] transition-colors group">
+      <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-[10px] bg-foreground/[0.05] border border-foreground/[0.06] hover:bg-foreground/[0.07] transition-colors group">
         <div className="size-8 rounded-[8px] bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 shadow-[0_0_0_1px_rgba(255,255,255,0.15)_inset]">
           {switchMutation.isPending ? <Loader2 className="size-4 text-white animate-spin" /> : <Building2 className="size-4 text-white" />}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-[600] tracking-[-0.01em] text-white truncate leading-[1.2]">{workspaceName ?? "…"}</div>
-          <div className="text-[11px] text-white/45 flex items-center gap-1 mt-0.5">
+          <div className="text-[13px] font-[600] tracking-[-0.01em] text-foreground truncate leading-[1.2]">{workspaceName ?? "…"}</div>
+          <div className="text-[11px] text-foreground/45 flex items-center gap-1 mt-0.5">
             <CircleDot className="size-3 text-emerald-400" />
             <span className="uppercase tracking-[0.06em] font-[500]">{plan ?? "—"}</span>
           </div>
@@ -296,7 +321,7 @@ function WorkspaceSwitcher({
       </div>
       {list.length > 1 && (
         <select
-          className="w-full text-[12px] rounded-[8px] bg-[var(--surface-1)] border border-[var(--hairline)] text-white/80 px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-[#5e6ad2] transition-all"
+          className="w-full text-[12px] rounded-[8px] bg-[var(--surface-1)] border border-[var(--hairline)] text-foreground/80 px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-[#5e6ad2] transition-all"
           value={list.find((m) => m.active)?.workspace.id ?? ""}
           disabled={switchMutation.isPending}
           onChange={(e) => {
@@ -304,7 +329,7 @@ function WorkspaceSwitcher({
           }}
         >
           {list.map((m) => (
-            <option key={m.workspace.id} value={m.workspace.id} className="bg-[#0f1011]">
+            <option key={m.workspace.id} value={m.workspace.id} className="bg-[var(--surface-1)]">
               {locale === "ar" ? m.workspace.nameAr ?? m.workspace.name : m.workspace.name} ({m.role})
             </option>
           ))}

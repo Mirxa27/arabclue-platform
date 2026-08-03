@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -19,11 +19,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArabclueLogo } from "@/components/brand/arabclue-logo";
+import { useLocale } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 function safeCallbackUrl(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/app";
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("..")) {
+    return "/app";
+  }
   return raw;
+}
+
+async function resolvePostLoginPath(fallback: string): Promise<string> {
+  try {
+    const res = await fetch("/api/auth/return-to");
+    if (!res.ok) return fallback;
+    const body = (await res.json().catch(() => ({}))) as { path?: string | null };
+    if (typeof body.path === "string" && body.path.startsWith("/")) {
+      return body.path;
+    }
+  } catch {
+    // Fall through to the query-string callback.
+  }
+  return fallback;
 }
 
 function LoginForm() {
@@ -31,7 +48,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
   const { data: session, update } = useSession();
-  const [locale, setLocale] = useState<"ar" | "en">("ar");
+  const { locale, toggle } = useLocale();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mfaToken, setMfaToken] = useState("");
@@ -44,18 +61,6 @@ function LoginForm() {
   const ar = locale === "ar";
 
   const changePwd = changePwdForced || !!session?.user?.mustChangePassword;
-
-  useEffect(() => {
-    document.documentElement.dir = ar ? "rtl" : "ltr";
-    document.documentElement.lang = locale;
-    const saved = localStorage.getItem("arabclue-marketing-locale");
-    if (saved === "ar" || saved === "en") setLocale(saved);
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dir = ar ? "rtl" : "ltr";
-    document.documentElement.lang = locale;
-  }, [locale, ar]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -150,7 +155,8 @@ function LoginForm() {
         return;
       }
 
-      router.replace(callbackUrl);
+      const destination = await resolvePostLoginPath(callbackUrl);
+      router.replace(destination);
       router.refresh();
     } catch {
       setError(ar ? "خطأ في الشبكة" : "Network error");
@@ -182,7 +188,8 @@ function LoginForm() {
       return;
     }
     await update?.({ mustChangePassword: false } as any);
-    router.replace(callbackUrl);
+    const destination = await resolvePostLoginPath(callbackUrl);
+    router.replace(destination);
     router.refresh();
   }
 
@@ -198,7 +205,7 @@ function LoginForm() {
           <ArabclueLogo className="size-10 rounded-xl" />
           <div>
             <p className="font-[family-name:var(--font-ibm-arabic)] text-[18px] font-bold leading-none">أراب كلاو</p>
-            <p className="text-[11px] tracking-[0.15em] uppercase text-white/50">Arabclue SaaS</p>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-white/50">Arabclue</p>
           </div>
         </Link>
         <div className="mt-16">
@@ -260,7 +267,7 @@ function LoginForm() {
           <div className="flex items-center justify-between p-6">
             <Link href="/" className="lg:hidden flex items-center gap-2"><ArabclueLogo className="size-8 rounded-lg" /><span className="font-[family-name:var(--font-ibm-arabic)] text-sm font-bold">أراب كلاو</span></Link>
             <div className="flex items-center gap-2 ms-auto">
-              <button onClick={() => setLocale(ar ? "en" : "ar")} className="h-9 rounded-full border border-border bg-card px-3.5 text-[12px] font-bold flex items-center gap-1.5"><Globe className="size-3.5" />{ar ? "EN" : "عربي"}</button>
+              <button onClick={toggle} className="h-9 rounded-full border border-border bg-card px-3.5 text-[12px] font-bold flex items-center gap-1.5"><Globe className="size-3.5" />{ar ? "EN" : "عربي"}</button>
               <Button asChild variant="ghost" size="sm" className="rounded-full"><Link href="/">{ar ? "الرئيسية" : "Home"}</Link></Button>
             </div>
           </div>

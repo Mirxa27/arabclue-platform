@@ -165,11 +165,25 @@ export function ClauseBrowser() {
       });
     },
     onSuccess: (res) => {
+      const payload = { clauses: res.combined, at: Date.now() };
+      try {
+        window.sessionStorage.setItem(
+          "arabclue-clause-insert",
+          JSON.stringify(payload)
+        );
+      } catch {
+        // Ignore storage quota / privacy mode — event still fires for open studios.
+      }
       window.dispatchEvent(
-        new CustomEvent("clause-library:select", { detail: { clauses: res.combined } })
+        new CustomEvent("clause-library:select", { detail: payload })
       );
       toast({
-        title: ar ? `تم إدراج ${res.combined.length} بندًا` : `Inserted ${res.combined.length} clauses`,
+        title: ar
+          ? `تم تجهيز ${res.combined.length} بندًا للإدراج في مسودة العقد`
+          : `${res.combined.length} clause(s) ready to insert into the contract draft`,
+        description: ar
+          ? "افتح استوديو العقود لإدراج البنود في المسودة النشطة."
+          : "Open Contract Studio to insert them into the active draft.",
       });
     },
     onError: (e: any) => {
@@ -316,9 +330,23 @@ export function ClauseBrowser() {
 
       {isError && (
         <Card className="p-4 border-destructive/50 bg-destructive/5">
-          <div className="flex items-start gap-2 text-sm">
-            <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
-            <span>{(error as any)?.message ?? (ar ? "تعذر تحميل البنود" : "Could not load clauses")}</span>
+          <div className="flex flex-wrap items-start justify-between gap-3 text-sm">
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
+              <span>
+                {(error as Error)?.message ??
+                  (ar ? "تعذر تحميل البنود" : "Could not load clauses")}
+              </span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refetch()}
+              disabled={isLoading}
+              className="h-8 shrink-0"
+            >
+              {ar ? "إعادة المحاولة" : "Retry"}
+            </Button>
           </div>
         </Card>
       )}

@@ -32,9 +32,10 @@
     "start:standalone": "NODE_ENV=production node .next/standalone/server.js",
     "postinstall": "prisma generate",
     "lint": "eslint .",
-    "test": "bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__",
+    "test": "bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests-isolated && bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__",
     "test:completion": "bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__/platform-completion",
     "test:completion:db": "COMPLETION_USE_TEST_DATABASE=1 bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__/platform-completion",
+    "test:e2e:completion": "playwright test --config playwright.completion.config.ts",
     "seed:clauses": "bun run src/lib/seeds/seed-clauses.ts",
     "db:ensure": "mkdir -p db uploads && touch db/.gitkeep && touch uploads/.gitkeep",
     "db:push": "prisma db push",
@@ -133,6 +134,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/pdf-parse": "^1.1.5",
     "@types/qrcode": "^1.5.6",
@@ -149,7 +151,7 @@
   },
   "overrides": {
     "@babel/core": "7.29.6",
-    "brace-expansion": "2.1.2",
+    "brace-expansion": "2.1.3",
     "defu": "6.1.7",
     "diff": "5.2.2",
     "flatted": "3.4.3",

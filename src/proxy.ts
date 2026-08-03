@@ -44,6 +44,15 @@ function isPublicPath(path: string): boolean {
   if (path.startsWith("/favicon")) return true;
   // Demo EN|AR sample tender/contract PDFs (public/samples)
   if (path === "/samples" || path.startsWith("/samples/")) return true;
+  // Chrome extension auth probe + remote config (returns authenticated:false when unsigned)
+  if (path === "/api/platform-agent/extension/config") return true;
+  // Pre-packed extension ZIP for Load unpacked (authenticated download API remains available)
+  if (
+    path === "/downloads/arabclue-agent.zip" ||
+    path === "/downloads/arabclue-voice-agent.zip"
+  ) {
+    return true;
+  }
   return false;
 }
 

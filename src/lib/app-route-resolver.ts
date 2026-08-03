@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { isEmailVerificationSkipped } from "@/lib/email-verification-policy";
 import { getTenantContext } from "@/lib/workspace-context";
 import {
   APP_BASE_PATH,
@@ -56,26 +57,43 @@ const OVERVIEW_FALLBACK = {
 /** Account-verification surface an unverified session is redirected to (1.5). */
 const VERIFICATION_SURFACE_PATH = "/verify-email";
 
+/** Sign-in surface an unauthenticated request is redirected to (14.2). */
+const SIGN_IN_PATH = "/login";
+
 /**
  * Resolves the segments below `/app` for the current session.
  *
- * The caller must already have an authenticated session; unauthenticated
- * requests are redirected by the proxy before reaching a page.
+ * The server entry authenticates via NextAuth before any view resolution or
+ * protected data lookup, so an unauthenticated request never reaches the
+ * client shell or issues a data request (Requirement 14.2, 14.5, 14.8).
+ * Unauthenticated requests are redirected to the sign-in surface; the edge
+ * middleware also retains the requested path in a signed cookie for post-login
+ * restoration (Requirement 14.10).
  */
 export async function resolveAppRouteForRequest(
   segments: readonly string[]
 ): Promise<ResolvedAppRoute> {
   const session = await getServerSession(authOptions);
 
+  // Requirement 14.2 — an unauthenticated request is redirected to the sign-in
+  // surface before any view resolution or protected data lookup. The edge
+  // middleware has already retained the requested path in a signed cookie.
+  if (!session?.user?.id) {
+    redirect(SIGN_IN_PATH);
+  }
+
   // Requirement 1.5 — an authenticated-but-unverified session reaches only the
   // verification surface. This server guard runs before any view resolution or
   // protected project lookup below, so no application-shell data is fetched or
   // rendered for an unverified session even if the edge gate is bypassed.
-  if (session?.user && session.user.emailVerified === false) {
+  if (
+    session.user.emailVerified === false &&
+    !isEmailVerificationSkipped()
+  ) {
     redirect(VERIFICATION_SURFACE_PATH);
   }
 
-  const role = session?.user?.role;
+  const role = session.user.role;
   const isAdmin = role === "SUPER_ADMIN" || role === "ADMIN";
 
   const resolution = resolveAppRoute(segments);
@@ -96,7 +114,7 @@ export async function resolveAppRouteForRequest(
 
   // Requirement 14.8 — a project outside the resolved workspace is cleared.
   if (projectId) {
-    const exists = await projectExistsInTenant(session?.user?.id, projectId);
+    const exists = await projectExistsInTenant(session.user.id, projectId);
     if (!exists) {
       return {
         view,
@@ -130,10 +148,10 @@ export async function resolveAppRouteForRequest(
 }
 
 async function projectExistsInTenant(
-  userId: string | undefined,
+  userId: string,
   projectId: string
 ): Promise<boolean> {
-  if (!userId || !isValidProjectIdShape(projectId)) return false;
+  if (!isValidProjectIdShape(projectId)) return false;
   try {
     const tenant = await getTenantContext(userId);
     const project = await db.tenderProject.findFirst({

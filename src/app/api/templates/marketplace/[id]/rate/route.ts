@@ -47,27 +47,31 @@ export async function POST(request: NextRequest, { params }: Params) {
     const { rating } = await parseJsonBody(request, ratingSchema);
     const entry = await resolveEntry(id, ctx.workspace.id);
 
-    await db.templateMarketplaceRating.upsert({
-      where: {
-        entryId_userId: { entryId: entry.id, userId: ctx.userId },
-      },
-      create: { entryId: entry.id, userId: ctx.userId, rating },
-      update: { rating },
-    });
+    const { rounded, ratingCount } = await db.$transaction(async (tx) => {
+      await tx.templateMarketplaceRating.upsert({
+        where: {
+          entryId_userId: { entryId: entry.id, userId: ctx.userId },
+        },
+        create: { entryId: entry.id, userId: ctx.userId, rating },
+        update: { rating },
+      });
 
-    const aggregation = await db.templateMarketplaceRating.aggregate({
-      where: { entryId: entry.id },
-      _avg: { rating: true },
-      _count: { rating: true },
-    });
+      const aggregation = await tx.templateMarketplaceRating.aggregate({
+        where: { entryId: entry.id },
+        _avg: { rating: true },
+        _count: { rating: true },
+      });
 
-    const avgRating = aggregation._avg.rating ?? 0;
-    const ratingCount = aggregation._count.rating ?? 0;
-    const rounded = Math.round(avgRating * 10) / 10;
+      const avgRating = aggregation._avg.rating ?? 0;
+      const count = aggregation._count.rating ?? 0;
+      const nextAverage = Math.round(avgRating * 10) / 10;
 
-    await db.templateMarketplaceEntry.update({
-      where: { id: entry.id },
-      data: { rating: rounded, ratingCount },
+      await tx.templateMarketplaceEntry.update({
+        where: { id: entry.id },
+        data: { rating: nextAverage, ratingCount: count },
+      });
+
+      return { rounded: nextAverage, ratingCount: count };
     });
 
     await audit({

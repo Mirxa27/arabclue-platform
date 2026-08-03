@@ -9,6 +9,7 @@ import {
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
 import { validateAndNormalizeLogoImage } from "@/lib/brand-logo";
+import { jsonApiFailure } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = await requireSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return jsonApiFailure("AUTHENTICATION_REQUIRED", { status: 401 });
     }
 
     const rl = await rateLimit({
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     if (!rl.ok) {
       const denial = describeRateLimitDenial(rl);
       return NextResponse.json(
-        { error: denial.error },
+        { error: denial.error, code: "AVATAR_UPLOAD_RATE_LIMITED" },
         {
           status: denial.status,
           headers: { "Retry-After": String(denial.retryAfterSeconds) },
@@ -46,16 +47,13 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
-      return NextResponse.json({ error: "file required" }, { status: 400 });
+      return jsonApiFailure("INVALID_REQUEST", { status: 400 });
     }
     if (!ALLOWED.has(file.type)) {
-      return NextResponse.json(
-        { error: "Only PNG, JPEG, or WebP images allowed" },
-        { status: 400 }
-      );
+      return jsonApiFailure("INVALID_REQUEST", { status: 400 });
     }
     if (file.size < 1 || file.size > MAX_BYTES) {
-      return NextResponse.json({ error: "Avatar must be under 2MB" }, { status: 400 });
+      return jsonApiFailure("AVATAR_TOO_LARGE", { status: 400 });
     }
 
     const { workspace } = await getTenantContext(session.user.id);
@@ -66,16 +64,10 @@ export async function POST(req: NextRequest) {
         file.name
       );
     } catch {
-      return NextResponse.json(
-        { error: "Invalid or undecodable avatar image" },
-        { status: 400 }
-      );
+      return jsonApiFailure("INVALID_REQUEST", { status: 400 });
     }
     if (image.mimeType !== file.type || image.bytes.length > MAX_BYTES) {
-      return NextResponse.json(
-        { error: "Avatar MIME type or normalized size is invalid" },
-        { status: 400 }
-      );
+      return jsonApiFailure("INVALID_REQUEST", { status: 400 });
     }
     const stored = await saveUpload({
       workspaceId: workspace.id,
@@ -109,9 +101,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ user: updated, avatarUrl });
   } catch (err) {
     console.error("[auth/avatar]", err);
-    return NextResponse.json(
-      { error: "Unable to update avatar" },
-      { status: 500 }
-    );
+    return jsonApiFailure("INTERNAL_ERROR", { status: 500 });
   }
 }

@@ -68,7 +68,7 @@ export function MissionControlShell({
         <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] bg-[linear-gradient(to_right,rgba(0,0,0,0.8)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.8)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.8)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.8)_1px,transparent_1px)] bg-[size:28px_28px]" />
         <motion.div
           className={cn(
-            "absolute -top-[48%] left-1/2 h-[90%] w-[140%] -translate-x-1/2 rounded-[100%] blur-[42px] transition-opacity duration-700",
+            "absolute -top-[48%] start-1/2 h-[90%] w-[140%] -translate-x-1/2 rounded-[100%] blur-[42px] transition-opacity duration-700",
             performing ? "opacity-[0.22]" : "opacity-[0.08]"
           )}
           style={{

@@ -185,8 +185,15 @@ describe("structured proposal snapshot persistence", () => {
       kind: "STRUCTURED",
       channel: "PPTX",
     });
+    expect(selectProposalDownloadEngine(true, "xlsx")).toEqual({
+      kind: "STRUCTURED",
+      channel: "XLSX",
+    });
     expect(selectProposalDownloadEngine(true, "zip")).toEqual({
-      kind: "STRUCTURED_FORMAT_UNSUPPORTED",
+      kind: "STRUCTURED_SUPPLEMENTAL",
+    });
+    expect(selectProposalDownloadEngine(true, "xlsx-matrix")).toEqual({
+      kind: "STRUCTURED_SUPPLEMENTAL",
     });
   });
 

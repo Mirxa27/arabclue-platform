@@ -3,7 +3,7 @@
 import { startTransition, useEffect, useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileCheck2,
@@ -14,6 +14,8 @@ import {
   Presentation,
   CheckCircle2,
   Pencil,
+  Send,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +68,7 @@ export function ProposalsList() {
   const { locale } = useLocale();
   const { setView } = useUI();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [editId, setEditId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const { download, busyFormat } = useArtifactDownload();
@@ -73,6 +76,53 @@ export function ProposalsList() {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["proposals"],
     queryFn: () => apiJson<{ proposals: ApiProposal[] }>("/api/proposals"),
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: async (proposalId: string) => {
+      const res = await fetch(`/api/proposals/${proposalId}/submit`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+      };
+      if (!res.ok) {
+        throw new Error(body.error || `Submit failed (${res.status})`);
+      }
+      return body;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["proposals"] });
+      queryClient.invalidateQueries({ queryKey: ["reviews"] });
+      toast({
+        title: locale === "ar" ? "أُرسل للمراجعة" : "Submitted for review",
+        description:
+          locale === "ar"
+            ? "افتح قائمة المراجعات لاعتماد العرض"
+            : "Open Reviews to approve the proposal",
+      });
+      startTransition(() => setView("reviews"));
+    },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "تعذر الإرسال" : "Submit failed",
+        description: err.message,
+        variant: "destructive",
+      });
+      if (
+        err.message.includes("snapshot") ||
+        err.message.includes("structured")
+      ) {
+        toast({
+          title: locale === "ar" ? "ابنِ اللقطة أولاً" : "Build snapshot first",
+          description:
+            locale === "ar"
+              ? "افتح المحرر وابنِ اللقطة المنظمة ثم أعد الإرسال"
+              : "Open the editor, build the structured snapshot, then submit again",
+        });
+      }
+    },
   });
 
   useEffect(() => {
@@ -85,6 +135,8 @@ export function ProposalsList() {
   }, [isError, error, locale, toast]);
 
   const proposals = (data?.proposals ?? []).filter((p) => p.type !== "CONTRACT");
+  const canSubmitStatus = (status: string) =>
+    status === "DRAFT" || status === "GENERATED" || status === "REJECTED";
 
   return (
     <>
@@ -251,6 +303,32 @@ export function ProposalsList() {
                         <Eye className="size-3" />
                         {locale === "ar" ? "معاينة" : "Preview"}
                       </Button>
+                      {canSubmitStatus(p.status) ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[10px] gap-1"
+                          disabled={submitMutation.isPending}
+                          onClick={() => submitMutation.mutate(p.id)}
+                        >
+                          {submitMutation.isPending ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Send className="size-3" />
+                          )}
+                          {locale === "ar" ? "إرسال للمراجعة" : "Submit review"}
+                        </Button>
+                      ) : null}
+                      {(p.status === "IN_REVIEW" || p.status === "REVIEW") && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[10px] gap-1"
+                          onClick={() => startTransition(() => setView("reviews"))}
+                        >
+                          {locale === "ar" ? "المراجعات" : "Reviews"}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"

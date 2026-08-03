@@ -384,6 +384,12 @@ describe("contract draft read route", () => {
       input.workspaceId === "workspace-1" && input.id === "draft-1"
         ? readResult
         : null,
+    prepare: prepareContractDraft,
+    updateDraft: async (input) => ({
+      updated: true,
+      revisionAppended: true,
+      draft: summary(input.prepared),
+    }),
     deleteDraft: async (input) => {
       expect(input).toMatchObject({
         workspaceId: "workspace-1",

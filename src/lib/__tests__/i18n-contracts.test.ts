@@ -42,6 +42,7 @@ describe("typed platform-completion localization contracts", () => {
     "marketplace",
     "readiness",
     "notifications",
+    "aiAssist",
     "integrityErrors",
   ] satisfies readonly CompletionSurface[];
 

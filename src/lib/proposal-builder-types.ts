@@ -104,10 +104,12 @@ export type DateRange = {
 export type AnalyticsMetric = {
   key: string;
   label: LocalizedString;
-  value: number;
-  previousValue?: number;
+  value: number | null;
+  previousValue?: number | null;
+  difference?: number | null;
   trend: "up" | "down" | "stable";
   unit?: string;
+  available?: boolean;
 };
 
 export type TimeSeriesPoint = {

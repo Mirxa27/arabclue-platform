@@ -7,7 +7,6 @@
  * document AST. The same AST is then used for canonical HTML and PDF output.
  */
 
-import ExcelJS from "exceljs";
 import {
   parseBilingualDocument,
   renderBilingualHTML,
@@ -42,8 +41,8 @@ import {
   type ProposalSnapshot,
   type ProposalSourceReference,
 } from "./proposal-layouts";
-import { t } from "./i18n";
-import { isXlsxRepresentableBlock } from "./proposal-workbook-plan";
+import { compileProposalWorkbookPlan } from "./proposal-workbook-plan";
+import { serializeProposalWorkbook } from "./proposal-workbook-xlsx";
 
 export const PROPOSAL_STRUCTURED_EXPORT_CHANNELS = Object.freeze([
   "HTML",
@@ -1208,319 +1207,41 @@ function requireValidNativePlan(
   };
 }
 
-function xlsxSheetName(blockType: string, locale: "ar" | "en", index: number): string {
-  const suffix = index > 0 ? ` (${index + 1})` : "";
-  switch (blockType) {
-    case "TABLE":
-      return `${t.xlsx_sheet_table[locale]}${suffix}`;
-    case "KPI":
-      return `${t.xlsx_sheet_kpi[locale]}${suffix}`;
-    case "EVIDENCE_REGISTER":
-      return `${t.xlsx_sheet_evidence[locale]}${suffix}`;
-    case "COMMERCIAL_HANDOFF":
-      return `${t.xlsx_sheet_commercial[locale]}${suffix}`;
-    default:
-      return `${blockType}${suffix}`;
-  }
-}
-
-function sanitizeSheetName(name: string): string {
-  // Excel sheet names: max 31 chars, no special characters: : \ / ? * [ ]
-  return name.replace(/[:\\/?*[\]]/g, "_").slice(0, 31);
-}
-
 /**
- * Generate a structured XLSX export of a proposal snapshot.
- * Creates one worksheet per representable block (TABLE, KPI, EVIDENCE_REGISTER, COMMERCIAL_HANDOFF).
- * Narrative, bullet-list, and diagram blocks are recorded as not-representable in the Manifest sheet.
+ * Generate a structured XLSX export of a proposal snapshot via the pure
+ * workbook planner and ExcelJS serializer (platform-completion §6.2).
  */
 async function exportProposalLayoutXLSX(
   snapshot: ProposalSnapshot,
-  metadata: ProposalLayoutExportMetadata,
+  _metadata: ProposalLayoutExportMetadata,
   plan: CompiledProposalLayout,
   locale: "ar" | "en"
 ): Promise<{ buffer: Buffer; notRepresentable: readonly string[] }> {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Arabclue Structured Export";
-  wb.created = new Date();
-
-  const notRepresentable: string[] = [];
-  const sheetTypeCounts: Record<string, number> = {};
-
-  // Header style
-  const headerFill: ExcelJS.FillPattern = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FF1E3A8A" },
-  };
-  const headerFont: Partial<ExcelJS.Font> = {
-    bold: true,
-    color: { argb: "FFFFFFFF" },
-  };
-
-  // Process each module and block
-  for (const compiledModule of plan.modules) {
-    const snapshotModule = findModule(snapshot, compiledModule.key);
-    if (!snapshotModule) continue;
-
-    for (const compiledBlock of compiledModule.blocks) {
-      const block = snapshotModule.blocks.find(
-        (candidate) => candidate.key === compiledBlock.key
-      );
-      if (!block) continue;
-
-      // Track non-representable blocks
-      if (!isXlsxRepresentableBlock(block)) {
-        notRepresentable.push(`${compiledModule.key}.${block.key} (${block.type})`);
-        continue;
-      }
-
-      // Get sheet name
-      const typeCount = sheetTypeCounts[block.type] ?? 0;
-      sheetTypeCounts[block.type] = typeCount + 1;
-      const rawSheetName = xlsxSheetName(block.type, locale, typeCount);
-      const sheetName = sanitizeSheetName(rawSheetName);
-
-      // Create worksheet with RTL view for Arabic
-      const ws = wb.addWorksheet(sheetName, {
-        views: [{ rightToLeft: locale === "ar" }],
-        properties: { defaultRowHeight: 20 },
-      });
-
-      // Add block title as first row
-      ws.mergeCells(1, 1, 1, 4);
-      const titleCell = ws.getCell(1, 1);
-      titleCell.value = `${block.title[locale]} / ${block.title[locale === "ar" ? "en" : "ar"]}`;
-      titleCell.font = { size: 14, bold: true, color: { argb: "FFFFFFFF" } };
-      titleCell.fill = headerFill;
-      titleCell.alignment = { vertical: "middle", horizontal: "center" };
-      ws.getRow(1).height = 28;
-
-      // Generate content based on block type
-      switch (block.type) {
-        case "TABLE": {
-          // Header row with bilingual column names
-          const headerRow = 3;
-          block.columns.forEach((col, i) => {
-            const cell = ws.getCell(headerRow, i + 1);
-            cell.value = `${col.label[locale]} / ${col.label[locale === "ar" ? "en" : "ar"]}`;
-            cell.font = headerFont;
-            cell.fill = headerFill;
-            cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-          });
-          ws.getRow(headerRow).height = 24;
-
-          // Data rows
-          block.rows.forEach((row, rowIdx) => {
-            const dataRow = headerRow + 1 + rowIdx;
-            block.columns.forEach((col, colIdx) => {
-              const cellValue = row.cells[col.key];
-              const cell = ws.getCell(dataRow, colIdx + 1);
-              // Write value as-is (no formulas)
-              cell.value = `${cellValue[locale]} / ${cellValue[locale === "ar" ? "en" : "ar"]}`;
-              cell.alignment = { wrapText: true };
-            });
-          });
-
-          // Auto-width columns
-          ws.columns = block.columns.map(() => ({ width: 30 }));
-          break;
-        }
-
-        case "KPI": {
-          // Headers
-          const headers = [
-            { en: "KPI Label", ar: "مؤشر الأداء" },
-            { en: "Value", ar: "القيمة" },
-            { en: "Unit", ar: "الوحدة" },
-            { en: "As Of", ar: "كما في" },
-          ];
-          headers.forEach((h, i) => {
-            const cell = ws.getCell(3, i + 1);
-            cell.value = `${h[locale]} / ${h[locale === "ar" ? "en" : "ar"]}`;
-            cell.font = headerFont;
-            cell.fill = headerFill;
-            cell.alignment = { vertical: "middle", horizontal: "center" };
-          });
-
-          // Data row
-          const labelCell = ws.getCell(4, 1);
-          labelCell.value = `${block.label[locale]} / ${block.label[locale === "ar" ? "en" : "ar"]}`;
-
-          const valueCell = ws.getCell(4, 2);
-          valueCell.value = block.value ?? NOT_AVAILABLE[locale];
-
-          const unitCell = ws.getCell(4, 3);
-          unitCell.value = block.unit
-            ? `${block.unit[locale]} / ${block.unit[locale === "ar" ? "en" : "ar"]}`
-            : "";
-
-          const asOfCell = ws.getCell(4, 4);
-          asOfCell.value = block.asOf ?? "";
-
-          ws.columns = [{ width: 35 }, { width: 20 }, { width: 25 }, { width: 20 }];
-          break;
-        }
-
-        case "EVIDENCE_REGISTER": {
-          // Headers
-          const headers = [
-            { en: "Evidence", ar: "الدليل" },
-            { en: "Status", ar: "الحالة" },
-            { en: "Source References", ar: "مراجع المصادر" },
-          ];
-          headers.forEach((h, i) => {
-            const cell = ws.getCell(3, i + 1);
-            cell.value = `${h[locale]} / ${h[locale === "ar" ? "en" : "ar"]}`;
-            cell.font = headerFont;
-            cell.fill = headerFill;
-            cell.alignment = { vertical: "middle", horizontal: "center" };
-          });
-
-          // Data rows
-          block.entries.forEach((entry, rowIdx) => {
-            const dataRow = 4 + rowIdx;
-            const labelCell = ws.getCell(dataRow, 1);
-            labelCell.value = `${entry.label[locale]} / ${entry.label[locale === "ar" ? "en" : "ar"]}`;
-            labelCell.alignment = { wrapText: true };
-
-            const statusLabel = EVIDENCE_STATUS[entry.status];
-            const statusCell = ws.getCell(dataRow, 2);
-            statusCell.value = `${statusLabel[locale]} / ${statusLabel[locale === "ar" ? "en" : "ar"]}`;
-
-            const refsCell = ws.getCell(dataRow, 3);
-            refsCell.value = entry.sourceRefs.length > 0
-              ? entry.sourceRefs.join(", ")
-              : locale === "ar" ? "لا توجد مراجع" : "None";
-          });
-
-          ws.columns = [{ width: 40 }, { width: 25 }, { width: 35 }];
-          break;
-        }
-
-        case "COMMERCIAL_HANDOFF": {
-          // Pricing status row
-          const pricingStatusLabel = PRICING_STATUS[block.pricingStatus];
-          ws.getCell(3, 1).value = locale === "ar" ? "حالة التسعير:" : "Pricing Status:";
-          ws.getCell(3, 1).font = { bold: true };
-          ws.getCell(3, 2).value = `${pricingStatusLabel[locale]} / ${pricingStatusLabel[locale === "ar" ? "en" : "ar"]}`;
-          ws.mergeCells(3, 2, 3, 4);
-
-          // Instruction row
-          ws.getCell(4, 1).value = locale === "ar" ? "التعليمات:" : "Instructions:";
-          ws.getCell(4, 1).font = { bold: true };
-          ws.getCell(4, 2).value = `${block.instruction[locale]}`;
-          ws.mergeCells(4, 2, 4, 4);
-          ws.getCell(4, 2).alignment = { wrapText: true };
-
-          if (block.entries.length > 0) {
-            // Headers
-            const headers = [
-              { en: "Description", ar: "الوصف" },
-              { en: "Amount", ar: "المبلغ" },
-              { en: "Currency", ar: "العملة" },
-              { en: "Source References", ar: "مراجع المصادر" },
-            ];
-            headers.forEach((h, i) => {
-              const cell = ws.getCell(6, i + 1);
-              cell.value = `${h[locale]} / ${h[locale === "ar" ? "en" : "ar"]}`;
-              cell.font = headerFont;
-              cell.fill = headerFill;
-              cell.alignment = { vertical: "middle", horizontal: "center" };
-            });
-
-            // Data rows - write commercial values EXACTLY as stored (no Excel formulas)
-            block.entries.forEach((entry, rowIdx) => {
-              const dataRow = 7 + rowIdx;
-
-              const descCell = ws.getCell(dataRow, 1);
-              descCell.value = `${entry.description[locale]} / ${entry.description[locale === "ar" ? "en" : "ar"]}`;
-              descCell.alignment = { wrapText: true };
-
-              // Amount - stored as string, write as string (NO formulas)
-              const amountCell = ws.getCell(dataRow, 2);
-              amountCell.value = entry.amount ?? NOT_AVAILABLE[locale];
-
-              // Currency
-              const currencyCell = ws.getCell(dataRow, 3);
-              currencyCell.value = entry.currency ?? NOT_AVAILABLE[locale];
-
-              // Source refs
-              const refsCell = ws.getCell(dataRow, 4);
-              refsCell.value = entry.sourceRefs.length > 0
-                ? entry.sourceRefs.join(", ")
-                : locale === "ar" ? "لا توجد مراجع" : "None";
-            });
-          }
-
-          ws.columns = [{ width: 40 }, { width: 20 }, { width: 15 }, { width: 30 }];
-          break;
-        }
-      }
-
-      // Freeze header row
-      ws.views = [{ state: "frozen", ySplit: 3, rightToLeft: locale === "ar" }];
-    }
-  }
-
-  // Create Manifest worksheet
-  const manifestSheetName = sanitizeSheetName(t.xlsx_sheet_manifest[locale]);
-  const manifestWs = wb.addWorksheet(manifestSheetName, {
-    views: [{ rightToLeft: locale === "ar" }],
-    properties: { defaultRowHeight: 20 },
+  const planned = compileProposalWorkbookPlan(snapshot, {
+    layout: plan,
+    locale,
+    generatedAt: new Date(),
   });
-
-  // Manifest title
-  manifestWs.mergeCells(1, 1, 1, 2);
-  const manifestTitle = manifestWs.getCell(1, 1);
-  manifestTitle.value = `${t.xlsx_sheet_manifest[locale]} / ${t.xlsx_sheet_manifest[locale === "ar" ? "en" : "ar"]}`;
-  manifestTitle.font = { size: 14, bold: true, color: { argb: "FFFFFFFF" } };
-  manifestTitle.fill = headerFill;
-  manifestTitle.alignment = { vertical: "middle", horizontal: "center" };
-  manifestWs.getRow(1).height = 28;
-
-  // Manifest data
-  const manifestData: Array<{ label: LocalizedProposalText; value: string }> = [
-    { label: t.xlsx_manifest_revision, value: String(metadata.snapshotVersion) },
-    { label: t.xlsx_manifest_hash, value: metadata.snapshotHash },
-    { label: t.xlsx_manifest_plan_hash, value: metadata.planHash },
-    { label: t.xlsx_manifest_preset, value: metadata.presetKey },
-    { label: t.xlsx_manifest_timestamp, value: new Date().toISOString() },
-  ];
-
-  manifestData.forEach((row, idx) => {
-    const labelCell = manifestWs.getCell(3 + idx, 1);
-    labelCell.value = `${row.label[locale]} / ${row.label[locale === "ar" ? "en" : "ar"]}`;
-    labelCell.font = { bold: true };
-
-    const valueCell = manifestWs.getCell(3 + idx, 2);
-    valueCell.value = row.value;
-    valueCell.font = { name: "Consolas" };
-  });
-
-  // Not-representable blocks section
-  const notRepRow = 3 + manifestData.length + 1;
-  const notRepLabel = manifestWs.getCell(notRepRow, 1);
-  notRepLabel.value = `${t.xlsx_manifest_not_representable[locale]} / ${t.xlsx_manifest_not_representable[locale === "ar" ? "en" : "ar"]}`;
-  notRepLabel.font = { bold: true };
-
-  if (notRepresentable.length > 0) {
-    notRepresentable.forEach((blockRef, idx) => {
-      const cell = manifestWs.getCell(notRepRow + 1 + idx, 1);
-      cell.value = blockRef;
-      cell.font = { italic: true };
-    });
-  } else {
-    const noneCell = manifestWs.getCell(notRepRow + 1, 1);
-    noneCell.value = locale === "ar" ? "لا يوجد" : "None";
+  if (planned.status === "BLOCKED") {
+    throw new ProposalLayoutExportError(
+      "XLSX",
+      sortDiagnostics(
+        planned.diagnostics.map((diagnostic) =>
+          Object.freeze({
+            severity: "ERROR" as const,
+            code: diagnostic.code,
+            channel: "XLSX" as const,
+            path: diagnostic.path,
+            message: diagnostic.message,
+          })
+        )
+      )
+    );
   }
-
-  manifestWs.columns = [{ width: 40 }, { width: 60 }];
-
-  const buf = await wb.xlsx.writeBuffer();
+  const serialized = await serializeProposalWorkbook(planned.plan);
   return {
-    buffer: Buffer.from(buf),
-    notRepresentable: Object.freeze(notRepresentable),
+    buffer: serialized.buffer,
+    notRepresentable: serialized.notRepresentable,
   };
 }
 

@@ -29,6 +29,7 @@ import {
   normalizeDocumentBrandFont,
   safeBrandLogoUrlForDocument,
 } from "@/lib/brand-policy";
+import { ErrorState } from "@/components/patterns";
 
 const SECTORS = ["GOV", "HEALTH", "FINANCE", "ENERGY", "TELECOM", "OTHER"];
 
@@ -85,10 +86,16 @@ export function BrandSetup() {
   const { locale } = useLocale();
   const [draft, setDraft] = useState<BrandDraft | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["brand"],
     queryFn: async () => {
       const res = await fetch("/api/brand");
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? "Failed to load brand");
+      }
       return res.json();
     },
   });
@@ -124,6 +131,22 @@ export function BrandSetup() {
     return (
       <Card className="p-8 flex items-center justify-center">
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <ErrorState
+          message={
+            locale === "ar"
+              ? "تعذر تحميل ملف العلامة التجارية"
+              : "Could not load brand profile"
+          }
+          onRetry={() => void refetch()}
+          retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+        />
       </Card>
     );
   }

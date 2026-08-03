@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Panel, EmptyState, QueryState } from "@/components/patterns";
+import { Panel, EmptyState, ErrorState, QueryState } from "@/components/patterns";
 import { apiJson } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +84,8 @@ type BillingPayload = {
 type CheckoutInput = {
   planId: string;
   billingCycle: "MONTHLY" | "YEARLY";
+  /** Defaults to recurring; pass `single` only for explicit one-cycle checkout. */
+  billingMode?: "recurring" | "single";
 };
 
 export function BillingPanel() {
@@ -97,18 +99,32 @@ export function BillingPanel() {
     queryFn: () => apiJson<BillingPayload>("/api/billing"),
   });
 
-  const { data: recurringData, isLoading: recurringLoading } = useQuery({
+  const {
+    data: recurringData,
+    isLoading: recurringLoading,
+    isError: recurringError,
+    refetch: refetchRecurring,
+  } = useQuery({
     queryKey: ["billing", "recurring"],
     queryFn: () =>
       apiJson<{ profiles: RecurringProfile[] }>("/api/billing/recurring"),
   });
 
   const checkout = useMutation({
-    mutationFn: async ({ planId, billingCycle }: CheckoutInput) => {
+    mutationFn: async ({
+      planId,
+      billingCycle,
+      billingMode = "recurring",
+    }: CheckoutInput) => {
       return apiJson<{ paymentUrl: string }>("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId, billingCycle, locale }),
+        body: JSON.stringify({
+          planId,
+          billingCycle,
+          billingMode,
+          locale,
+        }),
       });
     },
     onSuccess: (res) => {
@@ -319,7 +335,20 @@ export function BillingPanel() {
             )}
 
             {/* Recurring Profile Section */}
-            {!recurringLoading && recurringProfiles.length > 0 && (
+            {recurringError ? (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/5">
+                <ErrorState
+                  message={
+                    locale === "ar"
+                      ? "تعذر تحميل الاشتراكات المتكررة"
+                      : "Could not load recurring billing profiles"
+                  }
+                  onRetry={() => void refetchRecurring()}
+                  retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+                  className="py-4"
+                />
+              </div>
+            ) : !recurringLoading && recurringProfiles.length > 0 ? (
               <div className="rounded-xl border border-border/50 p-4 bg-muted/10 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <RefreshCw className="size-4 text-primary" />
@@ -337,7 +366,7 @@ export function BillingPanel() {
                   />
                 ))}
               </div>
-            )}
+            ) : null}
 
             {!data?.myfatoorahConfigured && (
               <p className="text-[11px] text-muted-foreground">

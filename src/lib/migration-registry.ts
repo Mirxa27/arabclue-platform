@@ -286,6 +286,14 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
     reverse:
       'DROP TABLE "ProposalPresence"; DROP TABLE "TemplateMarketplaceRating"; DROP TABLE "InAppNotification"; DROP TABLE "NotificationDelivery"; DROP TABLE "TemplateMarketplaceApplication"; DROP TABLE "RecurringCheckoutIntent"; DROP TABLE "GeneratedContractVersion"; DROP TABLE "WorkspaceInvitation"; DROP TABLE "RecoveryToken"; DROP TABLE "VerificationToken"; then drop the columns added by this migration.',
   },
+  {
+    id: "20260729100000_marketplace_rating_check",
+    position: 20,
+    capabilities: ["marketplace rating integrity"],
+    createsTables: [],
+    reverse:
+      'ALTER TABLE "TemplateMarketplaceRating": DROP CONSTRAINT IF EXISTS "template_marketplace_rating_range_check";',
+  },
 ]);
 
 /** Every declared migration identifier, in apply order. */

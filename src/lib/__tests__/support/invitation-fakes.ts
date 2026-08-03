@@ -316,7 +316,8 @@ export function createFakeInvitationRepository(
         if (
           row.workspaceId === input.workspaceId &&
           row.email === target &&
-          row.consumedAt === null
+          row.consumedAt === null &&
+          row.revokedAt === null
         ) {
           row.revokedAt = input.createdAt;
           row.consumedAt = input.createdAt;

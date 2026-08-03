@@ -2,7 +2,10 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { db } from "./db";
 import { AUDIT_ACTIONS } from "./audit";
-import { createContractVersion } from "./contract-versioning";
+import {
+  appendContractRevisionIfChanged,
+  createContractVersion,
+} from "./contract-versioning";
 import { parseBilingualDocument } from "./bilingual-layout";
 import {
   compileContractTemplateDocument,
@@ -933,6 +936,24 @@ async function findIdempotentDraft(
   });
 }
 
+/** Stable selected-clause identity list for revision hashing (Req 7.1). */
+function collectSelectedClauseIds(
+  boundClauses: BoundClausesEnvelope
+): readonly string[] {
+  const ids = new Set<string>();
+  for (const section of boundClauses.sections) {
+    const clauses = (section as { clauses?: readonly { id?: unknown }[] })
+      .clauses;
+    if (!Array.isArray(clauses)) continue;
+    for (const clause of clauses) {
+      if (typeof clause?.id === "string" && clause.id.trim()) {
+        ids.add(clause.id.trim());
+      }
+    }
+  }
+  return [...ids].sort();
+}
+
 function resolveIdempotentDraft(
   record: ContractDraftSafetyRecord,
   prepared: PreparedContractDraft,
@@ -1161,6 +1182,9 @@ export async function persistPreparedContractDraft(
         });
 
         // Create initial contract version for version history (Req 7)
+        const selectedClauseIds = collectSelectedClauseIds(
+          input.prepared.boundClauses
+        );
         await createContractVersion(
           {
             contractId: created.id,
@@ -1168,6 +1192,12 @@ export async function persistPreparedContractDraft(
             documentSpec: input.prepared.documentSpec,
             contentHtml: input.prepared.contentHtml,
             createdBy: input.userId,
+            templateVersionId: version.id,
+            selectedClauseIds,
+            variableValues: input.prepared.data.bindings,
+            legalReviewStatus: "UNREVIEWED",
+            counselReviewRequired: true,
+            isExecutable: false,
           },
           tx as unknown as PrismaClient
         );
@@ -1226,6 +1256,128 @@ export async function persistPreparedContractDraft(
     "CONTRACT_DRAFT_CONCURRENCY_CONFLICT",
     409
   );
+}
+
+/**
+ * Update an existing draft and append an immutable revision only when the
+ * revision hash changes (design §4.4 / Req 7.1, 7.5).
+ */
+export async function updatePersistedContractDraft(
+  input: {
+    readonly workspaceId: string;
+    readonly userId: string;
+    readonly id: string;
+    readonly prepared: PreparedContractDraft;
+    readonly ipAddress?: string;
+    readonly userAgent?: string;
+  },
+  database: PrismaClient = db
+): Promise<{
+  readonly updated: boolean;
+  readonly revisionAppended: boolean;
+  readonly draft: ContractDraftSummary;
+}> {
+  const result = await database.$transaction(
+    async (tx) => {
+      const existing = await tx.generatedContract.findFirst({
+        where: {
+          id: input.id,
+          workspaceId: input.workspaceId,
+          status: "draft",
+        },
+        include: contractDraftInclude,
+      });
+      if (!existing) {
+        throw new ContractDraftPersistenceError(
+          "Contract draft not found.",
+          "CONTRACT_DRAFT_NOT_FOUND",
+          404
+        );
+      }
+
+      const selectedClauseIds = collectSelectedClauseIds(
+        input.prepared.boundClauses
+      );
+      const templateVersionId =
+        existing.templateVersionId ??
+        (
+          await tx.contractTemplateVersion.findFirst({
+            where: {
+              templateId: existing.templateId,
+              version: input.prepared.template.versionId,
+            },
+            select: { id: true },
+          })
+        )?.id ??
+        null;
+
+      const updated = await tx.generatedContract.update({
+        where: { id: existing.id },
+        data: {
+          title: input.prepared.title,
+          titleAr: input.prepared.titleAr,
+          dataJson: input.prepared.serialized.dataJson,
+          clausesJson: input.prepared.serialized.clausesJson,
+          contentHtml: input.prepared.contentHtml,
+          documentSpecJson: input.prepared.serialized.documentSpecJson,
+          canonicalHash: input.prepared.canonicalHash,
+          generationMode: input.prepared.mode,
+          diagnosticCount: input.prepared.diagnostics.length,
+          storageBytes: input.prepared.storageBytes,
+          legalReviewStatus: "UNREVIEWED",
+          counselReviewRequired: true,
+          isExecutable: false,
+        },
+        include: contractDraftInclude,
+      });
+
+      const revision = await appendContractRevisionIfChanged(
+        {
+          contractId: updated.id,
+          bindings: input.prepared.data.bindings,
+          documentSpec: input.prepared.documentSpec,
+          contentHtml: input.prepared.contentHtml,
+          createdBy: input.userId,
+          templateVersionId,
+          selectedClauseIds,
+          variableValues: input.prepared.data.bindings,
+          legalReviewStatus: "UNREVIEWED",
+          counselReviewRequired: true,
+          isExecutable: false,
+        },
+        tx as unknown as PrismaClient
+      );
+
+      await tx.auditLog.create({
+        data: {
+          userId: input.userId,
+          action: AUDIT_ACTIONS.CONTRACT_DRAFT_CREATE,
+          resource: "GeneratedContract",
+          resourceId: updated.id,
+          details: json({
+            workspaceId: input.workspaceId,
+            action: "draft_update",
+            revisionAppended: revision.appended,
+            revision: revision.version.revision,
+            generatedCanonicalHash: input.prepared.canonicalHash,
+          }),
+          ipAddress: input.ipAddress?.slice(0, 512) ?? null,
+          userAgent: input.userAgent?.slice(0, 1_024) ?? null,
+          severity: "INFO",
+          success: true,
+        },
+      });
+
+      return {
+        updated: true as const,
+        revisionAppended: revision.appended,
+        draft: toSummary(updated, input.prepared.template),
+      };
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
+
+  return result;
 }
 
 /**

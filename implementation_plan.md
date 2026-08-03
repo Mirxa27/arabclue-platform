@@ -1,151 +1,128 @@
 # Implementation Plan
 
-> **RELEASE COMPLETED 2026-07-27** — commit `890c6d6` is on `main` and live at arabclue.com.
->
-> | Gate | Result |
-> | --- | --- |
-> | Lint | 0 errors (warnings only in bundled extension JS) |
-> | Tests | 3024 pass / 13 skip / 0 fail |
-> | Build | success (font-trace verified) |
-> | Git push | `origin/cursor/e2e-completion-ab64` + fast-forward `origin/main` |
-> | Schema | 19/19 migrations applied (`platform_completion` already present) |
-> | Production | `https://arabclue-platform-b9aubqsfp-mirxa27s-projects.vercel.app` (GitHub) and `https://arabclue-platform-7z3wpns58-mirxa27s-projects.vercel.app` (CLI) Ready; aliases include arabclue.com |
-> | Smoke | `/api/health` ok; `/api/ready` ready with migrations check ok |
-> | Rollback target | `https://arabclue-platform-r9ijxyxql-mirxa27s-projects.vercel.app` |
->
-> Residual debt (does not block this ship): historical `.env`/credential objects in Git history require a separate rewrite window + credential rotation; Production still uses memory rate limits (no `REDIS_URL`); email is degraded without Resend.
-
 [Overview]
-Verify ArabClue readiness, commit the full platform-completion workspace, push to GitHub, apply the pending Production schema migration in a controlled step, then promote the verified commit to arabclue.com on Vercel.
+Close the remaining open tasks in `.kiro/specs/platform-completion/tasks.md` by finishing partial domain modules already in `src/lib/*`, wiring them through existing App Router routes/UI, adding required property/example tests, and updating task checkboxes only when acceptance criteria and tests pass.
 
+Platform completion is mid-execution: foundations (section 1 + Checkpoint A) and several core services (registration, invitations, analytics vocabulary, clause seeding, template schema, workbook planner, recurring state, comment delete, dashboard route table) are implemented. Roughly **47 mandatory** and **42 optional** leaf tasks remain open in the checklist, many against modules that already exist as incomplete or partially wired code. Live production already shipped schema/migrations; this plan must **not** mutate shared Neon, run migrate/db push/reset, call real MyFatoorah/email, or invent synthetic runtime metrics.
 
-This is an operational release plan, not a feature design. Live production is already serving `arabclue.com` and reports healthy liveness/readiness, but local work on `cursor/e2e-completion-ab64` is 14 commits ahead of `main` plus a large dirty tree (≈180 paths) covering platform completion, account flows, extension Etimad agents, and migration tooling. Production must not receive partial, failing, or secret-bearing state.
-
-Release path: inventory → safety/env gates → static verification (`lint`/`test`/`build`) → clean commit of product code only → push branch → merge to `main` → run `prisma migrate deploy` once against Production with an explicit unpooled URL → `vercel --prod` → smoke `/api/health` and `/api/ready` → record rollback target.
+Approach: work dependency waves from `tasks.md` §Task Dependency Graph. For each open task: (1) read design/requirement slice, (2) extend existing files in place (no parallel replacements), (3) add/fix isolated unit/property tests with mocks + `fast-check` ≥100 where required, (4) flip checklist markers in `tasks.md` only after green, (5) run targeted completion suites before advancing.
 
 [Types]
-No application type system changes are required for the release procedure itself.
+No greenfield type system—extend existing domain types already present in completion modules.
 
-Operational state objects used during verification:
+Key existing contracts to complete against (do not re-fork):
+- `src/lib/recovery-service.ts` — `RequestRecoveryCommand`, `ResetPasswordCommand`, token digests, rate limits
+- `src/lib/analytics-collector.ts` — `ANALYTICS_EVENT_TYPES`, event key version `av1`, append-once semantics
+- `src/lib/clause-library.ts` — catalog projections, select/list page bounds, custom clauses
+- `src/lib/contract-template-authoring.ts` / `contract-versioning.ts` — workspace templates, immutable revisions
+- `src/lib/proposal-workbook-plan.ts` — representable vs manifest-only blocks, two-row bilingual headers
+- `src/lib/recurring-billing.ts` — DRAFT/ACTIVE/SUSPENDED/CANCELLED, exact amount copy, webhook idempotence
+- `src/lib/knowledge-queue.ts` — merged pending projections, keyset cursors
+- `src/lib/comment-lifecycle.ts` — amend/withdraw preserving replies
+- `src/lib/notification-service.ts` — must evolve toward durable outbox (`NotificationDelivery`) per design §11
+- `src/lib/dashboard-routes.ts` / `app-route-resolver.ts` / `hooks/use-view-router.ts` — path↔view mapping
+- Shared: `ApiFailure` codes in `api-failure.ts` / i18n completion keys; `token-digest.ts`; `keyset-cursor.ts`
 
-```ts
-type GateResult = {
-  name: "deploy:safety" | "lint" | "test" | "build" | "migrate" | "smoke";
-  ok: boolean;
-  detail?: string;
-};
-
-type ReleaseRecord = {
-  commitSha: string;
-  branch: string;
-  migrationIds: string[];
-  productionUrl: string;
-  knownGoodDeploymentUrl: string;
-  approver: string;
-  startedAt: string;
-  finishedAt?: string;
-};
-```
+Stable response codes and bounds remain those named in `requirements.md` / design; do not invent alternate codes.
 
 [Files]
-This release touches repository state and host/provider configuration, not a single feature module.
+Primary work is extend-in-place across domain services, API routes, dashboard components, and platform-completion tests.
 
-### Commit candidates (product)
-- Modified app/API/lib/component files under `src/`
-- `prisma/schema.prisma` and `prisma/migrations/20260726000000_platform_completion/`
-- `package.json`, `bun.lock`, `tsconfig.json`
-- `scripts/check-deployment-safety.mjs`, `scripts/predeploy-build-gate.mjs`, `scripts/sync-migration-runbook.mjs`
-- `docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md`, `docs/platform-completion-migrations.md`
-- Extension under `extensions/arabclue-agent/` (source + built assets intended for packaging)
-- `.env.example` (placeholders only)
+### Likely modified (existing)
+- Account/recovery/invite: `src/lib/recovery-service*.ts`, `src/app/api/auth/forgot-password/route.ts`, `reset-password/route.ts`, pages under `src/app/{forgot,reset}-password`, `register`, `verify-email`, `invite`, invitation dashboard controls
+- Analytics: `src/lib/analytics-collector.ts`, proposal/agent/document origin call sites, `src/app/api/analytics/proposals/route.ts`, `src/components/dashboard/analytics-*.tsx`
+- Clauses: `src/lib/clause-library*.ts`, `src/app/api/clauses/**`, `src/components/dashboard/clause-browser.tsx`, contract draft insertion points
+- Templates/contracts: `contract-template-authoring.ts`, `contract-versioning.ts`, `src/app/api/contracts/workspace-templates/**`, `instances/**/versions/**`, studio UI
+- XLSX: `proposal-workbook-plan.ts`, ExcelJS serializer (new helper under `src/lib/` if not present), `src/app/api/proposals/[id]/download/route.ts` validation gate order
+- Billing: `recurring-billing*.ts`, `src/app/api/billing/recurring/**`, webhook route, admin `billing-reconciliation.tsx`, `billing-panel.tsx`
+- Knowledge/collab: `knowledge-queue.ts`, pending-approval route, presence route (`collaboration/presence`), comment UI
+- History/routing: version APIs/UI, `(app)/app/[...segments]/page.tsx`, `use-view-router.ts`, store/sidebar integration
+- Marketplace: catalog seeding persistence, rate/use routes, marketplace UI
+- Notifications: evolve `notification-service.ts` + outbox rows; cron/retry if present
+- Cross-cutting: `src/lib/i18n.ts`, layout/locale cookie, `schema-guard.ts` / scanners, `.kiro/specs/platform-completion/tasks.md` (+ meta if tool-managed)
 
-### Do not commit
-- `.env`, `.env.*` (except `.env.example`)
-- `.vercel/`, `.next/`, `node_modules/`, `uploads/`, logs, screenshots unless already policy-tracked
-- Local IDE noise when not needed: prefer excluding `.vscode/` unless team-shared settings are intentional
-- Generated secrets / admin credential dumps
+### New files (as needed, under existing trees only)
+- Missing property tests: `src/lib/__tests__/platform-completion/property-{5-16,18-31,33-35}-*.test.ts` (optional `*` tasks may follow mandatory wiring)
+- Optional pure helpers: e.g. `src/lib/proposal-workbook-xlsx.ts` for ExcelJS serialization if download route still embeds incomplete writer
+- Capability reachability manifest (task 12.3): machine-readable path under `src/lib/` or `docs/` per design
 
-### Operational notes only (may remain untracked or be deleted after success)
-- `MIGRATION_REQUIRED.md` — delete after migrate succeeds
-- `docs/PRE_PRODUCTION_SECURITY_TASKS.md` — keep if documenting residual history work
+### Never touch for this plan
+- Shared Neon mutations / `prisma migrate` / `db push` / reset
+- Committing `.env` or secrets
+- Parallel “v2” services that strand existing modules
 
 [Functions]
-No new runtime functions are required for the release flow. Existing scripts are the interface:
+Extend and complete existing exported surfaces; preferred pattern is injectable dependencies + pure validators + serializable transactions.
 
-- `bun run deploy:safety` → `scripts/check-deployment-safety.mjs`
-- `bun run lint`
-- `bun run test`
-- `bun run build`
-- `bun run db:migrate:deploy` → `prisma migrate deploy` (Production-only, explicit approval)
-- `vercel --prod --yes`
-- smoke: `GET https://arabclue.com/api/health`, `GET https://arabclue.com/api/ready`
+### Finish/verify first (code largely present)
+- Recovery: `createRecoveryService` request/reset paths; ensure routes call prisma adapter; pages use shared bilingual failures; session revoke inside reset transaction (design gap if still outside)
+- Clauses list/select APIs + browser insert into active draft
+- Template CRUD already partially exported (`createWorkspaceTemplate`, `updateWorkspaceTemplate`, `listTemplateVersions`, …)—close retirement, same-hash no-op, version conflict mapping
+- Contract `createContractVersion`, `listContractVersions`, `compareContractRevisions`—ensure mutation origins append revisions
+- Workbook `compileProposalWorkbookPlan` + wire gated XLSX download
+- Recurring reserve/finalize/transition + webhook claim/settle; reconciliation report/apply
+- Knowledge `list`/`decide` service methods + pending-approval route
+- Dashboard `resolveAppRoute` + server entry auth/email/role gates + `useViewRouter` history sync
 
-Expected known `deploy:safety` failures until history remediation:
-1. Sensitive `.env` objects remain in Git history
-2. Historical embedded development identities in `AGENTS.md`, `scripts/ensure-devtest.ts`, `DEPLOY_ARABCLUE_COM.md`
-3. Local shell missing `REDIS_URL` / `CRON_SECRET` even if Vercel Production already has `CRON_SECRET`
+### Origin wiring required
+- After successful commits: analytics append helpers for proposal/agent/document/template events without failing origin responses
+- Notification outbox rows inside same transactions as review/subscription triggers (after outbox domain complete)
 
-Release decision:
-- History secret exposure must be treated as a security debt item and **credential rotation** is mandatory; full history rewrite is a separate maintenance window and is **not** silently performed in this push.
-- Production currently reports `rateLimit: memory_vercel` without Redis. Deploy proceeds only if product owner accepts single-node memory limits; otherwise provision Upstash/Redis first.
-- Shared Neon `DATABASE_URL` across Production/Preview/Development is a latent risk; Preview should eventually use a dedicated Neon branch. Do not block this release solely on that if the user explicitly wants Production updated, but record it.
+### Tests to add
+- Mandatory example/integration tests for open domains
+- Tagged property tests Properties 5–16, 18–31, 33–35 as optional `*` after domain functions stable; keep 17 and 32 green
+- Never weaken assertions to pass; fix product code
 
 [Classes]
-No class changes. Migration registry and readiness probe already encode schema gates:
+No new class hierarchy. Prefer frozen object dependencies and small error classes already in use (`RecurringBillingError`, `ContractVersioningError`, `ApiFailure` mapper).
 
-- `src/lib/migration-registry.ts` — ordered migration ledger including `20260726000000_platform_completion`
-- `/api/ready` — returns not-ready / `SCHEMA_MIGRATION_PENDING` if Production lacks that migration after code that depends on new columns/tables is deployed
-
-Critical ordering invariant:
-1. Apply migration before (or atomically with) code that requires `User.emailVerified` and new platform-completion tables.
-2. Never run `prisma migrate` / `db push` inside Vercel build.
-3. Never run `prisma migrate reset` on Production.
+- Extend domain “service factories” (`createXService`) rather than classes with inheritance
+- Prisma adapters remain separate (`*-prisma.ts`) so unit tests inject fakes from `src/lib/__tests__/support/*`
 
 [Dependencies]
-No new packages required for release. Runtime/tooling assumptions:
+No new runtime packages expected.
 
-- `bun` package manager and lockfile
-- Node 22.x (engines field); Vercel project may show Node 24.x — confirm build still passes
-- Vercel CLI authenticated as `mirxa27`
-- GitHub `origin` = `https://github.com/Mirxa27/arabclue-platform.git`
-- Linked Vercel project `arabclue-platform` → `https://arabclue.com`
-- Neon Production `DATABASE_URL` + preferably `DATABASE_URL_UNPOOLED` / `POSTGRES_URL_NON_POOLING` for migrate deploy
+- Keep `fast-check@4.9.0` exact (already in package.json)
+- ExcelJS already dependency—reuse for workbook serializer
+- Playwright only for tasks 13.3–13.4 later; not in early waves
+- Do not add message brokers or new frameworks
 
 [Testing]
-Release verification ladder (stop on first hard fail):
+Follow completion test policy in `tasks.md` Notes.
 
-1. `git status` / `git diff` — ensure no secrets staged
-2. `bun run deploy:safety` — record residual security debt; do not invent a bypass in code
-3. `bun run lint`
-4. `bun run test` (or at least `bun run test:completion` + critical suites if full suite is too long)
-5. `bun run build`
-6. After Production migrate: `bunx prisma migrate status` against Production connection (values never printed)
-7. Post-deploy smoke:
-   - `/api/health` → `ok: true`
-   - `/api/ready` → `ready: true` and database check ok
-   - Landing HTTPS + security headers present
-   - Login path loads (no credential automation against prod)
-
-If build or tests fail, do not push to `main` / do not `vercel --prod`.
+1. Unit/property: `bun test --preload ./src/lib/__tests__/support/completion-test-preload.ts src/lib/__tests__/platform-completion`
+2. Targeted domain tests when touching a service
+3. Randomized properties: ≥100 cases, exact `Feature: platform-completion, Property N: …` tag string
+4. Isolated DB only when task requires serializable races and `TEST_DATABASE_URL` is explicitly isolated
+5. Before declaring section done: `bun run lint`, relevant tests green; full `bun run test` + `bun run build` at section 13 / checkpoints
+6. No concurrent `dev` + `build`; user starts dev manually for browser QA
 
 [Implementation Order]
-Execute release steps in this exact sequence.
+Execute waves to minimize blocked work; mark `tasks.md` checkboxes only after verification for that leaf.
 
-1. Freeze scope: confirm working tree contents and exclude secret/local artifacts from staging.
-2. Run verification gates (`deploy:safety` inventory, lint, test, build).
-3. Create a single cohesive release commit (or small series) on `cursor/e2e-completion-ab64` with a clear message covering platform completion + deploy readiness.
-4. Push branch to `origin`.
-5. Fast-forward or merge into `main` after checks pass (prefer PR if protection requires it; otherwise direct merge with explicit user authority).
-6. Record current known-good Production deployment URL for rollback (`vercel ls` / dashboard).
-7. Apply `bun run db:migrate:deploy` once against Production using the non-pooling URL from Vercel secret store / local approved env (never log the URL).
-8. Confirm migrate status includes `20260726000000_platform_completion`.
-9. Deploy Production: `vercel --prod --yes` from the verified commit (or GitHub production deploy if auto-deploy is wired to `main`).
-10. Smoke arabclue.com health/ready; if unhealthy, `vercel rollback <known-good-url>`.
-11. Document residual security work: Git history purge + full credential rotation + Redis provisioning if accepted later.
-12. Delete `MIGRATION_REQUIRED.md` only after migrate verified.
+1. **Accuracy pass**: Re-audit open tasks against existing code; mark complete only items that fully meet acceptance (candidate: 2.3 recovery if tx + routes + anti-enumeration verified; similar for partials wrongly still open).
+2. **Section 2 closeout**: Finish recovery gaps; bilingual account/invite surfaces (2.5); example tests (2.6); Property 18 (2.8); mark parent section 2 complete.
+3. **Section 3 analytics**: Origin wiring (3.2), aggregation/API range (3.3), dashboard (3.4); optional 3.5–3.7 when stable.
+4. **Section 4 clauses**: API completeness (4.2), browser/insert (4.3); optional property 5–6.
+5. **Section 5 templates/contracts**: 5.2–5.7 transactions/routes/UI; optional properties 7–10, 25–26, 19 keyset.
+6. **Checkpoint B** after 4–5 + related tests green.
+7. **Section 6 XLSX**: serializer (6.2), validation gate ordering (6.3); optional properties 11–12, 24, 27.
+8. **Section 7 billing**: checkout/webhook/cancel/resume/console (7.2–7.5), reconciliation (7.6–7.7); optional 7.8–7.12.
+9. **Section 8 knowledge/collab**: queue/commands/UI (8.1–8.3), comment UI (8.5), durable presence (8.6); optional 8.7–8.8.
+10. **Section 9 history/routing**: version APIs/UI (9.1–9.3), server entry (9.5), nav sync (9.6); optional path properties.
+11. **Section 10 marketplace**: persistence seed/list/rate/apply/UI (10.1–10.3); optional 10.4–10.5.
+12. **Section 11 notifications**: outbox domain, wire triggers, retry cron, inbox UI (11.1–11.4); optional 11.5–11.7.
+13. **Section 12 integrity**: locale cookie/server-first RTL (12.1), literals/logical CSS (12.2), scanners/manifest (12.3); optional 12.4–12.9.
+14. **Checkpoint C**.
+15. **Section 13 validation**: matrix 13.1, lint/tsc/test/build 13.2, Playwright 13.3, manual dev+browse 13.4, Final checkpoint.
 
-### Explicit non-goals for this release pass
-- Rewriting public Git history with BFG/filter-repo (requires separate maintenance window and collaborator re-clone)
-- Changing production secrets in chat/logs
-- Running destructive DB commands (`reset`, `db push` against shared Neon)
-- Deploying with known failing TypeScript/build errors
+### Explicit non-goals while closing tasks
+- History rewrite for old `.env` blobs (tracked as pre-prod debt, not platform-completion task)
+- Redis provisioning / Resend prod config
+- Pricing calculations or commercial optimizers
+- Rewriting Mission Control / unrelated UX already on main
+
+### Definition of done for this plan
+- All **non-optional** leaf tasks in `tasks.md` checked `[x]`
+- Optional `*` tasks either completed or explicitly deferred with user consent (prefer complete)
+- Completion suite green; no synthetic success on missing schema; bilingual keys only for new UI; tenant isolation preserved

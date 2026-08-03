@@ -5,6 +5,7 @@ import {
   getRecurringProfileById,
   RecurringBillingError,
 } from "@/lib/recurring-billing";
+import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,14 @@ type RouteParams = { params: Promise<{ id: string }> };
  * POST /api/billing/recurring/[id]/cancel — Cancel a recurring billing profile.
  */
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  return withTenant("session", async ({ session }) => {
+  return withTenant("writer", async ({ session }) => {
+    if (!resolveEmailVerifiedClaim(session.user.emailVerified)) {
+      throw new ApiError(
+        "Email verification required",
+        403,
+        "EMAIL_VERIFICATION_REQUIRED"
+      );
+    }
     const { id } = await params;
 
     // Verify profile belongs to user

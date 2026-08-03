@@ -33,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { BrandSetup } from "./brand-setup";
 import { KnowledgeReviewControls } from "./knowledge-review-controls";
-import { EmptyState, Panel } from "@/components/patterns";
+import { EmptyState, ErrorState, Panel } from "@/components/patterns";
 import {
   CERTIFICATE_TYPES,
   assessQualificationDossier,
@@ -136,6 +136,12 @@ async function assertOk(res: Response) {
   throw new Error(payload?.error ?? "Request failed");
 }
 
+async function fetchJson(url: string) {
+  const res = await fetch(url);
+  await assertOk(res);
+  return res.json();
+}
+
 function scrollAndFocus(scrollId: string, focusId: string) {
   window.setTimeout(() => {
     document.getElementById(scrollId)?.scrollIntoView({
@@ -154,7 +160,7 @@ export function AccountOnboarding() {
   const { setView } = useUI();
   const [step, setStep] = useState<StepKey>("brand");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["onboarding"],
     queryFn: async () => {
       const res = await fetch("/api/onboarding");
@@ -167,6 +173,22 @@ export function AccountOnboarding() {
     return (
       <Card className="p-8 flex items-center justify-center">
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <ErrorState
+          message={
+            locale === "ar"
+              ? "تعذر تحميل حالة الإعداد"
+              : "Could not load onboarding status"
+          }
+          onRetry={() => void refetch()}
+          retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+        />
       </Card>
     );
   }
@@ -235,8 +257,30 @@ export function AccountOnboarding() {
         })}
       </div>
 
-      {step === "brand" || step === "trackRecord" ? (
+      {step === "brand" ? (
         <BrandSetup />
+      ) : step === "trackRecord" ? (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm space-y-2">
+            <p className="font-medium">
+              {locale === "ar"
+                ? "المشاريع السابقة تحتاج اعتماداً بمراجع إثبات"
+                : "Past projects need approval with evidence provenance"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {locale === "ar"
+                ? "أضف بطاقات المشاريع ثم اعتمدها من قائمة اعتماد المعرفة حتى يُفتح مسار توليد العروض."
+                : "Add project cards, then approve them in Knowledge Approval so proposal generation unlocks."}
+            </p>
+            <Button
+              size="sm"
+              onClick={() => startTransition(() => setView("knowledge-approval"))}
+            >
+              {locale === "ar" ? "فتح اعتماد المعرفة" : "Open Knowledge Approval"}
+            </Button>
+          </div>
+          <BrandSetup />
+        </div>
       ) : step === "legal" ? (
         <LegalPanel workspace={data?.workspace} />
       ) : step === "humanCapital" ? (
@@ -302,9 +346,9 @@ function LegalPanel({
   const [certType, setCertType] = useState("GOSI");
   const [expiresAt, setExpiresAt] = useState("");
 
-  const { data } = useQuery({
+  const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["certificates"],
-    queryFn: async () => (await fetch("/api/certificates")).json(),
+    queryFn: () => fetchJson("/api/certificates"),
   });
 
   const saveLegal = useMutation({
@@ -456,7 +500,20 @@ function LegalPanel({
             </Button>
           </div>
           <Separator />
-          {certificates.length === 0 ? (
+          {isLoading ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : isError ? (
+            <ErrorState
+              message={
+                locale === "ar" ? "تعذر تحميل الشهادات" : "Could not load certificates"
+              }
+              onRetry={() => void refetch()}
+              retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+              className="py-4"
+            />
+          ) : certificates.length === 0 ? (
             <EmptyState
               icon={Shield}
               title={locale === "ar" ? "لا توجد شهادات بعد" : "No certificates yet"}
@@ -589,9 +646,9 @@ function StaffPanel() {
   const [roleTitle, setRoleTitle] = useState("");
   const [tags, setTags] = useState("");
 
-  const { data } = useQuery({
+  const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["staff"],
-    queryFn: async () => (await fetch("/api/staff")).json(),
+    queryFn: () => fetchJson("/api/staff"),
   });
 
   const add = useMutation({
@@ -667,7 +724,20 @@ function StaffPanel() {
           <Plus className="size-4 me-1" />
           {locale === "ar" ? "إضافة" : "Add"}
         </Button>
-        {staff.length === 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : isError ? (
+          <ErrorState
+            message={
+              locale === "ar" ? "تعذر تحميل أعضاء الفريق" : "Could not load staff"
+            }
+            onRetry={() => void refetch()}
+            retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+            className="py-4"
+          />
+        ) : staff.length === 0 ? (
           <EmptyState
             icon={Users}
             title={locale === "ar" ? "لا يوجد أعضاء فريق بعد" : "No staff yet"}
@@ -718,9 +788,9 @@ function SimpleCrudPanel({
   const { toast } = useToast();
   const [form, setForm] = useState<Record<string, string>>({});
 
-  const { data } = useQuery({
+  const { data, isError, isLoading, refetch } = useQuery({
     queryKey: [queryKey],
-    queryFn: async () => (await fetch(endpoint)).json(),
+    queryFn: () => fetchJson(endpoint),
   });
 
   const add = useMutation({
@@ -827,7 +897,22 @@ function SimpleCrudPanel({
           <Plus className="size-4 me-1" />
           {locale === "ar" ? "إضافة" : "Add"}
         </Button>
-        {items.length === 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : isError ? (
+          <ErrorState
+            message={
+              locale === "ar"
+                ? `تعذر تحميل ${titleAr}`
+                : `Could not load ${titleEn.toLowerCase()}`
+            }
+            onRetry={() => void refetch()}
+            retryLabel={locale === "ar" ? "إعادة المحاولة" : "Retry"}
+            className="py-4"
+          />
+        ) : items.length === 0 ? (
           <EmptyState
             icon={Library}
             title={

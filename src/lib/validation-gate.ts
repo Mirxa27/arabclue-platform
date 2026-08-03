@@ -28,6 +28,103 @@ export type ValidationReport = {
 const PLACEHOLDER_RE =
   /\b(lorem ipsum|TODO|FIXME|TBD|\[insert|\[placeholder|xxx+)\b/i;
 
+const ARABIC_SCRIPT_RE = /[\u0600-\u06FF]/u;
+const LATIN_LETTER_RE = /[A-Za-z]/u;
+
+/**
+ * Strip approved identifiers, numerals, dates, units, and technical tokens so
+ * language-purity checks do not punish user-authored content that mixes them
+ * with narrative text (Req 18.10).
+ */
+export function stripApprovedTechnicalTokens(text: string): string {
+  return text
+    .replace(/\bNORA[-_\s]?[A-Z0-9.]+\b/gi, " ")
+    .replace(/\bEA[-_\s]?[A-Z0-9.]+\b/gi, " ")
+    .replace(/\b[A-Z]{2,}\d{2,}[A-Z0-9.-]*\b/g, " ")
+    .replace(/\bhttps?:\/\/\S+/gi, " ")
+    .replace(/\b[\w.+-]+@[\w.-]+\.\w+\b/g, " ")
+    .replace(/\b\d{1,4}([./-]\d{1,4}){1,2}\b/g, " ")
+    .replace(/\b\d+([.,]\d+)?\s?(%|SAR|USD|kg|km|m2|GB|MB)?\b/gi, " ")
+    .replace(/[{{}\[\]()]/g, " ");
+}
+
+export type DocumentLanguageSection = Readonly<{
+  key: string;
+  arabic?: string | null;
+  english?: string | null;
+}>;
+
+export type DocumentLanguageFinding = Readonly<{
+  code: "DOCUMENT_LANGUAGE_MISSING" | "DOCUMENT_LANGUAGE_INVALID";
+  section: string;
+  language: "ar" | "en";
+}>;
+
+/**
+ * Pure bilingual section purity check. Empty optional locales are ignored;
+ * required locales must be non-empty and match the expected script after
+ * technical-token stripping.
+ */
+export function assessDocumentLanguagePurity(
+  sections: readonly DocumentLanguageSection[],
+  required: Readonly<{ arabic: boolean; english: boolean }> = {
+    arabic: true,
+    english: true,
+  }
+): readonly DocumentLanguageFinding[] {
+  const findings: DocumentLanguageFinding[] = [];
+  for (const section of sections) {
+    if (required.arabic) {
+      const raw = (section.arabic ?? "").trim();
+      if (!raw) {
+        findings.push({
+          code: "DOCUMENT_LANGUAGE_MISSING",
+          section: section.key,
+          language: "ar",
+        });
+      } else if (!ARABIC_SCRIPT_RE.test(raw)) {
+        // Arabic narrative must contain Arabic script. Pure technical tokens /
+        // numerals alone are not sufficient for a required Arabic field.
+        findings.push({
+          code: "DOCUMENT_LANGUAGE_INVALID",
+          section: section.key,
+          language: "ar",
+        });
+      }
+    }
+    if (required.english) {
+      const raw = (section.english ?? "").trim();
+      if (!raw) {
+        findings.push({
+          code: "DOCUMENT_LANGUAGE_MISSING",
+          section: section.key,
+          language: "en",
+        });
+      } else {
+        const narrative = stripApprovedTechnicalTokens(raw);
+        if (!LATIN_LETTER_RE.test(raw)) {
+          findings.push({
+            code: "DOCUMENT_LANGUAGE_INVALID",
+            section: section.key,
+            language: "en",
+          });
+        } else if (
+          ARABIC_SCRIPT_RE.test(narrative) &&
+          !LATIN_LETTER_RE.test(narrative)
+        ) {
+          // English field that is only Arabic script after stripping tokens.
+          findings.push({
+            code: "DOCUMENT_LANGUAGE_INVALID",
+            section: section.key,
+            language: "en",
+          });
+        }
+      }
+    }
+  }
+  return findings;
+}
+
 function dedupeIssues(issues: ValidationIssue[]): ValidationIssue[] {
   const seen = new Set<string>();
   const out: ValidationIssue[] = [];
@@ -48,6 +145,8 @@ export function validateProposalOutput(opts: {
   restrictions?: string[];
   approvedEvidenceIds?: string[];
   claimedEvidenceIds?: string[];
+  /** Optional bilingual section map for language-purity checks (Req 18.10). */
+  bilingualSections?: readonly DocumentLanguageSection[];
 }): ValidationReport {
   const issues: ValidationIssue[] = [];
   const md = opts.contentMd ?? "";
@@ -183,6 +282,20 @@ export function validateProposalOutput(opts: {
       message:
         "Legal-review-required compliance rows present without legal-advice disclaimer in draft",
     });
+  }
+
+  if (opts.bilingualSections && opts.bilingualSections.length > 0) {
+    for (const finding of assessDocumentLanguagePurity(opts.bilingualSections)) {
+      issues.push({
+        code: finding.code,
+        severity: "error",
+        message:
+          finding.code === "DOCUMENT_LANGUAGE_MISSING"
+            ? `Section ${finding.section} is missing ${finding.language} content`
+            : `Section ${finding.section} content does not match ${finding.language}`,
+        path: `sections.${finding.section}.${finding.language}`,
+      });
+    }
   }
 
   const unique = dedupeIssues(issues);

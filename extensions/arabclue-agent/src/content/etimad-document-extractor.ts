@@ -1,6 +1,7 @@
 /** Extract and classify downloadable documents from Etimad pages */
 
 import type { TenderDocument, TenderDocumentType } from "../types";
+import { exposeGlobals } from "./globals";
 
 /** Find all downloadable document URLs on the current page */
 export function extractAllDocumentUrls(): TenderDocument[] {
@@ -135,3 +136,9 @@ function extractDocFromLink(link: HTMLAnchorElement): TenderDocument | null {
     size: sizeEl?.textContent?.trim(),
   };
 }
+
+exposeGlobals({
+  extractAllDocumentUrls,
+  classifyDocument,
+  resolveDocumentUrl,
+});

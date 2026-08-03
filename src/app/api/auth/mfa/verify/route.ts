@@ -9,6 +9,7 @@ import {
 import { audit } from "@/lib/audit";
 import { z } from "zod";
 import { zodErrorResponse } from "@/lib/validation";
+import { jsonApiFailure } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +21,13 @@ const mfaVerifySchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSession({ allowMustChangePassword: true });
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!session) return jsonApiFailure("AUTHENTICATION_REQUIRED", { status: 401 });
 
     const rl = await rateLimit({ key: `mfa:verify:${session.user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
     if (!rl.ok) {
       const denial = describeRateLimitDenial(rl);
       return NextResponse.json(
-        { error: denial.error },
+        { error: denial.error, code: "MFA_VERIFY_RATE_LIMITED" },
         {
           status: denial.status,
           headers: { "Retry-After": String(denial.retryAfterSeconds) },
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     try {
       raw = await req.json();
     } catch {
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+      return jsonApiFailure("INVALID_JSON_BODY", { status: 400 });
     }
     const parsed = mfaVerifySchema.safeParse(raw);
     if (!parsed.success) return zodErrorResponse(parsed.error);
@@ -46,10 +47,10 @@ export async function POST(req: NextRequest) {
     const { token } = parsed.data;
 
     const user = await db.user.findUnique({ where: { id: session.user.id } });
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!user) return jsonApiFailure("RESOURCE_NOT_FOUND", { status: 404 });
 
     if (!user.mfaSecret) {
-      return NextResponse.json({ error: "MFA not set up" }, { status: 400 });
+      return jsonApiFailure("MFA_NOT_SET_UP", { status: 400 });
     }
     if (!verifyMfaToken(user.mfaSecret, token)) {
       await audit({
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
         severity: "WARN",
         success: false,
       });
-      return NextResponse.json({ error: "Invalid MFA token" }, { status: 400 });
+      return jsonApiFailure("MFA_TOKEN_INVALID", { status: 400 });
     }
 
     await db.user.update({
@@ -77,9 +78,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, mfaEnabled: true });
   } catch (err) {
     console.error("[mfa/verify]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return jsonApiFailure("INTERNAL_ERROR", { status: 500 });
   }
 }

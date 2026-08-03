@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
+import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
 import { getTenantContext } from "@/lib/workspace-context";
 import {
   buildBusinessProfileHTML,
@@ -31,6 +32,7 @@ export type BusinessProfileExportLocale = "ar" | "en" | "bilingual";
 
 interface ExportSession {
   readonly userId: string;
+  readonly emailVerified: boolean;
 }
 
 interface ExportWorkspace {
@@ -87,7 +89,12 @@ export interface BusinessProfileExportDependencies {
 const productionDependencies: BusinessProfileExportDependencies = {
   getSession: async () => {
     const session = await requireSession();
-    return session ? { userId: session.user.id } : null;
+    return session
+      ? {
+          userId: session.user.id,
+          emailVerified: session.user.emailVerified,
+        }
+      : null;
   },
   getWorkspace: async (userId) => {
     const { workspace } = await getTenantContext(userId);
@@ -215,6 +222,12 @@ export async function handleBusinessProfileExport(
   const session = await dependencies.getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!resolveEmailVerifiedClaim(session.emailVerified)) {
+    return NextResponse.json(
+      { error: "EMAIL_VERIFICATION_REQUIRED" },
+      { status: 403, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   const workspace = await dependencies.getWorkspace(session.userId);

@@ -8,6 +8,10 @@ import { isProposalEditLocked } from "@/lib/proposal-status";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
 import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "@/lib/contract-render-snapshot";
 import { matchesProposalEditPrecondition } from "@/lib/proposal-edit-precondition";
+import {
+  analyticsRequestOrigin,
+  recordProposalAnalyticsEvent,
+} from "@/lib/analytics-collector";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +39,8 @@ export async function GET(
             category: true,
           },
         },
-        versions: { orderBy: { version: "desc" }, take: 20 },
+        // Collapsed UI preview only — full history loads via /versions cursor.
+        versions: { orderBy: { version: "desc" }, take: 3 },
       },
     });
     if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
@@ -189,6 +194,22 @@ export async function PATCH(
       resourceId: id,
       details: { version: updated.version, changeLog },
     });
+
+    if (contentMd != null && contentMd !== existing.contentMd) {
+      await recordProposalAnalyticsEvent({
+        eventType: "proposal_edited",
+        proposalId: id,
+        mutationRef: `patch:v${updated.version}`,
+        origin: analyticsRequestOrigin({
+          tenantWorkspaceId: workspace.id,
+          actorUserId: session.user.id,
+        }),
+        metadata: {
+          revision: updated.version,
+          projectId: updated.projectId,
+        },
+      });
+    }
 
     return NextResponse.json({
       proposal: {

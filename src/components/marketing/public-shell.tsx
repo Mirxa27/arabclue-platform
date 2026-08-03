@@ -3,18 +3,19 @@
 import Link from "next/link";
 import {
   createContext,
+  startTransition,
   useContext,
   useEffect,
   useState,
   type ReactNode,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import {
   Menu,
   X,
   ArrowUpRight,
   Shield,
-  Globe2,
+  Languages,
   Sun,
   Moon,
   Sparkles,
@@ -23,6 +24,10 @@ import {
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { ArabclueLogo } from "@/components/brand/arabclue-logo";
+import {
+  readPersistedLocale,
+  scheduleLocalePersistence,
+} from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -35,7 +40,6 @@ const NAV = [
 ] as const;
 
 type Locale = "ar" | "en";
-const LOCALE_KEY = "arabclue-marketing-locale";
 
 type LocaleApi = {
   locale: Locale;
@@ -60,12 +64,15 @@ export function PublicShell({
   children,
   activePath,
   variant = "dark",
+  initialLocale = "ar",
 }: {
   children: ReactNode;
   activePath?: string;
   variant?: "light" | "dark";
+  /** Cookie/SSR locale so first paint matches the document shell. */
+  initialLocale?: Locale;
 }) {
-  const [locale, setLocaleRaw] = useState<Locale>("ar");
+  const [locale, setLocaleRaw] = useState<Locale>(initialLocale);
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -74,13 +81,16 @@ export function PublicShell({
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem(LOCALE_KEY) : null;
-    if (saved === "ar" || saved === "en") setLocaleRaw(saved as Locale);
-  }, []);
+    // Prefer the shared dashboard locale key / cookie mirror (Req 14.7 / 18.8).
+    const persisted = readPersistedLocale();
+    if (persisted !== initialLocale) setLocaleRaw(persisted);
+  }, [initialLocale]);
 
   const setLocale = (l: Locale) => {
-    setLocaleRaw(l);
-    if (typeof window !== "undefined") window.localStorage.setItem(LOCALE_KEY, l);
+    // Transition + deferred persist: keep the language click under INP budget.
+    // `document.dir` reflow happens in the effect below (after paint), not in the click.
+    startTransition(() => setLocaleRaw(l));
+    scheduleLocalePersistence(l);
   };
   const toggle = () => setLocale(locale === "ar" ? "en" : "ar");
 
@@ -96,17 +106,26 @@ export function PublicShell({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const isDark = variant === "dark";
-  const currentTheme = mounted ? (resolvedTheme as "light" | "dark" | undefined) : undefined;
+  // Follow next-themes after mount. Before mount, stick to the page `variant`
+  // so SSR HTML matches the client's first paint (reading document here caused
+  // logo tone hydration mismatches when FOUC set a different html class).
+  const currentTheme = mounted
+    ? ((resolvedTheme as "light" | "dark" | undefined) ??
+      (variant === "dark" ? "dark" : "light"))
+    : variant === "dark"
+      ? "dark"
+      : "light";
+  const isDark = currentTheme === "dark";
 
   return (
     <LocaleCtx.Provider value={{ locale, setLocale, toggle }}>
-      <div
+      <MotionConfig reducedMotion="user">
+        <div
         className={cn(
-          "min-h-screen flex flex-col antialiased",
-          isDark
-            ? "bg-[oklch(0.13_0.02_260)] text-white marketing-dark-plane selection:bg-cyan-300/20"
-            : "bg-background text-foreground"
+          // Always keep the marketing plane class so light-mode CSS remaps
+          // (text-white → foreground, etc.) apply when the theme toggles.
+          "min-h-screen flex flex-col antialiased marketing-dark-plane",
+          isDark ? "selection:bg-cyan-300/20" : "selection:bg-primary/15"
         )}
       >
         {/* Premium header — Linear/Stripe inspired: surface ladder + hairline + glass 2.0 */}
@@ -123,21 +142,15 @@ export function PublicShell({
           )}
         >
           <div className="container-premium flex h-[64px] sm:h-[68px] items-center justify-between gap-3 sm:gap-4">
-            <Link href="/" className="flex items-center gap-3 min-w-0 group outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 rounded-full pr-1">
-              <div className="relative">
-                <ArabclueLogo className="size-9 sm:size-[38px] rounded-[11px] shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_16px_rgba(0,0,0,0.24)] group-hover:shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_12px_24px_rgba(0,0,0,0.32)] transition-all duration-300" />
-                <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_oklch(0.7_0.15_160)] animate-pulse" />
-              </div>
-              <div className="flex flex-col leading-none min-w-0">
-                <span className={cn("font-[family-name:var(--font-ibm-arabic)] text-[17px] sm:text-[18px] font-bold tracking-[-0.02em] truncate", isDark ? "text-white" : "text-foreground")}>
-                  أراب كلاو
-                </span>
-                <span className={cn("text-[10px] font-bold tracking-[0.18em] uppercase -mt-0.5", isDark ? "text-white/55" : "text-muted-foreground")}>Arabclue</span>
-              </div>
-              <span className={cn("hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ml-1.5 transition-colors", isDark ? "border-white/10 bg-white/[0.05] text-white/60 group-hover:bg-white/[0.08] group-hover:border-white/15" : "border-primary/15 bg-primary/5 text-primary")}>
-                <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                SaaS
-              </span>
+            <Link href="/" className="flex items-center min-w-0 group outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 rounded-full pr-1">
+              <ArabclueLogo
+                variant="header"
+                displayMode="cycle"
+                showWordmark
+                size="md"
+                tone={isDark ? "inverse" : "default"}
+                className="[&_.arabclue-logo__icon-mark]:rounded-[11px] [&_.arabclue-logo__icon-mark]:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_16px_rgba(0,0,0,0.24)] group-hover:[&_.arabclue-logo__icon-mark]:shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_12px_24px_rgba(0,0,0,0.32)]"
+              />
             </Link>
 
             <nav className="hidden lg:flex items-center gap-1">
@@ -174,23 +187,38 @@ export function PublicShell({
                 )}
                 aria-label="Toggle language"
               >
-                <Globe2 className="size-3.5 shrink-0" />
-                <motion.span key={locale} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="hidden xs:inline">
+                <Languages className="size-3.5 shrink-0 pointer-events-none" aria-hidden />
+                <span className="hidden xs:inline pointer-events-none">
                   {locale === "ar" ? "EN" : "عربي"}
-                </motion.span>
+                </span>
               </button>
 
               <button
                 type="button"
-                onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
+                onClick={() => {
+                  const root = document.documentElement;
+                  // Prefer the live DOM class — resolvedTheme can lag after FOUC
+                  // or a forced class, which previously made the toggle a no-op.
+                  const currentlyDark = root.classList.contains("dark");
+                  const next = currentlyDark ? "light" : "dark";
+                  root.classList.remove("light", "dark");
+                  root.classList.add(next);
+                  root.style.colorScheme = next;
+                  try {
+                    localStorage.setItem("theme", next);
+                  } catch {
+                    /* private mode */
+                  }
+                  setTheme(next);
+                }}
                 className={cn(
                   "h-[36px] w-[36px] sm:h-[40px] sm:w-[40px] rounded-full border inline-flex items-center justify-center transition-all duration-200 min-w-[44px] min-h-[44px] outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 active:scale-[0.96]",
                   isDark ? "border-white/10 bg-white/[0.06] text-white/60 hover:bg-white/[0.10] hover:text-white" : "border-border bg-background text-muted-foreground hover:text-foreground"
                 )}
-                title={currentTheme === "dark" ? "Light mode" : "Dark mode"}
-                aria-label="Toggle theme"
+                title={isDark ? "Light mode" : "Dark mode"}
+                aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
               >
-                {mounted && currentTheme === "dark" ? <Sun className="size-[16px]" /> : <Moon className="size-[16px]" />}
+                {mounted && isDark ? <Sun className="size-[16px]" /> : <Moon className="size-[16px]" />}
               </button>
 
               <Button
@@ -317,22 +345,19 @@ export function PublicShell({
           <div className="container-premium relative">
             <div className="py-12 sm:py-14 lg:py-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
               <div className="min-w-0">
-                <div className="flex items-center gap-3">
-                  <ArabclueLogo className="size-10 rounded-[12px] shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]" />
-                  <div className="min-w-0">
-                    <p className={cn("font-[family-name:var(--font-ibm-arabic)] text-[17px] font-bold leading-none tracking-[-0.02em] truncate", isDark ? "text-white" : "text-foreground")}>
-                      أراب كلاو
-                    </p>
-                    <p className={cn("text-[11px] font-[600] tracking-[0.14em] uppercase mt-0.5 flex items-center gap-1.5", isDark ? "text-white/40" : "text-muted-foreground")}>
-                      Arabclue SaaS
-                      <span className="inline-flex h-1 w-1 rounded-full bg-emerald-400 animate-pulse" />
-                    </p>
-                  </div>
-                </div>
-                <p className={cn("mt-5 text-[13.5px] leading-[1.65] max-w-[34ch] text-pretty", isDark ? "text-white/55" : "text-muted-foreground")}>
+                <ArabclueLogo
+                  variant="footer"
+                  displayMode="unified"
+                  showWordmark
+                  size="sm"
+                  animated={false}
+                  tone={isDark ? "inverse" : "default"}
+                  className="[&_.arabclue-logo__icon-mark]:rounded-[12px] [&_.arabclue-logo__icon-mark]:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]"
+                />
+                <p className={cn("mt-5 text-[13.5px] leading-[1.65] max-w-[36ch] text-pretty", isDark ? "text-white/55" : "text-muted-foreground")}>
                   {locale === "ar"
-                    ? "نظام تشغيل عطاءات اعتماد بالذكاء الاصطناعي — من الاستيعاب إلى الحزمة الجاهزة، عربي/إنجليزي، مع امتثال قابل للتدقيق وهوية علامتك."
-                    : "AI bid operating system for Etimad — intake to submission-ready pack, AR/EN, auditable compliance, your brand identity intact."}
+                    ? "من الاستيعاب إلى حزمة اعتماد جاهزة للمراجعة — عربي وإنجليزي، امتثال قابل للتدقيق، بهوية علامتك."
+                    : "From RFP intake to an Etimad-ready review pack — bilingual AR/EN, auditable compliance, your brand left intact."}
                 </p>
                 <div className="mt-6 flex flex-wrap gap-1.5">
                   {["Etimad", "NCA", "PDPL", "ZATCA", "Vision 2030"].map((b) => (
@@ -429,7 +454,7 @@ export function PublicShell({
                 ))}
               </div>
               <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-                <p className="text-[12px] leading-[1.5]">© {new Date().getFullYear()} Arabclue · أراب كلاو — {locale === "ar" ? "مساعد إعداد العطاءات بالذكاء الاصطناعي" : "AI Bid Preparation SaaS"}</p>
+                <p className="text-[12px] leading-[1.5]">© {new Date().getFullYear()} Arabclue · أراب كلاو — {locale === "ar" ? "إعداد عطاءات اعتماد بالذكاء الاصطناعي" : "AI bid preparation for Etimad"}</p>
                 <p className="flex items-center gap-2 text-[11px]">
                   <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   {locale === "ar" ? "متوافق مع متطلبات المنافسة الحكومية" : "Built for KSA government procurement"}
@@ -439,6 +464,7 @@ export function PublicShell({
           </div>
         </footer>
       </div>
+      </MotionConfig>
     </LocaleCtx.Provider>
   );
 }

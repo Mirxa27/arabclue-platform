@@ -28,6 +28,16 @@ function bootstrapAdminEmail(): string {
 
 async function disableProductionDevelopmentIdentities(): Promise<void> {
   if (!isProductionRuntime()) return;
+  // Local/dev hosts sharing a remote DB must keep seeded @arabclue.local accounts
+  // usable for e2e and AGENTS.md login — only sweep real production hosts.
+  const authUrl = (process.env.NEXTAUTH_URL || process.env.APP_URL || "").toLowerCase();
+  if (
+    authUrl.includes("localhost") ||
+    authUrl.includes("127.0.0.1") ||
+    process.env.ALLOW_DEV_IDENTITIES === "1"
+  ) {
+    return;
+  }
   if (productionIdentitySweepComplete) return;
   await db.$transaction(async (tx) => {
     const reservedUsers = await tx.user.findMany({

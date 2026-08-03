@@ -1,34 +1,33 @@
-# Task 5 Report: Open DocumentFileViewer after upload
+# Task 5 Report: Mission Control speech/mission error recovery
 
-**Status:** DONE
-**Branch:** `cursor/docs-generation-complete-ab64`
-**Commit message:** `feat(ingest): preview uploaded documents in file viewer`
+**Status:** DONE  
+**Plan:** `docs/superpowers/plans/2026-07-24-remaining-product-gaps.md`  
+**Commit:** not committed (per task instructions)
 
 ## Summary
 
-- Typed the upload mutation response as `{ document: ApiDocument }` so ingestion consumes `id`, `originalName`, `mimeType`, `storagePath`, `projectId`, and `parsedSummary` from `/api/documents`.
-- Added `previewDoc` state to `FileIngestion` and render `DocumentFileViewer` with `open`, `onOpenChange`, `locale`, `title`, `storagePath`, `mimeType`, and `fileName`.
-- Auto-opens the viewer after successful upload when the uploaded document has `storagePath`.
-- Updated Recent documents rows to open `DocumentFileViewer` when `storagePath` is present, with the existing Documents view navigation retained as the no-file fallback.
-- Normalized nullable `parsedSummary` to `undefined` for the local upload queue summary type.
+Mission Control classic mode already recovered speech/mission failures without `alert()`:
+
+- Missing SpeechRecognition → destructive toast (AR/EN).
+- Mission `POST /api/platform-agent/missions` failure → `missionError` banner + Retry (`missionRetryKey` re-POST).
+- Stop → abort recognition + `speechSynthesis.cancel()` + chat `stop()` + brief “Stopped” toast.
+
+Light touch on live mode: `LiveVoiceSession` End call now shows the same brief “Stopped” toast after mic/playback teardown.
 
 ## Files changed
 
-- `src/components/dashboard/file-ingestion.tsx`
-- `.superpowers/sdd/task-5-report.md`
+- `src/components/dashboard/platform-agent-console.tsx` — verified present (prior fix; no further edits this pass)
+- `src/components/dashboard/live-voice-session.tsx` — Stopped toast on `stopLive`
+- `.superpowers/sdd/task-5-report.md` — this report
 
 ## Verification
 
 | Check | Result |
 |-------|--------|
+| `rg 'alert\\('` in `platform-agent-console` / `live-voice-session` | none |
 | `bunx tsc --noEmit` | Pass (exit 0) |
-| `bun run lint` | Pass (exit 0) |
-
-## Constraints
-
-- No API, schema, or dependency changes.
-- No new user-facing copy was added.
 
 ## Concerns
 
-- GUI automation is not available in this subagent tool set, so verification is terminal-based.
+- Core recovery logic was already on the branch from an earlier commit; this pass mainly aligned live End-call feedback and verified acceptance criteria.
+- No commit created (dirty tree / explicit Do Not Commit).

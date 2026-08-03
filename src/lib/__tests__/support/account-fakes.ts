@@ -227,8 +227,8 @@ export function createFakeAccountRepository(): FakeAccountRepository {
         passwordHash: input.passwordHash,
         locale: input.locale,
         platformRole: input.platformRole,
-        emailVerified: false,
-        emailVerifiedAt: null,
+        emailVerified: input.emailVerified === true,
+        emailVerifiedAt: input.emailVerified === true ? input.createdAt : null,
         activeWorkspaceId: null,
         createdAt: input.createdAt,
       });
@@ -264,7 +264,7 @@ export function createFakeAccountRepository(): FakeAccountRepository {
         hashVersion: input.verificationToken.hashVersion,
         createdAt: input.verificationToken.createdAt,
         expiresAt: input.verificationToken.expiresAt,
-        consumedAt: null,
+        consumedAt: input.emailVerified === true ? input.createdAt : null,
       });
 
       state = staged;

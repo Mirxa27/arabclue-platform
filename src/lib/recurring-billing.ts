@@ -31,13 +31,18 @@ import {
   initiatePayment,
   type RecurringModel,
 } from "./myfatoorah";
-import { notifySubscriptionPastDue } from "./notification-service";
+import { notifySubscriptionFailed } from "./notification-service";
 import { systemUtcClock, utcNow, type UtcClock } from "./time";
-import type { ProviderCallContext } from "./provider-timeout";
+import {
+  ProviderDeadlineExceededError,
+  withProviderDeadline,
+  type ProviderCallContext,
+} from "./provider-timeout";
 import type { TranslationKey } from "./i18n";
 import {
   OCCUPYING_RECURRING_STATES,
   RECURRING_AMOUNT_TOLERANCE,
+  RECURRING_PROVIDER_DEADLINE_MS,
   RECURRING_PROVIDER_RETRY_COUNT,
   amountWithinProviderTolerance,
   currencyEquals,
@@ -1326,8 +1331,26 @@ export async function cancelRecurringProfile(
     );
   }
 
-  // Call MyFatoorah to cancel
-  const success = await mfCancelRecurring(recurringId);
+  // Provider call outside the DB transaction with a 30-second deadline.
+  let success = false;
+  try {
+    success = await withProviderDeadline(
+      () => mfCancelRecurring(recurringId),
+      {
+        provider: "myfatoorah-recurring-cancel",
+        timeoutMs: RECURRING_PROVIDER_DEADLINE_MS,
+      }
+    );
+  } catch (error) {
+    if (error instanceof ProviderDeadlineExceededError) {
+      throw new RecurringBillingError(
+        "Recurring cancel timed out waiting for MyFatoorah",
+        "RECURRING_PROVIDER_TIMEOUT",
+        504
+      );
+    }
+    throw error;
+  }
   if (!success) {
     throw new RecurringBillingError(
       "Failed to cancel recurring payment with MyFatoorah",
@@ -1336,15 +1359,56 @@ export async function cancelRecurringProfile(
     );
   }
 
-  const updated = await db.myFatoorahRecurringProfile.update({
+  // Recheck stored state before finalization (criterion 9.13).
+  const current = await db.myFatoorahRecurringProfile.findUnique({
     where: { recurringId },
+  });
+  if (!current) {
+    throw new RecurringBillingError(
+      "Recurring profile not found",
+      "RECURRING_PROFILE_NOT_FOUND",
+      404
+    );
+  }
+  if (normalizeRecurringProfileState(current.status) === "CANCELLED") {
+    return mapProfileToResult(current);
+  }
+  const recheck = resolveRecurringTransition(current.status, "MEMBER_CANCELLED");
+  if (!recheck.ok) {
+    throw new RecurringBillingError(
+      "The stored recurring profile state does not permit cancellation",
+      "RECURRING_STATE_CONFLICT",
+      409
+    );
+  }
+
+  const updatedCount = await db.myFatoorahRecurringProfile.updateMany({
+    where: { recurringId, status: recheck.from },
     data: {
-      status: resolution.to,
+      status: recheck.to,
       // No further period extension applies to a cancelled profile.
       nextChargeAt: null,
       lastWebhookAt: new Date(),
     },
   });
+  if (updatedCount.count !== 1) {
+    throw new RecurringBillingError(
+      "The stored recurring profile state does not permit cancellation",
+      "RECURRING_STATE_CONFLICT",
+      409
+    );
+  }
+
+  const updated = await db.myFatoorahRecurringProfile.findUnique({
+    where: { recurringId },
+  });
+  if (!updated) {
+    throw new RecurringBillingError(
+      "Recurring profile not found",
+      "RECURRING_PROFILE_NOT_FOUND",
+      404
+    );
+  }
 
   await audit({
     userId: userId ?? profile.userId,
@@ -1354,8 +1418,8 @@ export async function cancelRecurringProfile(
     details: {
       action: "cancel_recurring",
       recurringId,
-      previousStatus: resolution.from,
-      newStatus: resolution.to,
+      previousStatus: recheck.from,
+      newStatus: recheck.to,
     },
   });
 
@@ -1398,8 +1462,26 @@ export async function resumeRecurringProfile(
     );
   }
 
-  // Call MyFatoorah to resume
-  const success = await mfResumeRecurring(recurringId);
+  // Provider call outside the DB transaction with a 30-second deadline.
+  let success = false;
+  try {
+    success = await withProviderDeadline(
+      () => mfResumeRecurring(recurringId),
+      {
+        provider: "myfatoorah-recurring-resume",
+        timeoutMs: RECURRING_PROVIDER_DEADLINE_MS,
+      }
+    );
+  } catch (error) {
+    if (error instanceof ProviderDeadlineExceededError) {
+      throw new RecurringBillingError(
+        "Recurring resume timed out waiting for MyFatoorah",
+        "RECURRING_PROVIDER_TIMEOUT",
+        504
+      );
+    }
+    throw error;
+  }
   if (!success) {
     throw new RecurringBillingError(
       "Failed to resume recurring payment with MyFatoorah",
@@ -1408,20 +1490,43 @@ export async function resumeRecurringProfile(
     );
   }
 
-  const intervalDays = readStoredIntervalDays(profile.intervalDays);
+  // Recheck stored state before finalization (criterion 9.13).
+  const current = await db.myFatoorahRecurringProfile.findUnique({
+    where: { recurringId },
+  });
+  if (!current) {
+    throw new RecurringBillingError(
+      "Recurring profile not found",
+      "RECURRING_PROFILE_NOT_FOUND",
+      404
+    );
+  }
+  if (normalizeRecurringProfileState(current.status) === "ACTIVE") {
+    return mapProfileToResult(current);
+  }
+  const recheck = resolveRecurringTransition(current.status, "MEMBER_RESUMED");
+  if (!recheck.ok) {
+    throw new RecurringBillingError(
+      "The stored recurring profile state does not permit resumption",
+      "RECURRING_STATE_CONFLICT",
+      409
+    );
+  }
+
+  const intervalDays = readStoredIntervalDays(current.intervalDays);
   const nextChargeAt =
     intervalDays === null
       ? null
       : deriveRecurringNextChargeAt({
-          lastSuccessfulChargeAt: profile.lastChargeAt,
-          createdAt: profile.createdAt,
+          lastSuccessfulChargeAt: current.lastChargeAt,
+          createdAt: current.createdAt,
           intervalDays,
         });
 
-  const updated = await db.myFatoorahRecurringProfile.update({
-    where: { recurringId },
+  const updatedCount = await db.myFatoorahRecurringProfile.updateMany({
+    where: { recurringId, status: recheck.from },
     data: {
-      status: resolution.to,
+      status: recheck.to,
       nextChargeAt,
       failedCharges: 0,
       lastFailureReason: null,
@@ -1429,6 +1534,24 @@ export async function resumeRecurringProfile(
       lastWebhookAt: new Date(),
     },
   });
+  if (updatedCount.count !== 1) {
+    throw new RecurringBillingError(
+      "The stored recurring profile state does not permit resumption",
+      "RECURRING_STATE_CONFLICT",
+      409
+    );
+  }
+
+  const updated = await db.myFatoorahRecurringProfile.findUnique({
+    where: { recurringId },
+  });
+  if (!updated) {
+    throw new RecurringBillingError(
+      "Recurring profile not found",
+      "RECURRING_PROFILE_NOT_FOUND",
+      404
+    );
+  }
 
   await audit({
     userId: userId ?? profile.userId,
@@ -1438,8 +1561,8 @@ export async function resumeRecurringProfile(
     details: {
       action: "resume_recurring",
       recurringId,
-      previousStatus: resolution.from,
-      newStatus: resolution.to,
+      previousStatus: recheck.from,
+      newStatus: recheck.to,
     },
   });
 
@@ -1548,20 +1671,43 @@ export async function handleRecurringChargeSuccess(opts: {
     createdAt: profile.createdAt,
     intervalDays,
   });
-  // Criterion 9.3 and requirement 19.7: the charged amount is the provider's
-  // verified report when present, and otherwise the literal already stored on the
-  // profile. Neither branch derives a value, and an unreadable amount stops the
-  // update rather than writing a fabricated one.
-  const chargedLiteral =
-    readNumericAmountLiteral(opts.amount) ??
+  // Criterion 9.3/9.10 and requirement 19.7: accept only the stored plan literal
+  // when the provider amount is absent; when present, require exact currency match
+  // and amount within the 0.01 tolerance. Never derive or invent a charge value.
+  const storedLiteral =
     parseExactDecimalLiteral(profile.amountExact) ??
     readNumericAmountLiteral(profile.amount);
-  if (!chargedLiteral) {
+  if (!storedLiteral) {
     console.warn(
-      "[recurring-billing] Recurring charge ignored for unreadable amount:",
+      "[recurring-billing] Recurring charge ignored for unreadable stored amount:",
       opts.recurringId
     );
     return;
+  }
+  let chargedLiteral = storedLiteral;
+  if (opts.amount !== undefined && opts.amount !== null) {
+    const reported = readNumericAmountLiteral(opts.amount);
+    if (!reported) {
+      console.warn(
+        "[recurring-billing] Recurring charge ignored for unreadable provider amount:",
+        opts.recurringId
+      );
+      return;
+    }
+    if (
+      !amountWithinProviderTolerance(
+        storedLiteral,
+        reported,
+        RECURRING_AMOUNT_TOLERANCE
+      )
+    ) {
+      console.warn(
+        "[recurring-billing] Recurring charge ignored for amount out of tolerance:",
+        opts.recurringId
+      );
+      return;
+    }
+    chargedLiteral = reported;
   }
   const chargedAmount = Number(chargedLiteral.text);
 
@@ -1734,10 +1880,13 @@ export async function handleRecurringChargeFailure(opts: {
       null;
 
     if (workspaceId) {
-      notifySubscriptionPastDue({
+      // Criterion 17.2 — payment-failure trigger uses the failed template;
+      // past-due is reserved for period-expiry transitions.
+      notifySubscriptionFailed({
         subscriptionId,
         workspaceId,
         userId: profile.userId,
+        reason,
       }).catch((err) => {
         console.error("[recurring-billing] notification error:", err);
       });

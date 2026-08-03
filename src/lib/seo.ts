@@ -71,9 +71,13 @@ export function createPageMetadata(input: PageMetaInput): Metadata {
     keywords: [...SITE.keywords],
     authors: [{ name: SITE.name }],
     icons: {
-      icon: [{ url: "/logo.svg", type: "image/svg+xml" }, { url: "/icon.svg", type: "image/svg+xml" }],
-      apple: [{ url: "/logo.svg" }],
-      shortcut: "/logo.svg",
+      // Cache-bust so browsers pick up the champagne-gold mark after deploy.
+      icon: [
+        { url: "/logo.svg?v=2026-07-gold", type: "image/svg+xml" },
+        { url: "/icon.svg?v=2026-07-gold", type: "image/svg+xml" },
+      ],
+      apple: [{ url: "/logo.svg?v=2026-07-gold" }],
+      shortcut: "/logo.svg?v=2026-07-gold",
     },
     alternates: {
       canonical: url,

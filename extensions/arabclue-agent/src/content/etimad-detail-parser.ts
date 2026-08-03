@@ -3,6 +3,7 @@
 import type { EtimadTender, TenderDocument, TenderDocumentType } from "../types";
 import { parseArabicDate, parseSARValue } from "../utils";
 import { inferCategory, detectTenderStatus } from "./etimad-parser";
+import { exposeGlobals } from "./globals";
 
 /** Extract full tender data from a detail page */
 export function parseTenderDetailPage(): EtimadTender | null {
@@ -242,3 +243,12 @@ function classifyDocumentType(name: string, url: string): TenderDocumentType {
   if (/financ|مال|سعر|price|cost/i.test(combined)) return "financial";
   return "other";
 }
+
+exposeGlobals({
+  parseTenderDetailPage,
+  extractTimeline,
+  extractDocumentLinks,
+  extractQualifications,
+  extractLocalContentRequirements,
+  extractSpecifications,
+});

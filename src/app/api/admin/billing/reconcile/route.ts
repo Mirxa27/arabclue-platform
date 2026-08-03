@@ -1,14 +1,46 @@
 import { NextRequest } from "next/server";
-import { withAdmin, jsonOk, jsonError, ApiError } from "@/lib/api-controller";
-import { reconcilePendingCheckouts } from "@/lib/billing";
+import { withAdmin, jsonOk, jsonError } from "@/lib/api-controller";
+import {
+  getReconciliationReport,
+  applyReconciliation,
+  applyReconciliationBulk,
+  normalizeProviderState,
+  isAmountMismatch,
+  RECONCILE_DEFAULT_LIMIT,
+  RECONCILE_MAX_LIMIT,
+  RECONCILE_DEFAULT_OLDER_THAN_MINUTES,
+  RECONCILE_PROVIDER_DEADLINE_MS,
+  RECONCILE_CONCURRENCY,
+  type ReconcileProviderState,
+  type ReconcileProviderResult,
+} from "@/lib/billing";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { getPaymentStatus, getMyFatoorahPublicConfig } from "@/lib/myfatoorah";
+import { withProviderDeadline } from "@/lib/provider-timeout";
 
 export const dynamic = "force-dynamic";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// Re-export constants for backward compatibility
+export {
+  RECONCILE_DEFAULT_LIMIT,
+  RECONCILE_MAX_LIMIT,
+  RECONCILE_DEFAULT_OLDER_THAN_MINUTES,
+  RECONCILE_PROVIDER_DEADLINE_MS,
+  RECONCILE_CONCURRENCY,
+};
 
+// Re-export types for backward compatibility
+export type {
+  ReconcileProviderState,
+  ReconcileProviderResult,
+  ReconcileReportItem,
+  ReconcileReportResult,
+  ReconcileApplyResult,
+  ReconcileBulkApplyResult,
+} from "@/lib/billing";
+
+// Legacy types kept for backward compatibility with existing UI
 export interface ReconciliationMismatch {
   checkoutId: string;
   workspaceId: string | null;
@@ -29,58 +61,16 @@ export interface ReconciliationReport {
   checkedAt: string;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Map MyFatoorah payment status to a normalized provider state string.
- */
-function normalizeProviderState(status: {
-  isPaid: boolean;
-  isFailed: boolean;
-  isPending: boolean;
-  invoiceStatus: string;
-}): string {
-  if (status.isPaid) return "PAID";
-  if (status.isFailed) return "FAILED";
-  if (status.isPending) return "PENDING";
-  return status.invoiceStatus.toUpperCase() || "UNKNOWN";
-}
-
-/**
- * Check if local and provider states are mismatched.
- * - Local PENDING + Provider PAID = mismatch (needs reconciliation)
- * - Local PENDING + Provider FAILED = mismatch (needs reconciliation)
- * - Local PAID + Provider PAID = no mismatch
- */
-function isMismatch(localState: string, providerState: string): boolean {
-  // Normalize local state
-  const local = localState.toUpperCase();
-  const provider = providerState.toUpperCase();
-
-  // If both match, no mismatch
-  if (local === provider) return false;
-
-  // Local PENDING but provider has resolved state = mismatch
-  if (local === "PENDING" && (provider === "PAID" || provider === "FAILED")) {
-    return true;
-  }
-
-  // Local PAID but provider says not paid = potential issue (rare, flag it)
-  if (local === "PAID" && provider !== "PAID") {
-    return true;
-  }
-
-  return false;
-}
-
-// ─── GET: Reconciliation Report ──────────────────────────────────────────────
+// ─── GET: Reconciliation Report (legacy + new) ──────────────────────────────
 
 /**
  * GET /api/admin/billing/reconcile — Return list of PaymentCheckout rows
  * with provider state mismatches. For each pending checkout with invoiceId,
  * call getPaymentStatus to compare local vs provider state.
+ *
+ * Query: olderThanMinutes (default 5), limit (default 50, max 200), cursor (id).
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   return withAdmin(async () => {
     // Check if MyFatoorah is configured
     const mfConfig = await getMyFatoorahPublicConfig();
@@ -92,11 +82,32 @@ export async function GET() {
       );
     }
 
+    const params = req.nextUrl.searchParams;
+    const olderThanMinutes = Math.max(
+      1,
+      Number.parseInt(
+        params.get("olderThanMinutes") ?? String(RECONCILE_DEFAULT_OLDER_THAN_MINUTES),
+        10
+      ) || RECONCILE_DEFAULT_OLDER_THAN_MINUTES
+    );
+    const limit = Math.min(
+      RECONCILE_MAX_LIMIT,
+      Math.max(
+        1,
+        Number.parseInt(params.get("limit") ?? String(RECONCILE_DEFAULT_LIMIT), 10) ||
+          RECONCILE_DEFAULT_LIMIT
+      )
+    );
+    const cursor = params.get("cursor");
+    const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);
+
     // Get pending checkouts with invoiceId (can query provider)
     const pendingCheckouts = await db.paymentCheckout.findMany({
       where: {
         status: "PENDING",
         invoiceId: { not: null },
+        createdAt: { lte: cutoff },
+        ...(cursor ? { id: { lt: cursor } } : {}),
       },
       include: {
         user: {
@@ -110,50 +121,105 @@ export async function GET() {
           },
         },
       },
-      orderBy: { createdAt: "desc" },
-      take: 100, // Limit to avoid overloading provider API
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit,
     });
 
     const mismatches: ReconciliationMismatch[] = [];
+    let unresolved = 0;
 
-    for (const checkout of pendingCheckouts) {
-      if (!checkout.invoiceId) continue;
+    // Bounded concurrency with a 10s per-item provider deadline.
+    for (let i = 0; i < pendingCheckouts.length; i += RECONCILE_CONCURRENCY) {
+      const batch = pendingCheckouts.slice(i, i + RECONCILE_CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (checkout) => {
+          if (!checkout.invoiceId) {
+            return { kind: "skip" as const };
+          }
+          try {
+            const status = await withProviderDeadline(
+              () =>
+                getPaymentStatus({
+                  key: checkout.invoiceId!,
+                  keyType: "InvoiceId",
+                }),
+              {
+                provider: "myfatoorah-reconcile-status",
+                timeoutMs: RECONCILE_PROVIDER_DEADLINE_MS,
+              }
+            );
+            const providerState = normalizeProviderState(status);
+            const localState = checkout.status.toUpperCase();
 
-      try {
-        const status = await getPaymentStatus({
-          key: checkout.invoiceId,
-          keyType: "InvoiceId",
-        });
+            // Check if mismatch
+            const isMismatch =
+              localState !== providerState &&
+              ((localState === "PENDING" &&
+                (providerState === "PAID" ||
+                  providerState === "FAILED" ||
+                  providerState === "EXPIRED" ||
+                  providerState === "CANCELLED")) ||
+                (localState === "PAID" && providerState !== "PAID"));
 
-        const providerState = normalizeProviderState(status);
+            // Also check amount mismatch
+            const amountMismatch = isAmountMismatch(
+              checkout.amount,
+              checkout.currency,
+              status.invoiceValue,
+              status.paidCurrency
+            );
 
-        if (isMismatch(checkout.status, providerState)) {
-          mismatches.push({
-            checkoutId: checkout.id,
-            workspaceId: checkout.user?.workspaces[0]?.workspaceId ?? null,
-            amount: checkout.amount,
-            currency: checkout.currency,
-            localState: checkout.status,
-            providerState,
-            invoiceId: checkout.invoiceId,
-            paymentId: status.paymentId ?? checkout.paymentId,
-            customerReference: checkout.customerReference,
-            createdAt: checkout.createdAt.toISOString(),
-            userEmail: checkout.user?.email ?? null,
-          });
-        }
-      } catch (err) {
-        // Log but don't fail the whole report for one checkout
-        console.error(
-          `[reconcile] Failed to check status for checkout ${checkout.id}:`,
-          err instanceof Error ? err.message : err
-        );
+            if (!isMismatch && !amountMismatch) {
+              return { kind: "ok" as const };
+            }
+            return {
+              kind: "mismatch" as const,
+              row: {
+                checkoutId: checkout.id,
+                workspaceId: checkout.user?.workspaces[0]?.workspaceId ?? null,
+                amount: checkout.amount,
+                currency: checkout.currency,
+                localState: checkout.status,
+                providerState,
+                invoiceId: checkout.invoiceId,
+                paymentId: status.paymentId ?? checkout.paymentId,
+                customerReference: checkout.customerReference,
+                createdAt: checkout.createdAt.toISOString(),
+                userEmail: checkout.user?.email ?? null,
+              } satisfies ReconciliationMismatch,
+            };
+          } catch (err) {
+            console.error(
+              `[reconcile] Failed to check status for checkout ${checkout.id}:`,
+              err instanceof Error ? err.message : err
+            );
+            return { kind: "unresolved" as const };
+          }
+        })
+      );
+      for (const result of results) {
+        if (result.kind === "mismatch") mismatches.push(result.row);
+        if (result.kind === "unresolved") unresolved += 1;
       }
     }
 
-    const report: ReconciliationReport = {
+    const nextCursor =
+      pendingCheckouts.length === limit
+        ? pendingCheckouts[pendingCheckouts.length - 1]?.id ?? null
+        : null;
+
+    const report: ReconciliationReport & {
+      unresolved: number;
+      nextCursor: string | null;
+      olderThanMinutes: number;
+      limit: number;
+    } = {
       mismatches,
       scanned: pendingCheckouts.length,
+      unresolved,
+      nextCursor,
+      olderThanMinutes,
+      limit,
       checkedAt: new Date().toISOString(),
     };
 
@@ -161,15 +227,20 @@ export async function GET() {
   }, "billing reconcile report");
 }
 
-// ─── POST: Apply Reconciliation or Bulk Reconcile ────────────────────────────
+// ─── POST: Apply Reconciliation ──────────────────────────────────────────────
 
 /**
- * POST /api/admin/billing/reconcile — Apply reconciliation for a single checkout
- * OR run bulk reconciliation.
+ * POST /api/admin/billing/reconcile — Apply reconciliation.
  *
- * Body:
- * - { checkoutId: string } — Apply reconciliation for specific checkout
- * - { olderThanMinutes?: number, limit?: number } — Bulk reconcile (legacy)
+ * Supports two modes via `action` query param:
+ * - `action=report` (default): Run the report query (same as GET)
+ * - `action=apply`: Apply reconciliation for one or more checkouts
+ *
+ * Body for apply:
+ * - { checkoutId: string, providerResult?: ReconcileProviderResult } — single apply
+ * - { items: [{ checkoutId, providerResult }] } — bulk apply
+ * - { checkoutId: string } (legacy) — single apply with live provider query
+ * - {} (legacy) — bulk reconcile via reconcilePendingCheckouts
  */
 export async function POST(req: NextRequest) {
   return withAdmin(async (session) => {
@@ -183,8 +254,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const action = req.nextUrl.searchParams.get("action") ?? "apply";
+
+    // ─── action=report: Run report query ─────────────────────────────────
+    if (action === "report") {
+      const params = req.nextUrl.searchParams;
+      const olderThanMinutes = Math.max(
+        1,
+        Number.parseInt(
+          params.get("olderThanMinutes") ?? String(RECONCILE_DEFAULT_OLDER_THAN_MINUTES),
+          10
+        ) || RECONCILE_DEFAULT_OLDER_THAN_MINUTES
+      );
+      const limit = Math.min(
+        RECONCILE_MAX_LIMIT,
+        Math.max(
+          1,
+          Number.parseInt(params.get("limit") ?? String(RECONCILE_DEFAULT_LIMIT), 10) ||
+            RECONCILE_DEFAULT_LIMIT
+        )
+      );
+      const cursor = params.get("cursor");
+
+      const report = await getReconciliationReport({
+        olderThanMinutes,
+        limit,
+        cursor,
+      });
+
+      return jsonOk(report);
+    }
+
+    // ─── action=apply: Apply reconciliation ──────────────────────────────
     let body: {
       checkoutId?: string;
+      items?: Array<{ checkoutId: string; providerResult: ReconcileProviderResult }>;
+      providerResult?: ReconcileProviderResult;
       olderThanMinutes?: number;
       limit?: number;
     } = {};
@@ -194,11 +299,52 @@ export async function POST(req: NextRequest) {
       /* empty body ok for legacy bulk reconcile */
     }
 
-    // ─── Single Checkout Reconciliation ────────────────────────────────────
+    // ─── Bulk apply with explicit items ─────────────────────────────────
+    if (body.items && Array.isArray(body.items) && body.items.length > 0) {
+      const result = await applyReconciliationBulk({
+        items: body.items,
+        adminUserId: session.user.id,
+      });
+
+      await audit({
+        userId: session.user.id,
+        action: AUDIT_ACTIONS.BILLING_RECONCILE,
+        resource: "PaymentCheckout",
+        details: {
+          action: "bulk-apply",
+          applied: result.applied.length,
+          errors: result.errors.length,
+          alreadyApplied: result.alreadyApplied.length,
+        },
+        severity: "INFO",
+      });
+
+      return jsonOk(result);
+    }
+
+    // ─── Single checkout apply with explicit providerResult ──────────────
+    if (body.checkoutId && body.providerResult) {
+      const result = await applyReconciliation({
+        checkoutId: body.checkoutId,
+        providerResult: body.providerResult,
+        adminUserId: session.user.id,
+      });
+
+      if (!result.ok && result.code !== "RECONCILE_ALREADY_APPLIED") {
+        return jsonError(result.message, 400, result.code);
+      }
+      if (!result.ok && result.code === "RECONCILE_ALREADY_APPLIED") {
+        return jsonError(result.message, 409, result.code);
+      }
+
+      return jsonOk(result);
+    }
+
+    // ─── Single checkout apply with live provider query (legacy) ────────
     if (body.checkoutId) {
       const checkoutId = body.checkoutId;
 
-      // Load checkout with billing record
+      // Load checkout
       const checkout = await db.paymentCheckout.findUnique({
         where: { id: checkoutId },
         include: {
@@ -217,21 +363,16 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Also load billing record if exists
       const billingRecord = checkout?.billingRecordId
         ? await db.billingRecord.findUnique({ where: { id: checkout.billingRecordId } })
         : null;
 
       if (!checkout) {
-        throw new ApiError("Checkout not found", 404, "CHECKOUT_NOT_FOUND");
+        return jsonError("Checkout not found", 404, "CHECKOUT_NOT_FOUND");
       }
 
-      // Check if already reconciled (status matches and billingRecord exists with PAID status)
-      if (
-        checkout.status === "PAID" &&
-        billingRecord &&
-        billingRecord.status === "PAID"
-      ) {
+      // Idempotent: already reconciled
+      if (checkout.status === "PAID" && billingRecord && billingRecord.status === "PAID") {
         return jsonError(
           "Checkout already reconciled",
           409,
@@ -239,167 +380,64 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Get provider state
       if (!checkout.invoiceId) {
-        throw new ApiError(
+        return jsonError(
           "Checkout has no invoiceId to verify",
           400,
           "NO_INVOICE_ID"
         );
       }
 
-      const status = await getPaymentStatus({
-        key: checkout.invoiceId,
-        keyType: "InvoiceId",
+      // Query provider with deadline
+      const status = await withProviderDeadline(
+        () => getPaymentStatus({ key: checkout.invoiceId!, keyType: "InvoiceId" }),
+        {
+          provider: "myfatoorah-reconcile-apply",
+          timeoutMs: RECONCILE_PROVIDER_DEADLINE_MS,
+        }
+      );
+
+      const providerState = normalizeProviderState(status);
+
+      // Build providerResult and delegate to applyReconciliation
+      const providerResult: ReconcileProviderResult = {
+        providerState,
+        invoiceValue: status.invoiceValue,
+        paidCurrency: status.paidCurrency,
+        paymentId: status.paymentId,
+        paymentMethod: status.paymentMethod,
+      };
+
+      const result = await applyReconciliation({
+        checkoutId,
+        providerResult,
+        adminUserId: session.user.id,
       });
 
-      // Only reconcile if provider says PAID
-      if (!status.isPaid) {
-        return jsonError(
-          `Provider state is ${status.invoiceStatus}, not PAID`,
-          400,
-          "PROVIDER_NOT_PAID"
-        );
+      if (!result.ok && result.code === "RECONCILE_ALREADY_APPLIED") {
+        return jsonError(result.message, 409, result.code);
       }
-
-      const now = new Date();
-      const paymentMethod = status.paymentMethod
-        ? `myfatoorah:${status.paymentMethod}`
-        : "myfatoorah";
-
-      // Transaction: Update checkout + create/update billing record + audit
-      await db.$transaction(async (tx) => {
-        // Update PaymentCheckout status to PAID
-        await tx.paymentCheckout.update({
-          where: { id: checkoutId },
-          data: {
-            status: "PAID",
-            paidAt: now,
-            paymentId: status.paymentId ?? checkout.paymentId,
-            errorMessage: null,
-          },
-        });
-
-        // Append BillingRecord if missing
-        if (!checkout.billingRecordId) {
-          const newBillingRecord = await tx.billingRecord.create({
-            data: {
-              userId: checkout.userId,
-              type: "SUBSCRIPTION",
-              amount: checkout.amount,
-              currency: checkout.currency,
-              description: `${checkout.plan.name} (${checkout.billingCycle})`,
-              status: "PAID",
-              paymentMethod,
-              externalInvoiceId: checkout.invoiceId,
-              externalPaymentId: status.paymentId ?? checkout.paymentId,
-              invoiceNumber: `MF-${checkout.invoiceId}`,
-            },
-          });
-
-          await tx.paymentCheckout.update({
-            where: { id: checkoutId },
-            data: { billingRecordId: newBillingRecord.id },
-          });
-        } else if (billingRecord) {
-          // Update existing billing record to PAID
-          await tx.billingRecord.update({
-            where: { id: checkout.billingRecordId! },
-            data: {
-              status: "PAID",
-              paymentMethod,
-              externalInvoiceId: checkout.invoiceId,
-              externalPaymentId: status.paymentId ?? checkout.paymentId,
-              invoiceNumber:
-                billingRecord.invoiceNumber || `MF-${checkout.invoiceId}`,
-            },
-          });
-        }
-
-        // Activate subscription if not already active
-        const existingSub = await tx.subscription.findUnique({
-          where: { userId: checkout.userId },
-        });
-
-        const cycle = checkout.billingCycle === "YEARLY" ? "YEARLY" : "MONTHLY";
-        const periodEnd = new Date(now);
-        if (cycle === "YEARLY") {
-          periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-        } else {
-          periodEnd.setMonth(periodEnd.getMonth() + 1);
-        }
-
-        if (existingSub) {
-          await tx.subscription.update({
-            where: { id: existingSub.id },
-            data: {
-              planId: checkout.planId,
-              status: "ACTIVE",
-              billingCycle: cycle,
-              currentPeriodStart: now,
-              currentPeriodEnd: periodEnd,
-              cancelledAt: null,
-            },
-          });
-        } else {
-          await tx.subscription.create({
-            data: {
-              userId: checkout.userId,
-              planId: checkout.planId,
-              status: "ACTIVE",
-              billingCycle: cycle,
-              currentPeriodStart: now,
-              currentPeriodEnd: periodEnd,
-            },
-          });
-        }
-
-        // Update workspace plan label
-        const workspaceId = checkout.user?.workspaces[0]?.workspaceId;
-        if (workspaceId) {
-          await tx.workspace.update({
-            where: { id: workspaceId },
-            data: { plan: checkout.plan.name },
-          });
-        }
-      });
-
-      // Append audit BILLING_RECONCILE
-      await audit({
-        userId: session.user.id,
-        action: "BILLING_RECONCILE",
-        resource: "PaymentCheckout",
-        resourceId: checkoutId,
-        details: {
-          checkoutId,
-          targetUserId: checkout.userId,
-          planId: checkout.planId,
-          amount: checkout.amount,
-          currency: checkout.currency,
-          invoiceId: checkout.invoiceId,
-          paymentId: status.paymentId,
-          providerState: "PAID",
-          previousLocalState: checkout.status,
-        },
-        severity: "INFO",
-      });
+      if (!result.ok) {
+        return jsonError(result.message, 400, result.code);
+      }
 
       return jsonOk({
         success: true,
         checkoutId,
-        status: "PAID",
+        status: result.status,
         message: "Reconciliation applied successfully",
       });
     }
 
-    // ─── Legacy Bulk Reconciliation ────────────────────────────────────────
-    let olderThanMinutes = 5;
-    let limit = 50;
+    // ─── Legacy bulk reconcile (no checkoutId, no items) ────────────────
+    const { reconcilePendingCheckouts } = await import("@/lib/billing");
+    let olderThanMinutes = RECONCILE_DEFAULT_OLDER_THAN_MINUTES;
+    let limit = RECONCILE_DEFAULT_LIMIT;
     if (typeof body.olderThanMinutes === "number") {
       olderThanMinutes = body.olderThanMinutes;
     }
     if (typeof body.limit === "number") {
-      limit = Math.min(200, body.limit);
+      limit = Math.min(RECONCILE_MAX_LIMIT, body.limit);
     }
 
     const result = await reconcilePendingCheckouts({ olderThanMinutes, limit });

@@ -9,16 +9,43 @@ import { parseJsonBody, billingCheckoutSchema } from "@/lib/validation";
 import { sendPayment, appBaseUrl } from "@/lib/myfatoorah";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { startRecurringProfile, RecurringBillingError } from "@/lib/recurring-billing";
+import { isCompletionErrorCode } from "@/lib/i18n";
+import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
 import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
 
+async function markCheckoutFailed(
+  checkoutId: string,
+  billingRecordId: string,
+  message: string
+): Promise<void> {
+  await db.paymentCheckout.update({
+    where: { id: checkoutId },
+    data: {
+      status: "FAILED",
+      errorMessage: message.slice(0, 500),
+    },
+  });
+  await db.billingRecord.update({
+    where: { id: billingRecordId },
+    data: { status: "FAILED" },
+  });
+}
+
 // POST /api/billing/checkout — create MyFatoorah invoice and return payment URL
 export async function POST(req: NextRequest) {
   return withTenant("session", async ({ session }) => {
+    if (!resolveEmailVerifiedClaim(session.user.emailVerified)) {
+      throw new ApiError(
+        "Email verification required",
+        403,
+        "EMAIL_VERIFICATION_REQUIRED"
+      );
+    }
     const parsed = await parseJsonBody(req, billingCheckoutSchema);
     if (!parsed.ok) return parsed.response;
-    const { planId, billingCycle, locale } = parsed.data;
+    const { planId, billingCycle, billingMode, locale } = parsed.data;
 
     const plan = await db.subscriptionPlan.findFirst({
       where: { id: planId, isActive: true, isPublic: true },
@@ -101,14 +128,16 @@ export async function POST(req: NextRequest) {
         data: { externalInvoiceId: invoice.invoiceId },
       });
 
-      // Try to set up recurring billing for MONTHLY/YEARLY plans
+      // Recurring setup is required for MONTHLY/YEARLY unless the client
+      // explicitly opts into single-cycle (`billingMode: "single"`). Soft-fail
+      // fallthrough to single-cycle is not allowed — surface a stable code.
       let recurringProfileId: string | null = null;
-      if (billingCycle === "MONTHLY" || billingCycle === "YEARLY") {
+      const wantsRecurring =
+        billingMode === "recurring" &&
+        (billingCycle === "MONTHLY" || billingCycle === "YEARLY");
+
+      if (wantsRecurring) {
         try {
-          // The recurring profile and its checkout intent both reference a real
-          // Subscription row. A subscription created here carries status
-          // "PENDING", which grants no entitlement (see assertWithinQuota) until
-          // confirmCheckout activates it on verified payment.
           const now = new Date();
           const existingSub = await db.subscription.findUnique({
             where: { userId: session.user.id },
@@ -130,8 +159,6 @@ export async function POST(req: NextRequest) {
               })
             ).id;
 
-          // Criterion 9.1: no amount is passed. The service copies the stored
-          // plan cycle price and currency itself.
           const profile = await startRecurringProfile({
             userId: session.user.id,
             workspaceId: session.user.workspaceId,
@@ -157,32 +184,36 @@ export async function POST(req: NextRequest) {
             },
           });
         } catch (err) {
-          // If merchant rejects recurring (422) or not supported, log warning and continue single-cycle
-          const isRecurringRejection =
-            err instanceof RecurringBillingError &&
-            (err.httpStatus === 422 || err.code === "NO_PAYMENT_METHODS");
+          const message =
+            err instanceof Error ? err.message : "recurring_setup_failed";
+          await markCheckoutFailed(checkout.id, billingRecord.id, message);
+          await audit({
+            userId: session.user.id,
+            action: AUDIT_ACTIONS.BILLING_CHANGE,
+            resource: "PaymentCheckout",
+            resourceId: checkout.id,
+            details: {
+              error: message,
+              billingMode,
+              code:
+                err instanceof RecurringBillingError
+                  ? err.code
+                  : "RECURRING_UNAVAILABLE",
+            },
+            severity: "ERROR",
+          });
 
-          if (isRecurringRejection || (err instanceof Error && /recurring.*not.*available/i.test(err.message))) {
-            console.warn(
-              "[checkout] Recurring billing rejected by merchant, continuing with single-cycle:",
-              err instanceof Error ? err.message : err
-            );
-            await audit({
-              userId: session.user.id,
-              action: AUDIT_ACTIONS.BILLING_CHANGE,
-              resource: "PaymentCheckout",
-              resourceId: checkout.id,
-              details: {
-                warning: "Recurring billing not available",
-                error: err instanceof Error ? err.message : "unknown",
-                fallback: "single-cycle",
-              },
-              severity: "WARN",
-            });
-          } else {
-            // Log other errors but don't fail checkout
-            console.error("[checkout] Failed to start recurring profile:", err);
+          if (err instanceof RecurringBillingError) {
+            const code = isCompletionErrorCode(err.code)
+              ? err.code
+              : "RECURRING_UNAVAILABLE";
+            throw new ApiError(err.message, err.httpStatus, code);
           }
+          throw new ApiError(
+            message,
+            503,
+            "RECURRING_UNAVAILABLE"
+          );
         }
       }
 
@@ -194,6 +225,7 @@ export async function POST(req: NextRequest) {
         details: {
           planId,
           billingCycle,
+          billingMode,
           amount,
           invoiceId: invoice.invoiceId,
           recurringProfileId,
@@ -206,20 +238,16 @@ export async function POST(req: NextRequest) {
         invoiceId: invoice.invoiceId,
         amount,
         currency: plan.currency || "SAR",
+        billingMode,
         recurringProfileId,
       });
     } catch (err) {
-      await db.paymentCheckout.update({
-        where: { id: checkout.id },
-        data: {
-          status: "FAILED",
-          errorMessage: err instanceof Error ? err.message : "checkout_failed",
-        },
-      });
-      await db.billingRecord.update({
-        where: { id: billingRecord.id },
-        data: { status: "FAILED" },
-      });
+      if (err instanceof ApiError) throw err;
+      await markCheckoutFailed(
+        checkout.id,
+        billingRecord.id,
+        err instanceof Error ? err.message : "checkout_failed"
+      );
       throw err instanceof Error
         ? new ApiError(err.message, 502)
         : new ApiError("MyFatoorah checkout failed", 502);

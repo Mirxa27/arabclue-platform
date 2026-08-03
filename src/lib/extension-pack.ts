@@ -13,14 +13,24 @@ import { finished } from "stream/promises";
 type ZipEntry = { name: string; data: Buffer };
 
 function walk(dir: string, root: string, out: ZipEntry[]) {
+  const skipDirs = new Set(["node_modules", "src", ".git"]);
+  const skipFiles = new Set([
+    "bun.lock",
+    "package-lock.json",
+    "tsconfig.json",
+    "esbuild.config.mjs",
+  ]);
   for (const entry of readdirSync(dir)) {
-    if (entry === ".DS_Store" || entry === "node_modules") continue;
+    if (entry === ".DS_Store") continue;
+    if (skipDirs.has(entry)) continue;
     const full = path.join(dir, entry);
     const rel = path.relative(root, full).split(path.sep).join("/");
     const st = statSync(full);
     if (st.isDirectory()) {
       walk(full, root, out);
     } else {
+      if (skipFiles.has(entry)) continue;
+      if (entry.endsWith(".ts") || entry.endsWith(".map")) continue;
       out.push({ name: rel, data: readFileSync(full) });
     }
   }
@@ -118,7 +128,7 @@ export function buildStoreZip(entries: ZipEntry[], rootPrefix = "arabclue-agent"
   return Buffer.concat([...locals, centralDir, end]);
 }
 
-export const EXTENSION_ZIP_FILENAME = "arabclue-voice-agent.zip";
+export const EXTENSION_ZIP_FILENAME = "arabclue-agent.zip";
 /** Path under `public/` for the pre-packed download artifact. */
 export const EXTENSION_ZIP_RELATIVE = `downloads/${EXTENSION_ZIP_FILENAME}`;
 

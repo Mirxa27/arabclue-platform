@@ -36,7 +36,7 @@ export function MissionExecutionFeed({
         <Zap className="size-3.5 text-amber-600" />
         {ar ? "أحداث الملفات" : "File events"}
       </div>
-      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+      <div className="space-y-1.5 max-h-48 overflow-y-auto pe-1">
         {items.map((item) => {
           const running =
             item.status === "RUNNING" ||

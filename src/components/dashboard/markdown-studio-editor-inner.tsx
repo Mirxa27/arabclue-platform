@@ -146,7 +146,7 @@ export function MarkdownStudioEditorInner({
           readOnly={readOnly}
           contentEditableClassName={cn(
             "prose prose-sm max-w-none px-3 py-2 dark:prose-invert min-h-[380px]",
-            ar && "text-right"
+            ar && "text-end"
           )}
           plugins={plugins}
         />
@@ -188,7 +188,7 @@ export function MarkdownStudioEditorInner({
                   "[&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_li]:my-0.5",
                   "[&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:p-1.5 [&_th]:border [&_th]:border-slate-200 [&_th]:p-1.5 [&_th]:bg-slate-50",
                   "[&_a]:underline [&_blockquote]:border-s-2 [&_blockquote]:border-[var(--studio-accent)] [&_blockquote]:ps-3 [&_blockquote]:text-slate-600",
-                  ar && "text-right"
+                  ar && "text-end"
                 )}
                 style={{ color: "#0f172a" }}
                 dangerouslySetInnerHTML={{ __html: previewHtml }}

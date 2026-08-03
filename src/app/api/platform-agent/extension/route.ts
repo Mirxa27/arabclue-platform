@@ -15,8 +15,8 @@ export async function GET() {
     "arabclue-agent",
     "manifest.json"
   );
-  let version = "1.0.0";
-  let name = "ArabClue Voice Agent";
+  let version = "3.0.0";
+  let name = "ArabClue Agent";
   if (existsSync(manifestPath)) {
     try {
       const raw = JSON.parse(readFileSync(manifestPath, "utf8")) as {
@@ -35,7 +35,7 @@ export async function GET() {
     name,
     version,
     downloadUrl: "/api/platform-agent/extension/download",
-    downloadPath: "/downloads/arabclue-voice-agent.zip",
+    downloadPath: "/downloads/arabclue-agent.zip",
     steps: [
       "download",
       "unzip",
@@ -44,6 +44,16 @@ export async function GET() {
       "load_unpacked",
       "verify",
     ],
-    folderHint: "arabclue-voice-agent (unzipped) / arabclue-agent",
+    folderHint: "arabclue-agent (unzipped)",
+    configUrl: "/api/platform-agent/extension/config",
+    copilotUrl: "/api/platform-agent/extension/copilot",
+    capabilities: [
+      "etimad_scan",
+      "universal_capture",
+      "copilot",
+      "document_upload",
+      "offline_queue",
+      "autopilot",
+    ],
   });
 }

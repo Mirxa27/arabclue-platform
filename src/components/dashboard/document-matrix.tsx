@@ -163,7 +163,25 @@ export function DocumentMatrix() {
           empty={
             <EmptyState
               icon={FileText}
-              title={tr("no_data", locale)}
+              title={tr("documents_matrix_empty_title", locale)}
+              description={tr("documents_matrix_empty_description", locale)}
+              action={
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => startTransition(() => setView("documents"))}
+                  >
+                    {locale === "ar" ? "رفع مستندات" : "Upload documents"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => startTransition(() => setView("projects"))}
+                  >
+                    {tr("nav_projects", locale)}
+                  </Button>
+                </div>
+              }
             />
           }
         >

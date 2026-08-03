@@ -8,6 +8,7 @@ import {
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
 import { parseJsonBody, mfaDisableSchema } from "@/lib/validation";
+import { jsonApiFailure } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = await requireSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return jsonApiFailure("AUTHENTICATION_REQUIRED", { status: 401 });
     }
 
     const rl = await rateLimit({
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     if (!rl.ok) {
       const denial = describeRateLimitDenial(rl);
       return NextResponse.json(
-        { error: denial.error },
+        { error: denial.error, code: "MFA_DISABLE_RATE_LIMITED" },
         {
           status: denial.status,
           headers: { "Retry-After": String(denial.retryAfterSeconds) },
@@ -40,13 +41,13 @@ export async function POST(req: NextRequest) {
 
     const user = await db.user.findUnique({ where: { id: session.user.id } });
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return jsonApiFailure("RESOURCE_NOT_FOUND", { status: 404 });
     }
     if (!user.mfaEnabled || !user.mfaSecret) {
-      return NextResponse.json({ error: "MFA is not enabled" }, { status: 400 });
+      return jsonApiFailure("MFA_NOT_SET_UP", { status: 400 });
     }
     if (!verifyMfaToken(user.mfaSecret, parsed.data.currentToken)) {
-      return NextResponse.json({ error: "Invalid MFA token" }, { status: 400 });
+      return jsonApiFailure("MFA_TOKEN_INVALID", { status: 400 });
     }
 
     await db.user.update({
@@ -65,9 +66,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, mfaEnabled: false });
   } catch (err) {
     console.error("[mfa/disable]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return jsonApiFailure("INTERNAL_ERROR", { status: 500 });
   }
 }

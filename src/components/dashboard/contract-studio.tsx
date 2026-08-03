@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { SCROLL_VIEWPORT } from "@/lib/animation";
 import {
   Scale,
   ShieldAlert,
@@ -43,6 +44,7 @@ import { isProposalEditLocked } from "@/lib/proposal-status";
 import type { ApiProposal, ApiProposalVersion } from "@/lib/api-types";
 import { MarkdownStudioEditor } from "./markdown-studio-editor";
 import { DocumentPreviewFrame } from "./document-preview-frame";
+import { ErrorState } from "@/components/patterns";
 
 export type ContractStudioMode =
   | "preview"
@@ -107,11 +109,20 @@ export function BilingualContractStudio({
   const [draftMd, setDraftMd] = useState(contentMd);
   const [diffLines, setDiffLines] = useState<string[]>([]);
 
-  const { data: brandData } = useQuery<BrandResponse>({
+  const {
+    data: brandData,
+    isError: brandError,
+    refetch: refetchBrand,
+  } = useQuery<BrandResponse>({
     queryKey: ["brand"],
     queryFn: async () => {
       const res = await fetch("/api/brand");
-      if (!res.ok) return { brandProfile: null, company: null };
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? "Failed to load brand");
+      }
       return res.json();
     },
   });
@@ -128,6 +139,70 @@ export function BilingualContractStudio({
   const currentVersion = version ?? versions[0]?.version ?? 1;
   const locked = isProposalEditLocked(status);
   const isDirty = draftMd !== contentMd;
+
+  // Insert clauses selected from the Clause Library into the active draft.
+  useEffect(() => {
+    if (locked || !proposalId) return;
+
+    type InsertClause = {
+      nameEn: string;
+      nameAr: string;
+      contentEn: string;
+      contentAr: string;
+    };
+
+    const appendClauses = (clauses: InsertClause[]) => {
+      if (!clauses.length) return;
+      const block = clauses
+        .map(
+          (clause) =>
+            `## ${clause.nameEn} / ${clause.nameAr}\n\n` +
+            `**EN**\n\n${clause.contentEn.trim()}\n\n` +
+            `**AR**\n\n${clause.contentAr.trim()}`
+        )
+        .join("\n\n---\n\n");
+      setDraftMd((prev) =>
+        prev.trim().length === 0 ? block : `${prev.trimEnd()}\n\n---\n\n${block}`
+      );
+      setStudioMode("edit");
+      toast({
+        title: ar
+          ? `تم إدراج ${clauses.length} بندًا في المسودة`
+          : `Inserted ${clauses.length} clause(s) into the draft`,
+      });
+    };
+
+    const consumeStored = () => {
+      try {
+        const raw = window.sessionStorage.getItem("arabclue-clause-insert");
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as { clauses?: InsertClause[] };
+        if (!Array.isArray(parsed.clauses) || parsed.clauses.length === 0) {
+          return;
+        }
+        window.sessionStorage.removeItem("arabclue-clause-insert");
+        appendClauses(parsed.clauses);
+      } catch {
+        // Ignore malformed storage.
+      }
+    };
+
+    const onSelect = (event: Event) => {
+      const detail = (event as CustomEvent<{ clauses?: InsertClause[] }>).detail;
+      if (!detail?.clauses?.length) return;
+      try {
+        window.sessionStorage.removeItem("arabclue-clause-insert");
+      } catch {
+        // ignore
+      }
+      appendClauses(detail.clauses);
+    };
+
+    consumeStored();
+    window.addEventListener("clause-library:select", onSelect);
+    return () => window.removeEventListener("clause-library:select", onSelect);
+  }, [ar, locked, proposalId, toast]);
+
   const brandProfile = brandData?.brandProfile ?? null;
   const brandColors = useMemo(
     () => ({
@@ -228,7 +303,12 @@ export function BilingualContractStudio({
 
   const obligationsQueryKey = ["proposal-obligations", proposalId] as const;
 
-  const { data: obligationsData } = useQuery({
+  const {
+    data: obligationsData,
+    isError: obligationsError,
+    isLoading: obligationsLoading,
+    refetch: refetchObligations,
+  } = useQuery({
     queryKey: obligationsQueryKey,
     enabled: Boolean(proposalId),
     queryFn: async () => {
@@ -289,9 +369,11 @@ export function BilingualContractStudio({
   }, [proposalId, qc]);
 
   const obligationRows = useMemo(() => {
+    // On load failure, do not silently re-derive — that wipes server "done" state.
+    if (obligationsError) return [];
     if (obligationsData?.items?.length) return obligationsData.items;
     return extractObligations(articles, milestones);
-  }, [articles, milestones, obligationsData]);
+  }, [articles, milestones, obligationsData, obligationsError]);
 
   const toggleObligationMutation = useMutation({
     mutationFn: async (opts: { id: string; next: "open" | "done" }) => {
@@ -514,6 +596,21 @@ export function BilingualContractStudio({
       </div>
 
       {/* Research brief */}
+      {brandError ? (
+        <div className="px-4 sm:px-8 py-3 border-b border-destructive/30 bg-destructive/10">
+          <ErrorState
+            message={
+              ar
+                ? "تعذر تحميل هوية العلامة للترويسة"
+                : "Could not load brand for letterhead"
+            }
+            onRetry={() => void refetchBrand()}
+            retryLabel={ar ? "إعادة المحاولة" : "Retry"}
+            className="py-3"
+          />
+        </div>
+      ) : null}
+
       {showResearch && research ? (
         <motion.div
           initial={{ opacity: 0, height: 0 }}
@@ -685,7 +782,22 @@ export function BilingualContractStudio({
               </div>
             </div>
 
-            {obligationRows.length === 0 ? (
+            {obligationsLoading ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-white/40 text-sm">
+                <Loader2 className="size-4 animate-spin" />
+                {ar ? "جاري التحميل…" : "Loading…"}
+              </div>
+            ) : obligationsError ? (
+              <ErrorState
+                message={
+                  ar
+                    ? "تعذر تحميل سجل الالتزامات"
+                    : "Could not load obligation register"
+                }
+                onRetry={() => void refetchObligations()}
+                retryLabel={ar ? "إعادة المحاولة" : "Retry"}
+              />
+            ) : obligationRows.length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-16 text-white/40 text-sm">
                 <ClipboardCheck className="size-4" />
                 {ar
@@ -774,7 +886,7 @@ export function BilingualContractStudio({
                   key={article.number}
                   initial={{ opacity: 0, y: 12 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-20px" }}
+                  viewport={SCROLL_VIEWPORT}
                   transition={{ delay: Math.min(i * 0.03, 0.2) }}
                   className="rounded-xl border border-white/10 bg-white/[0.025] overflow-hidden"
                 >

@@ -1,20 +1,61 @@
-/** API uplink to ArabClue backend — tender ingest + proposal pipeline */
+/** API uplink to ArabClue backend — tender ingest + proposal pipeline + capture */
 
-import type { EtimadTender, TenderDocument, ProposalPrepResult } from "../types";
-import { DEFAULT_SETTINGS } from "../constants";
-import { normalizeApiBase, slug } from "../utils";
+import type {
+  EtimadTender,
+  TenderDocument,
+  ProposalPrepResult,
+  PageCapturePayload,
+  CopilotChatResult,
+} from "../types";
+import { DEFAULT_SETTINGS, MSG, STORAGE } from "../constants";
+import { normalizeApiBase, dataUrlToBlob } from "../utils";
 import { fetchDocumentAsBase64 } from "./downloader";
 
-/** Get current settings */
+async function queueFailedTender(tender: EtimadTender, reason: string): Promise<void> {
+  const { enqueueTender } = await import("./queue");
+  await enqueueTender(tender, reason);
+}
+
 async function getApiBase(): Promise<string> {
   const stored = await chrome.storage.sync.get({ apiBase: DEFAULT_SETTINGS.apiBase });
-  return normalizeApiBase(stored.apiBase);
+  return normalizeApiBase(stored.apiBase as string);
+}
+
+/** Emit AGENT_EVENT to arabclue tabs so bridge fires extension-ingest */
+export async function emitIngestEvent(data: Record<string, unknown>): Promise<void> {
+  const patterns = [
+    "https://arabclue.com/*",
+    "https://*.arabclue.com/*",
+    "https://*.vercel.app/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+  ];
+  let tabs: chrome.tabs.Tab[] = [];
+  try {
+    tabs = await chrome.tabs.query({ url: patterns });
+  } catch {
+    tabs = [];
+  }
+
+  for (const tab of tabs) {
+    if (!tab.id) continue;
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: MSG.AGENT_EVENT,
+        event: "extension-ingest",
+        data,
+      });
+    } catch {
+      /* tab may not have bridge injected */
+    }
+  }
 }
 
 /** Ingest a complete tender into ArabClue platform */
 export async function ingestTender(
   tender: EtimadTender,
-  documents: TenderDocument[]
+  documents: TenderDocument[],
+  options: { skipQueue?: boolean } = {}
 ): Promise<ProposalPrepResult> {
   const base = await getApiBase();
 
@@ -37,7 +78,7 @@ export async function ingestTender(
       qualifications: tender.qualifications,
       localContentRequired: tender.localContentRequired,
       localContentMinimum: tender.localContentMinimum,
-      documents: documents.map(d => ({ name: d.name, type: d.type, url: d.url })),
+      documents: documents.map((d) => ({ name: d.name, type: d.type, url: d.url })),
     },
     text: buildTenderSummary(tender),
     title: tender.titleAr || tender.title,
@@ -47,28 +88,129 @@ export async function ingestTender(
     metaDescription: `Etimad tender ${tender.referenceNumber} — ${tender.entity}`,
   };
 
-  const res = await fetch(`${base}/api/platform-agent/extension/ingest`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch(`${base}/api/platform-agent/extension/ingest`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45_000),
+    });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+
+    if (res.status === 401 || (!res.ok && isNetworkish(res.status))) {
+      if (!options.skipQueue) {
+        await queueFailedTender(tender, (data.error as string) || `HTTP ${res.status}`);
+      }
+      return {
+        ok: false,
+        queued: true,
+        status: res.status,
+        error: (data.error as string) || `Ingest failed (${res.status})`,
+        message: res.status === 401 ? "Unauthorized — sign in first" : "Queued for retry",
+      };
+    }
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        error: (data.error as string) || `Ingest failed (${res.status})`,
+        message: (data.error as string) || "Failed to ingest tender",
+      };
+    }
+
+    const missionId = data.missionId as string | undefined;
+    if (missionId) {
+      await chrome.storage.local.set({ [STORAGE.LAST_MISSION]: missionId });
+    }
+
+    await emitIngestEvent({
+      mode: "tender",
+      missionId,
+      tenderRef: tender.referenceNumber,
+      ok: true,
+    });
+
+    return {
+      ok: true,
+      missionId,
+      projectId: data.projectId as string | undefined,
+      message: (data.message as string) || "Tender ingested into Mission Control",
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "Network error";
+    if (!options.skipQueue) {
+      await queueFailedTender(tender, reason);
+    }
     return {
       ok: false,
-      error: data.error || `Ingest failed (${res.status})`,
-      message: data.error || "Failed to ingest tender",
+      queued: true,
+      error: reason,
+      message: "Network error — saved offline",
     };
   }
+}
 
-  return {
-    ok: true,
-    missionId: data.missionId,
-    projectId: data.projectId,
-    message: data.message || "Tender ingested into Mission Control",
-  };
+/** Ingest universal page/selection/screenshot capture */
+export async function ingestCapture(
+  payload: PageCapturePayload,
+  options: { skipQueue?: boolean } = {}
+): Promise<ProposalPrepResult> {
+  const base = await getApiBase();
+  try {
+    const res = await fetch(`${base}/api/platform-agent/extension/ingest`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45_000),
+    });
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (res.status === 401 || (!res.ok && isNetworkish(res.status))) {
+      if (!options.skipQueue) {
+        const { enqueueCapture } = await import("./queue");
+        await enqueueCapture(payload, (data.error as string) || `HTTP ${res.status}`);
+      }
+      return {
+        ok: false,
+        queued: true,
+        status: res.status,
+        error: (data.error as string) || `Capture ingest failed (${res.status})`,
+        message: res.status === 401 ? "Unauthorized — sign in first" : "Queued for retry",
+      };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        error: (data.error as string) || `Capture ingest failed (${res.status})`,
+        message: (data.error as string) || "Failed to ingest capture",
+      };
+    }
+    const missionId = data.missionId as string | undefined;
+    if (missionId) {
+      await chrome.storage.local.set({ [STORAGE.LAST_MISSION]: missionId });
+    }
+    await emitIngestEvent({ mode: payload.mode, missionId, ok: true });
+    return {
+      ok: true,
+      missionId,
+      message: (data.message as string) || "Capture ingested",
+    };
+  } catch (err) {
+    if (!options.skipQueue) {
+      const { enqueueCapture } = await import("./queue");
+      await enqueueCapture(payload, err instanceof Error ? err.message : "Network error");
+    }
+    return {
+      ok: false,
+      queued: true,
+      error: err instanceof Error ? err.message : "Network error",
+      message: "Network error — saved offline",
+    };
+  }
 }
 
 /** Trigger the full proposal preparation pipeline */
@@ -76,95 +218,264 @@ export async function startProposalPipeline(
   tender: EtimadTender,
   documents: TenderDocument[]
 ): Promise<ProposalPrepResult> {
-  // Step 1: Ingest the tender
   const ingestResult = await ingestTender(tender, documents);
-  if (!ingestResult.ok) return ingestResult;
+  if (!ingestResult.ok || !ingestResult.missionId) return ingestResult;
 
-  // Step 2: Upload downloaded documents
   for (const doc of documents) {
     if (!doc.url) continue;
     try {
       const { base64, mimeType } = await fetchDocumentAsBase64(doc.url);
-      await uploadDocument(doc, base64, mimeType, ingestResult.missionId!);
+      await uploadDocumentMultipart(doc, base64, mimeType, ingestResult.missionId);
     } catch {
-      // Non-fatal — continue with other docs
+      /* non-fatal */
     }
   }
 
-  // Step 3: Trigger agent pipeline
-  const base = await getApiBase();
-  try {
-    const pipelineRes = await fetch(`${base}/api/platform-agent/chat`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: `Prepare a proposal for Etimad tender ${tender.referenceNumber}: "${tender.titleAr}". Entity: ${tender.entityAr}. Deadline: ${tender.closingDate}. Automatically analyze all uploaded documents and generate a technical proposal draft.`,
-        missionId: ingestResult.missionId,
-      }),
-    });
-
-    if (pipelineRes.ok) {
-      const pipelineData = await pipelineRes.json().catch(() => ({}));
-      return {
-        ...ingestResult,
-        agentRunId: pipelineData.agentRunId,
-        message: "Proposal pipeline started",
-      };
-    }
-  } catch {
-    // Pipeline trigger is best-effort
-  }
-
-  return { ...ingestResult, message: "Tender ingested — start proposal manually" };
+  const autopilot = await triggerAutopilot(ingestResult.missionId, tender);
+  return {
+    ...ingestResult,
+    agentRunId: autopilot.agentRunId,
+    message: autopilot.message || ingestResult.message,
+  };
 }
 
-/** Upload a single document to the mission */
-async function uploadDocument(
+/** Upload a document via multipart to mission attachments */
+async function uploadDocumentMultipart(
   doc: TenderDocument,
   base64: string,
   mimeType: string,
   missionId: string
 ): Promise<void> {
   const base = await getApiBase();
-  await fetch(`${base}/api/platform-agent/extension/ingest`, {
+  const blob = await dataUrlToBlob(
+    base64.startsWith("data:") ? base64 : `data:${mimeType};base64,${base64}`
+  );
+  const form = new FormData();
+  const filename = sanitizeUploadName(doc.name || "document");
+  form.append("file", blob, filename);
+  form.append("source", "browser");
+
+  const res = await fetch(`${base}/api/platform-agent/missions/${missionId}/attachments`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      mode: "page",
-      title: doc.name,
-      url: doc.url,
-      text: `Tender document: ${doc.name}\nType: ${doc.type}\nSource: Etimad`,
-      screenshotDataUrl: mimeType.startsWith("image/") ? base64 : undefined,
-      source: "chrome-extension",
-    }),
+    body: form,
+    signal: AbortSignal.timeout(90_000),
   });
+  if (!res.ok) {
+    throw new Error(`Attachment upload failed (${res.status})`);
+  }
 }
 
-/** Create project from tender metadata */
-export async function createProjectFromTender(tender: EtimadTender): Promise<{ projectId: string } | null> {
+/** Prefer autopilot endpoint; fall back to extension copilot on 404 */
+async function triggerAutopilot(
+  missionId: string,
+  tender: EtimadTender
+): Promise<{ agentRunId?: string; message: string }> {
   const base = await getApiBase();
+  const message = `Prepare a proposal for Etimad tender ${tender.referenceNumber}: "${tender.titleAr || tender.title}". Entity: ${tender.entityAr || tender.entity}. Deadline: ${tender.closingDate}. Automatically analyze all uploaded documents and generate a technical proposal draft.`;
+
+  try {
+    const autopilotRes = await fetch(
+      `${base}/api/platform-agent/missions/${missionId}/autopilot`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          tenderRef: tender.referenceNumber,
+          message,
+        }),
+        signal: AbortSignal.timeout(60_000),
+      }
+    );
+
+    if (autopilotRes.ok) {
+      const data = await autopilotRes.json().catch(() => ({} as Record<string, unknown>));
+      return {
+        agentRunId: data.agentRunId as string | undefined,
+        message: (data.message as string) || "Proposal pipeline started",
+      };
+    }
+
+    if (autopilotRes.status !== 404) {
+      return { message: "Tender ingested — start proposal manually" };
+    }
+  } catch {
+    /* fall through to copilot */
+  }
+
+  const chat = await sendCopilotChat(message, missionId);
+  if (chat.ok) {
+    return { message: "Proposal pipeline started via copilot" };
+  }
+
+  return { message: "Tender ingested — start proposal manually" };
+}
+
+/** Copilot chat via dedicated non-streaming extension endpoint */
+export async function sendCopilotChat(
+  text: string,
+  missionId?: string
+): Promise<CopilotChatResult> {
+  const base = await getApiBase();
+  let resolvedMission = missionId;
+  if (!resolvedMission) {
+    const stored = await chrome.storage.local.get({ [STORAGE.LAST_MISSION]: null });
+    resolvedMission = stored[STORAGE.LAST_MISSION] || undefined;
+  }
+
+  try {
+    const res = await fetch(`${base}/api/platform-agent/extension/copilot`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        text,
+        missionId: resolvedMission,
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+
+    if (res.status === 401) {
+      return { ok: false, error: "Unauthorized — sign in at arabclue.com" };
+    }
+
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (!res.ok) {
+      // Fallback: AI SDK UI stream from main chat route
+      if (res.status === 404) {
+        return sendCopilotChatViaStream(text, resolvedMission, base);
+      }
+      return { ok: false, error: (data.error as string) || `Chat failed (${res.status})` };
+    }
+
+    if (data.missionId) resolvedMission = data.missionId as string;
+    if (resolvedMission) {
+      await chrome.storage.local.set({ [STORAGE.LAST_MISSION]: resolvedMission });
+    }
+
+    const reply = String(data.reply || data.message || data.text || "").trim();
+    return {
+      ok: true,
+      reply: reply || "Done.",
+      missionId: resolvedMission,
+      missionUrl: resolvedMission
+        ? `${base}/app?view=copilot&mission=${encodeURIComponent(resolvedMission)}`
+        : `${base}/app?view=copilot`,
+      streamed: false,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Network error",
+    };
+  }
+}
+
+async function sendCopilotChatViaStream(
+  text: string,
+  missionId: string | undefined,
+  base: string
+): Promise<CopilotChatResult> {
   try {
     const res = await fetch(`${base}/api/platform-agent/chat`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream, application/json, */*" },
       body: JSON.stringify({
-        message: `Create a new project for Etimad tender ${tender.referenceNumber}: "${tender.titleAr}" from ${tender.entityAr}. Set the deadline to ${tender.closingDate}.`,
+        messages: [
+          {
+            id: `ext-${Date.now()}`,
+            role: "user",
+            parts: [{ type: "text", text }],
+          },
+        ],
+        missionId,
       }),
+      signal: AbortSignal.timeout(120_000),
     });
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}));
-      return data.projectId ? { projectId: data.projectId } : null;
+
+    if (res.status === 401) {
+      return { ok: false, error: "Unauthorized — sign in at arabclue.com" };
     }
-  } catch {
-    // best-effort
+
+    const contentType = res.headers.get("content-type") || "";
+    let reply = "";
+    let resolvedMission = missionId;
+
+    if (contentType.includes("application/json")) {
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (!res.ok) {
+        return { ok: false, error: (data.error as string) || `Chat failed (${res.status})` };
+      }
+      reply = String(data.reply || data.message || data.text || "").trim();
+      if (data.missionId) resolvedMission = data.missionId as string;
+    } else {
+      const raw = await res.text();
+      if (!res.ok) {
+        return { ok: false, error: raw.slice(0, 400) || `Chat failed (${res.status})` };
+      }
+      reply = extractStreamText(raw);
+    }
+
+    if (resolvedMission) {
+      await chrome.storage.local.set({ [STORAGE.LAST_MISSION]: resolvedMission });
+    }
+
+    return {
+      ok: true,
+      reply: reply || "Done.",
+      missionId: resolvedMission,
+      missionUrl: resolvedMission
+        ? `${base}/app?view=copilot&mission=${encodeURIComponent(resolvedMission)}`
+        : `${base}/app?view=copilot`,
+      streamed: true,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Network error",
+    };
   }
-  return null;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────
+/** Parse AI SDK UI message SSE (`text-delta` / legacy shapes) */
+function extractStreamText(raw: string): string {
+  const lines = raw.split(/\r?\n/).filter(Boolean);
+  const chunks: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.replace(/^data:\s*/, "").trim();
+    if (!trimmed || trimmed === "[DONE]") continue;
+    try {
+      const parsed = JSON.parse(trimmed) as {
+        type?: string;
+        delta?: string;
+        text?: string;
+        content?: string;
+      };
+      if (parsed.type === "text-delta" && typeof parsed.delta === "string") {
+        chunks.push(parsed.delta);
+      } else if (typeof parsed.delta === "string") {
+        chunks.push(parsed.delta);
+      } else if (typeof parsed.text === "string" && parsed.type !== "text-start") {
+        chunks.push(parsed.text);
+      } else if (typeof parsed.content === "string") {
+        chunks.push(parsed.content);
+      }
+    } catch {
+      if (!trimmed.startsWith("{")) chunks.push(trimmed);
+    }
+  }
+  return chunks.join("").trim();
+}
+
+function isNetworkish(status: number): boolean {
+  return status === 0 || status === 408 || status === 429 || status >= 500;
+}
+
+function sanitizeUploadName(name: string): string {
+  return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 120) || "document.bin";
+}
 
 function buildTenderSummary(tender: EtimadTender): string {
   const lines = [
@@ -178,13 +489,15 @@ function buildTenderSummary(tender: EtimadTender): string {
     `**آخر موعد / Deadline:** ${tender.closingDate}`,
     `**الحالة / Status:** ${tender.status}`,
     tender.location ? `**الموقع / Location:** ${tender.location}` : "",
-    tender.localContentRequired ? `**محتوى محلي / Local Content:** Required (${tender.localContentMinimum || "?"}%)` : "",
+    tender.localContentRequired
+      ? `**محتوى محلي / Local Content:** Required (${tender.localContentMinimum || "?"}%)`
+      : "",
     "",
     tender.qualifications.length ? "## المتطلبات / Requirements" : "",
-    ...tender.qualifications.map(q => `- ${q}`),
+    ...tender.qualifications.map((q) => `- ${q}`),
     "",
     tender.documents.length ? "## المستندات / Documents" : "",
-    ...tender.documents.map(d => `- [${d.type}] ${d.name}`),
+    ...tender.documents.map((d) => `- [${d.type}] ${d.name}`),
     "",
     `Source: ${tender.url}`,
     `Extracted: ${tender.extractedAt}`,
