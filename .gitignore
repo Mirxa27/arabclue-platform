@@ -71,3 +71,7 @@ server.log
 .vercel
 prisma/template.db
 public/downloads/*.zip
+
+# Runtime artifacts
+dev.pid
+test-results/
