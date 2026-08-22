@@ -227,6 +227,95 @@ export async function GET(req: NextRequest) {
   }, "billing reconcile report");
 }
 
+/**
+ * Resolve authoritative provider state for each checkout, server-side.
+ *
+ * The only trustworthy source for "did this invoice get paid" is the payment
+ * gateway. A `providerResult` supplied in the request body is ignored
+ * everywhere in this route; this helper is the single place the answer comes
+ * from. Concurrency and per-item deadline match the GET report so a slow
+ * gateway cannot stall the request.
+ */
+async function verifyProviderResults(checkoutIds: readonly string[]): Promise<{
+  resolved: Array<{ checkoutId: string; providerResult: ReconcileProviderResult }>;
+  errors: Array<{ checkoutId: string; error: string }>;
+}> {
+  const unique = [...new Set(checkoutIds.filter(Boolean))];
+  const resolved: Array<{
+    checkoutId: string;
+    providerResult: ReconcileProviderResult;
+  }> = [];
+  const errors: Array<{ checkoutId: string; error: string }> = [];
+
+  const rows = await db.paymentCheckout.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, invoiceId: true },
+  });
+  const invoiceByCheckout = new Map(rows.map((r) => [r.id, r.invoiceId]));
+
+  type VerifyOutcome =
+    | { kind: "error"; checkoutId: string; error: string }
+    | {
+        kind: "ok";
+        checkoutId: string;
+        providerResult: ReconcileProviderResult;
+      };
+
+  for (let i = 0; i < unique.length; i += RECONCILE_CONCURRENCY) {
+    const batch = unique.slice(i, i + RECONCILE_CONCURRENCY);
+    const settled: VerifyOutcome[] = await Promise.all(
+      batch.map(async (checkoutId): Promise<VerifyOutcome> => {
+        const invoiceId = invoiceByCheckout.get(checkoutId);
+        if (invoiceId === undefined) {
+          return { kind: "error", checkoutId, error: "CHECKOUT_NOT_FOUND" };
+        }
+        if (!invoiceId) {
+          return { kind: "error", checkoutId, error: "NO_INVOICE_ID" };
+        }
+        try {
+          const status = await withProviderDeadline(
+            () => getPaymentStatus({ key: invoiceId, keyType: "InvoiceId" }),
+            {
+              provider: "myfatoorah-reconcile-verify",
+              timeoutMs: RECONCILE_PROVIDER_DEADLINE_MS,
+            }
+          );
+          return {
+            kind: "ok",
+            checkoutId,
+            providerResult: {
+              providerState: normalizeProviderState(status),
+              invoiceValue: status.invoiceValue,
+              paidCurrency: status.paidCurrency,
+              paymentId: status.paymentId,
+              paymentMethod: status.paymentMethod,
+            } satisfies ReconcileProviderResult,
+          };
+        } catch (err) {
+          console.error(
+            `[reconcile] provider verification failed for ${checkoutId}:`,
+            err instanceof Error ? err.message : err
+          );
+          return { kind: "error", checkoutId, error: "PROVIDER_UNREACHABLE" };
+        }
+      })
+    );
+
+    for (const entry of settled) {
+      if (entry.kind === "error") {
+        errors.push({ checkoutId: entry.checkoutId, error: entry.error });
+      } else {
+        resolved.push({
+          checkoutId: entry.checkoutId,
+          providerResult: entry.providerResult,
+        });
+      }
+    }
+  }
+
+  return { resolved, errors };
+}
+
 // ─── POST: Apply Reconciliation ──────────────────────────────────────────────
 
 /**
@@ -299,12 +388,24 @@ export async function POST(req: NextRequest) {
       /* empty body ok for legacy bulk reconcile */
     }
 
-    // ─── Bulk apply with explicit items ─────────────────────────────────
+    // ─── Bulk apply ─────────────────────────────────────────────────────
     if (body.items && Array.isArray(body.items) && body.items.length > 0) {
+      // Provider state is re-fetched here and any client-supplied
+      // `providerResult` is discarded. Reconciliation exists to confirm local
+      // state against the gateway, so accepting the answer from the browser
+      // defeats the entire operation: the admin UI sent
+      // providerState:"PAID" with invoiceValue:null for every selected row,
+      // which also skipped the amount/currency mismatch guard, so "select all
+      // -> bulk apply" marked FAILED and EXPIRED checkouts as paid.
+      const verifiedItems = await verifyProviderResults(
+        body.items.map((item) => item.checkoutId)
+      );
+
       const result = await applyReconciliationBulk({
-        items: body.items,
+        items: verifiedItems.resolved,
         adminUserId: session.user.id,
       });
+      result.errors.push(...verifiedItems.errors);
 
       await audit({
         userId: session.user.id,
@@ -322,11 +423,29 @@ export async function POST(req: NextRequest) {
       return jsonOk(result);
     }
 
-    // ─── Single checkout apply with explicit providerResult ──────────────
+    // ─── Single checkout apply ───────────────────────────────────────────
+    // `body.providerResult` is accepted for backward compatibility with the
+    // existing client but is never used: the state is re-fetched from the
+    // gateway here, exactly as the legacy branch below already did.
     if (body.checkoutId && body.providerResult) {
+      const verified = await verifyProviderResults([body.checkoutId]);
+      const entry = verified.resolved[0];
+      if (!entry) {
+        const failure = verified.errors[0];
+        return jsonError(
+          failure?.error === "CHECKOUT_NOT_FOUND"
+            ? "Checkout not found"
+            : failure?.error === "NO_INVOICE_ID"
+              ? "Checkout has no invoiceId to verify"
+              : "Could not verify payment state with the provider",
+          failure?.error === "CHECKOUT_NOT_FOUND" ? 404 : 502,
+          failure?.error ?? "PROVIDER_UNREACHABLE"
+        );
+      }
+
       const result = await applyReconciliation({
         checkoutId: body.checkoutId,
-        providerResult: body.providerResult,
+        providerResult: entry.providerResult,
         adminUserId: session.user.id,
       });
 

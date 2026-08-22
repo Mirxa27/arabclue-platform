@@ -205,16 +205,12 @@ export function AdminBillingReconciliation() {
 
   const bulkApplyMutation = useMutation({
     mutationFn: async (checkoutIds: string[]) => {
-      const items = checkoutIds.map((id) => ({
-        checkoutId: id,
-        providerResult: {
-          providerState: "PAID" as const,
-          invoiceValue: null,
-          paidCurrency: null,
-          paymentId: null,
-          paymentMethod: null,
-        },
-      }));
+      // Only identifiers are sent. The server re-queries the payment gateway
+      // for each checkout and ignores any client-supplied state: asserting
+      // "PAID" from the browser would defeat the purpose of reconciliation,
+      // and the report deliberately lists checkouts the provider considers
+      // FAILED, EXPIRED, or CANCELLED.
+      const items = checkoutIds.map((id) => ({ checkoutId: id }));
       const res = await fetch("/api/admin/billing/reconcile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
