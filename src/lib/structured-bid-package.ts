@@ -22,6 +22,21 @@ export async function generateStructuredBidPackageZIP(opts: {
   presetKey: string | null | undefined;
   proposalId: string;
   proposalVersion: number;
+  /**
+   * Real lifecycle state of the proposal.
+   *
+   * The manifest previously hardcoded `"APPROVED"` — three lines above
+   * `approvedAt: null` — so every package shipped an integrity artifact
+   * attesting an approval that had not been checked.
+   */
+  proposalStatus: string;
+  /**
+   * Proposal body used to derive the manifest content hash. Previously passed
+   * as `""`, which made the published hash a constant SHA-256 of the empty
+   * string for every export.
+   */
+  proposalContentMd: string | null;
+  proposalApprovedAt?: Date | null;
   project: TenderProject;
   brand: BrandProfile | null;
   checks: Parameters<typeof generateComplianceMatrixXLSX>[2];
@@ -99,10 +114,10 @@ export async function generateStructuredBidPackageZIP(opts: {
         proposal: {
           id: opts.proposalId,
           version: opts.proposalVersion,
-          status: "APPROVED",
+          status: opts.proposalStatus,
           locale,
-          contentMd: "",
-          approvedAt: null,
+          contentMd: opts.proposalContentMd,
+          approvedAt: opts.proposalApprovedAt ?? null,
         },
         validation: opts.validation,
         artifacts: [

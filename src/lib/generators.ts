@@ -73,6 +73,15 @@ function buildProposalHTML(
     locale?: PdfLocale;
     company?: ProposalCompanyLetterhead | null;
     trustedEmbeddedLogo?: boolean;
+    /**
+     * Self-contained `@font-face` CSS with base64 payloads.
+     *
+     * Required for any HTML handed to `htmlToPdf`, which aborts every network
+     * request, so a remote stylesheet link can never resolve and the document
+     * silently falls back to a default face. Omit it for HTML that a real
+     * browser will render, where the linked webfont does load.
+     */
+    embeddedFontCss?: string | null;
   }
 ): string {
   const primary = normalizeDocumentBrandColor(
@@ -89,6 +98,12 @@ function buildProposalHTML(
   );
   const fontStack = resolveBrandFontStack(brand?.fontFamily);
   const fontsHref = googleFontsHref(brand?.fontFamily);
+  const embeddedFontCss = opts?.embeddedFontCss ?? null;
+  // Either embed the faces or link them, never both: a link that cannot resolve
+  // is not a harmless fallback, it is the Arabic face silently disappearing.
+  const fontHead = embeddedFontCss
+    ? `<style>\n${embeddedFontCss}\n</style>`
+    : `<link rel="preconnect" href="https://fonts.googleapis.com">\n<link href="${fontsHref}" rel="stylesheet">`;
   const tenderType = getTenderType(project.category);
   const forPrint = opts?.forPrint ?? true;
   const locale = resolveLocale(proposal, opts?.locale);
@@ -165,8 +180,7 @@ function buildProposalHTML(
   return `<!DOCTYPE html>
 <html lang="${locale}" dir="${rtl ? "rtl" : "ltr"}"><head><meta charset="utf-8">
 <title>${titleDisplay} — ${labels.subtitle}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="${fontsHref}" rel="stylesheet">
+${fontHead}
 <style>
   @page { size: A4; margin: 18mm 14mm 18mm 14mm; }
   * { box-sizing: border-box; }
@@ -257,8 +271,15 @@ export async function generateProposalPDF(
   }
   const brandForPdf = logo.brand;
 
+  // htmlToPdf blocks every network request, so the faces must travel with the
+  // document. Without this the Arabic webfont never loaded on the product's
+  // primary deliverable.
+  const { getEmbeddedBilingualFontCss } = await import("./bilingual-pdf");
+  const embeddedFontCss = await getEmbeddedBilingualFontCss();
+
   const html = buildProposalHTML(proposal, project, brandForPdf, {
     forPrint: true,
+    embeddedFontCss,
     locale,
     company,
     trustedEmbeddedLogo: true,

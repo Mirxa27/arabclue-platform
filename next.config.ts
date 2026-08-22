@@ -61,6 +61,38 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [
+          {
+            // Defence in depth behind output escaping, not a replacement for it.
+            //
+            // - `object-src 'none'` and `base-uri 'self'` remove the two sinks
+            //   that survive most HTML-injection fixes.
+            // - `frame-ancestors 'self'` is the CSP equivalent of the
+            //   X-Frame-Options below and is the directive modern browsers
+            //   actually honour.
+            // - `script-src` keeps 'unsafe-inline' and 'unsafe-eval': Next.js
+            //   injects inline bootstrap scripts and the App Router dev overlay
+            //   needs eval. Tightening this requires per-request nonces through
+            //   the proxy, which is a separate change with its own rollout.
+            // - `img-src` allows data: and blob: because brand logos are inlined
+            //   as data URIs for PDF rendering and previews use object URLs.
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "base-uri 'self'",
+              "object-src 'none'",
+              "frame-ancestors 'self'",
+              "form-action 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob:",
+              "font-src 'self' data:",
+              "connect-src 'self'",
+              "media-src 'self' blob:",
+              "worker-src 'self' blob:",
+              "frame-src 'self' blob:",
+              "manifest-src 'self'",
+            ].join("; "),
+          },
           { key: "X-Content-Type-Options", value: "nosniff" },
           // SAMEORIGIN (not DENY): in-app PDF/HTML previews iframe same-origin
           // /api/files and proposal download routes. Cross-origin framing still blocked.
