@@ -13,6 +13,8 @@ import {
 import { setActiveWorkspace } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { isWorkspaceManager } from "@/lib/auth";
+import { isSeatAllowanceExhausted } from "@/lib/invitation-service";
+import { readSeatUsage } from "@/lib/invitation-service-prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +145,19 @@ export async function POST(req: Request) {
     });
     if (existing) {
       return jsonOk({ member: existing, alreadyMember: true });
+    }
+
+    // Seat capacity is a billing control, so it applies wherever a membership
+    // is created — not only in the invitation flow. This endpoint created the
+    // row directly, so a manager could grow a workspace past its plan
+    // allowance simply by using it instead of sending an invitation.
+    const seatUsage = await readSeatUsage(db, workspace.id, new Date());
+    if (isSeatAllowanceExhausted(seatUsage)) {
+      throw new ApiError(
+        "Workspace seat allowance reached for the active plan",
+        429,
+        "SEAT_LIMIT_REACHED"
+      );
     }
 
     const member = await db.workspaceMember.create({

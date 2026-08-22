@@ -183,7 +183,7 @@ export function createPrismaInvitationRepository(
  * Seat usage of one workspace: the plan allowance of the owner's subscription,
  * the member count, and the pending unexpired invitation count (criterion 3.8).
  */
-async function readSeatUsage(
+export async function readSeatUsage(
   client: PrismaClientLike | PrismaTransactionClient,
   workspaceId: string,
   now: Date,

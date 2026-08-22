@@ -357,6 +357,29 @@ export type InvitationSeatUsage = Readonly<{
   pendingInvitationCount: number;
 }>;
 
+/**
+ * True when the workspace has no seat left for another member.
+ *
+ * Exported because seat capacity is a billing control and must be applied
+ * wherever a membership is created — not only in the invitation flow. The
+ * direct-add path on `POST /api/workspaces` bypassed it entirely, so a manager
+ * could grow a workspace past its plan allowance by using that endpoint
+ * instead of sending an invitation.
+ *
+ * An allowance that is null, non-integral, or non-positive means "unbounded".
+ */
+export function isSeatAllowanceExhausted(
+  usage: InvitationSeatUsage,
+  pendingAdjustment = 0
+): boolean {
+  const allowance = usage.seatAllowance;
+  if (allowance === null || !Number.isSafeInteger(allowance) || allowance <= 0) {
+    return false;
+  }
+  const pending = Math.max(0, usage.pendingInvitationCount + pendingAdjustment);
+  return usage.memberCount + pending >= allowance;
+}
+
 export type CreateInvitationInput = Readonly<{
   workspaceId: string;
   email: string;
@@ -737,17 +760,7 @@ export function createInvitationService(
     return canManageInvitations(actor.membershipRole, actor.platformRole);
   }
 
-  function seatAllowanceExhausted(
-    usage: InvitationSeatUsage,
-    pendingAdjustment = 0
-  ): boolean {
-    const allowance = usage.seatAllowance;
-    if (allowance === null || !Number.isSafeInteger(allowance) || allowance <= 0) {
-      return false;
-    }
-    const pending = Math.max(0, usage.pendingInvitationCount + pendingAdjustment);
-    return usage.memberCount + pending >= allowance;
-  }
+  const seatAllowanceExhausted = isSeatAllowanceExhausted;
 
   async function createInvitation(
     command: CreateInvitationCommand
