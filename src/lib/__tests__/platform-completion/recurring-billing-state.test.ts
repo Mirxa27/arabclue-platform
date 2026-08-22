@@ -150,6 +150,17 @@ describe("exact stored value rules (criterion 9.1, requirement 19.7)", () => {
     expect(readStoredPlanAmount("0.00")).toEqual({ ok: false, reason: "NOT_POSITIVE" });
   });
 
+  test("reads a Prisma-style Decimal object as its exact literal", () => {
+    const decimal = { toString: () => "299.00" };
+    const read = readStoredPlanAmount(decimal);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.amount.text).toBe("299.00");
+    expect(readStoredPlanAmount({ toString: () => "[object Object]" })).toEqual({
+      ok: false,
+      reason: "NOT_EXACT",
+    });
+  });
+
   test("stores 30 days for a monthly cycle and 365 for a yearly cycle", () => {
     expect(recurringIntervalDays("MONTHLY")).toBe(30);
     expect(recurringIntervalDays("YEARLY")).toBe(365);

@@ -322,6 +322,14 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
     reverse:
       'DROP TABLE "MfaRecoveryCode"; ALTER TABLE "User" DROP COLUMN "pendingMfaSecret"; ALTER TABLE "User" DROP COLUMN "mfaLastUsedStep";',
   },
+  {
+    id: "20260822200000_money_decimal_columns",
+    position: 24,
+    capabilities: ["billing", "exact SAR storage"],
+    createsTables: [],
+    reverse:
+      'ALTER TABLE "SubscriptionPlan" DROP COLUMN "priceMonthlyDecimal"; ALTER TABLE "SubscriptionPlan" DROP COLUMN "priceYearlyDecimal"; ALTER TABLE "BillingRecord" DROP COLUMN "amountDecimal"; ALTER TABLE "PaymentCheckout" DROP COLUMN "amountDecimal";',
+  },
 ]);
 
 /** Every declared migration identifier, in apply order. */

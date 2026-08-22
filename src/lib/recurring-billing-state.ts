@@ -278,6 +278,17 @@ export function readStoredPlanAmount(stored: unknown): StoredAmountRead {
     // Shortest round-trip form of the stored double. This selects an existing
     // representation; it neither rounds nor rescales the stored value.
     text = String(stored);
+  } else if (
+    typeof stored === "object" &&
+    stored !== null &&
+    typeof stored.toString === "function"
+  ) {
+    // Prisma.Decimal and other exact decimal objects. toString is the stored
+    // literal; we still validate it rather than rounding.
+    text = stored.toString().trim();
+    if (text.length === 0 || text === "[object Object]") {
+      return { ok: false, reason: "NOT_EXACT" };
+    }
   } else {
     return { ok: false, reason: "NOT_EXACT" };
   }

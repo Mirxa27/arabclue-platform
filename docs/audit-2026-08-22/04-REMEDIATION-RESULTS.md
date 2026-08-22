@@ -25,7 +25,7 @@ applied**. Commits made directly to `main`.
 | --- | --- | --- |
 | `bunx tsc --noEmit` | pass, 0 errors | unchanged |
 | `bun run lint` | pass, 0 errors | unchanged |
-| `bun run test` | **4109 pass**, 13 skip, **0 fail** — 206 files | +269 tests, +22 files |
+| `bun run test` | **4114 pass**, 13 skip, **0 fail** — 207 files | +274 tests, +23 files |
 | Chromium-gated suites | 64 pass, 0 fail | unchanged |
 | `bun run build` | pass — 20 embedded font assets verified across 3 route traces | newly exercised |
 | `bun run deploy:safety:repo` | pass | newly runnable in CI |
@@ -39,7 +39,7 @@ asserted the defective behaviour directly, each noted below.
 
 ---
 
-## 2. Completed — 32 items (29 of 34 approved, plus 3 late Criticals/High)
+## 2. Completed — 34 items (31 of 34 approved, plus 3 late Criticals/High)
 
 ### Critical (4/4)
 
@@ -50,7 +50,7 @@ asserted the defective behaviour directly, each noted below.
 | C3 | Conflicting unique keys made every email notification throw `P2002` | `59f01ef` |
 | C4 | Stored XSS in the proposal builder preview | `e6c74ac` |
 
-### High (25/30)
+### High (26/30)
 
 | # | Finding | Commit |
 | --- | --- | --- |
@@ -78,6 +78,7 @@ asserted the defective behaviour directly, each noted below.
 | H3 | Builder route bypassed four safeguards | `ec2b381` |
 | H20 | Dashboard navigation desynced the URL | `145557b` |
 | H27 | Auth hardening (limiter, MFA seal, TOTP replay, recovery codes, scrypt params) | `8114691` |
+| H28 | Money stored as `Float` — expand to `Decimal(12,2)` | this session |
 
 ### Migrations applied to the shared Neon database
 
@@ -89,10 +90,11 @@ and verified by querying `pg_indexes` / `information_schema` afterwards.
 | `20260822170000_notification_delivery_channel_unique` | Drops the subsuming `(eventId, recipientId)` unique index | Subsuming index absent, channel-scoped key present |
 | `20260822180000_analytics_daily_summary` | Creates `AnalyticsDailySummary` + 3 indexes | Table, columns, and all indexes present |
 | `20260822190000_auth_hardening_mfa` | Adds `pendingMfaSecret`, `mfaLastUsedStep`, `MfaRecoveryCode` | Applied with `prisma migrate deploy` |
+| `20260822200000_money_decimal_columns` | Adds `DECIMAL(12,2)` SAR columns and backfills from the legacy floats | Applied with `prisma migrate deploy` |
 
 `prisma migrate status` reported 20 applied and 0 pending before the session;
-22 applied and 0 pending after the first remediation wave. H27 adds a 23rd
-additive migration.
+22 applied and 0 pending after the first remediation wave. H27 and H28 add a
+23rd and 24th additive migration.
 
 ---
 
@@ -120,6 +122,7 @@ bypass fails CI rather than shipping.
 | `auth-hardening.test.ts` | Sealed MFA secrets, TOTP replay, recovery codes, dual login keys |
 | `auth-hardening-guards.test.ts` | Setup stages pending secret; admin cannot invent MFA |
 | `admin-handler-controller.test.ts` | Every admin `route.ts` wraps each method with `withAdmin`; no hand-rolled Forbidden |
+| `money.test.ts` | Decimal-like literals; schema fields are `Decimal(12,2)` |
 
 ### Existing tests updated (not weakened)
 
@@ -132,10 +135,9 @@ bypass fails CI rather than shipping.
 
 ---
 
-## 4. Remaining — 1 of 34
+## 4. Remaining — 0 of 34
 
-H8, H20, H27, and the late N9 admin-handler wrap were completed after the
-first remediation wave.
+H8, H20, H27, N9, and H28 were completed after the first remediation wave.
 
 ### H8 — Nineteen sites return raw `err.message` to clients
 **Done in `7f8c289`.** Routes now go through `toErrorResponse` / `redactSensitiveText`.
@@ -158,12 +160,15 @@ live in `src/lib/validation.ts`. Privilege and env-secrecy source guards are
 unchanged.
 
 ### H28 — Monetary columns are `Float`
-**Effort ~4h, needs a careful data migration.** `schema.prisma:654,689,707,734`
-use double precision, contradicting the exact-decimal design the recurring
-billing state machine already implements. This is the one change that can lose
-data on a live database and should use expand-migrate-contract: add `Decimal`
-columns, backfill, dual-write, verify, then drop. **Recommend testing on a Neon
-branch first — the Neon CLI is not currently installed in this workspace.**
+**Implemented this session.** The additive policy forbids `ALTER COLUMN ... TYPE`
+and `DROP COLUMN`, so this is expand-and-cutover rather than a retype: new
+`DECIMAL(12,2)` columns (`priceMonthlyDecimal`, `priceYearlyDecimal`,
+`amountDecimal`) sit beside the legacy floats; a `ROUND(..., 2)` backfill copies
+every live row (4 plans, 1 billing record, 1 checkout — all already clean
+two-decimal SAR); Prisma maps the model fields onto the new columns. API
+responses still expose JavaScript numbers. Provider amount comparison keeps the
+±0.01 tolerance only for the paid side. The leftover float columns stay as a
+frozen snapshot. Migration `20260822200000_money_decimal_columns`.
 
 ### Not a code change — credential rotation
 `deploy:safety --scope=deploy` reports `.env` present in Git history across four

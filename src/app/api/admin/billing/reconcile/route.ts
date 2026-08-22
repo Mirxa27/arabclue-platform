@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { withAdmin, jsonOk, jsonError } from "@/lib/api-controller";
+import { moneyNumber } from "@/lib/money";
 import {
   getReconciliationReport,
   applyReconciliation,
@@ -177,7 +178,7 @@ export async function GET(req: NextRequest) {
               row: {
                 checkoutId: checkout.id,
                 workspaceId: checkout.user?.workspaces[0]?.workspaceId ?? null,
-                amount: checkout.amount,
+                amount: moneyNumber(checkout.amount),
                 currency: checkout.currency,
                 localState: checkout.status,
                 providerState,

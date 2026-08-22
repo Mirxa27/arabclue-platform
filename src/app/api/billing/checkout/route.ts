@@ -8,6 +8,7 @@ import {
 } from "@/lib/api-controller";
 import { parseJsonBody, billingCheckoutSchema } from "@/lib/validation";
 import { sendPayment, appBaseUrl } from "@/lib/myfatoorah";
+import { moneyNumber } from "@/lib/money";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { startRecurringProfile, RecurringBillingError } from "@/lib/recurring-billing";
 import { isCompletionErrorCode } from "@/lib/i18n";
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
 
     const amount =
       billingCycle === "YEARLY" ? plan.priceYearly : plan.priceMonthly;
-    if (amount <= 0) {
+    if (moneyNumber(amount) <= 0) {
       throw new ApiError(
         "This plan is free — contact an administrator to assign it",
         400
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
       const invoice = await sendPayment({
         customerName: session.user.name || session.user.email,
         customerEmail: session.user.email,
-        invoiceValue: amount,
+        invoiceValue: moneyNumber(amount),
         currencyIso: plan.currency || "SAR",
         customerReference,
         callBackUrl: `${callBackUrl}&ref=${customerReference}`,
@@ -112,7 +113,7 @@ export async function POST(req: NextRequest) {
           {
             ItemName: `Arabclue ${plan.name} — ${billingCycle}`,
             Quantity: 1,
-            UnitPrice: amount,
+            UnitPrice: moneyNumber(amount),
           },
         ],
       });

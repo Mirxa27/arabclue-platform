@@ -1,6 +1,11 @@
 import { db } from "@/lib/db";
 import { withTenant, jsonOk } from "@/lib/api-controller";
 import { getDecryptedEnv } from "@/lib/env-settings";
+import {
+  AMOUNT_MONEY_KEYS,
+  PLAN_MONEY_KEYS,
+  withPublicMoney,
+} from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +40,21 @@ export async function GET() {
       ]);
 
     return jsonOk({
-      plans,
-      subscription,
-      records,
-      checkouts: pendingCheckouts,
+      plans: plans.map((plan) => withPublicMoney({ ...plan }, PLAN_MONEY_KEYS)),
+      subscription: subscription
+        ? {
+            ...subscription,
+            plan: subscription.plan
+              ? withPublicMoney({ ...subscription.plan }, PLAN_MONEY_KEYS)
+              : subscription.plan,
+          }
+        : subscription,
+      records: records.map((record) =>
+        withPublicMoney({ ...record }, AMOUNT_MONEY_KEYS)
+      ),
+      checkouts: pendingCheckouts.map((checkout) =>
+        withPublicMoney({ ...checkout }, AMOUNT_MONEY_KEYS)
+      ),
       myfatoorahConfigured: Boolean(mfKey?.trim()),
     });
   }, "billing GET");

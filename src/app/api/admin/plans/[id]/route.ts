@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { jsonOk, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { PLAN_MONEY_KEYS, withPublicMoney } from "@/lib/money";
 import { adminPlanWriteSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ export async function PATCH(
       resourceId: id,
       details: { changes: Object.keys(body) },
     });
-    return jsonOk({ plan: updated });
+    return jsonOk({ plan: withPublicMoney({ ...updated }, PLAN_MONEY_KEYS) });
   }, "admin/plans/[id]");
 }
 

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { moneyNumber, withPublicMoney, AMOUNT_MONEY_KEYS, PLAN_MONEY_KEYS } from "@/lib/money";
 import { adminBillingCreateSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -32,12 +33,12 @@ export async function GET() {
   // Revenue: sum of paid billing records
   const revenue = records
     .filter((r) => r.status === "PAID")
-    .reduce((sum, r) => sum + r.amount, 0);
+    .reduce((sum, r) => sum + moneyNumber(r.amount), 0);
 
   // MRR: sum of active monthly subscriptions
   const mrr = allSubs
     .filter((s) => s.status === "ACTIVE" && s.billingCycle === "MONTHLY")
-    .reduce((sum, s) => sum + (s.plan?.priceMonthly ?? 0), 0);
+    .reduce((sum, s) => sum + moneyNumber(s.plan?.priceMonthly ?? 0), 0);
 
   // Usage aggregation
   const totalProposalsUsed = allSubs.reduce((s, sub) => s + sub.proposalsUsed, 0);
@@ -45,9 +46,12 @@ export async function GET() {
   const totalDocumentsUsed = allSubs.reduce((s, sub) => s + sub.documentsUsed, 0);
 
   return NextResponse.json({
-    records,
-    subscriptions: allSubs,
-    plans,
+    records: records.map((r) => withPublicMoney({ ...r }, AMOUNT_MONEY_KEYS)),
+    subscriptions: allSubs.map((s) => ({
+      ...s,
+      plan: s.plan ? withPublicMoney({ ...s.plan }, PLAN_MONEY_KEYS) : s.plan,
+    })),
+    plans: plans.map((p) => withPublicMoney({ ...p }, PLAN_MONEY_KEYS)),
     stats: {
       activeSubscriptions: activeSubs,
       totalSubscriptions: allSubs.length,
@@ -100,6 +104,8 @@ export async function POST(req: NextRequest) {
     details: { userId: body.userId, amount: record.amount, type: record.type },
     severity: "WARN",
   });
-  return NextResponse.json({ record });
+  return NextResponse.json({
+    record: withPublicMoney({ ...record }, AMOUNT_MONEY_KEYS),
+  });
   }, "admin/billing");
 }

@@ -6,6 +6,7 @@
 import { db } from "./db";
 import { audit, AUDIT_ACTIONS } from "./audit";
 import { amountsMatch, getPaymentStatus } from "./myfatoorah";
+import { moneyNumber } from "./money";
 import { withProviderDeadline } from "./provider-timeout";
 import type { PaymentStatusResult } from "./myfatoorah";
 
@@ -453,7 +454,7 @@ export function normalizeProviderState(status: PaymentStatusResult): ReconcilePr
  * Returns true when they match; false when there is a mismatch.
  */
 export function isAmountMismatch(
-  localAmount: number,
+  localAmount: number | string | { toString(): string },
   localCurrency: string,
   providerInvoiceValue: number | null,
   providerPaidCurrency: string | null
@@ -574,7 +575,7 @@ export async function getReconciliationReport(opts: {
           checkoutId: result.checkout.id,
           workspaceId: result.checkout.user?.workspaces[0]?.workspaceId ?? null,
           userEmail: result.checkout.user?.email ?? null,
-          amount: result.checkout.amount,
+          amount: moneyNumber(result.checkout.amount),
           currency: result.checkout.currency,
           localState: result.checkout.status,
           providerState: "UNKNOWN",
@@ -609,7 +610,7 @@ export async function getReconciliationReport(opts: {
           checkoutId: result.checkout.id,
           workspaceId: result.checkout.user?.workspaces[0]?.workspaceId ?? null,
           userEmail: result.checkout.user?.email ?? null,
-          amount: result.checkout.amount,
+          amount: moneyNumber(result.checkout.amount),
           currency: result.checkout.currency,
           localState: result.checkout.status,
           providerState,

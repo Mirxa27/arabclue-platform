@@ -13,6 +13,14 @@
 
 import crypto from "crypto";
 import { getDecryptedEnv } from "./env-settings";
+import { moneyLiteral } from "./money";
+import {
+  RECURRING_AMOUNT_TOLERANCE,
+  amountWithinProviderTolerance,
+  currencyEquals,
+  exactDecimalEquals,
+  parseExactDecimalLiteral,
+} from "./recurring-billing-state";
 
 /** Official MyFatoorah environment endpoints — never accept arbitrary URLs. */
 export const MYFATOORAH_ALLOWED_BASE_URLS = [
@@ -667,19 +675,39 @@ export function webhookEventFingerprint(
 
 /** Verify paid amount/currency against server-side order (prevents callback tampering). */
 export function amountsMatch(opts: {
-  expectedSar: number;
-  paidSar: number;
+  expectedSar: number | string | { toString(): string };
+  paidSar: number | string | { toString(): string };
   expectedCurrency: string;
   paidCurrency: string | null;
   toleranceSar?: number;
 }): boolean {
+  if (
+    !currencyEquals(
+      opts.expectedCurrency,
+      opts.paidCurrency ?? opts.expectedCurrency
+    )
+  ) {
+    return false;
+  }
+
+  const expected = parseExactDecimalLiteral(moneyLiteral(opts.expectedSar) ?? "");
+  const paid = parseExactDecimalLiteral(moneyLiteral(opts.paidSar) ?? "");
+  if (expected && paid) {
+    if (opts.toleranceSar === 0) return exactDecimalEquals(expected, paid);
+    return amountWithinProviderTolerance(
+      expected,
+      paid,
+      RECURRING_AMOUNT_TOLERANCE
+    );
+  }
+
+  const expectedNumber = Number(opts.expectedSar);
+  const paidNumber = Number(opts.paidSar);
+  if (!Number.isFinite(expectedNumber) || !Number.isFinite(paidNumber)) {
+    return false;
+  }
   const tol = opts.toleranceSar ?? 0.01;
-  const currencyOk =
-    (opts.paidCurrency ?? opts.expectedCurrency).toUpperCase() ===
-    opts.expectedCurrency.toUpperCase();
-  return (
-    currencyOk && Math.abs(opts.expectedSar - opts.paidSar) <= tol
-  );
+  return Math.abs(expectedNumber - paidNumber) <= tol;
 }
 
 export function appBaseUrl(): string {

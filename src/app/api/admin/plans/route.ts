@@ -4,6 +4,7 @@ import { getBootstrapContext } from "@/lib/bootstrap";
 import { jsonOk, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { DEFAULT_PLANS } from "@/lib/constants";
+import { PLAN_MONEY_KEYS, withPublicMoney } from "@/lib/money";
 import { adminPlanCreateSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,10 @@ export async function GET() {
       orderBy: [{ priceMonthly: "asc" }],
       include: { _count: { select: { subscriptions: true } } },
     });
-    return jsonOk({ plans, defaults: DEFAULT_PLANS });
+    return jsonOk({
+      plans: plans.map((plan) => withPublicMoney({ ...plan }, PLAN_MONEY_KEYS)),
+      defaults: DEFAULT_PLANS,
+    });
   }, "admin/plans");
 }
 
@@ -48,6 +52,6 @@ export async function POST(req: NextRequest) {
       resourceId: plan.id,
       details: { name: plan.name, priceMonthly: plan.priceMonthly },
     });
-    return jsonOk({ plan });
+    return jsonOk({ plan: withPublicMoney({ ...plan }, PLAN_MONEY_KEYS) });
   }, "admin/plans");
 }

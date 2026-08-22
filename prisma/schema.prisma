@@ -665,8 +665,8 @@ model SubscriptionPlan {
   name              String // STARTER | PRO | ENTERPRISE | PAY_AS_YOU_GO
   nameAr            String?
   description       String?
-  priceMonthly      Float    @default(0.0) // SAR
-  priceYearly       Float    @default(0.0) // SAR
+  priceMonthly      Decimal  @default(0.00) @map("priceMonthlyDecimal") @db.Decimal(12, 2)
+  priceYearly       Decimal  @default(0.00) @map("priceYearlyDecimal") @db.Decimal(12, 2)
   currency          String   @default("SAR")
   // Quotas
   maxProposals      Int      @default(10) // per month; -1 = unlimited
@@ -718,7 +718,7 @@ model BillingRecord {
   id                String   @id @default(cuid())
   userId            String
   type              String // SUBSCRIPTION | USAGE | TOPUP | REFUND | OVERAGE
-  amount            Float // SAR
+  amount            Decimal  @map("amountDecimal") @db.Decimal(12, 2)
   currency          String   @default("SAR")
   description       String
   tokensIncluded    Int      @default(0)
@@ -745,7 +745,7 @@ model PaymentCheckout {
   userId            String
   planId            String
   billingCycle      String // MONTHLY | YEARLY
-  amount            Float
+  amount            Decimal   @map("amountDecimal") @db.Decimal(12, 2)
   currency          String    @default("SAR")
   status            String    @default("PENDING") // PENDING | PAID | FAILED | EXPIRED | CANCELLED
   customerReference String    @unique
