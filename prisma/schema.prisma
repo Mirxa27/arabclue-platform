@@ -1629,7 +1629,10 @@ model NotificationDelivery {
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   recipient User       @relation(fields: [recipientId], references: [id], onDelete: Cascade)
 
-  @@unique([eventId, recipientId])
+  // Uniqueness is per delivery channel: one event fans out to an in-app row and
+  // an email row for the same recipient. A two-column key on
+  // (eventId, recipientId) subsumes this one and makes the second channel
+  // insert fail with P2002, so it must not be reintroduced.
   @@unique([eventId, recipientId, channel])
   @@index([workspaceId, createdAt])
   @@index([recipientId, createdAt])

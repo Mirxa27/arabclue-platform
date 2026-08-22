@@ -294,6 +294,14 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
     reverse:
       'ALTER TABLE "TemplateMarketplaceRating": DROP CONSTRAINT IF EXISTS "template_marketplace_rating_range_check";',
   },
+  {
+    id: "20260822170000_notification_delivery_channel_unique",
+    position: 21,
+    capabilities: ["multi-channel notification delivery"],
+    createsTables: [],
+    reverse:
+      'CREATE UNIQUE INDEX "NotificationDelivery_eventId_recipientId_key" ON "NotificationDelivery"("eventId", "recipientId"); — only safe after collapsing multi-channel rows to one row per (eventId, recipientId).',
+  },
 ]);
 
 /** Every declared migration identifier, in apply order. */

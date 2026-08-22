@@ -476,6 +476,20 @@ export interface MigrationSqlPolicyOptions {
    * constrained retroactively.
    */
   readonly allowUnclassifiedStatements?: boolean;
+  /**
+   * Index names this migration is explicitly approved to drop, lower-cased.
+   *
+   * The policy already permits dropping an index the same migration creates,
+   * because that is an idempotency guard on a brand-new object. This option
+   * covers the separate, rarer case of removing a *pre-existing* index that is
+   * itself the defect — for example a unique key that subsumes another and so
+   * makes a column unreachable.
+   *
+   * It is deliberately per-index and per-migration rather than a blanket
+   * "allow drops" switch: every entry has to be named and justified at the call
+   * site, so the exception stays reviewable and cannot silently widen.
+   */
+  readonly allowedDroppedIndexes?: readonly string[];
 }
 
 const ALLOWED_STATEMENTS: readonly RegExp[] = [
@@ -704,7 +718,17 @@ export function analyzeMigrationSql(
         const names = [...statement.scanned.matchAll(/"((?:[^"]|"")+)"/gu)].map(
           (name) => unquote(`"${name[1]}"`).toLowerCase(),
         );
-        if (names.length > 0 && names.every((name) => created.indexes.has(name))) {
+        const approved = new Set(
+          (options.allowedDroppedIndexes ?? []).map((name) =>
+            name.toLowerCase(),
+          ),
+        );
+        if (
+          names.length > 0 &&
+          names.every(
+            (name) => created.indexes.has(name) || approved.has(name),
+          )
+        ) {
           continue;
         }
       }

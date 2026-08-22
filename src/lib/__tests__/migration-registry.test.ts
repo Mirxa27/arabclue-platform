@@ -162,6 +162,44 @@ describe("migrationForTable", () => {
 describe("no migration on disk removes, renames, retypes, or empties schema", () => {
   const LEGACY_POLICY = { allowUnclassifiedStatements: true } as const;
 
+  /**
+   * Pre-existing indexes a specific migration is approved to drop.
+   *
+   * Every entry is an index whose *existence* was the defect, so removing it is
+   * a correctness fix rather than a schema reduction. Keep this map as small as
+   * possible and state the reason: it is the one place the additive policy can
+   * be relaxed, and it is reviewed as part of the migration itself.
+   */
+  const APPROVED_INDEX_DROPS: Readonly<Record<string, readonly string[]>> = {
+    // The two-column key strictly subsumed
+    // NotificationDelivery_eventId_recipientId_channel_key, capping delivery at
+    // one row per (event, recipient) and making every email insert fail with
+    // P2002 after the in-app insert claimed the slot.
+    "20260822170000_notification_delivery_channel_unique": [
+      "NotificationDelivery_eventId_recipientId_key",
+    ],
+  };
+
+  const policyFor = (id: string) => ({
+    ...LEGACY_POLICY,
+    allowedDroppedIndexes: APPROVED_INDEX_DROPS[id] ?? [],
+  });
+
+  test("every approved index drop names a migration that exists", () => {
+    for (const id of Object.keys(APPROVED_INDEX_DROPS)) {
+      expect(MIGRATION_IDS).toContain(id);
+    }
+  });
+
+  test("an approved index drop only relaxes the migration it names", () => {
+    // The exemption must not leak: the same DROP in another migration still fails.
+    const borrowed = migrationSqlViolations(
+      'DROP INDEX IF EXISTS "NotificationDelivery_eventId_recipientId_key";',
+      LEGACY_POLICY
+    );
+    expect(borrowed.map((v) => v.rule)).toContain("DROP_INDEX");
+  });
+
   test("every migration file parses into at least one statement", () => {
     for (const id of MIGRATION_IDS) {
       expect(parseMigrationSql(migrationSql(id)).length).toBeGreaterThan(0);
@@ -173,7 +211,7 @@ describe("no migration on disk removes, renames, retypes, or empties schema", ()
     for (const id of MIGRATION_IDS) {
       offences.push(
         ...formatMigrationSqlViolations(
-          migrationSqlViolations(migrationSql(id), LEGACY_POLICY),
+          migrationSqlViolations(migrationSql(id), policyFor(id)),
           id
         )
       );

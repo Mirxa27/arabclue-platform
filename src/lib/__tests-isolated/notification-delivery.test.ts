@@ -116,6 +116,27 @@ mock.module("../db", () => ({
         return Promise.resolve(matched);
       }),
       create: mock(({ data }: { data: Record<string, unknown> }) => {
+        // Model the real unique key. Without this the fake accepted rows the
+        // database rejects, which is exactly how the channel-agnostic
+        // @@unique([eventId, recipientId]) went unnoticed: every email row
+        // raised P2002 in production while 12 tests passed here.
+        const duplicate = findDelivery(
+          data.eventId as string,
+          data.recipientId as string,
+          ((data.channel as string) ?? "email")
+        );
+        if (duplicate) {
+          const err = Object.assign(
+            new Error(
+              "Unique constraint failed on the fields: (`eventId`,`recipientId`,`channel`)"
+            ),
+            {
+              code: "P2002",
+              meta: { target: ["eventId", "recipientId", "channel"] },
+            }
+          );
+          return Promise.reject(err);
+        }
         const row: DeliveryRow = {
           id: `nd-${deliveryRows.length + 1}`,
           workspaceId: (data.workspaceId as string) ?? null,
