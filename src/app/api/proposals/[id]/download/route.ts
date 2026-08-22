@@ -12,7 +12,7 @@ import {
   resolveLocale,
   type SlidesMetrics,
 } from "@/lib/generators";
-import { requireSession } from "@/lib/auth";
+import { canWriteRole, requireSession } from "@/lib/auth";
 import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
 import {
   rateLimitAsync,
@@ -146,16 +146,57 @@ export function resolveProposalExportLifecycle(input: {
 
 export function shouldMarkProposalExported(input: {
   readonly policyRequestedTransition: boolean;
+  /**
+   * Whether this request is allowed to mutate proposal lifecycle state.
+   *
+   * The download surface is a GET because links, iframes and in-app previews
+   * depend on it, so it is reachable by prefetch, by a cross-origin
+   * `<img>`/`<iframe>`, and by a read-only REVIEWER. Producing the artifact is
+   * harmless in all of those cases; advancing APPROVED to EXPORTED is not.
+   */
+  readonly mutationAllowed: boolean;
   readonly currentStatus: string;
   readonly authoritative: boolean;
   readonly completeBoundReviewChain: boolean;
 }): boolean {
   return (
+    input.mutationAllowed &&
     input.policyRequestedTransition &&
     input.currentStatus === "APPROVED" &&
     input.authoritative &&
     input.completeBoundReviewChain
   );
+}
+
+/**
+ * True when a download request may advance proposal lifecycle state.
+ *
+ * Requires all three:
+ * - a role that can write (a REVIEWER may download but must not export),
+ * - a same-origin request (blocks a cross-origin tag triggering the transition),
+ * - not a prefetch (blocks a browser or crawler exporting on hover).
+ *
+ * `Sec-Fetch-*` are forbidden headers, so a page cannot forge them; absent
+ * values are treated as same-origin to stay compatible with non-browser
+ * clients that legitimately drive exports.
+ */
+function exportMutationAllowed(
+  req: NextRequest,
+  role: Parameters<typeof canWriteRole>[0]
+): boolean {
+  if (!canWriteRole(role)) return false;
+
+  const site = req.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return false;
+
+  const purpose =
+    req.headers.get("sec-purpose") ??
+    req.headers.get("purpose") ??
+    req.headers.get("x-purpose") ??
+    "";
+  if (purpose.toLowerCase().includes("prefetch")) return false;
+
+  return true;
 }
 
 // GET /api/proposals/[id]/download?format=zip|pdf|html|xlsx|xlsx-matrix|ea-matrix|xlsx-boq|boq|slides|pptx
@@ -1028,6 +1069,7 @@ export async function GET(
 
     if (
       shouldMarkProposalExported({
+        mutationAllowed: exportMutationAllowed(req, session.user.role),
         policyRequestedTransition: policyResult.markExported,
         currentStatus: proposal.status,
         authoritative: exportLifecycle.authoritative,

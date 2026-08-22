@@ -13,7 +13,7 @@
     "pack:extension": "bun scripts/pack-extension.mjs",
     "samples:docs": "bun scripts/generate-sample-documents.mjs",
     "build": "node scripts/ensure-extension-packed.mjs && prisma generate && next build && node scripts/check-bilingual-font-traces.mjs",
-    "build:schema-sql": "node scripts/embed-schema-sql.mjs",
+    "scan:integrity": "bun scripts/scan-integrity.ts",
     "build:vercel": "bun run build",
     "build:standalone": "STANDALONE=1 bun run pack:extension && STANDALONE=1 prisma generate && STANDALONE=1 next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "deploy:safety": "bun scripts/check-deployment-safety.mjs --scope=deploy",

@@ -50,6 +50,7 @@ describe("proposal download format resolution", () => {
 
   test("promotes only an approved authoritative export with its bound review chain", () => {
     const approved = {
+      mutationAllowed: true,
       policyRequestedTransition: true,
       currentStatus: "APPROVED",
       authoritative: true,
@@ -72,6 +73,22 @@ describe("proposal download format resolution", () => {
       shouldMarkProposalExported({
         ...approved,
         completeBoundReviewChain: false,
+      })
+    ).toBe(false);
+  });
+
+  // The download route is a GET because links, iframes and in-app previews
+  // depend on it, so the artifact is reachable by prefetch, by a cross-origin
+  // tag, and by a read-only REVIEWER. Producing it is harmless; advancing
+  // APPROVED to EXPORTED is not.
+  test("never promotes when the request may not mutate lifecycle state", () => {
+    expect(
+      shouldMarkProposalExported({
+        mutationAllowed: false,
+        policyRequestedTransition: true,
+        currentStatus: "APPROVED",
+        authoritative: true,
+        completeBoundReviewChain: true,
       })
     ).toBe(false);
   });

@@ -71,6 +71,12 @@ jobs:
       - name: Deployment safety gate (repo scope)
         run: bun run deploy:safety:repo
 
+      # Static production-integrity scan: fabricated fallback data, orphaned
+      # capabilities, unreachable declared capabilities. The script existed but
+      # was unrunnable (tsx shebang, tsx not a dependency) so had never run.
+      - name: Production integrity scan
+        run: bun run scan:integrity
+
       - name: Validate Prisma schema without changing a database
         env:
           DATABASE_URL: postgresql://quality:quality@localhost:5432/quality

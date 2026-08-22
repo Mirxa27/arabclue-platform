@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * Production-integrity scanner runner (task 12.3 / Requirement 19.1–19.11).
  *
