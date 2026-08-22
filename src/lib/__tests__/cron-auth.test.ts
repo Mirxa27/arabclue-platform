@@ -69,12 +69,66 @@ describe("authorizeCron", () => {
     }
   });
 
-  test("returns null when query param secret matches", () => {
+  // Regression: the query-string form used to authenticate. A URL is written
+  // to server logs, proxy logs, browser history and Referer headers, and every
+  // cron route exports GET, so one logged URL exposed the whole cron plane.
+  // Vercel Cron sends the Authorization header, so nothing legitimate relied
+  // on this.
+  test("rejects a correct secret supplied in the query string", () => {
     const prev = process.env.CRON_SECRET;
     process.env.CRON_SECRET = VALID_SECRET;
     try {
       const res = authorizeCron(makeRequest({ querySecret: VALID_SECRET }));
-      expect(res).toBeNull();
+      expect(res).not.toBeNull();
+      expect(res!.status).toBe(401);
+    } finally {
+      if (prev === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = prev;
+    }
+  });
+
+  test("a query secret cannot rescue a wrong header secret", () => {
+    const prev = process.env.CRON_SECRET;
+    process.env.CRON_SECRET = VALID_SECRET;
+    try {
+      const res = authorizeCron(
+        makeRequest({ auth: "Bearer wrong-secret", querySecret: VALID_SECRET })
+      );
+      expect(res).not.toBeNull();
+      expect(res!.status).toBe(401);
+    } finally {
+      if (prev === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = prev;
+    }
+  });
+
+  test("rejects a secret that is a prefix of the real one", () => {
+    // A non-constant-time `===` would also reject this, but the length-folded
+    // compare is what keeps the rejection cost independent of how much of the
+    // secret was guessed correctly.
+    const prev = process.env.CRON_SECRET;
+    process.env.CRON_SECRET = VALID_SECRET;
+    try {
+      const res = authorizeCron(
+        makeRequest({ auth: `Bearer ${VALID_SECRET.slice(0, -1)}` })
+      );
+      expect(res).not.toBeNull();
+      expect(res!.status).toBe(401);
+    } finally {
+      if (prev === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = prev;
+    }
+  });
+
+  test("rejects a secret that merely starts with the real one", () => {
+    const prev = process.env.CRON_SECRET;
+    process.env.CRON_SECRET = VALID_SECRET;
+    try {
+      const res = authorizeCron(
+        makeRequest({ auth: `Bearer ${VALID_SECRET}extra` })
+      );
+      expect(res).not.toBeNull();
+      expect(res!.status).toBe(401);
     } finally {
       if (prev === undefined) delete process.env.CRON_SECRET;
       else process.env.CRON_SECRET = prev;

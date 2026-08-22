@@ -24,18 +24,24 @@ export async function PATCH(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  // Applies to ANY mutation of a SUPER_ADMIN, not just a role change.
+  //
+  // This guard used to sit inside `if (body.role)`, so `{ active: false }` or
+  // `{ mfaEnabled: false }` skipped it entirely and an ADMIN could deactivate a
+  // SUPER_ADMIN or strip their MFA — neutralising the only role that outranks
+  // them. Hoisted so the target's rank is checked before any field is written.
+  if (before.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
+    return NextResponse.json(
+      { error: "Only SUPER_ADMIN can modify SUPER_ADMIN accounts" },
+      { status: 403 }
+    );
+  }
+
   if (body.role) {
     const targetRole = body.role as Role;
     if (!canGrantRole(session.user.role, targetRole)) {
       return NextResponse.json(
         { error: "Insufficient privileges to grant this role" },
-        { status: 403 }
-      );
-    }
-    // Non-super-admins cannot demote/modify SUPER_ADMIN accounts
-    if (before.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only SUPER_ADMIN can modify SUPER_ADMIN accounts" },
         { status: 403 }
       );
     }

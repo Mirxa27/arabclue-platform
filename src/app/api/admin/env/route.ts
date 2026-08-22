@@ -81,7 +81,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "key and value required" }, { status: 400 });
   }
 
-  const secret = isSecret ?? (key.includes("KEY") || key.includes("SECRET") || key.includes("PASSWORD"));
+  // Secrecy is the allowlist verdict OR an explicit request to treat it as
+  // secret — never the caller's `isSecret: false`. The previous form,
+  // `isSecret ?? heuristic`, let an ADMIN post
+  // `{ key: "MYFATOORAH_API_KEY", isSecret: false }` and write a credential
+  // that the SUPER_ADMIN gate below was supposed to protect.
+  const secret = isSecretEnvKey(key) || isSecret === true;
 
   // Secret / critical writes require SUPER_ADMIN
   if ((secret || CRITICAL_ENV_KEYS.has(key)) && session.user.role !== "SUPER_ADMIN") {

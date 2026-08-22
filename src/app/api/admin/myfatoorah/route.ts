@@ -184,6 +184,22 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "save" || action === "rotate") {
+      // Rotating the payment credential or the webhook HMAC secret writes the
+      // same EnvSetting rows that /api/admin/env guards behind SUPER_ADMIN.
+      // Without this check, this panel was a way for an ADMIN to reach them
+      // anyway — including pointing the platform at an attacker's MyFatoorah
+      // account or installing a webhook secret they control.
+      const rotatingSecrets = Boolean(
+        body.apiKey?.trim() || body.webhookSecret?.trim()
+      );
+      if (rotatingSecrets && session.user.role !== "SUPER_ADMIN") {
+        throw new ApiError(
+          "Only SUPER_ADMIN can rotate the MyFatoorah API key or webhook secret",
+          403,
+          "SUPER_ADMIN_REQUIRED"
+        );
+      }
+
       if (body.mode) {
         const url = resolveMyFatoorahBaseUrl(body.mode);
         await upsertSecret(
