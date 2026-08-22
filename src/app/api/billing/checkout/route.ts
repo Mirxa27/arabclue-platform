@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import {
@@ -185,7 +186,7 @@ export async function POST(req: NextRequest) {
           });
         } catch (err) {
           const message =
-            err instanceof Error ? err.message : "recurring_setup_failed";
+            redactSensitiveText(err instanceof Error ? err.message : "recurring_setup_failed");
           await markCheckoutFailed(checkout.id, billingRecord.id, message);
           await audit({
             userId: session.user.id,
@@ -246,7 +247,7 @@ export async function POST(req: NextRequest) {
       await markCheckoutFailed(
         checkout.id,
         billingRecord.id,
-        err instanceof Error ? err.message : "checkout_failed"
+        redactSensitiveText(err instanceof Error ? err.message : "checkout_failed")
       );
       throw err instanceof Error
         ? new ApiError(err.message, 502)

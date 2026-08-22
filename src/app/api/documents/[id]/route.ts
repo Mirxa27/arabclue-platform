@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { toErrorResponse } from "@/lib/api-controller";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -38,11 +39,7 @@ export async function GET(
     if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
     return NextResponse.json({ document: doc });
   } catch (err) {
-    console.error("[documents GET id]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return toErrorResponse(err, "[documents GET id]");
   }
 }
 
@@ -114,11 +111,7 @@ export async function DELETE(
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("[documents DELETE]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return toErrorResponse(err, "[documents DELETE]");
   }
 }
 
@@ -146,10 +139,6 @@ export async function PATCH(
     });
     return NextResponse.json({ document: updated });
   } catch (err) {
-    console.error("[documents PATCH]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return toErrorResponse(err, "[documents PATCH]");
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { toErrorResponse } from "@/lib/api-controller";
 import type { DocCategory } from "@/lib/types";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
@@ -127,10 +128,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ document: ingested.document });
   } catch (err) {
-    console.error("[documents POST]", err);
-    const message = err instanceof Error ? err.message : "unknown";
-    const status =
-      /rejected|empty file|too large|project not found/i.test(message) ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    // Status used to be chosen by regex over an English exception message,
+    // which broke as soon as a driver phrased something differently and echoed
+    // the raw text either way. Ingestion now throws a typed ApiError for the
+    // client-fault cases and everything else maps to a generic failure.
+    return toErrorResponse(err, "documents POST");
   }
 }

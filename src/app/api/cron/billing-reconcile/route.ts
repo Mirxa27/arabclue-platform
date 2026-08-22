@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCron } from "@/lib/cron-auth";
 import { reconcilePendingCheckouts } from "@/lib/billing";
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: err instanceof Error ? err.message : "reconcile failed",
+        error: redactSensitiveText(err instanceof Error ? err.message : "reconcile failed"),
       },
       { status: 500 }
     );

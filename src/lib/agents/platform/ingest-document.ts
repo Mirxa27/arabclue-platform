@@ -8,6 +8,7 @@ import {
 import { indexDocumentChunks } from "@/lib/document-chunks";
 import { saveUpload } from "@/lib/storage";
 import { validateUploadAllowlist } from "@/lib/safe-zip";
+import { ApiError } from "@/lib/api-failure";
 import type { DocCategory } from "@/lib/types";
 
 export type IngestDocumentInput = {
@@ -23,24 +24,44 @@ export type IngestDocumentInput = {
   via?: string;
 };
 
+/**
+ * Client-fault conditions throw a typed `ApiError` carrying its own status and
+ * stable code.
+ *
+ * These used to be plain `Error`s, which forced the caller to recover the
+ * status by running a regex over the English message — so a rephrased message
+ * silently became a 500, and the raw text was echoed to the client either way.
+ * Typing them lets the shared failure mapper answer 400 with a bilingual body
+ * and no leaked internals.
+ */
 export async function ingestDocumentForWorkspace(input: IngestDocumentInput) {
   if (!input.bytes.length) {
-    throw new Error("empty file");
+    throw new ApiError("Uploaded file is empty", 400, "UPLOAD_EMPTY");
   }
   if (input.bytes.length > 50 * 1024 * 1024) {
-    throw new Error("file too large (max 50MB)");
+    throw new ApiError(
+      "Uploaded file exceeds the 50MB limit",
+      400,
+      "UPLOAD_TOO_LARGE"
+    );
   }
 
   const allow = validateUploadAllowlist(input.originalName, input.mimeType);
   if (!allow.ok) {
-    throw new Error(`Upload rejected: ${allow.reason}`);
+    throw new ApiError(
+      `Upload rejected: ${allow.reason}`,
+      400,
+      "UPLOAD_TYPE_REJECTED"
+    );
   }
 
   if (input.projectId) {
     const project = await db.tenderProject.findFirst({
       where: { id: input.projectId, workspaceId: input.workspaceId },
     });
-    if (!project) throw new Error("project not found");
+    if (!project) {
+      throw new ApiError("Project not found", 404, "PROJECT_NOT_FOUND");
+    }
   }
 
   const stored = await saveUpload({

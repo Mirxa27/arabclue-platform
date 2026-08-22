@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jsonOk, jsonError } from "@/lib/api-controller";
+import { jsonOk, jsonError, toErrorResponse } from "@/lib/api-controller";
 import { reviewDecisionSchema, parseJsonBody } from "@/lib/validation";
 import { getTenantContext } from "@/lib/workspace-context";
 import { requireReviewerAction } from "@/lib/auth";
@@ -98,7 +98,8 @@ export async function PATCH(
     if (err instanceof ProposalReviewDecisionError) {
       return jsonError(err.message, err.status, err.code);
     }
-    console.error("[reviews]", err);
-    return jsonError(err instanceof Error ? err.message : "unknown", 500);
+    // The typed decision error above carries a curated, safe message. Anything
+    // else is a driver or runtime fault and is mapped, not echoed.
+    return toErrorResponse(err, "reviews decision");
   }
 }

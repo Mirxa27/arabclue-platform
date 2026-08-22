@@ -10,7 +10,7 @@ import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context"
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { agentRunBodySchema, parseJsonBody } from "@/lib/validation";
 import { assertOnboardingReady, computeOnboardingSteps } from "@/lib/onboarding";
-import { ApiError } from "@/lib/api-controller";
+import { ApiError, toErrorResponse } from "@/lib/api-controller";
 import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
 import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
 import { isAgentRunStale } from "@/lib/proposal-studio";
@@ -262,10 +262,6 @@ export async function POST(req: NextRequest) {
       agentStates,
     });
   } catch (err) {
-    console.error("[agents/run]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return toErrorResponse(err, "[agents/run]");
   }
 }

@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { existsSync } from "node:fs";
@@ -44,7 +45,7 @@ export async function GET() {
     return NextResponse.json(
       {
         error: "Failed to pack extension",
-        detail: error instanceof Error ? error.message : "Unknown error",
+        detail: redactSensitiveText(error instanceof Error ? error.message : "Unknown error"),
       },
       { status: 500 },
     );

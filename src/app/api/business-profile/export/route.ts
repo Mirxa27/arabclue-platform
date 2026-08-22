@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
@@ -286,7 +287,9 @@ export async function handleBusinessProfileExport(
       );
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : String(error);
+        redactSensitiveText(
+          error instanceof Error ? error.message : String(error)
+        );
       return NextResponse.json(
         {
           error: `PDF generation failed: ${message}`,
@@ -326,8 +329,9 @@ export async function handleBusinessProfileExport(
     });
     return pdfResponse(pdf, `${slug}-business-profile-${locale}.pdf`);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : String(error);
+    const message = redactSensitiveText(
+      error instanceof Error ? error.message : String(error)
+    );
     return NextResponse.json(
       {
         error: `PDF generation failed: ${message}`,

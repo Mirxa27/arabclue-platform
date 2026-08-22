@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { createAgentUIStreamResponse } from "ai";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
@@ -112,7 +113,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("[platform-agent/chat]", err);
     const message =
-      err instanceof Error ? err.message : "Platform agent failed";
+      redactSensitiveText(err instanceof Error ? err.message : "Platform agent failed");
     return Response.json({ error: message }, { status: 500 });
   }
 }

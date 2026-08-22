@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { requireSession } from "@/lib/auth";
 import { executeVoiceLiveTool } from "@/lib/agents/platform/realtime";
 import { detectPricingRequest } from "@/lib/guardrails";
@@ -63,7 +64,7 @@ export async function POST(req: Request) {
     console.error("[platform-agent/realtime/tools]", err);
     return Response.json(
       {
-        error: err instanceof Error ? err.message : "Tool execution failed",
+        error: redactSensitiveText(err instanceof Error ? err.message : "Tool execution failed"),
       },
       { status: 500 }
     );

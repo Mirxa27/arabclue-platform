@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { toErrorResponse } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
@@ -140,10 +141,6 @@ export async function GET(req: NextRequest) {
       contractValidation: finalArtifact?.contractValidation ?? null,
     });
   } catch (err) {
-    console.error("[agents/status]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return toErrorResponse(err, "[agents/status]");
   }
 }

@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
@@ -114,7 +115,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("[extension/copilot]", err);
     const message =
-      err instanceof Error ? err.message : "Extension copilot failed";
+      redactSensitiveText(err instanceof Error ? err.message : "Extension copilot failed");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

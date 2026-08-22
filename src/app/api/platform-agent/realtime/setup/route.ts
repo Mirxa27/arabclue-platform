@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { requireSession } from "@/lib/auth";
 import {
   getVoiceLiveConfig,
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
     console.error("[platform-agent/realtime/setup]", err);
     return Response.json(
       {
-        error: err instanceof Error ? err.message : "Failed to start live voice",
+        error: redactSensitiveText(err instanceof Error ? err.message : "Failed to start live voice"),
       },
       { status: 500 }
     );

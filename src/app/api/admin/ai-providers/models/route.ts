@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
@@ -5,7 +6,6 @@ import { requireAdmin } from "@/lib/auth";
 import { parseModelsCache } from "@/lib/llm/model-catalog";
 import { fetchLiveProviderModels } from "@/lib/llm/fetch-models";
 import { isAllowedProviderApiKeyEnv } from "@/lib/llm/model-catalog";
-import { redactSensitiveText } from "@/lib/api-failure";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

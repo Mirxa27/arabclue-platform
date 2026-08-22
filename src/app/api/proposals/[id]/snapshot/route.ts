@@ -760,8 +760,9 @@ export async function PUT(
     return await handleProposalSnapshotPut(req, id);
   } catch (error) {
     console.error("[proposal snapshot PUT]", error);
+    // The thrown text can carry Prisma constraint names and column paths.
     return errorResponse(
-      error instanceof Error ? error.message : "unknown",
+      "Snapshot operation failed",
       "SNAPSHOT_WRITE_FAILED",
       500
     );
@@ -777,8 +778,9 @@ export async function POST(
     return await handleProposalSnapshotPost(req, id);
   } catch (error) {
     console.error("[proposal snapshot POST]", error);
+    // The thrown text can carry Prisma constraint names and column paths.
     return errorResponse(
-      error instanceof Error ? error.message : "unknown",
+      "Snapshot operation failed",
       "SNAPSHOT_HYDRATION_FAILED",
       500
     );
@@ -794,8 +796,9 @@ export async function GET(
     return await handleProposalSnapshotGet(id);
   } catch (error) {
     console.error("[proposal snapshot GET]", error);
+    // The thrown text can carry Prisma constraint names and column paths.
     return errorResponse(
-      error instanceof Error ? error.message : "unknown",
+      "Snapshot operation failed",
       "SNAPSHOT_READ_FAILED",
       500
     );

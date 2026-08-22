@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { toErrorResponse } from "@/lib/api-controller";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
@@ -55,11 +56,7 @@ export async function GET(
       },
     });
   } catch (err) {
-    console.error("[proposals GET id]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return toErrorResponse(err, "[proposals GET id]");
   }
 }
 
@@ -220,10 +217,6 @@ export async function PATCH(
       },
     });
   } catch (err) {
-    console.error("[proposals PATCH]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
+    return toErrorResponse(err, "[proposals PATCH]");
   }
 }

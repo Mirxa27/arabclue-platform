@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -552,7 +553,7 @@ export async function GET(
       } catch (err) {
         return NextResponse.json(
           {
-            error: err instanceof Error ? err.message : "validation_failed",
+            error: redactSensitiveText(err instanceof Error ? err.message : "validation_failed"),
             code: policyResult.code,
             validation: gateReport,
           },
@@ -1250,7 +1251,7 @@ export async function GET(
       );
     }
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "download failed" },
+      { error: redactSensitiveText(err instanceof Error ? err.message : "download failed") },
       { status: 500 }
     );
   } finally {

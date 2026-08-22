@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession, canWriteRole } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
     console.error("[mission attachments]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "failed" },
+      { error: redactSensitiveText(err instanceof Error ? err.message : "failed") },
       { status: 500 }
     );
   }

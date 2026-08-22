@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCron } from "@/lib/cron-auth";
 import { isEmailConfigured } from "@/lib/email";
@@ -34,7 +35,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: redactSensitiveText(
+          err instanceof Error ? err.message : String(err)
+        ),
         time: new Date().toISOString(),
       },
       { status: 500 }
