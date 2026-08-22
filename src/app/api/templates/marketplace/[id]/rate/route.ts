@@ -9,6 +9,7 @@ import {
   ResourceNotFoundError,
   type TenantHandlerContext,
 } from "@/lib/api-controller";
+import { marketplaceEntryVisibilityWhere } from "@/lib/marketplace-template-resolve";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -20,14 +21,7 @@ const ratingSchema = z
 
 async function resolveEntry(id: string, workspaceId: string) {
   const entry = await db.templateMarketplaceEntry.findFirst({
-    where: {
-      OR: [
-        { id },
-        { templateKey: id, workspaceId },
-        { templateKey: id, workspaceId: null, isPublic: true },
-        { templateKey: id, isPublic: true },
-      ],
-    },
+    where: marketplaceEntryVisibilityWhere(id, workspaceId),
   });
   if (!entry) throw new ResourceNotFoundError();
   if (entry.isRetired && entry.workspaceId !== workspaceId) {

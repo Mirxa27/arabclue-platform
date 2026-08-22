@@ -9,6 +9,7 @@ import {
   type TenantHandlerContext,
 } from "@/lib/api-controller";
 import { isTemplateCategory } from "@/lib/template-marketplace-catalog";
+import { marketplaceEntryVisibilityWhere } from "@/lib/marketplace-template-resolve";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -28,14 +29,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const workspaceId = ctx.workspace.id;
 
     const row = await db.templateMarketplaceEntry.findFirst({
-      where: {
-        OR: [
-          { id },
-          { templateKey: id, workspaceId },
-          { templateKey: id, workspaceId: null, isPublic: true },
-          { templateKey: id, isPublic: true },
-        ],
-      },
+      where: marketplaceEntryVisibilityWhere(id, workspaceId),
       include: {
         workspace: { select: { id: true, name: true, nameAr: true } },
         creator: { select: { id: true, name: true, avatarUrl: true } },
@@ -98,10 +92,13 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     const { id } = await params;
     const workspaceId = ctx.workspace.id;
 
+    // Resolve through the shared visibility predicate so an entry the caller
+    // cannot see answers 404 rather than 403. A bare `{ id }` lookup here would
+    // distinguish "another workspace's private entry" from "no such entry",
+    // which is an existence oracle even though the ownership check below
+    // already prevents the retire itself.
     const row = await db.templateMarketplaceEntry.findFirst({
-      where: {
-        OR: [{ id }, { templateKey: id, workspaceId }],
-      },
+      where: marketplaceEntryVisibilityWhere(id, workspaceId),
     });
 
     if (!row) throw new ResourceNotFoundError();

@@ -1,6 +1,12 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
+import {
+  withTenant,
+  jsonOk,
+  ApiError,
+  requireWorkspaceRole,
+  WORKSPACE_MANAGER_ROLES,
+} from "@/lib/api-controller";
 import { approvalPolicySchema, parseJsonBody } from "@/lib/validation";
 import { computeOnboardingSteps } from "@/lib/onboarding";
 
@@ -33,7 +39,15 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  return withTenant("writer", async ({ workspace }) => {
+  return withTenant("writer", async ({ workspace, membershipRole }) => {
+    // The approval policy decides who may approve a proposal, so editing it is
+    // a separation-of-duties control rather than ordinary content authoring.
+    // With only the `writer` gate, any member who can author a proposal could
+    // also name themselves the sole approver and then approve their own
+    // submission — `decideProposalReview` enforces the assigned reviewer, but
+    // the assignment itself was self-serviceable.
+    requireWorkspaceRole({ membershipRole }, WORKSPACE_MANAGER_ROLES);
+
     const parsed = await parseJsonBody(req, approvalPolicySchema);
     if (!parsed.ok) return parsed.response;
 

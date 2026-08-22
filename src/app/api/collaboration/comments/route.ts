@@ -8,6 +8,8 @@ import {
   parseSearchParams,
   parseJsonBody,
   requireTenantRecord,
+  ApiError,
+  ResourceNotFoundError,
   type TenantHandlerContext,
 } from "@/lib/api-controller";
 
@@ -108,6 +110,29 @@ export async function POST(request: NextRequest) {
     );
 
     await loadOwnedProposal(proposalId, ctx.workspace.id);
+
+    // The proposal is verified above, but `parentId` was written unchecked, so
+    // a reply could be attached to a thread on a different proposal — including
+    // one in another workspace, where it would then surface through the
+    // `replies` include on that proposal's comment list.
+    if (parentId) {
+      const parent = await db.collaborationComment.findFirst({
+        where: { id: parentId, proposalId },
+        select: { id: true, parentId: true },
+      });
+      if (!parent) {
+        throw new ResourceNotFoundError();
+      }
+      // Threads are one level deep; a reply to a reply would be unreachable in
+      // the list query, which only includes replies of top-level comments.
+      if (parent.parentId) {
+        throw new ApiError(
+          "Replies cannot be nested further",
+          400,
+          "COMMENT_PARENT_NOT_TOP_LEVEL"
+        );
+      }
+    }
 
     const comment = await db.collaborationComment.create({
       data: {

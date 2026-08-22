@@ -430,7 +430,20 @@ export async function requireWriter(opts?: SessionOpts) {
   return session;
 }
 
-/** REVIEWER may approve/reject; writers and admins may also act on reviews — explicit role check */
+/**
+ * Session gate for acting on a review step.
+ *
+ * Authorization for a review decision is by **assignment**, not by platform
+ * role: `decideProposalReview` rejects any caller who is not the review's
+ * `reviewerId` with `REVIEW_REVIEWER_MISMATCH`, and the assignment itself comes
+ * from the workspace approval policy, which only a workspace OWNER or ADMIN may
+ * edit. A platform-role check here would therefore add nothing and would break
+ * the legitimate case of a BIDDER or FINANCE member named as an approver.
+ *
+ * This function exists to name that decision explicitly. It deliberately adds
+ * no role constraint beyond `requireSession` (which still enforces MFA
+ * step-up, the password-change gate, and email verification).
+ */
 export async function requireReviewerAction() {
   const session = await requireSession();
   if (!session) return null;

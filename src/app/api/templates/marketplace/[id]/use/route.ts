@@ -14,6 +14,7 @@ import { sectionsFromTemplateTypes } from "@/lib/proposal-builder-engine";
 import type { ProposalSection } from "@/lib/proposal-builder-types";
 import {
   mapDbMarketplaceRow,
+  marketplaceEntryVisibilityWhere,
   type ResolvedMarketplaceTemplate,
 } from "@/lib/marketplace-template-resolve";
 import {
@@ -36,13 +37,7 @@ type UseTemplateBody = z.infer<typeof useTemplateSchema>;
 
 async function resolveDbTemplate(id: string, workspaceId: string) {
   const row = await db.templateMarketplaceEntry.findFirst({
-    where: {
-      OR: [
-        { id },
-        { templateKey: id, workspaceId },
-        { templateKey: id, workspaceId: null, isPublic: true },
-      ],
-    },
+    where: marketplaceEntryVisibilityWhere(id, workspaceId),
   });
   if (!row) throw new ResourceNotFoundError();
   if (row.isRetired) {
