@@ -93,8 +93,32 @@ export const profileUpdateSchema = z
     { message: "currentPassword required to change email", path: ["currentPassword"] }
   );
 
+export const mfaPasswordSchema = z.string().min(1).max(200);
+
+export const mfaTotpSchema = z.string().regex(/^\d{6}$/);
+
+/** TOTP (6 digits) or a recovery code (`xxxxx-xxxxx`). */
+export const mfaChallengeTokenSchema = z
+  .string()
+  .min(6)
+  .max(32)
+  .refine((value) => /^\d{6}$/.test(value.replace(/\s/g, "")) || /^[0-9a-fA-F]{5}-?[0-9a-fA-F]{5}$/.test(value.replace(/\s/g, "")), {
+    message: "MFA token must be a 6-digit TOTP or a recovery code",
+  });
+
+export const mfaSetupSchema = z.object({
+  password: mfaPasswordSchema,
+  currentToken: mfaTotpSchema.optional(),
+});
+
+export const mfaVerifySchema = z.object({
+  token: mfaTotpSchema,
+  password: mfaPasswordSchema,
+});
+
 export const mfaDisableSchema = z.object({
-  currentToken: z.string().regex(/^\d{6}$/),
+  password: mfaPasswordSchema,
+  currentToken: mfaChallengeTokenSchema,
 });
 
 export const authPrecheckSchema = z.object({
@@ -105,7 +129,7 @@ export const authPrecheckSchema = z.object({
 export const mfaCredentialSchema = z.object({
   email: emailSchema,
   password: z.string().min(1),
-  token: z.string().regex(/^\d{6}$/).optional(),
+  token: mfaChallengeTokenSchema.optional(),
 });
 
 export const proposalPatchSchema = z

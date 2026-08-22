@@ -5,6 +5,7 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { requireAdmin, canGrantRole } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
 import type { Role } from "@/lib/types";
+import { toPublicAdminUser } from "@/lib/admin-user-public";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,12 @@ export async function POST(req: NextRequest) {
       { status: 403 }
     );
   }
+  if (body.mfaEnabled === true) {
+    return NextResponse.json(
+      { error: "Cannot enable MFA on a new account that has no MFA secret", code: "MFA_NOT_SET_UP" },
+      { status: 400 }
+    );
+  }
   const passwordHash = await hashPassword(String(body.password));
   const created = await db.user.create({
     data: {
@@ -66,7 +73,7 @@ export async function POST(req: NextRequest) {
       name: body.name,
       passwordHash,
       role,
-      mfaEnabled: body.mfaEnabled ?? false,
+      mfaEnabled: false,
       locale: body.locale ?? "ar",
       active: true,
     },
@@ -79,6 +86,7 @@ export async function POST(req: NextRequest) {
     details: { email: created.email, role: created.role },
     severity: "WARN",
   });
-  const { passwordHash: _pw, ...safe } = created;
-  return NextResponse.json({ user: safe });
+  return NextResponse.json({
+    user: toPublicAdminUser(created as unknown as Record<string, unknown>),
+  });
 }

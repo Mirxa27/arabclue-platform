@@ -309,6 +309,19 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
     createsTables: ["AnalyticsDailySummary"],
     reverse: 'DROP TABLE "AnalyticsDailySummary";',
   },
+  {
+    id: "20260822190000_auth_hardening_mfa",
+    position: 23,
+    capabilities: [
+      "authentication",
+      "MFA enrolment staging",
+      "TOTP replay protection",
+      "MFA recovery codes",
+    ],
+    createsTables: ["MfaRecoveryCode"],
+    reverse:
+      'DROP TABLE "MfaRecoveryCode"; ALTER TABLE "User" DROP COLUMN "pendingMfaSecret"; ALTER TABLE "User" DROP COLUMN "mfaLastUsedStep";',
+  },
 ]);
 
 /** Every declared migration identifier, in apply order. */

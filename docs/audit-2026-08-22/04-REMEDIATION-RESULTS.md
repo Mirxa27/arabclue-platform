@@ -76,6 +76,8 @@ asserted the defective behaviour directly, each noted below.
 | H29 | `SKIP_EMAIL_VERIFICATION` had no production guard | `4506605` |
 | H30 | Integrity scanner unrunnable; stale generated SQL | `12b7633` |
 | H3 | Builder route bypassed four safeguards | `ec2b381` |
+| H20 | Dashboard navigation desynced the URL | `145557b` |
+| H27 | Auth hardening (limiter, MFA seal, TOTP replay, recovery codes, scrypt params) | this session |
 
 ### Migrations applied to the shared Neon database
 
@@ -86,9 +88,11 @@ and verified by querying `pg_indexes` / `information_schema` afterwards.
 | --- | --- | --- |
 | `20260822170000_notification_delivery_channel_unique` | Drops the subsuming `(eventId, recipientId)` unique index | Subsuming index absent, channel-scoped key present |
 | `20260822180000_analytics_daily_summary` | Creates `AnalyticsDailySummary` + 3 indexes | Table, columns, and all indexes present |
+| `20260822190000_auth_hardening_mfa` | Adds `pendingMfaSecret`, `mfaLastUsedStep`, `MfaRecoveryCode` | Applied with `prisma migrate deploy` |
 
 `prisma migrate status` reported 20 applied and 0 pending before the session;
-22 applied and 0 pending after.
+22 applied and 0 pending after the first remediation wave. H27 adds a 23rd
+additive migration.
 
 ---
 
@@ -113,6 +117,8 @@ bypass fails CI rather than shipping.
 | `no-fabricated-assurance.test.ts` | Zero invented metrics; no unconditional compliance claim |
 | `export-lifecycle-guard.test.ts` | Role, origin, and prefetch gates on the transition |
 | `autopilot-confirmation.test.ts` | Confirmation gate precedes project creation |
+| `auth-hardening.test.ts` | Sealed MFA secrets, TOTP replay, recovery codes, dual login keys |
+| `auth-hardening-guards.test.ts` | Setup stages pending secret; admin cannot invent MFA |
 
 ### Existing tests updated (not weakened)
 
@@ -125,33 +131,23 @@ bypass fails CI rather than shipping.
 
 ---
 
-## 4. Remaining — 5 of 34
+## 4. Remaining — 2 of 34
 
-These are the largest items and none is a quick change. All are unstarted.
+H8, H20, and H27 were completed after the first remediation wave.
 
 ### H8 — Nineteen sites return raw `err.message` to clients
-**Effort ~3h.** Mechanical but touches many route files. `documents/route.ts`
-additionally selects 4xx vs 5xx by regex over an English exception message.
-Fix: route through the existing `ApiFailure` mapper.
+**Done in `7f8c289`.** Routes now go through `toErrorResponse` / `redactSensitiveText`.
 
 ### H20 — Dashboard navigation desyncs the URL
-**Effort ~4h.** `useNavigateToView` exists with **zero consumers**; roughly 50
-in-content buttons call `setView` directly, which never touches the URL, so
-reload, back/forward and link sharing all break. The sidebar is the only
-correct surface. Mechanical but wide, and each call site needs its project
-context checked.
+**Done in `145557b`.** Reconciliation lives in `use-view-router`, so a new
+`setView` call cannot desync the URL.
 
 ### H27 — Auth hardening set
-**Effort ~6h, needs a migration.** Four related items sharing one file:
-- login limiter keyed on email only, enabling both password spraying across
-  accounts and lockout of a known victim;
-- `User.mfaSecret` stored in plaintext despite AES-GCM being available;
-- no TOTP replay ledger and no recovery codes;
-- scrypt at Node defaults with no parameters encoded in the hash, so there is
-  no rehash-on-login upgrade path.
-
-Encrypting `mfaSecret` requires a backfill over existing rows, so it needs a
-maintenance window rather than a forward-only additive migration.
+**Implemented this session.** Dual-key login limiter (email + IP); `mfaSecret`
+sealed with AES-GCM on write and re-sealed from plaintext on next use;
+`pendingMfaSecret` so setup no longer disables the live factor; TOTP last-used
+step + hashed recovery codes; scrypt hashes encode `N/r/p/keylen` and rehash
+on login. Additive migration `20260822190000_auth_hardening_mfa`.
 
 ### H28 — Monetary columns are `Float`
 **Effort ~4h, needs a careful data migration.** `schema.prisma:654,689,707,734`

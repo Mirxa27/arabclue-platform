@@ -32,6 +32,8 @@ export function SettingsPanel() {
   const [qr, setQr] = useState<string | null>(null);
   const [mfaToken, setMfaToken] = useState("");
   const [currentMfaToken, setCurrentMfaToken] = useState("");
+  const [mfaPassword, setMfaPassword] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const mfaEnabled = !!session?.user?.mfaEnabled;
 
   useEffect(() => {
@@ -190,9 +192,10 @@ export function SettingsPanel() {
       const res = await fetch("/api/auth/mfa/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          mfaEnabled ? { currentToken: currentMfaToken } : {}
-        ),
+        body: JSON.stringify({
+          password: mfaPassword,
+          ...(mfaEnabled ? { currentToken: currentMfaToken } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "MFA setup failed");
@@ -220,13 +223,15 @@ export function SettingsPanel() {
       const res = await fetch("/api/auth/mfa/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: mfaToken }),
+        body: JSON.stringify({ token: mfaToken, password: mfaPassword }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Invalid token");
       setQr(null);
       setMfaToken("");
       setCurrentMfaToken("");
+      setMfaPassword("");
+      setRecoveryCodes(Array.isArray(data.recoveryCodes) ? data.recoveryCodes : []);
       await update?.({ mfaEnabled: true } as never);
       toast({
         title: locale === "ar" ? "تم تفعيل MFA" : "MFA enabled",
@@ -247,11 +252,16 @@ export function SettingsPanel() {
       const res = await fetch("/api/auth/mfa/disable", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentToken: currentMfaToken }),
+        body: JSON.stringify({
+          password: mfaPassword,
+          currentToken: currentMfaToken,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setCurrentMfaToken("");
+      setMfaPassword("");
+      setRecoveryCodes([]);
       setQr(null);
       await update?.({ mfaEnabled: false } as never);
       toast({
@@ -463,20 +473,31 @@ export function SettingsPanel() {
                 </span>
               )}
             </p>
+            <div>
+              <Label>
+                {locale === "ar" ? "كلمة المرور الحالية" : "Current password"}
+              </Label>
+              <Input
+                type="password"
+                value={mfaPassword}
+                onChange={(e) => setMfaPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
             {mfaEnabled && (
               <div>
                 <Label>
                   {locale === "ar"
-                    ? "رمز MFA الحالي"
-                    : "Current MFA code"}
+                    ? "رمز MFA أو رمز الاسترداد"
+                    : "Current MFA or recovery code"}
                 </Label>
                 <Input
-                  inputMode="numeric"
-                  maxLength={6}
+                  maxLength={11}
                   value={currentMfaToken}
                   onChange={(e) => setCurrentMfaToken(e.target.value)}
                   placeholder="000000"
                   className="font-mono tracking-widest"
+                  autoComplete="one-time-code"
                 />
               </div>
             )}
@@ -485,7 +506,9 @@ export function SettingsPanel() {
                 variant="outline"
                 onClick={() => void setupMfa()}
                 disabled={
-                  securityBusy || (mfaEnabled && currentMfaToken.length < 6)
+                  securityBusy ||
+                  mfaPassword.length < 1 ||
+                  (mfaEnabled && currentMfaToken.length < 6)
                 }
               >
                 {mfaEnabled
@@ -500,7 +523,11 @@ export function SettingsPanel() {
                 <Button
                   variant="destructive"
                   onClick={() => void disableMfa()}
-                  disabled={securityBusy || currentMfaToken.length < 6}
+                  disabled={
+                    securityBusy ||
+                    mfaPassword.length < 1 ||
+                    currentMfaToken.length < 6
+                  }
                 >
                   {locale === "ar" ? "إيقاف MFA" : "Disable MFA"}
                 </Button>
@@ -524,10 +551,26 @@ export function SettingsPanel() {
                 />
                 <Button
                   onClick={() => void confirmMfa()}
-                  disabled={securityBusy || mfaToken.length < 6}
+                  disabled={
+                    securityBusy || mfaToken.length < 6 || mfaPassword.length < 1
+                  }
                 >
                   {locale === "ar" ? "تأكيد وتفعيل" : "Confirm & enable"}
                 </Button>
+              </div>
+            )}
+            {recoveryCodes.length > 0 && (
+              <div className="rounded-xl border bg-muted/40 p-3 space-y-2">
+                <p className="text-xs font-medium">
+                  {locale === "ar"
+                    ? "رموز الاسترداد — احفظها الآن، لن تُعرض مرة أخرى"
+                    : "Recovery codes — save them now, they will not be shown again"}
+                </p>
+                <ul className="font-mono text-sm grid grid-cols-2 gap-1">
+                  {recoveryCodes.map((code) => (
+                    <li key={code}>{code}</li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>

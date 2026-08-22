@@ -1,15 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { hashPassword, verifyPassword, getBootstrapAdminPassword } from "../password";
+import { scrypt as scryptCb, randomBytes } from "node:crypto";
+import { promisify } from "node:util";
+import {
+  CURRENT_SCRYPT_PARAMS,
+  getBootstrapAdminPassword,
+  hashPassword,
+  passwordNeedsRehash,
+  verifyPassword,
+} from "../password";
+
+const scrypt = promisify(scryptCb);
 
 describe("hashPassword", () => {
-  test("hashes a valid password with scrypt prefix", async () => {
+  test("hashes a valid password with encoded scrypt parameters", async () => {
     const hash = await hashPassword("StrongPass123!");
     expect(hash.startsWith("scrypt$")).toBe(true);
     const parts = hash.split("$");
-    expect(parts).toHaveLength(3);
+    expect(parts).toHaveLength(7);
     expect(parts[0]).toBe("scrypt");
-    expect(parts[1].length).toBe(32); // 16 bytes hex
-    expect(parts[2].length).toBe(128); // 64 bytes hex
+    expect(parts[1]).toBe(String(CURRENT_SCRYPT_PARAMS.N));
+    expect(parts[2]).toBe(String(CURRENT_SCRYPT_PARAMS.r));
+    expect(parts[3]).toBe(String(CURRENT_SCRYPT_PARAMS.p));
+    expect(parts[4]).toBe(String(CURRENT_SCRYPT_PARAMS.keylen));
+    expect(parts[5].length).toBe(32); // 16 bytes hex
+    expect(parts[6].length).toBe(128); // 64 bytes hex
+    expect(passwordNeedsRehash(hash)).toBe(false);
   });
 
   test("produces different salts for same password", async () => {
@@ -77,6 +92,15 @@ describe("verifyPassword", () => {
       false
     );
     expect(await verifyPassword("StrongPass123!", "scrypt$$")).toBe(false);
+  });
+
+  test("still verifies a legacy scrypt$salt$hash and marks it for upgrade", async () => {
+    const salt = randomBytes(16).toString("hex");
+    const derived = (await scrypt("StrongPass123!", salt, 64)) as Buffer;
+    const legacy = `scrypt$${salt}$${derived.toString("hex")}`;
+    expect(await verifyPassword("StrongPass123!", legacy)).toBe(true);
+    expect(await verifyPassword("WrongPassword!", legacy)).toBe(false);
+    expect(passwordNeedsRehash(legacy)).toBe(true);
   });
 });
 

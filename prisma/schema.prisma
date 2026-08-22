@@ -48,6 +48,8 @@ model User {
   role               String    @default("BIDDER") // SUPER_ADMIN | ADMIN | BIDDER | REVIEWER | FINANCE
   mfaEnabled         Boolean   @default(false)
   mfaSecret          String?
+  pendingMfaSecret   String?
+  mfaLastUsedStep    BigInt?
   avatarUrl          String?
   locale             String    @default("ar") // ar | en
   active             Boolean   @default(true)
@@ -65,6 +67,7 @@ model User {
   proposals                GeneratedProposal[]
   agentRuns                AgentRun[]
   sessions                 UserSession[]
+  mfaRecoveryCodes         MfaRecoveryCode[]
   auditLogs                AuditLog[]
   billingRecords           BillingRecord[]
   paymentCheckouts         PaymentCheckout[]
@@ -122,6 +125,17 @@ model UserSession {
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }

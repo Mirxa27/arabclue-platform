@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { generateMfaSecret, buildMfaQrDataUrl, verifyMfaToken } from "@/lib/mfa";
+import { generateMfaSecret, buildMfaQrDataUrl, verifyMfaTokenDetailed } from "@/lib/mfa";
 import { requireSession } from "@/lib/auth";
 import {
   describeRateLimitDenial,
@@ -8,13 +8,17 @@ import {
 } from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
 import { jsonApiFailure } from "@/lib/api-controller";
+import { parseJsonBody, mfaSetupSchema } from "@/lib/validation";
+import { verifyPassword } from "@/lib/password";
+import { sealMfaSecret, unsealMfaSecret } from "@/lib/mfa-secret";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST — generate MFA secret + QR.
- * Requires authenticated session. If MFA is already enabled, requires current TOTP.
- * Rate-limited: 5 setups / 15min per user.
+ * POST — generate a pending MFA secret + QR.
+ * Requires the current password. If MFA is already enabled, also requires the
+ * current TOTP. The live factor is left untouched until /verify promotes the
+ * pending secret.
  */
 export async function POST(req: NextRequest) {
   const session = await requireSession({ allowMustChangePassword: true });
@@ -32,19 +36,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const parsed = await parseJsonBody(req, mfaSetupSchema);
+  if (!parsed.ok) return parsed.response;
+
   const user = await db.user.findUnique({ where: { id: session.user.id } });
   if (!user) return jsonApiFailure("RESOURCE_NOT_FOUND", { status: 404 });
 
-  let body: { currentToken?: string } = {};
-  try {
-    body = await req.json();
-  } catch {
-    body = {};
+  if (!(await verifyPassword(parsed.data.password, user.passwordHash))) {
+    return jsonApiFailure("PASSWORD_INCORRECT", { status: 403 });
   }
 
   if (user.mfaEnabled) {
-    const currentToken = body.currentToken?.trim() ?? "";
-    if (!user.mfaSecret || !currentToken || !verifyMfaToken(user.mfaSecret, currentToken)) {
+    const currentToken = parsed.data.currentToken?.trim() ?? "";
+    const liveSecret = unsealMfaSecret(user.mfaSecret);
+    if (
+      !liveSecret ||
+      !currentToken ||
+      !verifyMfaTokenDetailed(liveSecret, currentToken, {
+        lastUsedStep: user.mfaLastUsedStep,
+      }).ok
+    ) {
       return jsonApiFailure("MFA_ROTATION_TOKEN_REQUIRED", { status: 403 });
     }
   }
@@ -52,7 +63,7 @@ export async function POST(req: NextRequest) {
   const secret = generateMfaSecret();
   await db.user.update({
     where: { id: user.id },
-    data: { mfaSecret: secret, mfaEnabled: false },
+    data: { pendingMfaSecret: sealMfaSecret(secret) },
   });
 
   const { otpauthUrl, qrDataUrl } = await buildMfaQrDataUrl({
@@ -65,10 +76,9 @@ export async function POST(req: NextRequest) {
     action: "MFA_SETUP",
     resource: "User",
     resourceId: user.id,
-    details: { rotated: user.mfaEnabled },
+    details: { rotated: user.mfaEnabled, staged: true },
   });
 
-  // Do not return raw secret — QR / otpauth URL is enough for authenticator apps
   return NextResponse.json({
     otpauthUrl,
     qrDataUrl,

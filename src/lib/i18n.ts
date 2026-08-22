@@ -1809,6 +1809,14 @@ export const localizationRegistry = {
     ar: "يلزم رمز المصادقة الثنائية الحالي لتدوير المفتاح",
     en: "Current MFA token required to rotate MFA",
   },
+  MFA_PASSWORD_REQUIRED: {
+    ar: "يلزم كلمة المرور الحالية لتغيير المصادقة الثنائية",
+    en: "Current password is required to change MFA",
+  },
+  MFA_REPLAYED_TOKEN: {
+    ar: "تم استخدام رمز المصادقة الثنائية هذا مسبقاً",
+    en: "This MFA code has already been used",
+  },
   PASSWORD_INCORRECT: { ar: "كلمة المرور الحالية غير صحيحة", en: "Current password is incorrect" },
   AVATAR_TOO_LARGE: { ar: "حجم الصورة يجب أن يكون أقل من ٢ ميجابايت", en: "Avatar must be under 2MB" },
   EMAIL_ALREADY_IN_USE: { ar: "البريد الإلكتروني مستخدم بالفعل", en: "Email already in use" },
@@ -2384,6 +2392,8 @@ export const COMPLETION_ERROR_CONTRACTS = {
   MFA_NOT_SET_UP: { actionKey: "error_action_manage_mfa", messageKey: "MFA_NOT_SET_UP" },
   MFA_TOKEN_INVALID: { actionKey: "error_action_manage_mfa", messageKey: "MFA_TOKEN_INVALID" },
   MFA_ROTATION_TOKEN_REQUIRED: { actionKey: "error_action_manage_mfa", messageKey: "MFA_ROTATION_TOKEN_REQUIRED" },
+  MFA_PASSWORD_REQUIRED: { actionKey: "error_action_manage_mfa", messageKey: "MFA_PASSWORD_REQUIRED" },
+  MFA_REPLAYED_TOKEN: { actionKey: "error_action_manage_mfa", messageKey: "MFA_REPLAYED_TOKEN" },
   PASSWORD_INCORRECT: { actionKey: "error_action_change_password", messageKey: "PASSWORD_INCORRECT" },
   AVATAR_TOO_LARGE: { actionKey: "error_action_complete_request", messageKey: "AVATAR_TOO_LARGE" },
   EMAIL_ALREADY_IN_USE: { actionKey: "error_action_complete_request", messageKey: "EMAIL_ALREADY_IN_USE" },

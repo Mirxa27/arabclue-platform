@@ -292,8 +292,8 @@ function LoginForm() {
                   </div>
                   {needsMfa && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="space-y-1.5 overflow-hidden">
-                      <Label className="text-xs font-semibold flex items-center gap-1"><KeyRound className="size-3" />{ar ? "رمز MFA" : "MFA Code"}</Label>
-                      <Input inputMode="numeric" pattern="[0-9]*" maxLength={6} value={mfaToken} onChange={(e) => setMfaToken(e.target.value)} placeholder="000000" className="h-11 rounded-xl font-mono tracking-widest text-center text-[16px]" />
+                      <Label className="text-xs font-semibold flex items-center gap-1"><KeyRound className="size-3" />{ar ? "رمز MFA أو رمز الاسترداد" : "MFA or recovery code"}</Label>
+                      <Input autoComplete="one-time-code" maxLength={11} value={mfaToken} onChange={(e) => setMfaToken(e.target.value)} placeholder={ar ? "000000 أو xxxxx-xxxxx" : "000000 or xxxxx-xxxxx"} className="h-11 rounded-xl font-mono tracking-widest text-center text-[16px]" />
                     </motion.div>
                   )}
                   {error && <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2.5 text-[12px] text-destructive leading-snug">{error}</div>}

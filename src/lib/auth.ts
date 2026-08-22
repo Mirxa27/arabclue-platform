@@ -2,10 +2,10 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { getServerSession } from "next-auth";
 import { db } from "./db";
-import { verifyPassword } from "./password";
-import { verifyMfaToken } from "./mfa";
+import { passwordNeedsRehash, hashPassword, verifyPassword } from "./password";
+import { consumeMfaChallenge } from "./mfa-challenge";
+import { consumeLoginRateLimits, extractClientIp } from "./login-rate-limit";
 import { audit, AUDIT_ACTIONS } from "./audit";
-import { rateLimitAsync as rateLimit } from "./rate-limit";
 import type { Role } from "./types";
 import { isProductionBlockedDevelopmentIdentity } from "./production-identities";
 import { resolveEmailVerifiedClaim } from "./email-verification-policy";
@@ -96,28 +96,28 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
         mfaToken: { label: "MFA Token", type: "text" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         const email = credentials?.email?.trim().toLowerCase() ?? "";
         const password = credentials?.password ?? "";
         const mfaToken = credentials?.mfaToken?.trim() ?? "";
+        const ip = extractClientIp(req?.headers);
 
-        // Prefer Redis when REDIS_URL is set; otherwise use in-memory limits
-        // (Vercel Hobby / single-node). Do not force requireDistributed on
-        // production alone — that blocks all logins when Redis is unset.
-        const rl = await rateLimit({
-          key: `login:${email || "unknown"}`,
-          limit: 10,
-          windowMs: 15 * 60 * 1000,
-        });
+        // Email cap stops guessing one account. IP cap stops spraying the
+        // same password across many accounts from one origin. Prefer Redis
+        // when REDIS_URL is set; otherwise use in-memory limits.
+        const rl = await consumeLoginRateLimits(email, ip);
         if (!rl.ok) {
           const reason =
             rl.backend === "unavailable"
               ? "rate_limit_service_unavailable"
               : "rate_limited";
-          console.warn(`[auth] authorize rejected: ${reason}`, { email });
+          console.warn(`[auth] authorize rejected: ${reason}`, {
+            email,
+            dimension: rl.dimension,
+          });
           await audit({
             action: AUDIT_ACTIONS.LOGIN_FAILED,
-            details: { email, reason },
+            details: { email, reason, dimension: rl.dimension },
             severity: "WARN",
             success: false,
           });
@@ -174,8 +174,26 @@ export const authOptions: NextAuthOptions = {
 
         let mfaVerified = !user.mfaEnabled;
         if (user.mfaEnabled) {
-          if (!user.mfaSecret || !mfaToken || !verifyMfaToken(user.mfaSecret, mfaToken)) {
-            console.warn("[auth] authorize rejected: mfa_failed", { email, hasSecret: !!user.mfaSecret, hasToken: !!mfaToken });
+          const challenge = await consumeMfaChallenge({
+            userId: user.id,
+            storedSecret: user.mfaSecret,
+            lastUsedStep: user.mfaLastUsedStep,
+            token: mfaToken,
+          });
+          if (!challenge.ok) {
+            console.warn("[auth] authorize rejected: mfa_failed", {
+              email,
+              hasSecret: !!user.mfaSecret,
+              hasToken: !!mfaToken,
+              reason: challenge.reason,
+            });
+            await audit({
+              userId: user.id,
+              action: AUDIT_ACTIONS.LOGIN_FAILED,
+              details: { email, reason: `mfa_${challenge.reason}` },
+              severity: "WARN",
+              success: false,
+            });
             return null;
           }
           mfaVerified = true;
@@ -183,7 +201,12 @@ export const authOptions: NextAuthOptions = {
 
         await db.user.update({
           where: { id: user.id },
-          data: { lastLoginAt: new Date() },
+          data: {
+            lastLoginAt: new Date(),
+            ...(passwordNeedsRehash(user.passwordHash)
+              ? { passwordHash: await hashPassword(password) }
+              : {}),
+          },
         });
 
         const sessionToken = crypto.randomUUID();

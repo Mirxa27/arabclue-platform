@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { requireAdmin, canGrantRole, revokeUserSessions } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import type { Role } from "@/lib/types";
+import { toPublicAdminUser } from "@/lib/admin-user-public";
+import { unsealMfaSecret } from "@/lib/mfa-secret";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +20,7 @@ export async function PATCH(
 
   const before = await db.user.findUnique({
     where: { id },
-    select: { role: true, active: true, email: true },
+    select: { role: true, active: true, email: true, mfaSecret: true, mfaEnabled: true },
   });
   if (!before) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -45,6 +47,13 @@ export async function PATCH(
         { status: 403 }
       );
     }
+  }
+
+  if (body.mfaEnabled === true && !unsealMfaSecret(before.mfaSecret)) {
+    return NextResponse.json(
+      { error: "Cannot enable MFA on an account that has no MFA secret", code: "MFA_NOT_SET_UP" },
+      { status: 400 }
+    );
   }
 
   const updated = await db.user.update({
@@ -103,7 +112,9 @@ export async function PATCH(
     severity: "CRITICAL",
   });
 
-  return NextResponse.json({ user: updated });
+  return NextResponse.json({
+    user: toPublicAdminUser(updated as unknown as Record<string, unknown>),
+  });
 }
 
 // DELETE /api/admin/users/[id] — deactivate (soft delete)
