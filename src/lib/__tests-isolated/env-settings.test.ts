@@ -112,17 +112,62 @@ describe("getProviderApiKey", () => {
 });
 
 describe("resolveProviderApiKey", () => {
-  test("uses custom env key when provided", async () => {
-    const prev = process.env.CUSTOM_API_KEY;
-    process.env.CUSTOM_API_KEY = "custom-key-value";
+  // A custom key must name a provider credential slot. The multi-account suffix
+  // form is the supported case: one deployment holding several credentials for
+  // the same vendor.
+  test("uses a custom env key inside the provider-credential allowlist", async () => {
+    const prev = process.env.OPENAI_API_KEY_TEAM_B;
+    process.env.OPENAI_API_KEY_TEAM_B = "custom-key-value";
     try {
-      const val = await resolveProviderApiKey("openai", "CUSTOM_API_KEY");
+      const val = await resolveProviderApiKey(
+        "openai",
+        "OPENAI_API_KEY_TEAM_B"
+      );
       expect(val).toBe("custom-key-value");
     } finally {
-      if (prev === undefined) delete process.env.CUSTOM_API_KEY;
-      else process.env.CUSTOM_API_KEY = prev;
+      if (prev === undefined) delete process.env.OPENAI_API_KEY_TEAM_B;
+      else process.env.OPENAI_API_KEY_TEAM_B = prev;
     }
   });
+
+  // Regression: an administrator-supplied name outside the allowlist previously
+  // read any variable in the process and forwarded it to the connection's
+  // apiBase as a bearer token.
+  test("ignores a custom env key outside the allowlist and uses the provider default", async () => {
+    const prevSecret = process.env.NEXTAUTH_SECRET;
+    const prevDefault = process.env.OPENAI_API_KEY;
+    process.env.NEXTAUTH_SECRET = "super-secret-session-signing-key";
+    process.env.OPENAI_API_KEY = "default-openai-key";
+    try {
+      const val = await resolveProviderApiKey("openai", "NEXTAUTH_SECRET");
+      expect(val).toBe("default-openai-key");
+      expect(val).not.toBe("super-secret-session-signing-key");
+    } finally {
+      if (prevSecret === undefined) delete process.env.NEXTAUTH_SECRET;
+      else process.env.NEXTAUTH_SECRET = prevSecret;
+      if (prevDefault === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = prevDefault;
+    }
+  });
+
+  test.each(["DATABASE_URL", "ARABCLUE_ENC_KEY", "MYFATOORAH_API_KEY"])(
+    "never resolves the platform secret %s through a provider connection",
+    async (secretName) => {
+      const prevSecret = process.env[secretName];
+      const prevDefault = process.env.OPENAI_API_KEY;
+      process.env[secretName] = `value-of-${secretName}`;
+      process.env.OPENAI_API_KEY = "default-openai-key";
+      try {
+        const val = await resolveProviderApiKey("openai", secretName);
+        expect(val).not.toBe(`value-of-${secretName}`);
+      } finally {
+        if (prevSecret === undefined) delete process.env[secretName];
+        else process.env[secretName] = prevSecret;
+        if (prevDefault === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = prevDefault;
+      }
+    }
+  );
 
   test("falls back to provider default when custom key is empty", async () => {
     const prev = process.env.OPENAI_API_KEY;
@@ -152,14 +197,17 @@ describe("resolveProviderApiKey", () => {
   });
 
   test("trims custom env key before lookup", async () => {
-    const prev = process.env.TRIMMED_KEY;
-    process.env.TRIMMED_KEY = "trimmed-value";
+    const prev = process.env.OPENAI_API_KEY_TRIMMED;
+    process.env.OPENAI_API_KEY_TRIMMED = "trimmed-value";
     try {
-      const val = await resolveProviderApiKey("openai", "  TRIMMED_KEY  ");
+      const val = await resolveProviderApiKey(
+        "openai",
+        "  OPENAI_API_KEY_TRIMMED  "
+      );
       expect(val).toBe("trimmed-value");
     } finally {
-      if (prev === undefined) delete process.env.TRIMMED_KEY;
-      else process.env.TRIMMED_KEY = prev;
+      if (prev === undefined) delete process.env.OPENAI_API_KEY_TRIMMED;
+      else process.env.OPENAI_API_KEY_TRIMMED = prev;
     }
   });
 });

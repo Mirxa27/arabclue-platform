@@ -11,6 +11,7 @@ import {
   defaultApiBase,
   defaultApiKeyEnvKey,
   inferModelCapabilities,
+  isAllowedProviderApiKeyEnv,
   parseModelsCache,
   parseProviderEngines,
 } from "@/lib/llm/model-catalog";
@@ -105,6 +106,25 @@ export async function POST(req: NextRequest) {
         error:
           "Cannot activate a connection without a model. Fetch models and select one first.",
         code: "model_required",
+      },
+      { status: 400 }
+    );
+  }
+
+  // A connection's key name is resolved against `process.env` at call time, so
+  // it must be a provider credential slot and never an arbitrary platform
+  // secret. Rejecting here gives the administrator an immediate, explicit error
+  // instead of a silent fallback to the default credential at first use.
+  if (
+    body.apiKeyEnvKey != null &&
+    String(body.apiKeyEnvKey).trim() !== "" &&
+    !isAllowedProviderApiKeyEnv(String(body.apiKeyEnvKey))
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "apiKeyEnvKey must name a provider credential variable (for example OPENAI_API_KEY or OPENAI_API_KEY_TEAM_B).",
+        code: "api_key_env_not_allowed",
       },
       { status: 400 }
     );

@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import {
   inferModelCapabilities,
+  isAllowedProviderApiKeyEnv,
   parseProviderEngines,
 } from "@/lib/llm/model-catalog";
 import {
@@ -58,6 +59,24 @@ export async function PATCH(
   const existing = await db.aIProviderConfig.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // See the POST handler: `apiKeyEnvKey` is resolved against `process.env` at
+  // call time, so an arbitrary name would read a platform secret and forward it
+  // to this connection's `apiBase`.
+  if (
+    body.apiKeyEnvKey != null &&
+    String(body.apiKeyEnvKey).trim() !== "" &&
+    !isAllowedProviderApiKeyEnv(String(body.apiKeyEnvKey))
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "apiKeyEnvKey must name a provider credential variable (for example OPENAI_API_KEY or OPENAI_API_KEY_TEAM_B).",
+        code: "api_key_env_not_allowed",
+      },
+      { status: 400 }
+    );
   }
 
   const data: Record<string, unknown> = {};

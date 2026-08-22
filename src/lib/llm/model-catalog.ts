@@ -289,6 +289,51 @@ export function defaultApiBase(provider: string): string {
   }
 }
 
+/**
+ * Environment variable names an operator may point a provider connection at.
+ *
+ * A provider row carries an optional `apiKeyEnvKey` so one deployment can hold
+ * several credentials for the same vendor (`OPENAI_API_KEY_TEAM_B`). That value
+ * is administrator-supplied and is resolved against `process.env`, so without a
+ * positive allowlist it reads *any* variable in the process — including
+ * `NEXTAUTH_SECRET`, `ARABCLUE_ENC_KEY`, and `DATABASE_URL` — and forwards it as
+ * a bearer token to the connection's `apiBase`.
+ *
+ * This is an allowlist rather than a denylist on purpose: a denylist silently
+ * fails to protect every secret added after it was written.
+ */
+export const PROVIDER_API_KEY_ENV_BASES: readonly string[] = Object.freeze([
+  "OPENAI_API_KEY",
+  "AZURE_OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "MISTRAL_API_KEY",
+  "ZAI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GEMINI_API_KEY",
+  "OPENROUTER_API_KEY",
+  "GROQ_API_KEY",
+  "DEEPSEEK_API_KEY",
+]);
+
+/**
+ * True when `key` names a provider credential slot.
+ *
+ * Accepts an exact base name or a base name with a `_SUFFIX`, which is what
+ * makes multi-account setups (`ANTHROPIC_API_KEY_EU`) work without opening the
+ * whole environment.
+ */
+export function isAllowedProviderApiKeyEnv(
+  key: string | null | undefined
+): boolean {
+  const candidate = (key ?? "").trim();
+  if (!candidate) return false;
+  if (candidate !== candidate.toUpperCase()) return false;
+  return PROVIDER_API_KEY_ENV_BASES.some(
+    (base) => candidate === base || candidate.startsWith(`${base}_`)
+  );
+}
+
 export function defaultApiKeyEnvKey(provider: string): string {
   switch (provider) {
     case "openai":
