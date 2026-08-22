@@ -26,6 +26,11 @@ export async function stageMissionAttachment(opts: {
   source: AttachmentSource;
   textPreview?: string | null;
   autoRoute?: boolean;
+  /**
+   * Stage and classify, but require a human action before the classification
+   * can create a project or start a pipeline. See `maybeAutopilotAfterIngest`.
+   */
+  requireConfirmation?: boolean;
 }) {
   try {
     await assertWithinQuota(opts.userId, "document");
@@ -104,6 +109,7 @@ export async function stageMissionAttachment(opts: {
       decision,
       activeProjectId: opts.activeProjectId,
       canWrite: opts.canWrite,
+      requireConfirmation: opts.requireConfirmation,
     });
   }
 

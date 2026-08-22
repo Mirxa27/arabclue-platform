@@ -134,11 +134,34 @@ export async function maybeAutopilotAfterIngest(opts: {
   decision: ClassificationDecision;
   activeProjectId?: string | null;
   canWrite: boolean;
+  /**
+   * Require an explicit human action before this content creates a project or
+   * starts a pipeline.
+   *
+   * Set for content the platform did not receive from a deliberate in-app
+   * action — chiefly pages scraped by the browser extension. That content is
+   * attacker-influenceable: a crafted page can steer the keyword classifier,
+   * and above the confidence floor the classifier's opinion alone was enough to
+   * create a project and run the full six-agent pipeline over it. Staging the
+   * attachment is fine; taking privileged action on it is not.
+   */
+  requireConfirmation?: boolean;
 }): Promise<AutopilotResult> {
   if (!opts.canWrite) {
     return {
       mode: "clarify",
       question: "Read-only role: I staged the file but cannot route or run agents.",
+      attachmentId: opts.attachmentId,
+    };
+  }
+
+  if (opts.requireConfirmation) {
+    return {
+      mode: "clarify",
+      question:
+        opts.locale === "ar"
+          ? "تم حفظ المحتوى من المتصفح. أكّد لإنشاء مشروع وبدء التحليل."
+          : "Captured from the browser and staged. Confirm to create a project and start analysis.",
       attachmentId: opts.attachmentId,
     };
   }

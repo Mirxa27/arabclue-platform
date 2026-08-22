@@ -102,6 +102,10 @@ export async function POST(req: NextRequest) {
         source: "browser",
         textPreview: tenderHeader.slice(0, 4000),
         autoRoute: true,
+        // Browser-captured content is attacker-influenceable: a crafted page
+        // can steer the keyword classifier. Stage and classify, but require an
+        // explicit human action before it creates a project or runs agents.
+        requireConfirmation: true,
       });
 
       return NextResponse.json({
@@ -138,6 +142,10 @@ export async function POST(req: NextRequest) {
           .filter(Boolean)
           .join("\n"),
         autoRoute: true,
+        // Browser-captured content is attacker-influenceable: a crafted page
+        // can steer the keyword classifier. Stage and classify, but require an
+        // explicit human action before it creates a project or runs agents.
+        requireConfirmation: true,
       });
       return NextResponse.json({
         ok: true,
@@ -182,6 +190,10 @@ export async function POST(req: NextRequest) {
       source: "browser",
       textPreview: header.slice(0, 4000),
       autoRoute: true,
+        // Browser-captured content is attacker-influenceable: a crafted page
+        // can steer the keyword classifier. Stage and classify, but require an
+        // explicit human action before it creates a project or runs agents.
+        requireConfirmation: true,
     });
 
     return NextResponse.json({
