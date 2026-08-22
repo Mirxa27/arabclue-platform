@@ -176,6 +176,11 @@ export async function PATCH(req: NextRequest) {
           ? { expiresAt: d.expiresAt ? new Date(d.expiresAt) : null }
           : {}),
         ...(d.alertDays !== undefined ? { alertDays: d.alertDays } : {}),
+        // filePath participates in the knowledge content hash and in the
+        // substantive-edit check above, so omitting it here left the stored
+        // hash describing a path the row did not have — and cost the
+        // certificate its approval for an edit that was never persisted.
+        ...(d.filePath !== undefined ? { filePath: d.filePath } : {}),
         ...(d.notes !== undefined ? { notes: d.notes } : {}),
         ...(reviewData ?? {}),
       },

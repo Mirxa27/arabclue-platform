@@ -34,6 +34,22 @@ export function AdminOverview() {
     refetchInterval: 15000,
   });
 
+  // Real readiness, rather than a hardcoded assurance banner. `/api/ready`
+  // reports per-facet state (database, schema migrations, rate limiting,
+  // storage, cron, email) and is the same source the deployment probe uses.
+  const { data: readiness } = useQuery({
+    queryKey: ["platform-readiness"],
+    queryFn: async () => {
+      const res = await fetch("/api/ready");
+      // A failing readiness probe still returns a JSON body describing why.
+      return (await res.json()) as {
+        ready: boolean;
+        checks?: Record<string, { ok: boolean; detail?: string }>;
+      };
+    },
+    refetchInterval: 60_000,
+  });
+
   const k = data?.kpis;
   const charts = data?.charts;
   const usersByRole: RoleCount[] = charts?.usersByRole ?? [];
@@ -154,28 +170,122 @@ export function AdminOverview() {
         </Card>
       </div>
 
-      {/* Security status banner */}
-      <Card className="p-4 border-emerald-500/20 bg-emerald-500/5">
-        <div className="flex items-center gap-3">
-          <div className="size-10 rounded-lg bg-emerald-500/15 flex items-center justify-center">
-            <ShieldCheck className="size-5 text-emerald-600" />
-          </div>
-          <div className="flex-1">
-            <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-              {locale === "ar" ? "الأمان مفعّل" : "Security Hardening Active"}
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              {locale === "ar"
-                ? "RBAC + MFA + سجل تدقيق غير قابل للتغيير + تشفير AES-256 لمتغيرات البيئة"
-                : "RBAC + MFA + Immutable Audit Trail + AES-256 env encryption"}
-            </div>
-          </div>
-          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 border-emerald-500/20 text-[10px] gap-1">
-            <TrendingUp className="size-2.5" />
-            {locale === "ar" ? "متوافق PDPL" : "PDPL Compliant"}
-          </Badge>
+      {/* Platform readiness — measured via /api/ready, not asserted.
+          This card previously rendered a fixed green security-and-regulatory
+          assurance banner with no data behind it. A compliance claim the
+          product has not computed is worse than no claim at all. */}
+      <PlatformReadinessCard locale={locale} readiness={readiness} />
+    </div>
+  );
+}
+
+/** Human labels for the facets `/api/ready` reports. */
+const READINESS_LABELS: Record<string, { ar: string; en: string }> = {
+  database: { ar: "قاعدة البيانات", en: "Database" },
+  schema: { ar: "ترحيلات المخطط", en: "Schema migrations" },
+  migrations: { ar: "ترحيلات المخطط", en: "Schema migrations" },
+  rateLimit: { ar: "تحديد المعدل", en: "Rate limiting" },
+  storage: { ar: "التخزين", en: "Storage" },
+  cron: { ar: "المهام المجدولة", en: "Scheduled jobs" },
+  email: { ar: "البريد", en: "Email" },
+};
+
+function PlatformReadinessCard({
+  locale,
+  readiness,
+}: {
+  locale: string;
+  readiness?: {
+    ready: boolean;
+    checks?: Record<string, { ok: boolean; detail?: string }>;
+  };
+}) {
+  const ar = locale === "ar";
+
+  if (!readiness) {
+    return (
+      <Card className="p-4 border-border/50">
+        <div className="text-xs text-muted-foreground">
+          {ar ? "جارٍ فحص جاهزية المنصة…" : "Checking platform readiness…"}
         </div>
       </Card>
-    </div>
+    );
+  }
+
+  const entries = Object.entries(readiness.checks ?? {});
+  const failing = entries.filter(([, check]) => !check.ok);
+  const ok = readiness.ready && failing.length === 0;
+
+  return (
+    <Card
+      className={cn(
+        "p-4",
+        ok
+          ? "border-emerald-500/20 bg-emerald-500/5"
+          : "border-amber-500/30 bg-amber-500/5"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "size-10 rounded-lg flex items-center justify-center shrink-0",
+            ok ? "bg-emerald-500/15" : "bg-amber-500/15"
+          )}
+        >
+          {ok ? (
+            <ShieldCheck className="size-5 text-emerald-600" />
+          ) : (
+            <Activity className="size-5 text-amber-600" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div
+            className={cn(
+              "text-sm font-semibold",
+              ok
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-amber-700 dark:text-amber-400"
+            )}
+          >
+            {ok
+              ? ar
+                ? "جميع فحوصات الجاهزية ناجحة"
+                : "All readiness checks passing"
+              : ar
+                ? `${failing.length} من فحوصات الجاهزية تحتاج انتباهًا`
+                : `${failing.length} readiness check${failing.length === 1 ? "" : "s"} need attention`}
+          </div>
+          {entries.length === 0 ? (
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              {ar ? "لا توجد تفاصيل متاحة" : "No detail reported"}
+            </div>
+          ) : (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {entries.map(([key, check]) => (
+                <Badge
+                  key={key}
+                  variant="outline"
+                  className={cn(
+                    "text-[10px] gap-1",
+                    check.ok
+                      ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                      : "bg-amber-500/10 text-amber-700 border-amber-500/30"
+                  )}
+                >
+                  {READINESS_LABELS[key]
+                    ? ar
+                      ? READINESS_LABELS[key].ar
+                      : READINESS_LABELS[key].en
+                    : key}
+                  {check.detail ? (
+                    <span className="font-mono opacity-70">{check.detail}</span>
+                  ) : null}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }

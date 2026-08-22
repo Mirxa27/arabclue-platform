@@ -97,52 +97,30 @@ export function MissionPipelineBar({
   tools?: TheaterToolEvent[];
 }) {
   const ar = locale === "ar";
-  const [simStep, setSimStep] = useState(-1);
-  const [simDone, setSimDone] = useState<Set<number>>(new Set());
 
-  const realActive = useMemo(() => (tools && tools.length ? inferActiveStep(tools) : -1), [tools]);
-  const realDone = useMemo(() => (tools ? computeCompleted(tools) : new Set<number>()), [tools]);
+  // Progress is derived from real tool telemetry only.
+  //
+  // This component used to run a timer that marched through the step list every
+  // 1600ms whenever `tools` was empty, rendering the same checkmarks, "n/5"
+  // counter and percentage as a genuine run. An operator could not tell
+  // fabricated progress from real progress, which is not acceptable in a
+  // compliance product. With no telemetry we now show an honest indeterminate
+  // "working" state instead of inventing one.
+  const hasTelemetry = Boolean(tools && tools.length > 0);
+  const activeStep = useMemo(
+    () => (hasTelemetry ? inferActiveStep(tools!) : -1),
+    [hasTelemetry, tools]
+  );
+  const completedSteps = useMemo(
+    () => (hasTelemetry ? computeCompleted(tools!) : new Set<number>()),
+    [hasTelemetry, tools]
+  );
 
-  useEffect(() => {
-    if (tools && tools.length > 0) return;
-    if (!performing) {
-      if (simStep >= 0) {
-        setSimDone(new Set(STEPS.map((_, i) => i)));
-        const t = setTimeout(() => {
-          setSimStep(-1);
-          setSimDone(new Set());
-        }, 1800);
-        return () => clearTimeout(t);
-      }
-      return;
-    }
-    let step = 0;
-    setSimStep(0);
-    const interval = setInterval(() => {
-      step += 1;
-      if (step >= STEPS.length) {
-        setSimDone(new Set(STEPS.map((_, i) => i)));
-        setTimeout(() => {
-          setSimDone(new Set());
-          setSimStep(0);
-          step = 0;
-        }, 900);
-        return;
-      }
-      setSimDone((prev) => new Set([...prev, step - 1]));
-      setSimStep(step);
-    }, 1600);
-    return () => clearInterval(interval);
-  }, [performing, simStep, tools]);
-
-  const activeStep = tools && tools.length ? realActive : simStep;
-  const completedSteps = tools && tools.length ? realDone : simDone;
-
-  const shouldRender = performing || activeStep >= 0 || completedSteps.size > 0 || (tools && tools.length > 0);
+  const shouldRender = performing || hasTelemetry;
   if (!shouldRender) return null;
 
   const progressPct =
-    STEPS.length === 0
+    !hasTelemetry || STEPS.length === 0
       ? 0
       : Math.round(((completedSteps.size + (activeStep >= 0 && !completedSteps.has(activeStep) ? 0.55 : 0)) / STEPS.length) * 100);
 
@@ -202,25 +180,38 @@ export function MissionPipelineBar({
 
         <div className="flex sm:hidden items-center gap-2.5">
           <div className="flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-white/10 overflow-hidden">
-            <motion.div
-              className={cn(
-                "h-full rounded-full bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-400",
-                performing && "shadow-[0_0_12px_rgba(20,184,166,0.6)]"
-              )}
-              initial={{ width: 0 }}
-              animate={{ width: `${progressPct}%` }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            />
+            {hasTelemetry ? (
+              <motion.div
+                className={cn(
+                  "h-full rounded-full bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-400",
+                  performing && "shadow-[0_0_12px_rgba(20,184,166,0.6)]"
+                )}
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPct}%` }}
+                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              />
+            ) : (
+              // Indeterminate: the agent is working but has not reported a step.
+              <motion.div
+                className="h-full w-1/3 rounded-full bg-gradient-to-r from-transparent via-teal-500 to-transparent"
+                animate={{ x: ["-100%", "300%"] }}
+                transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+              />
+            )}
           </div>
           <AnimatePresence mode="popLayout">
             <motion.span
-              key={`${completedSteps.size}-${activeStep}`}
+              key={hasTelemetry ? `${completedSteps.size}-${activeStep}` : "indeterminate"}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               className="shrink-0 rounded-full border border-black/10 bg-white/70 dark:border-white/10 dark:bg-white/[0.06] px-2 py-0.5 font-mono text-[10px] tabular-nums text-zinc-600 dark:text-zinc-400"
             >
-              {completedSteps.size}/{STEPS.length} · {progressPct}%
+              {hasTelemetry
+                ? `${completedSteps.size}/${STEPS.length} · ${progressPct}%`
+                : ar
+                  ? "جارٍ العمل"
+                  : "Working"}
             </motion.span>
           </AnimatePresence>
           {performing ? <span className="size-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" /> : null}

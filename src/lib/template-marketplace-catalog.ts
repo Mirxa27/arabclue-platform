@@ -8,6 +8,13 @@ import type {
 /**
  * Built-in catalog used when TemplateMarketplaceEntry is unavailable
  * (table not migrated yet) or empty — keeps the marketplace visually useful.
+ *
+ * Engagement metrics (`rating`, `ratingCount`, `downloadCount`, `usageCount`)
+ * are zero on every system entry and must stay that way. They previously
+ * carried invented values — 4.8 stars from 126 ratings, 1,840 downloads — which
+ * the marketplace rendered next to genuine community numbers with no visual
+ * distinction. Real counts accrue through TemplateMarketplaceRating and
+ * marketplace-usage once the entry is actually used.
  */
 export const SYSTEM_TEMPLATE_CATALOG: readonly TemplateMarketplaceItem[] = [
   {
@@ -34,10 +41,10 @@ export const SYSTEM_TEMPLATE_CATALOG: readonly TemplateMarketplaceItem[] = [
       "pricing",
       "appendix",
     ] as SectionType[],
-    rating: 4.8,
-    ratingCount: 126,
-    downloadCount: 1840,
-    usageCount: 920,
+    rating: 0,
+    ratingCount: 0,
+    downloadCount: 0,
+    usageCount: 0,
     isPublic: true,
     isFeatured: true,
     version: 3,
@@ -67,10 +74,10 @@ export const SYSTEM_TEMPLATE_CATALOG: readonly TemplateMarketplaceItem[] = [
       "compliance",
       "pricing",
     ] as SectionType[],
-    rating: 4.6,
-    ratingCount: 88,
-    downloadCount: 1120,
-    usageCount: 540,
+    rating: 0,
+    ratingCount: 0,
+    downloadCount: 0,
+    usageCount: 0,
     isPublic: true,
     isFeatured: true,
     version: 2,
@@ -101,10 +108,10 @@ export const SYSTEM_TEMPLATE_CATALOG: readonly TemplateMarketplaceItem[] = [
       "pricing",
       "appendix",
     ] as SectionType[],
-    rating: 4.4,
-    ratingCount: 61,
-    downloadCount: 760,
-    usageCount: 310,
+    rating: 0,
+    ratingCount: 0,
+    downloadCount: 0,
+    usageCount: 0,
     isPublic: true,
     isFeatured: false,
     version: 2,
@@ -134,10 +141,10 @@ export const SYSTEM_TEMPLATE_CATALOG: readonly TemplateMarketplaceItem[] = [
       "qualifications",
       "appendix",
     ] as SectionType[],
-    rating: 4.5,
-    ratingCount: 47,
-    downloadCount: 530,
-    usageCount: 210,
+    rating: 0,
+    ratingCount: 0,
+    downloadCount: 0,
+    usageCount: 0,
     isPublic: true,
     isFeatured: false,
     version: 1,
@@ -168,10 +175,10 @@ export const SYSTEM_TEMPLATE_CATALOG: readonly TemplateMarketplaceItem[] = [
       "qualifications",
       "appendix",
     ] as SectionType[],
-    rating: 4.7,
-    ratingCount: 39,
-    downloadCount: 410,
-    usageCount: 175,
+    rating: 0,
+    ratingCount: 0,
+    downloadCount: 0,
+    usageCount: 0,
     isPublic: true,
     isFeatured: true,
     version: 1,
@@ -199,10 +206,10 @@ export const SYSTEM_TEMPLATE_CATALOG: readonly TemplateMarketplaceItem[] = [
       "team",
       "appendix",
     ] as SectionType[],
-    rating: 4.2,
-    ratingCount: 22,
-    downloadCount: 290,
-    usageCount: 140,
+    rating: 0,
+    ratingCount: 0,
+    downloadCount: 0,
+    usageCount: 0,
     isPublic: true,
     isFeatured: false,
     version: 1,

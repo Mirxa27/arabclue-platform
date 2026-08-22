@@ -28,7 +28,12 @@ const BADGE: Record<
 export function PageHeader({
   title,
   subtitle,
-  badge = "compliance",
+  // Defaults to no badge. This previously defaulted to "compliance", so 14 of
+  // 22 dashboard views rendered a "C1 Compliance" chip that nothing computed —
+  // an unearned assurance claim on screens that had no compliance data at all.
+  // The badge is still available where a real, derived compliance state exists;
+  // it just has to be asked for.
+  badge = "none",
   locale = "en",
   actions,
   className,
