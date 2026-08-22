@@ -15,6 +15,40 @@ import {
   type DashboardView,
 } from "@/lib/dashboard-routes";
 
+/**
+ * Decide whether a store-driven view change needs a URL push, and to where.
+ *
+ * Pure so the guard conditions can be tested directly: they are the whole
+ * correctness argument for the effect that uses this, and getting one wrong
+ * either leaves the URL stale again or starts a push/reconcile loop.
+ *
+ * Returns the path to push, or null to do nothing.
+ */
+export function resolveStoreDrivenPush(input: {
+  /** False until the first server-resolution effect has run. */
+  readonly hydrated: boolean;
+  readonly sessionLoading: boolean;
+  /** Last path this hook itself navigated to. */
+  readonly ownedPath: string | null;
+  readonly pathname: string;
+  readonly view: DashboardView;
+  readonly activeProjectId: string | null;
+}): string | null {
+  // Before hydration the server resolution owns the URL.
+  if (!input.hydrated) return null;
+  // A loading session cannot yet decide admin visibility.
+  if (input.sessionLoading) return null;
+  // The pathname is not one we pushed, so a URL-driven reconciliation is in
+  // flight and owns this transition. Pushing here would race it.
+  if (input.ownedPath !== input.pathname) return null;
+
+  const expected = getPathForView(input.view, input.activeProjectId);
+  // Already in sync: nothing to do, and pushing would loop.
+  if (expected === input.pathname) return null;
+
+  return expected;
+}
+
 export interface ViewRouterInit {
   /** View resolved on the server from the requested URL. */
   readonly initialView: DashboardView;
@@ -274,6 +308,41 @@ export function useViewRouter(init: ViewRouterInit) {
     const expected = getPathForView(view, activeProjectId);
     if (expected !== pathname) replacePath(expected);
   }, [view, activeProjectId, pathname, replacePath]);
+
+  /**
+   * Keeps the URL in step when the view is changed through the store rather
+   * than through `navigateToView`.
+   *
+   * `navigateToView` exists precisely to push the URL alongside the view, but
+   * it had zero consumers: roughly fifty in-content buttons call `setView`
+   * straight off the Zustand store, which never touches the URL. The result was
+   * that reload, browser back/forward and link sharing all returned the user to
+   * whatever view the stale URL named, not the one they were looking at.
+   *
+   * Fixing this at the fifty call sites would leave the fifty-first broken, so
+   * the reconciliation lives here instead — one place, and impossible for a new
+   * component to bypass.
+   *
+   * The `ownedPath` guard is what keeps this from fighting the URL-to-store
+   * effect above. When the pathname is one this hook pushed, the two are in
+   * sync and any divergence must have come from the store, so a push is
+   * correct. When it is not, a URL-driven reconciliation is already in flight
+   * and this must stay out of its way.
+   */
+  useEffect(() => {
+    const target = resolveStoreDrivenPush({
+      hydrated: hydrated.current,
+      sessionLoading: status === "loading",
+      ownedPath: ownedPath.current,
+      pathname,
+      view,
+      activeProjectId,
+    });
+    if (!target) return;
+
+    ownedPath.current = target;
+    router.push(target, { scroll: false });
+  }, [view, activeProjectId, pathname, status, router]);
 
   return {
     navigateToView,
