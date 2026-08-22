@@ -4,6 +4,8 @@ import { getBootstrapContext } from "@/lib/bootstrap";
 import { requireAdmin } from "@/lib/auth";
 import { parseModelsCache } from "@/lib/llm/model-catalog";
 import { fetchLiveProviderModels } from "@/lib/llm/fetch-models";
+import { isAllowedProviderApiKeyEnv } from "@/lib/llm/model-catalog";
+import { redactSensitiveText } from "@/lib/api-failure";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -34,12 +36,37 @@ export async function POST(req: NextRequest) {
     await getBootstrapContext();
 
     const body = (await req.json().catch(() => ({}))) as FetchBody;
+
+    // The connection's key name is resolved against process.env at fetch time
+    // and sent as a bearer token to `apiBase`, so an arbitrary name here would
+    // forward a platform secret to an administrator-chosen host. Same
+    // allowlist the provider write paths enforce.
+    if (
+      body.apiKeyEnvKey != null &&
+      String(body.apiKeyEnvKey).trim() !== "" &&
+      !isAllowedProviderApiKeyEnv(String(body.apiKeyEnvKey))
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "apiKeyEnvKey must name a provider credential variable (for example OPENAI_API_KEY).",
+          models: [],
+          code: "api_key_env_not_allowed",
+        },
+        { status: 400 }
+      );
+    }
+
     return await handleModelsPost(body);
   } catch (err) {
+    // The thrown message can carry a provider URL, a driver error, or a
+    // fragment of the credential that was rejected, so it is logged and not
+    // echoed. Everything else in this repository already answers through the
+    // bilingual failure mapper.
     console.error("[admin/ai-providers/models]", err);
     return NextResponse.json(
       {
-        error: err instanceof Error ? err.message : "Models endpoint failed",
+        error: "Models endpoint failed",
         models: [],
         code: "INTERNAL",
       },
@@ -90,7 +117,11 @@ async function handleModelsPost(body: FetchBody) {
           providerId: row.id,
           name: row.name,
           ok: false,
-          error: err instanceof Error ? err.message : "fetch failed",
+          // Redacted: an upstream failure can carry the provider URL or a
+          // fragment of the credential that was rejected.
+          error: redactSensitiveText(
+            err instanceof Error ? err.message : "fetch failed"
+          ),
         });
       }
     }
@@ -156,7 +187,9 @@ async function handleModelsPost(body: FetchBody) {
       cached: Boolean(providerId),
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch models";
+    const message = redactSensitiveText(
+      err instanceof Error ? err.message : "Failed to fetch models"
+    );
     const missingKey = /API key missing/i.test(message);
     // Serve last cache on soft failure when providerId present
     if (providerId) {

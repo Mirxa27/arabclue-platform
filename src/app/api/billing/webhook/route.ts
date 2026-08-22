@@ -176,8 +176,25 @@ export async function POST(req: NextRequest) {
               id: eventRow.id,
             });
           } catch (err) {
+            // Do NOT fall through to the acknowledge path. Falling through
+            // marked the event PROCESSED and answered 200, so MyFatoorah
+            // considered an unapplied charge delivered and never retried it —
+            // the customer was billed and the entitlement never granted.
             console.error("[webhook] Failed to handle recurring charge success:", err);
-            // Continue to update event status
+            await db.paymentWebhookEvent.update({
+              where: { id: eventRow.id },
+              data: {
+                processingStatus: "FAILED",
+                disposition: "recurring_charge_success_failed",
+                errorMessage:
+                  err instanceof Error ? err.message.slice(0, 500) : "handler_failed",
+              },
+            });
+            return jsonError(
+              "Recurring charge could not be applied; retry delivery",
+              500,
+              "RECURRING_CHARGE_APPLY_FAILED"
+            );
           }
         }
 
@@ -210,7 +227,23 @@ export async function POST(req: NextRequest) {
               id: eventRow.id,
             });
           } catch (err) {
+            // Same reasoning as the success branch: an unrecorded failure must
+            // stay retryable rather than be acknowledged as handled.
             console.error("[webhook] Failed to handle recurring charge failure:", err);
+            await db.paymentWebhookEvent.update({
+              where: { id: eventRow.id },
+              data: {
+                processingStatus: "FAILED",
+                disposition: "recurring_charge_failure_failed",
+                errorMessage:
+                  err instanceof Error ? err.message.slice(0, 500) : "handler_failed",
+              },
+            });
+            return jsonError(
+              "Recurring charge failure could not be recorded; retry delivery",
+              500,
+              "RECURRING_CHARGE_FAILURE_NOT_RECORDED"
+            );
           }
         }
 
