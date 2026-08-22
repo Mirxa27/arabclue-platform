@@ -64,6 +64,13 @@ jobs:
       - name: Audit production dependencies
         run: bun audit --prod
 
+      # Repo scope only: checks that depend on the checkout (tracked secrets,
+      # embedded role credentials, schema-mutating build/dev/start scripts).
+      # The full `deploy:safety` gate additionally asserts runtime environment
+      # variables and Git history, which belong to a pre-deploy step.
+      - name: Deployment safety gate (repo scope)
+        run: bun run deploy:safety:repo
+
       - name: Validate Prisma schema without changing a database
         env:
           DATABASE_URL: postgresql://quality:quality@localhost:5432/quality

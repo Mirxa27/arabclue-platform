@@ -12,11 +12,26 @@ function parseFlag(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
 
-/** True when email verification gates and token delivery should be skipped. */
+/**
+ * True when email verification gates and token delivery should be skipped.
+ *
+ * The flag is ignored in production and refuses to start the process if it is
+ * set there. It disables an account-security control globally, so a value
+ * copied from a local `.env` into a production environment must fail loudly
+ * rather than silently admit unverified accounts. `assertProductionSecrets`
+ * checks only for *missing* secrets, so this guard lives here where the flag is
+ * read.
+ */
 export function isEmailVerificationSkipped(
   env: NodeJS.ProcessEnv = process.env
 ): boolean {
-  return parseFlag(env.SKIP_EMAIL_VERIFICATION);
+  const requested = parseFlag(env.SKIP_EMAIL_VERIFICATION);
+  if (requested && env.NODE_ENV === "production") {
+    throw new Error(
+      "SKIP_EMAIL_VERIFICATION must not be enabled in production: it disables the account email-verification gate for every user."
+    );
+  }
+  return requested;
 }
 
 /** Effective verification claim for a session/user under the current policy. */

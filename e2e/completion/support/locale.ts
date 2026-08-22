@@ -76,17 +76,33 @@ export async function toggleLocaleFromPublicPage(page: Page): Promise<void> {
   await page.waitForTimeout(50);
 }
 
-/** Sign in with the seeded SUPER_ADMIN so middleware JWT is real. */
+/**
+ * Sign in with the seeded SUPER_ADMIN so the proxy sees a real JWT.
+ *
+ * Credentials come from the environment, matching `global-setup.ts`. They are
+ * never hardcoded: this file is committed, and a working SUPER_ADMIN password
+ * in version control is a real credential against whatever database the suite
+ * is pointed at.
+ */
 export async function loginAsDevTest(page: Page): Promise<void> {
+  const email = process.env.E2E_ADMIN_EMAIL?.trim();
+  const password = process.env.E2E_ADMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error(
+      "E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD must be set to run authenticated E2E specs (see e2e/completion/global-setup.ts)."
+    );
+  }
+
   await setLocale(page, "en");
   await page.goto("/login");
-  await page.locator('input[type="email"], input[name="email"]').first().fill(
-    "devtest@arabclue.local",
-  );
+  await page
+    .locator('input[type="email"], input[name="email"]')
+    .first()
+    .fill(email);
   await page
     .locator('input[type="password"], input[name="password"]')
     .first()
-    .fill("DevTest2026!");
+    .fill(password);
   await page
     .getByRole("button", { name: /sign in|log in|دخول|تسجيل الدخول/i })
     .first()

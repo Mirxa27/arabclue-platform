@@ -7,7 +7,7 @@
  */
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -70,11 +70,96 @@ const embeddedRoleCredentialPattern =
   /^#\s+(?:SUPER_ADMIN|ADMIN|BIDDER|REVIEWER|FINANCE):\s+\S+\s+\/\s+\S+/gmu;
 const embeddedDevelopmentIdentityPattern =
   /[A-Z0-9._%+-]+@arabclue\.local/iu;
-const credentialRiskPaths = [
+/**
+ * Paths whose *history* is searched for embedded credentials.
+ *
+ * History scanning costs one `git show` per commit per path, so it stays
+ * focused on the files that have previously carried credentials. The
+ * current-tree scan below is the broad one.
+ */
+const credentialHistoryPaths = [
   "AGENTS.md",
   "scripts/ensure-devtest.ts",
   "DEPLOY_ARABCLUE_COM.md",
+  "e2e/completion/global-setup.ts",
+  "e2e/completion/support/locale.ts",
 ];
+
+/** Extensions worth scanning as text for an embedded credential. */
+const SCANNABLE_EXTENSIONS = new Set([
+  ".md",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".yml",
+  ".yaml",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".txt",
+  ".example",
+  ".toml",
+  ".env",
+]);
+
+const MAX_SCANNED_FILE_BYTES = 512 * 1024;
+
+/**
+ * Unit-test trees are excluded from the credential scan.
+ *
+ * This is a principle, not an allowlist: `bun test` runs against hand-written
+ * fakes behind a preload that repoints `DATABASE_URL` at an unreachable
+ * loopback port and blocks non-loopback `fetch`, so a reserved identity named
+ * in a unit test cannot authenticate against anything. Code under `e2e/` is
+ * deliberately *not* excluded, because it runs against a real database and is
+ * exactly where a live credential did get committed.
+ */
+const UNIT_TEST_PATH = /(^|\/)__tests__(\/|$)|(^|\/)__tests-isolated(\/|$)/u;
+
+/**
+ * The audit trail records past findings verbatim; redacted quotes there are
+ * evidence, not credentials. Nothing under this path is executable.
+ */
+const AUDIT_DOCS_PATH = /^docs\/audit-\d{4}-\d{2}-\d{2}\//u;
+
+/**
+ * Every tracked text file, so a credential cannot hide in a file nobody thought
+ * to list.
+ *
+ * The previous implementation scanned a hardcoded three-path allowlist, which
+ * meant the gate could not see `e2e/completion/global-setup.ts` — the file that
+ * actually contained a plaintext SUPER_ADMIN password. An allowlist is the
+ * wrong shape for a credential scanner: it only ever finds what someone already
+ * knew about.
+ */
+function listTrackedScannablePaths() {
+  const tracked = execFileSync("git", ["ls-files", "-z"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  })
+    .split("\0")
+    .filter(Boolean);
+
+  return tracked.filter((relativePath) => {
+    const dot = relativePath.lastIndexOf(".");
+    if (dot === -1) return false;
+    if (!SCANNABLE_EXTENSIONS.has(relativePath.slice(dot).toLowerCase())) {
+      return false;
+    }
+    if (UNIT_TEST_PATH.test(relativePath)) return false;
+    if (AUDIT_DOCS_PATH.test(relativePath)) return false;
+    try {
+      return statSync(join(repositoryRoot, relativePath)).size <= MAX_SCANNED_FILE_BYTES;
+    } catch {
+      return false;
+    }
+  });
+}
 
 export function containsDatabaseMutation(command) {
   return databaseMutationPattern.test(String(command ?? ""));
@@ -157,7 +242,36 @@ export function sensitiveEnvironmentPathsFromGitObjectList(objectList) {
   ].sort();
 }
 
-export function runDeploymentSafetyCheck() {
+/**
+ * Scopes of the gate.
+ *
+ * - `repo`   — checks that depend only on the working tree: script safety and
+ *              credentials in tracked files. Deterministic on any checkout, so
+ *              it can run on every pull request.
+ * - `deploy` — everything, including runtime environment variables and Git
+ *              history. History findings stay failing until the exposed
+ *              credentials are rotated and the history is rewritten, so this
+ *              scope belongs to a pre-deploy gate rather than PR CI.
+ *
+ * Splitting them keeps a meaningful gate on every PR instead of a gate that is
+ * permanently red and therefore ignored.
+ */
+export const DEPLOYMENT_SAFETY_SCOPES = Object.freeze(["repo", "deploy"]);
+
+export function resolveDeploymentSafetyScope(argv = process.argv.slice(2)) {
+  const flag = argv.find((arg) => arg.startsWith("--scope="));
+  const requested = flag ? flag.slice("--scope=".length) : process.env.DEPLOY_SAFETY_SCOPE;
+  const scope = (requested ?? "deploy").trim().toLowerCase();
+  if (!DEPLOYMENT_SAFETY_SCOPES.includes(scope)) {
+    throw new Error(
+      `Unknown deployment safety scope "${scope}". Expected one of: ${DEPLOYMENT_SAFETY_SCOPES.join(", ")}`,
+    );
+  }
+  return scope;
+}
+
+export function runDeploymentSafetyCheck(scope = "deploy") {
+  const includeEnvironmentAndHistory = scope !== "repo";
   const failures = [];
   const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
     cwd: repositoryRoot,
@@ -176,8 +290,9 @@ export function runDeploymentSafetyCheck() {
     );
   }
 
-  const historicalSensitiveEnvironmentFiles =
-    sensitiveEnvironmentPathsFromGitObjectList(
+  const historicalSensitiveEnvironmentFiles = !includeEnvironmentAndHistory
+    ? []
+    : sensitiveEnvironmentPathsFromGitObjectList(
       execFileSync("git", ["rev-list", "--objects", "--all"], {
         cwd: repositoryRoot,
         encoding: "utf8",
@@ -189,17 +304,19 @@ export function runDeploymentSafetyCheck() {
     );
   }
 
-  const currentCredentialRiskPaths = credentialRiskPaths.filter((relativePath) => {
-    try {
-      const text = readRepositoryFile(relativePath);
-      return (
-        containsEmbeddedRoleCredential(text) ||
-        containsEmbeddedDevelopmentIdentity(text)
-      );
-    } catch {
-      return false;
-    }
-  });
+  const currentCredentialRiskPaths = listTrackedScannablePaths().filter(
+    (relativePath) => {
+      try {
+        const text = readRepositoryFile(relativePath);
+        return (
+          containsEmbeddedRoleCredential(text) ||
+          containsEmbeddedDevelopmentIdentity(text)
+        );
+      } catch {
+        return false;
+      }
+    },
+  );
   if (currentCredentialRiskPaths.length > 0) {
     failures.push(
       `Credential-bearing development or deployment files remain tracked: ${currentCredentialRiskPaths.join(", ")}`,
@@ -207,7 +324,7 @@ export function runDeploymentSafetyCheck() {
   }
 
   const historicalCredentialLocations = [];
-  for (const relativePath of credentialRiskPaths) {
+  for (const relativePath of includeEnvironmentAndHistory ? credentialHistoryPaths : []) {
     const commits = execFileSync(
       "git",
       ["rev-list", "--all", "--", relativePath],
@@ -266,20 +383,24 @@ export function runDeploymentSafetyCheck() {
     );
   }
 
-  if (!String(process.env.REDIS_URL ?? "").trim()) {
-    failures.push(
-      "REDIS_URL is required for distributed authentication and document-export rate limiting",
-    );
-  }
-  if (!String(process.env.BLOB_READ_WRITE_TOKEN ?? "").trim()) {
-    failures.push(
-      "BLOB_READ_WRITE_TOKEN is required for durable document storage on Vercel",
-    );
-  }
-  if (String(process.env.CRON_SECRET ?? "").trim().length < 16) {
-    failures.push(
-      "CRON_SECRET is required and must contain at least 16 characters",
-    );
+  // Runtime environment requirements are a property of the deployment target,
+  // not of the checkout, so they are not asserted in the `repo` scope.
+  if (includeEnvironmentAndHistory) {
+    if (!String(process.env.REDIS_URL ?? "").trim()) {
+      failures.push(
+        "REDIS_URL is required for distributed authentication and document-export rate limiting",
+      );
+    }
+    if (!String(process.env.BLOB_READ_WRITE_TOKEN ?? "").trim()) {
+      failures.push(
+        "BLOB_READ_WRITE_TOKEN is required for durable document storage on Vercel",
+      );
+    }
+    if (String(process.env.CRON_SECRET ?? "").trim().length < 16) {
+      failures.push(
+        "CRON_SECRET is required and must contain at least 16 characters",
+      );
+    }
   }
 
   const vercelConfiguration = JSON.parse(readRepositoryFile("vercel.json"));
@@ -338,12 +459,14 @@ export function runDeploymentSafetyCheck() {
   }
 
   console.log(
-    "Deployment safety gate passed: environment files are protected, Redis, Blob, and cron authentication are configured, no role credentials are embedded, Vercel builds and the build/development/start scripts issue no data-definition statement, and the runbook migration ledger matches the migration registry.",
+    scope === "repo"
+      ? "Deployment safety gate (repo scope) passed: no sensitive environment file or role credential is tracked, and the build/development/start scripts and Vercel build issue no data-definition statement."
+      : "Deployment safety gate passed: environment files are protected, Redis, Blob, and cron authentication are configured, no role credentials are embedded, Vercel builds and the build/development/start scripts issue no data-definition statement, and the runbook migration ledger matches the migration registry.",
   );
   return 0;
 }
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
 if (invokedPath === fileURLToPath(import.meta.url)) {
-  process.exitCode = runDeploymentSafetyCheck();
+  process.exitCode = runDeploymentSafetyCheck(resolveDeploymentSafetyScope());
 }

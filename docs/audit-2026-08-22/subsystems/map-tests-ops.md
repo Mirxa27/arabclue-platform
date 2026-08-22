@@ -798,8 +798,8 @@ Also `"noImplicitAny": false` (line 13) partially defeats `"strict": true` (line
 
 2. **`e2e/completion/global-setup.ts:9-10` — a plaintext SUPER_ADMIN credential.**
    ```9:10:e2e/completion/global-setup.ts
-   const EMAIL = "devtest@arabclue.local";
-   const PASSWORD = "DevTest2026!";
+   const EMAIL = "<REDACTED>@<reserved-dev-domain>";
+   const PASSWORD = "<REDACTED-PASSWORD>";
    ```
    The same address is repeated at `e2e/completion/support/locale.ts:84`.
 
@@ -855,8 +855,8 @@ The collision is **unconditional**. Both email branches insert a row for the sam
 *Category: security.* `e2e/completion/global-setup.ts:9`
 
 ```9:10:e2e/completion/global-setup.ts
-const EMAIL = "devtest@arabclue.local";
-const PASSWORD = "DevTest2026!";
+const EMAIL = "<REDACTED>@<reserved-dev-domain>";
+const PASSWORD = "<REDACTED-PASSWORD>";
 ```
 
 It then runs `db.user.upsert` (line 14) with `role: "SUPER_ADMIN"`, `active: true`, `mustChangePassword: false`, `mfaEnabled: false`, and makes that user `OWNER` of `default-workspace` (line 39). There is **no** database-host guard, no `NODE_ENV` check, and no `VERCEL` check — unlike `scripts/ensure-devtest.ts:15-37`, which enforces all three. `playwright.completion.config.ts:13` wires it as `globalSetup`, so `bun run test:e2e:completion` with a normal `.env` provisions a known-password super-admin on the shared database. The file's own doc comment acknowledges this: *"Shared Neon + production deploys can deactivate @arabclue.local identities; this restores the AGENTS.md account before the suite runs."*
