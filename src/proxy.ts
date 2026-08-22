@@ -31,6 +31,13 @@ const PUBLIC_PATHS = new Set<string>([
   "/api/health",
   "/api/ready",
   "/api/billing/webhook",
+  // The invitee accepting an invitation usually has no account yet: the /invite
+  // page is public, the handler is a withPublicRoute that explicitly tolerates
+  // a null session, and the service reports `accountCreated`. Without this
+  // entry the proxy rejected the unauthenticated invitee before the handler
+  // ran, so the primary invitation flow could not complete. Authorization is
+  // the single-use invitation token itself, verified inside the service.
+  "/api/invitations/accept",
   "/sitemap.xml",
   "/robots.txt",
 ]);

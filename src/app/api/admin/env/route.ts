@@ -4,7 +4,7 @@ import { getBootstrapContext } from "@/lib/bootstrap";
 import { requireAdmin, requireSuperAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { encryptValue, decryptValue, maskSecret } from "@/lib/crypto";
-import { ENV_CATALOG } from "@/lib/constants";
+import { ENV_CATALOG, isSecretEnvKey } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -29,15 +29,19 @@ export async function GET(req: NextRequest) {
 
   const result = settings.map((s) => {
     const plain = decryptValue(s.valueEncrypted);
+    // Effective secrecy is the stored flag OR the allowlist verdict, so a row
+    // whose isSecret was flipped to false still masks. Secrecy can be raised by
+    // data but never lowered by it.
+    const secret = s.isSecret || isSecretEnvKey(s.key);
     return {
       id: s.id,
       key: s.key,
       category: s.category,
       description: s.description,
-      isSecret: s.isSecret,
+      isSecret: secret,
       isRequired: s.isRequired,
-      value: s.isSecret && !reveal ? maskSecret(plain) : plain,
-      isMasked: s.isSecret && !reveal,
+      value: secret && !reveal ? maskSecret(plain) : plain,
+      isMasked: secret && !reveal,
       lastRotatedAt: s.lastRotatedAt,
       lastEditedBy: s.lastEditedBy,
       updatedAt: s.updatedAt,

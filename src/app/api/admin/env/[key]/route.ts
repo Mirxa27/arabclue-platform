@@ -4,6 +4,7 @@ import { getBootstrapContext } from "@/lib/bootstrap";
 import { requireAdmin } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { decryptValue, maskSecret, rotateEncryption } from "@/lib/crypto";
+import { isSecretEnvKey } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -39,16 +40,57 @@ export async function PATCH(
     return NextResponse.json({ setting: { ...updated, value: maskSecret(decryptValue(rotated)) } });
   }
 
-  // Generic update (category, description, isSecret)
+  // Generic update (category, description, isSecret).
+  //
+  // isSecret may be raised but never lowered below the allowlist verdict.
+  // Without this an ADMIN could PATCH { isSecret: false } onto NEXTAUTH_SECRET
+  // or ARABCLUE_ENC_KEY and then read the plaintext from the list endpoint,
+  // sidestepping the SUPER_ADMIN reveal gate entirely.
+  const requestedSecret =
+    typeof body.isSecret === "boolean" ? body.isSecret : undefined;
+  const nextSecret =
+    requestedSecret === undefined
+      ? undefined
+      : requestedSecret || isSecretEnvKey(key);
+
+  if (requestedSecret === false && nextSecret === true) {
+    return NextResponse.json(
+      {
+        error:
+          "This key must remain masked. Only keys on the non-secret allowlist can be displayed in plaintext.",
+        code: "ENV_SECRECY_REQUIRED",
+      },
+      { status: 400 }
+    );
+  }
+
   const updated = await db.envSetting.update({
     where: { key },
     data: {
       category: body.category ?? undefined,
       description: body.description ?? undefined,
-      isSecret: body.isSecret ?? undefined,
+      isSecret: nextSecret,
       lastEditedBy: session.user.id,
     },
   });
+
+  // This branch previously wrote no audit entry at all, so a metadata change on
+  // a credential row left no trace.
+  await audit({
+    userId: session.user.id,
+    action: AUDIT_ACTIONS.ENV_UPDATE,
+    resource: "EnvSetting",
+    resourceId: updated.id,
+    details: {
+      key,
+      action: "METADATA_UPDATE",
+      categoryChanged: body.category != null,
+      descriptionChanged: body.description != null,
+      isSecretChanged: nextSecret !== undefined,
+    },
+    severity: "WARN",
+  });
+
   return NextResponse.json({ setting: { ...updated, value: maskSecret(decryptValue(updated.valueEncrypted)) } });
 }
 

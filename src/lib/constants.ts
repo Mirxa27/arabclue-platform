@@ -416,6 +416,34 @@ export const ENV_CATALOG = [
   { key: "MYFATOORAH_WEBHOOK_SECRET", category: "BILLING", description: "MyFatoorah webhook HMAC secret", isRequired: false },
 ];
 
+/**
+ * Environment keys whose value is safe to display in plaintext.
+ *
+ * Secrecy is decided by this allowlist, not by a naming heuristic. It used to
+ * be derived from `key.includes("KEY") || includes("SECRET") ||
+ * includes("PASSWORD")`, which classified `DATABASE_URL`, `REDIS_URL`,
+ * `POSTGRES_PRISMA_URL`, `BLOB_READ_WRITE_TOKEN` and `WEBHOOK_URL` as
+ * non-secret — so an administrator read live connection strings and storage
+ * tokens unmasked, with no reveal audit.
+ *
+ * An allowlist fails closed: a key added later is secret until someone
+ * deliberately says otherwise. Only add entries here that are safe in a
+ * screenshot.
+ */
+export const NON_SECRET_ENV_KEYS: readonly string[] = Object.freeze([
+  "NEXTAUTH_URL",
+  "EMAIL_FROM",
+  "SMTP_HOST",
+  "SMTP_PORT",
+  "MYFATOORAH_API_URL",
+  "MYFATOORAH_MODE",
+]);
+
+/** True when the key's value must be masked for anyone below SUPER_ADMIN. */
+export function isSecretEnvKey(key: string): boolean {
+  return !NON_SECRET_ENV_KEYS.includes(key.trim());
+}
+
 // ─── Admin: Default subscription plans ───────────────────────────────────────
 
 export const DEFAULT_PLANS = [

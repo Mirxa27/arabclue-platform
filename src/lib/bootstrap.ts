@@ -1,5 +1,11 @@
 import { db } from "./db";
-import { COMPLIANCE_FRAMEWORKS, AI_PROVIDER_PRESETS, ENV_CATALOG, DEFAULT_PLANS } from "./constants";
+import {
+  COMPLIANCE_FRAMEWORKS,
+  AI_PROVIDER_PRESETS,
+  ENV_CATALOG,
+  DEFAULT_PLANS,
+  isSecretEnvKey,
+} from "./constants";
 import { encryptValue, assertProductionSecrets } from "./crypto";
 import { hashPassword, getBootstrapAdminPassword } from "./password";
 import { ensureDatabaseReady } from "./ensure-db";
@@ -314,10 +320,10 @@ async function seedAdminData(userId: string) {
         ),
         category: e.category,
         description: e.description,
-        isSecret:
-          e.key.includes("KEY") ||
-          e.key.includes("SECRET") ||
-          e.key.includes("PASSWORD"),
+        // Allowlist, not a naming heuristic: the previous substring test
+        // classified DATABASE_URL, REDIS_URL and BLOB_READ_WRITE_TOKEN as
+        // non-secret and served them unmasked.
+        isSecret: isSecretEnvKey(e.key),
         isRequired: e.isRequired,
         lastEditedBy: userId,
       })),
