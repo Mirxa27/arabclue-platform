@@ -25,7 +25,7 @@ applied**. Commits made directly to `main`.
 | --- | --- | --- |
 | `bunx tsc --noEmit` | pass, 0 errors | unchanged |
 | `bun run lint` | pass, 0 errors | unchanged |
-| `bun run test` | **3987 pass**, 13 skip, **0 fail** — 197 files | +147 tests, +13 files |
+| `bun run test` | **4025 pass**, 13 skip, **0 fail** — 199 files | +185 tests, +15 files |
 | Chromium-gated suites | 64 pass, 0 fail | unchanged |
 | `bun run build` | pass — 20 embedded font assets verified across 3 route traces | newly exercised |
 | `bun run deploy:safety:repo` | pass | newly runnable in CI |
@@ -39,7 +39,7 @@ asserted the defective behaviour directly, each noted below.
 
 ---
 
-## 2. Completed — 29 of 34 items
+## 2. Completed — 32 items (29 of 34 approved, plus 3 late Criticals/High)
 
 ### Critical (4/4)
 
@@ -198,6 +198,45 @@ Two findings were **downgraded out of scope** after confirming the deployment is
 Vercel-production-only: the MyFatoorah webhook fail-open and the `crypto.ts`
 dev-key fallback both guard on `NODE_ENV !== "production"` and are therefore
 unreachable in production. They remain real for local development.
+
+---
+
+## 5b. Late findings from the re-run auth/admin/billing mapper
+
+The mapper covering `auth`, `admin`, `billing` and `cron` errored on its first
+attempt and was re-dispatched; it reported after the main remediation pass. It
+found two further Criticals in the **same family as C2** — an administrator
+reading a platform secret in cleartext — plus a functional break in the
+invitation flow. All three are fixed (`5fa4c15`).
+
+| # | Finding | Status |
+| --- | --- | --- |
+| C5 | Env secrecy derived from a naming heuristic, so `DATABASE_URL`, `POSTGRES_PRISMA_URL`, `REDIS_URL`, `BLOB_READ_WRITE_TOKEN`, `VECTOR_DB_URL` and `WEBHOOK_URL` were served unmasked and unaudited to any ADMIN | fixed |
+| C6 | `PATCH /api/admin/env/[key]` accepted `isSecret:false` on any key, letting an ADMIN downgrade `NEXTAUTH_SECRET` then read it — and wrote no audit | fixed |
+| H31 | `/api/invitations/accept` missing from the proxy's `PUBLIC_PATHS`, so the unauthenticated invitee the route exists to serve was rejected before it ran | fixed |
+
+C5 and C6 are the third and fourth instance of the pattern this audit is built
+around: a naming heuristic where an allowlist belongs. The fix mirrors C2 —
+`NON_SECRET_ENV_KEYS` is a positive allowlist, everything else is secret, and
+secrecy can be raised by data but never lowered by it.
+
+### Additional High findings from that mapper, not yet addressed
+
+These are **new** and are not counted in the 34 originally approved. They are
+recorded here rather than fixed, because they arrived after the remediation
+pass and several need design decisions.
+
+| Finding | Location |
+| --- | --- |
+| SUPER_ADMIN protection nested inside `if (body.role)`, so an ADMIN can send `{active:false}` or `{mfaEnabled:false}` against a SUPER_ADMIN | `admin/users/[id]/route.ts:27` |
+| Direct `workspaceMember.create` bypasses the invitation service's seat allowance, token, expiry and invitee consent | `workspaces/route.ts:148` |
+| Cron secret accepted from `?secret=`, every cron route exports `GET`, and the comparison is not constant time | `lib/cron-auth.ts:24` |
+| ADMIN can rotate the MyFatoorah API key and webhook secret, bypassing the SUPER_ADMIN gate that guards the same rows via `/api/admin/env` | `admin/myfatoorah/route.ts:202` |
+| Unauthenticated credential oracle: no audit on failure, no reserved-identity check, email-only rate key, returns the account holder's name | `auth/precheck/route.ts:48` |
+| Recurring-charge handler failures are swallowed and fall through to `PROCESSED` + HTTP 200, so the provider never retries an unapplied charge | `billing/webhook/route.ts:178` |
+| `take:100` with no cursor and no "already notified" predicate, so logged rows permanently occupy the scan window | `cron/expiry-notifications/route.ts:30` |
+| Raw `err.message` returned to the client; `body.apiBase` is an unvalidated fetch target used with a bearer credential | `admin/ai-providers/models/route.ts:42` |
+| Eleven of fourteen admin handlers predate the controller: no `try/catch`, no Zod, hand-rolled 403s, Prisma errors escape as 500s | `admin/**` |
 
 ---
 
