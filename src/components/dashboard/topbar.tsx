@@ -85,12 +85,14 @@ export function DashboardTopbar() {
     queryKey: ["notifications"],
     queryFn: async () => {
       const res = await fetch("/api/notifications");
+      // The response body is a single-use stream: reading it twice throws and
+      // the query never resolved, which left the inbox permanently empty.
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         const apiMsg = selectApiFailureMessage(body, locale as Locale);
         throw new Error(apiMsg ?? tr("notification_inbox_unavailable", locale));
       }
-      return res.json();
+      return body;
     },
     refetchInterval: searchOpen ? 30_000 : 60_000,
     staleTime: 20_000,

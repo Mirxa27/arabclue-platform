@@ -4,6 +4,7 @@
  * This helper only verifies connectivity (no SQLite /tmp bootstrap).
  */
 import { db } from "./db";
+import { resolveDatabaseUrl } from "./database-url";
 
 let ensurePromise: Promise<void> | null = null;
 
@@ -18,11 +19,14 @@ export async function ensureDatabaseReady(): Promise<void> {
 }
 
 async function doEnsure(): Promise<void> {
-  const url = process.env.DATABASE_URL?.trim() ?? "";
+  // Resolve exactly as the Prisma client does: Vercel + Neon supplies
+  // POSTGRES_PRISMA_URL and may not set DATABASE_URL at all, so checking only
+  // the latter made this gate fail on a perfectly healthy deployment.
+  const url = resolveDatabaseUrl() ?? "";
   if (!url || (!url.startsWith("postgresql://") && !url.startsWith("postgres://"))) {
     throw new Error(
-      "DATABASE_URL must be a PostgreSQL connection string (e.g. Neon pooled URL)"
+      "A PostgreSQL connection string is required: set POSTGRES_PRISMA_URL (Neon pooled) or DATABASE_URL"
     );
   }
-  await db.$queryRawUnsafe(`SELECT 1`);
+  await db.$queryRaw`SELECT 1`;
 }

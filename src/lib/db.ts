@@ -1,16 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-
-/**
- * Prefer Neon Prisma URL (pooled + pgbouncer-safe) when present.
- * Falls back to DATABASE_URL.
- */
-function resolveDatabaseUrl(): string | undefined {
-  return (
-    process.env.POSTGRES_PRISMA_URL?.trim() ||
-    process.env.DATABASE_URL?.trim() ||
-    undefined
-  );
-}
+import { resolveDatabaseUrl } from "./database-url";
 
 const datasourceUrl = resolveDatabaseUrl();
 
