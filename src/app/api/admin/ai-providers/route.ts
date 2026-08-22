@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { requireAdmin } from "@/lib/auth";
+import { parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import {
+  adminAiProviderWriteSchema,
+  type AdminAiProviderWrite,
+} from "@/lib/validation";
 import {
   AGENT_ENGINES,
   AGENT_ENGINE_LABELS,
@@ -24,8 +28,7 @@ export const dynamic = "force-dynamic";
 
 // GET /api/admin/ai-providers
 export async function GET() {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async () => {
   await getBootstrapContext();
   const providers = await db.aIProviderConfig.findMany({
     orderBy: [
@@ -64,14 +67,17 @@ export async function GET() {
     providerTypes: LLM_PROVIDER_TYPES,
     activeByEngine,
   });
+  }, "admin/ai-providers");
 }
 
 // POST /api/admin/ai-providers — create a new provider connection
 export async function POST(req: NextRequest) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   await getBootstrapContext();
-  const body = await req.json();
+  const body = (await parseJsonBody(
+    req,
+    adminAiProviderWriteSchema
+  )) as AdminAiProviderWrite;
 
   const provider = String(body.provider || "openai_compatible");
   const modelId = String(body.modelId || "").trim();
@@ -201,4 +207,5 @@ export async function POST(req: NextRequest) {
       engines: parseProviderEngines(created),
     },
   });
+  }, "admin/ai-providers");
 }

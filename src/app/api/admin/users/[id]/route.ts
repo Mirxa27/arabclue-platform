@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin, canGrantRole, revokeUserSessions } from "@/lib/auth";
+import { canGrantRole, revokeUserSessions } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import type { Role } from "@/lib/types";
+import { jsonApiFailure, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { toPublicAdminUser } from "@/lib/admin-user-public";
 import { unsealMfaSecret } from "@/lib/mfa-secret";
+import { adminUserPatchSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   const { id } = await params;
-  const body = await req.json();
+  const body = await parseJsonBody(req, adminUserPatchSchema);
 
   const before = await db.user.findUnique({
     where: { id },
@@ -40,7 +40,7 @@ export async function PATCH(
   }
 
   if (body.role) {
-    const targetRole = body.role as Role;
+    const targetRole = body.role;
     if (!canGrantRole(session.user.role, targetRole)) {
       return NextResponse.json(
         { error: "Insufficient privileges to grant this role" },
@@ -50,10 +50,7 @@ export async function PATCH(
   }
 
   if (body.mfaEnabled === true && !unsealMfaSecret(before.mfaSecret)) {
-    return NextResponse.json(
-      { error: "Cannot enable MFA on an account that has no MFA secret", code: "MFA_NOT_SET_UP" },
-      { status: 400 }
-    );
+    return jsonApiFailure("MFA_NOT_SET_UP", { status: 400 });
   }
 
   const updated = await db.user.update({
@@ -115,6 +112,7 @@ export async function PATCH(
   return NextResponse.json({
     user: toPublicAdminUser(updated as unknown as Record<string, unknown>),
   });
+  }, "admin/users/[id]");
 }
 
 // DELETE /api/admin/users/[id] — deactivate (soft delete)
@@ -122,8 +120,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   const { id } = await params;
 
   const target = await db.user.findUnique({ where: { id }, select: { role: true, email: true } });
@@ -137,7 +134,7 @@ export async function DELETE(
     );
   }
   if (id === session.user.id) {
-    return NextResponse.json({ error: "Cannot deactivate your own account" }, { status: 400 });
+    return jsonApiFailure("CANNOT_DEACTIVATE_OWN_ACCOUNT", { status: 400 });
   }
 
   const updated = await db.user.update({
@@ -154,4 +151,5 @@ export async function DELETE(
     severity: "CRITICAL",
   });
   return NextResponse.json({ ok: true });
+  }, "admin/users/[id]");
 }

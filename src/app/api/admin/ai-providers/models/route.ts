@@ -2,7 +2,8 @@ import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { requireAdmin } from "@/lib/auth";
+import { parseJsonBody, withAdmin } from "@/lib/api-controller";
+import { adminAiProviderModelsSchema } from "@/lib/validation";
 import { parseModelsCache } from "@/lib/llm/model-catalog";
 import { fetchLiveProviderModels } from "@/lib/llm/fetch-models";
 import { isAllowedProviderApiKeyEnv } from "@/lib/llm/model-catalog";
@@ -30,12 +31,9 @@ type FetchBody = {
  * Never returns a hardcoded model catalog.
  */
 export async function POST(req: NextRequest) {
-  try {
-    const session = await requireAdmin();
-    if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async () => {
     await getBootstrapContext();
-
-    const body = (await req.json().catch(() => ({}))) as FetchBody;
+    const body = await parseJsonBody(req, adminAiProviderModelsSchema);
 
     // The connection's key name is resolved against process.env at fetch time
     // and sent as a bearer token to `apiBase`, so an arbitrary name here would
@@ -57,22 +55,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return await handleModelsPost(body);
-  } catch (err) {
-    // The thrown message can carry a provider URL, a driver error, or a
-    // fragment of the credential that was rejected, so it is logged and not
-    // echoed. Everything else in this repository already answers through the
-    // bilingual failure mapper.
-    console.error("[admin/ai-providers/models]", err);
-    return NextResponse.json(
-      {
-        error: "Models endpoint failed",
-        models: [],
-        code: "INTERNAL",
-      },
-      { status: 500 }
-    );
-  }
+    try {
+      return await handleModelsPost(body);
+    } catch (err) {
+      // The thrown message can carry a provider URL, a driver error, or a
+      // fragment of the credential that was rejected, so it is logged and not
+      // echoed. Everything else in this repository already answers through the
+      // bilingual failure mapper.
+      console.error("[admin/ai-providers/models]", err);
+      return NextResponse.json(
+        {
+          error: "Models endpoint failed",
+          models: [],
+          code: "INTERNAL",
+        },
+        { status: 500 }
+      );
+    }
+  }, "admin/ai-providers/models");
 }
 
 async function handleModelsPost(body: FetchBody) {

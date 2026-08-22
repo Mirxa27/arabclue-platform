@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { requireAdmin } from "@/lib/auth";
+import { parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { decryptValue, maskSecret, rotateEncryption } from "@/lib/crypto";
 import { isSecretEnvKey } from "@/lib/constants";
+import { adminEnvPatchSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +14,10 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ key: string }> }
 ) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   const { key } = await params;
   await getBootstrapContext();
-  const body = await req.json();
+  const body = await parseJsonBody(req, adminEnvPatchSchema);
 
   const existing = await db.envSetting.findUnique({ where: { key } });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -92,6 +92,7 @@ export async function PATCH(
   });
 
   return NextResponse.json({ setting: { ...updated, value: maskSecret(decryptValue(updated.valueEncrypted)) } });
+  }, "admin/env/[key]");
 }
 
 // DELETE /api/admin/env/[key]
@@ -99,8 +100,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ key: string }> }
 ) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   const { key } = await params;
   await getBootstrapContext();
   await db.envSetting.delete({ where: { key } });
@@ -112,4 +112,5 @@ export async function DELETE(
     severity: "WARN",
   });
   return NextResponse.json({ ok: true });
+  }, "admin/env/[key]");
 }

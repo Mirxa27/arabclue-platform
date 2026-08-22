@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { requireAdmin } from "@/lib/auth";
+import { parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import {
+  adminAiProviderWriteSchema,
+  type AdminAiProviderWrite,
+} from "@/lib/validation";
 import {
   inferModelCapabilities,
   isAllowedProviderApiKeyEnv,
@@ -50,11 +54,13 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   const { id } = await params;
   await getBootstrapContext();
-  const body = await req.json();
+  const body = (await parseJsonBody(
+    req,
+    adminAiProviderWriteSchema
+  )) as AdminAiProviderWrite;
 
   const existing = await db.aIProviderConfig.findUnique({ where: { id } });
   if (!existing) {
@@ -166,6 +172,7 @@ export async function PATCH(
       engines: parseProviderEngines(updated),
     },
   });
+  }, "admin/ai-providers/[id]");
 }
 
 // DELETE /api/admin/ai-providers/[id]
@@ -173,8 +180,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   const { id } = await params;
   await getBootstrapContext();
   const existing = await db.aIProviderConfig.findUnique({ where: { id } });
@@ -197,4 +203,5 @@ export async function DELETE(
     severity: "WARN",
   });
   return NextResponse.json({ ok: true });
+  }, "admin/ai-providers/[id]");
 }

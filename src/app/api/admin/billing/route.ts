@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { requireAdmin } from "@/lib/auth";
+import { parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import { adminBillingCreateSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/admin/billing — revenue, usage, recent billing records
 export async function GET() {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async () => {
   await getBootstrapContext();
 
   const [records, activeSubs, allSubs, plans] = await Promise.all([
@@ -58,14 +58,14 @@ export async function GET() {
       totalDocumentsUsed,
     },
   });
+  }, "admin/billing");
 }
 
 // POST /api/admin/billing — record a manual billing event (topup/usage/refund)
 export async function POST(req: NextRequest) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   await getBootstrapContext();
-  const body = await req.json();
+  const body = await parseJsonBody(req, adminBillingCreateSchema);
   const record = await db.billingRecord.create({
     data: {
       userId: body.userId,
@@ -101,4 +101,5 @@ export async function POST(req: NextRequest) {
     severity: "WARN",
   });
   return NextResponse.json({ record });
+  }, "admin/billing");
 }

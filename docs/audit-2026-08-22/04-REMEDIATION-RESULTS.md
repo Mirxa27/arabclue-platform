@@ -25,7 +25,7 @@ applied**. Commits made directly to `main`.
 | --- | --- | --- |
 | `bunx tsc --noEmit` | pass, 0 errors | unchanged |
 | `bun run lint` | pass, 0 errors | unchanged |
-| `bun run test` | **4025 pass**, 13 skip, **0 fail** — 199 files | +185 tests, +15 files |
+| `bun run test` | **4109 pass**, 13 skip, **0 fail** — 206 files | +269 tests, +22 files |
 | Chromium-gated suites | 64 pass, 0 fail | unchanged |
 | `bun run build` | pass — 20 embedded font assets verified across 3 route traces | newly exercised |
 | `bun run deploy:safety:repo` | pass | newly runnable in CI |
@@ -77,7 +77,7 @@ asserted the defective behaviour directly, each noted below.
 | H30 | Integrity scanner unrunnable; stale generated SQL | `12b7633` |
 | H3 | Builder route bypassed four safeguards | `ec2b381` |
 | H20 | Dashboard navigation desynced the URL | `145557b` |
-| H27 | Auth hardening (limiter, MFA seal, TOTP replay, recovery codes, scrypt params) | this session |
+| H27 | Auth hardening (limiter, MFA seal, TOTP replay, recovery codes, scrypt params) | `8114691` |
 
 ### Migrations applied to the shared Neon database
 
@@ -119,6 +119,7 @@ bypass fails CI rather than shipping.
 | `autopilot-confirmation.test.ts` | Confirmation gate precedes project creation |
 | `auth-hardening.test.ts` | Sealed MFA secrets, TOTP replay, recovery codes, dual login keys |
 | `auth-hardening-guards.test.ts` | Setup stages pending secret; admin cannot invent MFA |
+| `admin-handler-controller.test.ts` | Every admin `route.ts` wraps each method with `withAdmin`; no hand-rolled Forbidden |
 
 ### Existing tests updated (not weakened)
 
@@ -131,9 +132,10 @@ bypass fails CI rather than shipping.
 
 ---
 
-## 4. Remaining — 2 of 34
+## 4. Remaining — 1 of 34
 
-H8, H20, and H27 were completed after the first remediation wave.
+H8, H20, H27, and the late N9 admin-handler wrap were completed after the
+first remediation wave.
 
 ### H8 — Nineteen sites return raw `err.message` to clients
 **Done in `7f8c289`.** Routes now go through `toErrorResponse` / `redactSensitiveText`.
@@ -148,6 +150,12 @@ sealed with AES-GCM on write and re-sealed from plaintext on next use;
 `pendingMfaSecret` so setup no longer disables the live factor; TOTP last-used
 step + hashed recovery codes; scrypt hashes encode `N/r/p/keylen` and rehash
 on login. Additive migration `20260822190000_auth_hardening_mfa`.
+
+### N9 — Admin handlers use the controller
+**Implemented this session.** Overview, audit, plans, billing, users, env, and
+AI-provider routes (including models) now go through `withAdmin`. Zod schemas
+live in `src/lib/validation.ts`. Privilege and env-secrecy source guards are
+unchanged.
 
 ### H28 — Monetary columns are `Float`
 **Effort ~4h, needs a careful data migration.** `schema.prisma:654,689,707,734`
@@ -231,8 +239,8 @@ pass and several need design decisions.
 | Unauthenticated credential oracle: no audit on failure, no reserved-identity check, email-only rate key, returns the account holder's name | `auth/precheck/route.ts:48` |
 | Recurring-charge handler failures are swallowed and fall through to `PROCESSED` + HTTP 200, so the provider never retries an unapplied charge | `billing/webhook/route.ts:178` |
 | `take:100` with no cursor and no "already notified" predicate, so logged rows permanently occupy the scan window | `cron/expiry-notifications/route.ts:30` |
-| Raw `err.message` returned to the client; `body.apiBase` is an unvalidated fetch target used with a bearer credential | `admin/ai-providers/models/route.ts:42` |
-| Eleven of fourteen admin handlers predate the controller: no `try/catch`, no Zod, hand-rolled 403s, Prisma errors escape as 500s | `admin/**` |
+| Raw `err.message` returned to the client; `body.apiBase` is an unvalidated fetch target used with a bearer credential | **Done with N9.** Models POST now uses `withAdmin` + Zod; fetch failures stay redacted and never echo `err.message`. `apiKeyEnvKey` remains allowlisted. |
+| Eleven of fourteen admin handlers predate the controller: no `try/catch`, no Zod, hand-rolled 403s, Prisma errors escape as 500s | **Done (N9).** Every `src/app/api/admin/**/route.ts` method is wrapped in `withAdmin`. Write bodies and audit query params parse through Zod. Business-rule 403s keep string `error` so the admin UI can read `data.error`. |
 
 ---
 

@@ -6,6 +6,145 @@ export const emailSchema = z.email();
 
 export const localeSchema = z.enum(["ar", "en"]);
 
+export const roleSchema = z.enum([
+  "SUPER_ADMIN",
+  "ADMIN",
+  "BIDDER",
+  "REVIEWER",
+  "FINANCE",
+]);
+
+export const adminAuditQuerySchema = z.object({
+  action: z.string().trim().min(1).max(64).optional(),
+  severity: z.enum(["INFO", "WARN", "ERROR", "CRITICAL"]).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export const adminUserCreateSchema = z.object({
+  email: emailSchema,
+  name: z.string().trim().min(1).max(200),
+  password: z.string().min(10).max(200),
+  role: roleSchema.optional(),
+  locale: localeSchema.optional(),
+  mfaEnabled: z.boolean().optional(),
+});
+
+export const adminUserPatchSchema = z
+  .object({
+    role: roleSchema.optional(),
+    active: z.boolean().optional(),
+    mfaEnabled: z.boolean().optional(),
+    locale: localeSchema.optional(),
+    planId: z.string().min(1).max(64).optional(),
+    billingCycle: z.enum(["MONTHLY", "YEARLY"]).optional(),
+  })
+  .refine((o) => Object.keys(o).length > 0, { message: "no allowed fields" });
+
+export const adminPlanWriteSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  nameAr: z.string().trim().max(200).nullable().optional(),
+  description: z.string().max(2000).nullable().optional(),
+  priceMonthly: z.number().nonnegative().optional(),
+  priceYearly: z.number().nonnegative().optional(),
+  currency: z.string().trim().max(8).optional(),
+  maxProposals: z.number().int().min(-1).optional(),
+  maxDocuments: z.number().int().min(-1).optional(),
+  maxWorkspaces: z.number().int().min(-1).optional(),
+  maxTokensPerMonth: z.number().int().min(-1).optional(),
+  maxStorageGb: z.number().int().min(-1).optional(),
+  featuresJson: z.string().max(20_000).optional(),
+  isActive: z.boolean().optional(),
+  isPublic: z.boolean().optional(),
+});
+
+export const adminPlanCreateSchema = adminPlanWriteSchema.extend({
+  name: z.string().trim().min(1).max(200),
+});
+
+export const adminBillingCreateSchema = z.object({
+  userId: z.string().min(1),
+  type: z.enum(["SUBSCRIPTION", "USAGE", "TOPUP", "REFUND", "OVERAGE"]).optional(),
+  amount: z.number().optional(),
+  description: z.string().max(2000).optional(),
+  tokensIncluded: z.number().int().min(0).optional(),
+  proposalsIncluded: z.number().int().min(0).optional(),
+  status: z.enum(["PAID", "PENDING", "FAILED", "REFUNDED"]).optional(),
+  invoiceNumber: z.string().max(128).optional(),
+  paymentMethod: z.string().max(64).optional(),
+});
+
+export const adminEnvUpsertSchema = z.object({
+  key: z.string().trim().min(1).max(128),
+  value: z.string(),
+  category: z.string().trim().max(64).optional(),
+  description: z.string().max(500).optional(),
+  isSecret: z.boolean().optional(),
+});
+
+export const adminEnvPatchSchema = z.object({
+  rotate: z.boolean().optional(),
+  category: z.string().trim().max(64).optional(),
+  description: z.string().max(500).optional(),
+  isSecret: z.boolean().optional(),
+});
+
+export const adminAiProviderWriteSchema = z
+  .object({
+    name: z.string().max(200).optional(),
+    provider: z.string().max(64).optional(),
+    modelId: z.string().max(200).optional(),
+    apiBase: z.string().max(500).nullable().optional(),
+    apiKeyEnvKey: z.string().max(128).nullable().optional(),
+    isActive: z.boolean().optional(),
+    isDefault: z.boolean().optional(),
+    engine: z.string().max(64).nullable().optional(),
+  })
+  .passthrough();
+
+/** Runtime extras the provider write routes already accept after Zod. */
+export type AdminAiProviderWrite = {
+  name?: string;
+  provider?: string;
+  modelId?: string;
+  apiBase?: string | null;
+  apiKeyEnvKey?: string | null;
+  isActive?: boolean;
+  isDefault?: boolean;
+  engine?: string | null;
+  engines?: unknown;
+  contextWindow?: number;
+  maxTokens?: number;
+  supportsVision?: boolean;
+  supportsJsonMode?: boolean;
+  supportsTools?: boolean;
+  temperature?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  confidenceThreshold?: number;
+  toxicityFilter?: boolean;
+  piiFilter?: boolean;
+  hallucinationGuard?: boolean;
+  maxRetries?: number;
+  timeoutMs?: number;
+  inputCostPer1k?: number;
+  outputCostPer1k?: number;
+  priority?: number;
+  modelsCache?: unknown;
+  modelsCacheJson?: string | null;
+  modelsFetchedAt?: string | Date | null;
+};
+
+export const adminAiProviderModelsSchema = z.object({
+  provider: z.string().max(64).optional(),
+  apiBase: z.string().max(500).nullable().optional(),
+  apiKeyEnvKey: z.string().max(128).nullable().optional(),
+  providerId: z.string().max(64).optional(),
+  refreshAll: z.boolean().optional(),
+  cachedOnly: z.boolean().optional(),
+  engine: z.string().max(64).nullable().optional(),
+});
+
 export const agentRunBodySchema = z.object({
   projectId: z.string().min(1),
   locale: localeSchema.optional(),

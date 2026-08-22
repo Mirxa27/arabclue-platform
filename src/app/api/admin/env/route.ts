@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { requireAdmin, requireSuperAdmin } from "@/lib/auth";
+import { parseJsonBody, parseSearchParams, withAdmin } from "@/lib/api-controller";
+import { adminEnvUpsertSchema } from "@/lib/validation";
+import { z } from "zod";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { encryptValue, decryptValue, maskSecret } from "@/lib/crypto";
 import { ENV_CATALOG, isSecretEnvKey } from "@/lib/constants";
@@ -9,14 +11,17 @@ import { ENV_CATALOG, isSecretEnvKey } from "@/lib/constants";
 export const dynamic = "force-dynamic";
 
 // GET /api/admin/env — returns all settings with masked secret values
+const envRevealQuerySchema = z.object({
+  reveal: z.enum(["0", "1"]).optional(),
+});
+
 export async function GET(req: NextRequest) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAdmin(async (session) => {
   await getBootstrapContext();
-  const reveal = req.nextUrl.searchParams.get("reveal") === "1";
+  const { reveal: revealFlag } = parseSearchParams(req, envRevealQuerySchema);
+  const reveal = revealFlag === "1";
   if (reveal) {
-    const superAdmin = await requireSuperAdmin();
-    if (!superAdmin) {
+    if (session.user.role !== "SUPER_ADMIN") {
       return NextResponse.json(
         { error: "Only SUPER_ADMIN can reveal secret values" },
         { status: 403 }
@@ -59,6 +64,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({ settings: result, catalog: ENV_CATALOG });
+  }, "admin/env");
 }
 
 // CRITICAL env keys that must never be overwritten via API without SUPER_ADMIN + extra caution
@@ -66,20 +72,11 @@ const CRITICAL_ENV_KEYS = new Set(["ARABCLUE_ENC_KEY", "NEXTAUTH_SECRET", "DATAB
 
 // POST /api/admin/env — create or update a setting (encrypts the value)
 export async function POST(req: NextRequest) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const body = await req.json();
-  const { key, value, category, description, isSecret } = body as {
-    key: string;
-    value: string;
-    category?: string;
-    description?: string;
-    isSecret?: boolean;
-  };
-
-  if (!key || value === undefined) {
-    return NextResponse.json({ error: "key and value required" }, { status: 400 });
-  }
+  return withAdmin(async (session) => {
+  const { key, value, category, description, isSecret } = await parseJsonBody(
+    req,
+    adminEnvUpsertSchema
+  );
 
   // Secrecy is the allowlist verdict OR an explicit request to treat it as
   // secret — never the caller's `isSecret: false`. The previous form,
@@ -136,4 +133,5 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json({ setting: { ...setting, value: maskSecret(value) } });
+  }, "admin/env");
 }
