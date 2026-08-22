@@ -72,6 +72,39 @@ export async function getVoiceLiveConfig(): Promise<VoiceLiveConfigResponse> {
   };
 }
 
+/**
+ * Resolve the mission and agent context backing a voice request.
+ *
+ * `activeProjectId` reaches this module from the browser, so it is resolved
+ * against the tenant *before* `getOrCreateMission` can persist it. Persisting
+ * an unresolved identifier would make it look server-derived on every later
+ * turn of the conversation. A foreign or unknown identifier degrades to "no
+ * active project" rather than failing the session.
+ */
+async function resolveVoiceMissionContext(
+  session: Session,
+  opts?: { missionId?: string | null; activeProjectId?: string | null }
+) {
+  const { getOrCreateMission } = await import("./mission");
+  const { resolveOwnedProjectId } = await import("@/lib/workspace-context");
+  const base = await buildPlatformAgentContext(session);
+  const requestedProjectId = await resolveOwnedProjectId(
+    opts?.activeProjectId,
+    base.workspace.id
+  );
+  const mission = await getOrCreateMission({
+    workspaceId: base.workspace.id,
+    userId: base.userId,
+    locale: base.locale,
+    activeProjectId: requestedProjectId ?? undefined,
+  });
+  const ctx = await buildPlatformAgentContext(session, {
+    missionId: opts?.missionId || mission.id,
+    activeProjectId: requestedProjectId ?? mission.activeProjectId ?? null,
+  });
+  return { mission, ctx };
+}
+
 export async function mintVoiceLiveSession(
   session: Session,
   opts?: {
@@ -89,19 +122,7 @@ export async function mintVoiceLiveSession(
   const row = await getProviderForEngine("VOICE");
   if (!row) throw new Error("VOICE provider missing");
 
-  const { getOrCreateMission } = await import("./mission");
-  const base = await buildPlatformAgentContext(session);
-  const mission = await getOrCreateMission({
-    workspaceId: base.workspace.id,
-    userId: base.userId,
-    locale: base.locale,
-    activeProjectId: opts?.activeProjectId ?? undefined,
-  });
-  const ctx = await buildPlatformAgentContext(session, {
-    missionId: opts?.missionId || mission.id,
-    activeProjectId:
-      opts?.activeProjectId ?? mission.activeProjectId ?? null,
-  });
+  const { mission, ctx } = await resolveVoiceMissionContext(session, opts);
   const tools = createPlatformTools(ctx);
   const toolDefinitions = await experimental_getRealtimeToolDefinitions({
     tools,
@@ -177,34 +198,73 @@ export async function mintVoiceLiveSession(
   };
 }
 
+type VoiceExecutableTool = {
+  execute?: (input: unknown, opts?: unknown) => Promise<unknown> | unknown;
+  inputSchema?: unknown;
+};
+
+/**
+ * Validate a voice tool call against the tool's declared `inputSchema`.
+ *
+ * The AI SDK's `tool()` helper is an identity function: `inputSchema` is
+ * enforced by the tool-calling loop inside `streamText`/`generateText`, not by
+ * `execute` itself. This endpoint dispatches to `execute` directly, so without
+ * this step the browser could invoke every registered tool with arbitrary,
+ * unvalidated arguments.
+ *
+ * Fails closed. A tool that declares a schema we cannot evaluate is a
+ * programming error, and admitting the call would reintroduce the same gap.
+ */
+export function validateVoiceToolInput(
+  toolName: string,
+  tool: VoiceExecutableTool,
+  args: unknown
+): unknown {
+  const schema = tool.inputSchema;
+  if (schema === undefined || schema === null) return args;
+
+  // Zod (and anything else implementing Standard Schema v1).
+  const zodLike = schema as {
+    safeParse?: (value: unknown) => { success: boolean; data?: unknown };
+  };
+  if (typeof zodLike.safeParse === "function") {
+    const parsed = zodLike.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for tool: ${toolName}`);
+    }
+    return parsed.data;
+  }
+
+  const standard = schema as {
+    "~standard"?: {
+      validate: (value: unknown) => { issues?: unknown; value?: unknown };
+    };
+  };
+  const validate = standard["~standard"]?.validate;
+  if (typeof validate === "function") {
+    const result = validate(args);
+    if (result.issues) {
+      throw new Error(`Invalid arguments for tool: ${toolName}`);
+    }
+    return result.value;
+  }
+
+  throw new Error(`Tool ${toolName} declares an unvalidatable input schema`);
+}
+
 export async function executeVoiceLiveTool(
   session: Session,
   toolName: string,
   args: unknown,
   opts?: { missionId?: string | null; activeProjectId?: string | null }
 ): Promise<unknown> {
-  const { getOrCreateMission } = await import("./mission");
-  const base = await buildPlatformAgentContext(session);
-  const mission = await getOrCreateMission({
-    workspaceId: base.workspace.id,
-    userId: base.userId,
-    locale: base.locale,
-    activeProjectId: opts?.activeProjectId ?? undefined,
-  });
-  const ctx = await buildPlatformAgentContext(session, {
-    missionId: opts?.missionId || mission.id,
-    activeProjectId:
-      opts?.activeProjectId ?? mission.activeProjectId ?? null,
-  });
-  const tools = createPlatformTools(ctx) as Record<
-    string,
-    { execute?: (input: unknown, opts?: unknown) => Promise<unknown> | unknown }
-  >;
+  const { ctx } = await resolveVoiceMissionContext(session, opts);
+  const tools = createPlatformTools(ctx) as Record<string, VoiceExecutableTool>;
   const tool = tools[toolName];
   if (!tool?.execute) {
     throw new Error(`Unknown or non-executable tool: ${toolName}`);
   }
-  return tool.execute(args, {
+  return tool.execute(validateVoiceToolInput(toolName, tool, args), {
     toolCallId: `voice-${crypto.randomUUID()}`,
     messages: [],
   });

@@ -116,6 +116,29 @@ export function assertWorkspaceMatch(
   return !!resourceWorkspaceId && resourceWorkspaceId === tenantWorkspaceId;
 }
 
+/**
+ * Resolve a client-supplied project identifier to a project the tenant owns.
+ *
+ * Returns the project identifier when the project exists inside
+ * `tenantWorkspaceId`, and `null` for every other case — absent value, unknown
+ * identifier, or a project belonging to another workspace. Callers that accept
+ * a project identifier from a request body, a tool argument, or any other
+ * client-controlled source must route it through here before it reaches a
+ * query, a write, or the agent pipeline.
+ */
+export async function resolveOwnedProjectId(
+  projectId: string | null | undefined,
+  tenantWorkspaceId: string
+): Promise<string | null> {
+  const candidate = projectId?.trim();
+  if (!candidate) return null;
+  const project = await db.tenderProject.findFirst({
+    where: { id: candidate, workspaceId: tenantWorkspaceId },
+    select: { id: true },
+  });
+  return project?.id ?? null;
+}
+
 /** Switch active workspace when caller is a member. */
 export async function setActiveWorkspace(
   userId: string,

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession, canWriteRole } from "@/lib/auth";
-import { getTenantContext } from "@/lib/workspace-context";
+import {
+  getTenantContext,
+  resolveOwnedProjectId,
+} from "@/lib/workspace-context";
 import { getOrCreateMission } from "@/lib/agents/platform/mission";
 import { db } from "@/lib/db";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -80,10 +83,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
 
   const tenderRef = body.tenderRef?.trim() || null;
+  // Both candidates are client-influenced: `activeProjectId` arrives in the
+  // request body, and `mission.activeProjectId` is whatever a previous request
+  // stored. Each is resolved against the tenant before it can select, mutate,
+  // or seed a project.
   let projectId =
-    body.activeProjectId?.trim() ||
-    mission.activeProjectId ||
-    null;
+    (await resolveOwnedProjectId(body.activeProjectId, tenant.workspace.id)) ??
+    (await resolveOwnedProjectId(
+      mission.activeProjectId,
+      tenant.workspace.id
+    ));
 
   if (tenderRef) {
     const existing = await db.tenderProject.findFirst({

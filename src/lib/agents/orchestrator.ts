@@ -166,13 +166,18 @@ export async function runAgentPipeline(opts: {
   try {
     await persist("RUNNING");
 
-    const project = await db.tenderProject.findUnique({ where: { id: opts.projectId } });
+    // Tenant predicate is mandatory: the pipeline is reachable from callers that
+    // accept a client-supplied project identifier, so ownership is re-asserted
+    // here rather than trusted from the caller.
+    const project = await db.tenderProject.findFirst({
+      where: { id: opts.projectId, workspaceId: opts.workspaceId },
+    });
     if (!project) {
       throw new Error("Project not found");
     }
 
     const docs = await db.uploadedDocument.findMany({
-      where: { projectId: opts.projectId },
+      where: { projectId: opts.projectId, workspaceId: opts.workspaceId },
       orderBy: { createdAt: "asc" },
     });
 

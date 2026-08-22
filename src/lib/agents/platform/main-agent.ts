@@ -7,7 +7,10 @@ import {
 } from "ai";
 import { canWriteRole } from "@/lib/auth";
 import { AGENT_CONFIG } from "@/lib/agents/agent-config";
-import { getTenantContext } from "@/lib/workspace-context";
+import {
+  getTenantContext,
+  resolveOwnedProjectId,
+} from "@/lib/workspace-context";
 import type { Session } from "next-auth";
 import type { PlatformAgentContext } from "./context";
 import { buildPlatformAgentInstructions } from "./instructions";
@@ -29,6 +32,17 @@ export async function buildPlatformAgentContext(
   const isAdmin = role === "SUPER_ADMIN" || role === "ADMIN";
   const locale = session.user.locale === "en" ? "en" : "ar";
 
+  // `activeProjectId` is the only field on this context that can originate from
+  // the client (chat body, realtime tool options, mission payload). Every other
+  // field is derived from the server session, so this is the one value that has
+  // to be re-resolved against the tenant before any tool can query on it. A
+  // foreign or unknown identifier degrades to "no active project" rather than
+  // failing the request, which keeps an unscoped session usable.
+  const activeProjectId = await resolveOwnedProjectId(
+    opts?.activeProjectId,
+    tenant.workspace.id
+  );
+
   return {
     session,
     workspace: tenant.workspace,
@@ -39,7 +53,7 @@ export async function buildPlatformAgentContext(
     isAdmin,
     canWrite: canWriteRole(role),
     missionId: opts?.missionId ?? null,
-    activeProjectId: opts?.activeProjectId ?? null,
+    activeProjectId,
   };
 }
 
