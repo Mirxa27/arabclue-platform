@@ -27,33 +27,85 @@ export async function POST(req: NextRequest) {
   let subSkipped = 0;
   const errors: string[] = [];
 
-  const certs = await db.certificate.findMany({
-    where: {
-      expiresAt: { not: null, lte: in30 },
-      revokedAt: null,
-    },
-    take: 100,
-    orderBy: { expiresAt: "asc" },
-  });
+  // Candidate selection pages forward instead of re-reading a fixed window.
+  //
+  // The previous form took the first 100 rows by expiry and de-duplicated each
+  // one afterwards against ExpiryNotificationLog. Once 100 certificates in the
+  // window had been notified, every later run fetched the same 100, skipped
+  // them all, and never reached the 101st — which was therefore never notified
+  // at all. Paging with a keyset cursor and stopping on an emit budget keeps
+  // the run bounded while still making progress.
+  const CERT_EMIT_BUDGET = 100;
+  const CERT_PAGE_SIZE = 200;
+  const CERT_MAX_PAGES = 25;
+
+  type CertRow = Awaited<ReturnType<typeof db.certificate.findMany>>[number];
+  const certs: CertRow[] = [];
+  let certCursor: { expiresAt: Date; id: string } | null = null;
+
+  for (let page = 0; page < CERT_MAX_PAGES; page += 1) {
+    const batch: CertRow[] = await db.certificate.findMany({
+      where: {
+        expiresAt: { not: null, lte: in30 },
+        revokedAt: null,
+        ...(certCursor
+          ? {
+              OR: [
+                { expiresAt: { gt: certCursor.expiresAt } },
+                {
+                  expiresAt: certCursor.expiresAt,
+                  id: { gt: certCursor.id },
+                },
+              ],
+            }
+          : {}),
+      },
+      take: CERT_PAGE_SIZE,
+      orderBy: [{ expiresAt: "asc" }, { id: "asc" }],
+    });
+    if (batch.length === 0) break;
+
+    const last = batch[batch.length - 1];
+    certCursor = last.expiresAt
+      ? { expiresAt: last.expiresAt, id: last.id }
+      : null;
+
+    // One log query per page rather than one per certificate.
+    const resourceIds = batch
+      .filter((c) => c.expiresAt)
+      .map((c) => `${c.id}:${c.expiresAt!.toISOString().slice(0, 10)}`);
+    const logged = await db.expiryNotificationLog.findMany({
+      where: {
+        kind: "CERT_EXPIRY",
+        channel: "email",
+        resourceId: { in: resourceIds },
+      },
+      select: { workspaceId: true, resourceId: true },
+    });
+    const loggedKeys = new Set(
+      logged.map((l) => `${l.workspaceId}:${l.resourceId}`)
+    );
+
+    for (const cert of batch) {
+      if (!cert.expiresAt) continue;
+      const resourceId = `${cert.id}:${cert.expiresAt.toISOString().slice(0, 10)}`;
+      if (loggedKeys.has(`${cert.workspaceId}:${resourceId}`)) {
+        certScanned += 1;
+        certSkipped += 1;
+        continue;
+      }
+      certs.push(cert);
+      if (certs.length >= CERT_EMIT_BUDGET) break;
+    }
+
+    if (certs.length >= CERT_EMIT_BUDGET) break;
+    if (!certCursor || batch.length < CERT_PAGE_SIZE) break;
+  }
 
   for (const cert of certs) {
     if (!cert.expiresAt) continue;
     certScanned += 1;
     const resourceId = `${cert.id}:${cert.expiresAt.toISOString().slice(0, 10)}`;
-    const already = await db.expiryNotificationLog.findUnique({
-      where: {
-        workspaceId_kind_resourceId_channel: {
-          workspaceId: cert.workspaceId,
-          kind: "CERT_EXPIRY",
-          resourceId,
-          channel: "email",
-        },
-      },
-    });
-    if (already) {
-      certSkipped += 1;
-      continue;
-    }
 
     const owners = await db.workspaceMember.findMany({
       where: {
