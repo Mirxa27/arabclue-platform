@@ -70,8 +70,26 @@ export interface AnalyticsRetentionClient {
     limit: number
   ): Promise<readonly AnalyticsRetentionBucket[]>;
 
-  /** Deletes individual events older than the cutoff, returning the count. */
-  deleteExpiredEvents(cutoff: Date, limit: number): Promise<number>;
+  /**
+   * Durably records the summarised buckets, accumulating into any existing
+   * row for the same (workspace, eventType, day).
+   */
+  persistDailySummaries(
+    buckets: readonly AnalyticsRetentionBucket[]
+  ): Promise<number>;
+
+  /**
+   * Deletes only the events covered by `buckets`, returning the count.
+   *
+   * Scoping the delete to the summarised buckets is what makes the job safe:
+   * `groupExpiredEvents` is bounded by `limit`, so deleting everything older
+   * than the cutoff would destroy events that were never counted. Any
+   * remainder is drained by the next run.
+   */
+  deleteArchivedEvents(
+    cutoff: Date,
+    buckets: readonly AnalyticsRetentionBucket[]
+  ): Promise<number>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -115,11 +133,53 @@ export function createPrismaRetentionClient(
       }));
     },
 
-    async deleteExpiredEvents(cutoff) {
-      const result = await client.analyticsEvent.deleteMany({
-        where: { createdAt: { lt: cutoff } },
-      });
-      return result.count;
+    async persistDailySummaries(buckets) {
+      if (buckets.length === 0) return 0;
+      // Sequential upserts inside the caller's transaction. `increment` makes
+      // the write converge when a day is archived across several batches.
+      let written = 0;
+      for (const bucket of buckets) {
+        await client.analyticsDailySummary.upsert({
+          where: {
+            workspaceId_eventType_day: {
+              workspaceId: bucket.workspaceId,
+              eventType: bucket.eventType,
+              day: new Date(bucket.day),
+            },
+          },
+          create: {
+            workspaceId: bucket.workspaceId,
+            eventType: bucket.eventType,
+            day: new Date(bucket.day),
+            eventCount: bucket.count,
+          },
+          update: { eventCount: { increment: bucket.count } },
+        });
+        written += 1;
+      }
+      return written;
+    },
+
+    async deleteArchivedEvents(cutoff, buckets) {
+      if (buckets.length === 0) return 0;
+      // Delete exactly the rows the summaries account for. A blanket
+      // `createdAt < cutoff` delete would also remove groups beyond the
+      // grouping LIMIT, which were never summarised.
+      const tuples = Prisma.join(
+        buckets.map(
+          (bucket) =>
+            Prisma.sql`(${bucket.workspaceId}, ${bucket.eventType}, ${bucket.day}::date)`
+        )
+      );
+      const deleted = await client.$executeRaw(Prisma.sql`
+        DELETE FROM "AnalyticsEvent" AS e
+        USING (VALUES ${tuples}) AS b("workspaceId", "eventType", "day")
+        WHERE e."createdAt" < ${cutoff}
+          AND e."workspaceId" = b."workspaceId"
+          AND e."eventType" = b."eventType"
+          AND DATE(e."createdAt") = b."day"
+      `);
+      return deleted;
     },
   });
 }
@@ -154,14 +214,17 @@ export async function archiveOldAnalyticsEvents(
     options.retentionClient ??
     (await import("./db").then(({ db }) => createPrismaRetentionClient(db)));
 
-  // Step 1: Aggregate events into daily summaries before deletion.
+  // Step 1: Aggregate events older than the cutoff, bounded by batchSize.
   const buckets = await client.groupExpiredEvents(cutoff, batchSize);
 
-  // Step 2: Delete the individual events that were just aggregated.
-  // If no events were found, deletion is a no-op.
+  // Step 2: Persist the summaries, then delete only the events they account
+  // for. The order matters and so does the pairing: this function is named
+  // "archive", and a delete that is not preceded by a durable write is simply
+  // data loss. Anything beyond the batch is drained by the next run.
   let archivedEventCount = 0;
   if (buckets.length > 0) {
-    archivedEventCount = await client.deleteExpiredEvents(cutoff, batchSize);
+    await client.persistDailySummaries(buckets);
+    archivedEventCount = await client.deleteArchivedEvents(cutoff, buckets);
   }
 
   return Object.freeze({

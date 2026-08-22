@@ -19,13 +19,37 @@ import { fixedUtcClock } from "../time";
 /* Mock retention client                                                      */
 /* -------------------------------------------------------------------------- */
 
+type RecordingClient = AnalyticsRetentionClient & {
+  readonly calls: string[];
+  readonly persisted: AnalyticsRetentionBucket[][];
+  readonly deletedFor: AnalyticsRetentionBucket[][];
+};
+
 function createMockRetentionClient(
   buckets: readonly AnalyticsRetentionBucket[],
   deleteCount: number
-): AnalyticsRetentionClient {
+): RecordingClient {
+  const calls: string[] = [];
+  const persisted: AnalyticsRetentionBucket[][] = [];
+  const deletedFor: AnalyticsRetentionBucket[][] = [];
   return Object.freeze({
-    groupExpiredEvents: async () => [...buckets],
-    deleteExpiredEvents: async () => deleteCount,
+    calls,
+    persisted,
+    deletedFor,
+    groupExpiredEvents: async () => {
+      calls.push("group");
+      return [...buckets];
+    },
+    persistDailySummaries: async (input) => {
+      calls.push("persist");
+      persisted.push([...input]);
+      return input.length;
+    },
+    deleteArchivedEvents: async (_cutoff, input) => {
+      calls.push("delete");
+      deletedFor.push([...input]);
+      return deleteCount;
+    },
   });
 }
 
@@ -126,6 +150,56 @@ describe("analytics-retention", () => {
     });
     expect(secondResult.archivedEventCount).toBe(0);
     expect(secondResult.summaryBucketCount).toBe(0);
+  });
+
+  // Regression cover: the function computed summaries, returned them, and then
+  // deleted the raw events without ever writing the summaries anywhere. No
+  // AnalyticsDailySummary model existed, so "archival" was pure data loss.
+  it("persists the summaries before deleting anything", async () => {
+    const clock = fixedUtcClock(new Date("2026-07-29T10:00:00.000Z"));
+    const client = createMockRetentionClient(mockBuckets, mockDeleteCount);
+
+    await archiveOldAnalyticsEvents({ clock, retentionClient: client });
+
+    expect(client.calls).toEqual(["group", "persist", "delete"]);
+    expect(client.persisted).toHaveLength(1);
+    expect(client.persisted[0]).toEqual([...mockBuckets]);
+  });
+
+  it("never deletes without a preceding durable write", async () => {
+    const clock = fixedUtcClock(new Date("2026-07-29T10:00:00.000Z"));
+    const client = createMockRetentionClient(mockBuckets, mockDeleteCount);
+
+    await archiveOldAnalyticsEvents({ clock, retentionClient: client });
+
+    const persistAt = client.calls.indexOf("persist");
+    const deleteAt = client.calls.indexOf("delete");
+    expect(persistAt).toBeGreaterThan(-1);
+    expect(deleteAt).toBeGreaterThan(persistAt);
+  });
+
+  // The grouping query is bounded by `batchSize`; a blanket
+  // `createdAt < cutoff` delete would also remove groups beyond that bound,
+  // which were never counted.
+  it("scopes the delete to exactly the summarised buckets", async () => {
+    const clock = fixedUtcClock(new Date("2026-07-29T10:00:00.000Z"));
+    const client = createMockRetentionClient(mockBuckets, mockDeleteCount);
+
+    await archiveOldAnalyticsEvents({ clock, retentionClient: client });
+
+    expect(client.deletedFor).toHaveLength(1);
+    expect(client.deletedFor[0]).toEqual([...mockBuckets]);
+  });
+
+  it("writes and deletes nothing when there is nothing to archive", async () => {
+    const clock = fixedUtcClock(new Date("2026-07-29T10:00:00.000Z"));
+    const client = createMockRetentionClient([], 0);
+
+    await archiveOldAnalyticsEvents({ clock, retentionClient: client });
+
+    expect(client.calls).toEqual(["group"]);
+    expect(client.persisted).toHaveLength(0);
+    expect(client.deletedFor).toHaveLength(0);
   });
 
   it("groups by workspace, eventType, and day in the breakdown", async () => {

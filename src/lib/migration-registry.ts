@@ -302,6 +302,13 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
     reverse:
       'CREATE UNIQUE INDEX "NotificationDelivery_eventId_recipientId_key" ON "NotificationDelivery"("eventId", "recipientId"); — only safe after collapsing multi-channel rows to one row per (eventId, recipientId).',
   },
+  {
+    id: "20260822180000_analytics_daily_summary",
+    position: 22,
+    capabilities: ["analytics retention archival"],
+    createsTables: ["AnalyticsDailySummary"],
+    reverse: 'DROP TABLE "AnalyticsDailySummary";',
+  },
 ]);
 
 /** Every declared migration identifier, in apply order. */

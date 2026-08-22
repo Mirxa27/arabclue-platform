@@ -1507,6 +1507,27 @@ model AnalyticsEvent {
 
 // ─── Platform Completion Wave 1 ────────────────────────────────────────────
 
+/// Durable rollup of AnalyticsEvent rows removed by the retention job.
+///
+/// Retention deletes raw events older than the window; without this table the
+/// aggregate was computed, returned to the caller, and thrown away, so the
+/// history was destroyed rather than archived. `eventCount` accumulates so a
+/// batched or repeated run converges on the true total.
+model AnalyticsDailySummary {
+  id          String   @id @default(cuid())
+  workspaceId String
+  eventType   String
+  /// UTC calendar day the summarised events occurred on.
+  day         DateTime @db.Date
+  eventCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([workspaceId, eventType, day])
+  @@index([workspaceId, day])
+  @@index([day])
+}
+
 model VerificationToken {
   id          String    @id @default(cuid())
   userId      String
