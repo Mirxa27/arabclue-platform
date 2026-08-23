@@ -100,6 +100,11 @@ export const localizationRegistry = {
   nav_proposal_builder: { ar: "بناء العروض", en: "Proposal Builder" },
   nav_marketplace: { ar: "سوق القوالب", en: "Template Marketplace" },
   nav_analytics: { ar: "التحليلات", en: "Analytics" },
+  nav_group_workflow: { ar: "سير العمل", en: "Workflow" },
+  nav_group_library: { ar: "المكتبة", en: "Library" },
+  nav_group_account: { ar: "الحساب", en: "Account" },
+  nav_expand: { ar: "توسيع", en: "Expand" },
+  nav_collapse: { ar: "طي", en: "Collapse" },
 
   // Sections
   section_overview: { ar: "نظرة عامة", en: "Overview" },

@@ -41,27 +41,32 @@ import { Separator } from "@/components/ui/separator";
 import { ArabclueLogo } from "@/components/brand/arabclue-logo";
 import { usePendingApprovalCount } from "./knowledge-approval-queue";
 
-const NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard; badge?: "pending-approval" }[] = [
+const NAV_WORKFLOW: { view: DashboardView; key: string; icon: typeof LayoutDashboard; badge?: "pending-approval" }[] = [
   { view: "overview", key: "nav_dashboard", icon: LayoutDashboard },
   { view: "copilot", key: "nav_copilot", icon: AudioLines },
   { view: "projects", key: "nav_projects", icon: FolderKanban },
   { view: "documents", key: "nav_documents", icon: FileText },
   { view: "proposals", key: "nav_proposals", icon: FileCheck2 },
   { view: "contracts", key: "nav_contracts", icon: Scale },
-  { view: "clause-library", key: "nav_clause_library", icon: Scale },
-  { view: "template-editor", key: "nav_template_editor", icon: FileStack },
   { view: "compliance", key: "nav_compliance", icon: ShieldCheck },
   { view: "agents", key: "nav_agents", icon: Bot },
-  { view: "history", key: "nav_history", icon: History },
+  { view: "reviews", key: "nav_reviews", icon: ScrollText },
+];
+
+const NAV_LIBRARY: typeof NAV_WORKFLOW = [
+  { view: "clause-library", key: "nav_clause_library", icon: Scale },
+  { view: "template-editor", key: "nav_template_editor", icon: FileStack },
+  { view: "marketplace", key: "nav_marketplace", icon: Store },
+  { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval" },
+];
+
+const NAV_ACCOUNT: typeof NAV_WORKFLOW = [
   { view: "account", key: "nav_account", icon: Building2 },
   { view: "business-profile", key: "nav_business_profile", icon: Sparkles },
-  { view: "reviews", key: "nav_reviews", icon: ScrollText },
-  { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval" },
+  { view: "history", key: "nav_history", icon: History },
   { view: "billing", key: "nav_billing", icon: CreditCard },
   { view: "settings", key: "nav_settings", icon: Lock },
-  // Phase 4: Enhanced Proposal System
   { view: "proposal-builder", key: "nav_proposal_builder", icon: LayoutList },
-  { view: "marketplace", key: "nav_marketplace", icon: Store },
   { view: "analytics", key: "nav_analytics", icon: BarChart3 },
 ];
 
@@ -74,6 +79,88 @@ const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboar
   { view: "admin_security", key: "nav_admin_security", icon: Users },
   { view: "admin_audit", key: "nav_admin_audit", icon: ScrollText },
 ];
+
+type NavItem = (typeof NAV_WORKFLOW)[number];
+
+function NavButton({
+  item,
+  active,
+  collapsed,
+  locale,
+  badgeCount,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed: boolean;
+  locale: "ar" | "en";
+  badgeCount: number;
+  onNavigate: () => void;
+}) {
+  const Icon = item.icon;
+  return (
+    <button
+      onClick={onNavigate}
+      title={tr(item.key, locale)}
+      className={cn(
+        "group relative w-full flex items-center gap-2.5 px-2.5 h-[34px] rounded-[8px] text-[13px] font-[450] tracking-[-0.01em] transition-all duration-[140ms] outline-none",
+        "focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.12_195)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--surface-0)]",
+        "active:scale-[0.98]",
+        active
+          ? "bg-foreground/[0.08] text-foreground shadow-[0_0_0_1px_rgba(0,0,0,0.06)_inset] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_1px_0_0_rgba(255,255,255,0.06)]"
+          : "text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] active:bg-foreground/[0.08]",
+        collapsed && "justify-center px-2"
+      )}
+    >
+      <Icon className={cn("size-[18px] shrink-0 transition-colors", active ? "text-foreground" : "text-foreground/45 group-hover:text-foreground/75")} />
+      {!collapsed && <span className="truncate">{tr(item.key, locale)}</span>}
+      {badgeCount > 0 && !collapsed && (
+        <span className="ms-auto shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
+      {badgeCount > 0 && collapsed && (
+        <span className="absolute top-0.5 end-0.5 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center rounded-full bg-amber-500 text-[9px] font-semibold text-white">
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
+      {active && !collapsed && badgeCount === 0 && (
+        <span className="ms-auto flex items-center gap-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#5e6ad2] shadow-[0_0_6px_#5e6ad2]" />
+        </span>
+      )}
+      {active && collapsed && (
+        <span className="absolute end-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-[#5e6ad2] rounded-full shadow-[0_0_8px_#5e6ad2]" />
+      )}
+    </button>
+  );
+}
+
+function NavGroupHeading({
+  labelKey,
+  collapsed,
+  locale,
+  first,
+}: {
+  labelKey: "nav_group_workflow" | "nav_group_library" | "nav_group_account";
+  collapsed: boolean;
+  locale: "ar" | "en";
+  first?: boolean;
+}) {
+  if (collapsed) {
+    return first ? null : <div className="my-3 mx-2 h-px bg-[var(--hairline)]" />;
+  }
+  return (
+    <div
+      className={cn(
+        "pb-2 px-2.5 flex items-center gap-2 text-[11px] font-[650] uppercase tracking-[0.08em] text-foreground/25",
+        first ? "pt-1" : "pt-5"
+      )}
+    >
+      {tr(labelKey, locale)}
+    </div>
+  );
+}
 
 export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" | "drawer" }) {
   const { locale } = useLocale();
@@ -105,10 +192,11 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
     });
   }
 
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: ["workspace"],
     queryFn: async () => {
       const res = await fetch("/api/workspaces");
+      if (!res.ok) throw new Error(`workspaces ${res.status}`);
       return res.json();
     },
   });
@@ -116,6 +204,15 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
   const workspace = data?.workspace;
   const workspaceName = locale === "ar" ? workspace?.nameAr ?? workspace?.name : workspace?.name;
   const plan = workspace?.plan;
+
+  const groups: {
+    key: "nav_group_workflow" | "nav_group_library" | "nav_group_account";
+    items: typeof NAV_WORKFLOW;
+  }[] = [
+    { key: "nav_group_workflow", items: NAV_WORKFLOW },
+    { key: "nav_group_library", items: NAV_LIBRARY },
+    { key: "nav_group_account", items: NAV_ACCOUNT },
+  ];
 
   return (
     <aside
@@ -143,56 +240,49 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
         )}
       </div>
 
+      {isError && !collapsed && (
+        <div className="px-3 py-2 border-b border-[var(--hairline)] flex items-center gap-2 text-[11px] text-foreground/55">
+          <span className="min-w-0 truncate">
+            {locale === "ar" ? "تعذر تحميل مساحة العمل" : "Could not load workspace"}
+          </span>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="shrink-0 text-[11px] font-[600] text-foreground/70 hover:text-foreground underline-offset-2 hover:underline"
+          >
+            {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+          </button>
+        </div>
+      )}
+
       {/* Workspace */}
-      {!collapsed && (
+      {!collapsed && !isError && (
         <WorkspaceSwitcher locale={locale} memberships={data?.memberships} workspaceName={workspaceName} plan={plan} />
       )}
 
       {/* Nav — Linear: 6 microstates crafted */}
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-2.5 py-3 space-y-0.5">
-        {NAV.map((item) => {
-          const Icon = item.icon;
-          const active = view === item.view;
-          const badgeCount = item.badge === "pending-approval" ? (pendingApprovalCount ?? 0) : 0;
-          return (
-            <button
-              key={item.view}
-              onClick={() => goToView(item.view)}
-              title={tr(item.key, locale)}
-              className={cn(
-                "group relative w-full flex items-center gap-2.5 px-2.5 h-[34px] rounded-[8px] text-[13px] font-[450] tracking-[-0.01em] transition-all duration-[140ms] outline-none",
-                "focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.12_195)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--surface-0)]",
-                "active:scale-[0.98]",
-                active
-                  ? "bg-foreground/[0.08] text-foreground shadow-[0_0_0_1px_rgba(0,0,0,0.06)_inset] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_1px_0_0_rgba(255,255,255,0.06)]"
-                  : "text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] active:bg-foreground/[0.08]",
-                collapsed && "justify-center px-2"
-              )}
-            >
-              <Icon className={cn("size-[18px] shrink-0 transition-colors", active ? "text-foreground" : "text-foreground/45 group-hover:text-foreground/75")} />
-              {!collapsed && <span className="truncate">{tr(item.key, locale)}</span>}
-              {/* Badge for pending approval count */}
-              {badgeCount > 0 && !collapsed && (
-                <span className="ms-auto shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
-                  {badgeCount > 99 ? "99+" : badgeCount}
-                </span>
-              )}
-              {badgeCount > 0 && collapsed && (
-                <span className="absolute top-0.5 end-0.5 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center rounded-full bg-amber-500 text-[9px] font-semibold text-white">
-                  {badgeCount > 99 ? "99+" : badgeCount}
-                </span>
-              )}
-              {active && !collapsed && badgeCount === 0 && (
-                <span className="ms-auto flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#5e6ad2] shadow-[0_0_6px_#5e6ad2]" />
-                </span>
-              )}
-              {active && collapsed && (
-                <span className="absolute end-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-[#5e6ad2] rounded-full shadow-[0_0_8px_#5e6ad2]" />
-              )}
-            </button>
-          );
-        })}
+        {groups.map((group, groupIndex) => (
+          <div key={group.key}>
+            <NavGroupHeading
+              labelKey={group.key}
+              collapsed={collapsed}
+              locale={locale}
+              first={groupIndex === 0}
+            />
+            {group.items.map((item) => (
+              <NavButton
+                key={item.view}
+                item={item}
+                active={view === item.view}
+                collapsed={collapsed}
+                locale={locale}
+                badgeCount={item.badge === "pending-approval" ? (pendingApprovalCount ?? 0) : 0}
+                onNavigate={() => goToView(item.view)}
+              />
+            ))}
+          </div>
+        ))}
 
         {isAdmin && (
           <>
@@ -240,7 +330,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
             "shadow-[0_2px_8px_rgba(0,0,0,0.24)]",
             locale === "ar" ? "-start-3" : "-end-3"
           )}
-          title={locale === "ar" ? (collapsed ? "توسيع" : "طي") : (collapsed ? "Expand" : "Collapse")}
+          title={tr(collapsed ? "nav_expand" : "nav_collapse", locale)}
         >
           <ChevronLeft className={cn("size-3.5 transition-transform duration-200", collapsed && "rotate-180", locale === "ar" && "rotate-180", collapsed && locale === "ar" && "rotate-0")} />
         </button>
