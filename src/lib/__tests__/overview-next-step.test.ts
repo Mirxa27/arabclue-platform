@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   overviewStepView,
   resolveOverviewNextStep,
+  resolveOverviewNextStepWhenReady,
   shouldShowOverviewWorkPanels,
 } from "@/lib/overview-next-step";
 
@@ -42,6 +43,53 @@ describe("resolveOverviewNextStep", () => {
   test("export once a run exists", () => {
     expect(
       resolveOverviewNextStep({
+        projectCount: 1,
+        documentCount: 2,
+        agentRunCount: 1,
+        proposalCount: 0,
+      })
+    ).toBe("export");
+  });
+});
+
+describe("resolveOverviewNextStepWhenReady", () => {
+  test("returns null while projects query is in flight", () => {
+    expect(
+      resolveOverviewNextStepWhenReady({
+        isSuccess: false,
+        projectCount: 0,
+        documentCount: 0,
+        agentRunCount: 0,
+        proposalCount: 0,
+      })
+    ).toBeNull();
+  });
+
+  test("does not treat a pending empty list as create", () => {
+    expect(
+      resolveOverviewNextStepWhenReady({
+        isSuccess: false,
+        projectCount: 0,
+        documentCount: 0,
+        agentRunCount: 0,
+        proposalCount: 0,
+      })
+    ).not.toBe("create");
+  });
+
+  test("delegates to resolveOverviewNextStep once ready", () => {
+    expect(
+      resolveOverviewNextStepWhenReady({
+        isSuccess: true,
+        projectCount: 0,
+        documentCount: 0,
+        agentRunCount: 0,
+        proposalCount: 0,
+      })
+    ).toBe("create");
+    expect(
+      resolveOverviewNextStepWhenReady({
+        isSuccess: true,
         projectCount: 1,
         documentCount: 2,
         agentRunCount: 1,

@@ -24,7 +24,7 @@ import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 import { useNavigateToView } from "@/components/dashboard/view-navigation";
 import {
   overviewStepView,
-  resolveOverviewNextStep,
+  resolveOverviewNextStepWhenReady,
   type OverviewStepId,
 } from "@/lib/overview-next-step";
 
@@ -35,7 +35,8 @@ export function TenderFlowBoard() {
   const { locale } = useLocale();
   const { setActiveProjectId } = useUI();
   const navigateToView = useNavigateToView();
-  const { projects, active, activeProjectId } = useEnsureActiveProject();
+  const { projects, active, activeProjectId, isSuccess } =
+    useEnsureActiveProject();
   const ar = locale === "ar";
   const [wizardOpen, setWizardOpen] = useState(false);
 
@@ -45,7 +46,8 @@ export function TenderFlowBoard() {
   const docs = active?._count?.documents ?? 0;
   const runs = active?._count?.agentRuns ?? 0;
   const proposals = active?._count?.proposals ?? 0;
-  const nextId = resolveOverviewNextStep({
+  const nextId = resolveOverviewNextStepWhenReady({
+    isSuccess,
     projectCount: projects.length,
     documentCount: docs,
     agentRunCount: runs,
@@ -120,7 +122,7 @@ export function TenderFlowBoard() {
     setActiveProjectId,
   ]);
 
-  const next = steps.find((s) => s.id === nextId) ?? steps[steps.length - 1];
+  const next = nextId ? steps.find((s) => s.id === nextId) : undefined;
 
   return (
     <>
@@ -143,9 +145,11 @@ export function TenderFlowBoard() {
                   : "Start by setting up a tender — then upload the RFP, run agents, and export PDF."}
             </p>
           </div>
-          <Button size="sm" onClick={next.action} className="gap-1.5">
-            {next.actionLabel}
-          </Button>
+          {next ? (
+            <Button size="sm" onClick={next.action} className="gap-1.5">
+              {next.actionLabel}
+            </Button>
+          ) : null}
         </div>
 
         <ol className="grid gap-0 sm:grid-cols-2 xl:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-border/40">

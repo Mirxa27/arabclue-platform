@@ -20,6 +20,18 @@ export function resolveOverviewNextStep(input: {
   return "export";
 }
 
+/** Null while projects are still loading — never treat pending as zero. */
+export function resolveOverviewNextStepWhenReady(input: {
+  isSuccess: boolean;
+  projectCount: number;
+  documentCount: number;
+  agentRunCount: number;
+  proposalCount: number;
+}): OverviewStepId | null {
+  if (!input.isSuccess) return null;
+  return resolveOverviewNextStep(input);
+}
+
 export function overviewStepView(id: OverviewStepId): DashboardView | null {
   switch (id) {
     case "create":

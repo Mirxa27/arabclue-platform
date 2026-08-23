@@ -9,7 +9,7 @@ describe("overview navigation stays on the URL", () => {
   test("the flow board does not call setView", () => {
     const source = read("src/components/dashboard/tender-flow-board.tsx");
     expect(source).toContain("useNavigateToView");
-    expect(source).toContain("resolveOverviewNextStep");
+    expect(source).toContain("resolveOverviewNextStepWhenReady");
     expect(source).not.toMatch(/\bsetView\b/);
   });
 
