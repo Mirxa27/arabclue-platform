@@ -67,7 +67,7 @@ None.
 **Finding:** `TenderFlowBoard` treated an in-flight `["projects"]` query as zero projects, so `resolveOverviewNextStep` returned `"create"` and briefly marked “Set up tender” as Next / primary CTA.
 
 **Status:** DONE  
-**Commit:** _(filled after commit)_
+**Commit:** `24182a6` — fix(dashboard): do not treat a pending project list as empty
 
 ### What changed
 
