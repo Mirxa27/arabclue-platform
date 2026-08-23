@@ -12,7 +12,6 @@ import {
   Moon,
   Sun,
   Bell,
-  ShieldCheck,
   ChevronDown,
   Command,
   LogOut,
@@ -192,15 +191,6 @@ export function DashboardTopbar() {
       </div>
 
       <div className="flex-1 hidden sm:block" />
-
-      <div className="hidden lg:flex items-center gap-2 px-3 h-[36px] rounded-full bg-emerald-500/10 border border-emerald-500/20 backdrop-blur">
-        <div className="size-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
-        <ShieldCheck className="size-3.5 text-emerald-700 dark:text-emerald-300" />
-        <span className="text-[12px] font-[550] tracking-[-0.01em] text-emerald-800 dark:text-emerald-200">
-          {locale === "ar" ? "PDPL متوافق" : "PDPL Compliant"}
-        </span>
-        <span className="text-[10px] text-emerald-700/70 dark:text-emerald-400/60 font-mono">KSA</span>
-      </div>
 
       <Button
         variant="outline"

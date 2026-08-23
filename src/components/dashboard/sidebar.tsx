@@ -30,7 +30,6 @@ import {
   Loader2,
   Scale,
   Sparkles,
-  Zap,
   LayoutList,
   Store,
   BarChart3,
@@ -137,10 +136,8 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
         {!collapsed && (
           <div className="min-w-0">
             <div className="text-[14px] font-[650] tracking-[-0.02em] text-foreground truncate leading-[1.1]">{tr("appName", locale)}</div>
-            <div className="text-[11px] font-[500] tracking-[-0.01em] text-foreground/45 truncate flex items-center gap-1">
+            <div className="text-[11px] font-[500] tracking-[-0.01em] text-foreground/45 truncate">
               {locale === "ar" ? "منصة سعودية" : "Saudi Platform"}
-              <span className="inline-flex h-1 w-1 rounded-full bg-foreground/20" />
-              <span className="text-emerald-700 dark:text-emerald-300/80">PDPL</span>
             </div>
           </div>
         )}
@@ -234,22 +231,6 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
         )}
       </nav>
 
-      {/* Vision badge — subtle */}
-      {!collapsed && (
-        <div className="p-3 border-t border-[var(--hairline)]">
-          <div className="rounded-[12px] bg-gradient-to-br from-emerald-500/[0.08] to-cyan-400/[0.06] border border-emerald-500/15 p-3 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-1.5">
-              <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
-              <span className="text-[11px] font-[700] uppercase tracking-[0.08em] text-emerald-200/80">Vision 2030</span>
-              <Zap className="size-3 text-emerald-300/50 ms-auto" />
-            </div>
-            <p className="text-[11px] leading-[1.5] text-foreground/50">
-              {locale === "ar" ? "متوافق مع رؤية 2030 — C1 • PDPL • NCA" : "Vision 2030 aligned — C1 • PDPL • NCA essentials"}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Collapse toggle */}
       {!isDrawer && (
         <button
@@ -259,7 +240,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
             "shadow-[0_2px_8px_rgba(0,0,0,0.24)]",
             locale === "ar" ? "-start-3" : "-end-3"
           )}
-          title={collapsed ? "Expand" : "Collapse"}
+          title={locale === "ar" ? (collapsed ? "توسيع" : "طي") : (collapsed ? "Expand" : "Collapse")}
         >
           <ChevronLeft className={cn("size-3.5 transition-transform duration-200", collapsed && "rotate-180", locale === "ar" && "rotate-180", collapsed && locale === "ar" && "rotate-0")} />
         </button>
@@ -317,7 +298,6 @@ function WorkspaceSwitcher({
             <span className="uppercase tracking-[0.06em] font-[500]">{plan ?? "—"}</span>
           </div>
         </div>
-        <div className="size-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
       </div>
       {list.length > 1 && (
         <select

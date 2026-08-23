@@ -2,7 +2,7 @@
 
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
-import { ShieldCheck, Server, Globe } from "lucide-react";
+import { Server } from "lucide-react";
 
 export function DashboardFooter() {
   const { locale } = useLocale();
@@ -21,14 +21,6 @@ export function DashboardFooter() {
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <Server className="size-3.5 text-emerald-500 dark:text-emerald-400" />
             <span>{locale === "ar" ? "مستضاف في الرياض" : "Hosted in Riyadh"}</span>
-          </span>
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <ShieldCheck className="size-3.5 text-emerald-500 dark:text-emerald-400" />
-            <span>{tr("footer_pdpl_note", locale)}</span>
-          </span>
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <Globe className="size-3.5 text-chart-2" />
-            <span className="font-mono">v1.0.0</span>
           </span>
         </div>
       </div>

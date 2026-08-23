@@ -84,3 +84,25 @@ describe("generated documents qualify category defaults", () => {
     expect(qualifiedAr.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("dashboard chrome does not invent compliance", () => {
+  test("sidebar does not pulse a PDPL or Vision 2030 claim", () => {
+    const source = read("src/components/dashboard/sidebar.tsx");
+    expect(source).not.toContain("PDPL");
+    expect(source).not.toContain("Vision 2030");
+    expect(source).not.toContain("animate-pulse");
+  });
+
+  test("topbar does not show PDPL Compliant", () => {
+    const source = read("src/components/dashboard/topbar.tsx");
+    expect(source).not.toContain("PDPL Compliant");
+    expect(source).not.toContain("PDPL متوافق");
+  });
+
+  test("footer does not claim PDPL compliance or a fake version", () => {
+    const source = read("src/components/dashboard/footer.tsx");
+    expect(source).not.toContain("footer_pdpl_note");
+    expect(source).not.toContain("v1.0.0");
+    expect(source).not.toContain("PDPL");
+  });
+});
