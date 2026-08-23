@@ -137,7 +137,8 @@ export function ProjectsList() {
             empty={
               <EmptyState
                 icon={FolderKanban}
-                title={tr("no_data", locale)}
+                title={tr("projects_empty_title", locale)}
+                description={tr("projects_empty_description", locale)}
                 action={
                   <Button size="sm" onClick={() => setOpen(true)}>
                     <Plus className="size-3 me-1" />

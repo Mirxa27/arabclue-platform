@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ListSkeleton } from "@/components/dashboard/loading-skeletons";
+import { useLocale } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export function EmptyState({
@@ -34,17 +35,20 @@ export function EmptyState({
   );
 }
 
-export function ErrorState({
-  message,
-  onRetry,
-  retryLabel = "Retry",
-  className,
-}: {
+export function ErrorState(props: {
   message: string;
   onRetry?: () => void;
   retryLabel?: string;
   className?: string;
 }) {
+  const { locale } = useLocale();
+  const {
+    message,
+    onRetry,
+    retryLabel = locale === "ar" ? "إعادة المحاولة" : "Retry",
+    className,
+  } = props;
+
   return (
     <div className={cn("p-8 text-center space-y-2", className)}>
       <AlertCircle className="size-8 text-destructive/50 mx-auto" />

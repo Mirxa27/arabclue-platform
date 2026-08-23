@@ -10,6 +10,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useLocale } from "@/lib/store";
+import { tr } from "@/lib/i18n";
 
 /**
  * Reusable confirm / destructive action modal.
@@ -19,8 +21,8 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   onConfirm,
   loading,
   destructive,
@@ -37,6 +39,10 @@ export function ConfirmDialog({
   destructive?: boolean;
   children?: ReactNode;
 }) {
+  const { locale } = useLocale();
+  const resolvedConfirm = confirmLabel ?? tr("nav_confirm", locale);
+  const resolvedCancel = cancelLabel ?? tr("nav_cancel", locale);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -54,7 +60,7 @@ export function ConfirmDialog({
             onClick={() => onOpenChange(false)}
             disabled={loading}
           >
-            {cancelLabel}
+            {resolvedCancel}
           </Button>
           <Button
             type="button"
@@ -62,7 +68,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={loading}
           >
-            {confirmLabel}
+            {resolvedConfirm}
           </Button>
         </DialogFooter>
       </DialogContent>

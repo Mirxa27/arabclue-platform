@@ -111,6 +111,13 @@ export const localizationRegistry = {
   workspace_retry: { ar: "إعادة المحاولة", en: "Retry" },
   nav_expand: { ar: "توسيع", en: "Expand" },
   nav_collapse: { ar: "طي", en: "Collapse" },
+  projects_empty_title: { ar: "لا توجد مناقصات بعد", en: "No tenders yet" },
+  projects_empty_description: {
+    ar: "أنشئ مناقصة لرفع الكراسة وتشغيل الوكلاء وتصدير العرض.",
+    en: "Set up a tender so you can upload the RFP, run agents, and export the bid.",
+  },
+  nav_confirm: { ar: "تأكيد", en: "Confirm" },
+  nav_cancel: { ar: "إلغاء", en: "Cancel" },
 
   // Sections
   section_overview: { ar: "نظرة عامة", en: "Overview" },

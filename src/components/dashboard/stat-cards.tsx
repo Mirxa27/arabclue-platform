@@ -17,9 +17,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { resolveTrend } from "@/lib/stats-trends";
 import type { StatsResponse } from "@/lib/api-types";
+import type { DashboardView } from "@/lib/dashboard-routes";
+import { useNavigateToView } from "@/components/dashboard/view-navigation";
 
 export function StatCards() {
   const { locale } = useLocale();
+  const navigateToView = useNavigateToView();
   const { data, isLoading, isError, refetch } = useQuery<StatsResponse>({
     queryKey: ["stats"],
     queryFn: async () => {
@@ -58,6 +61,7 @@ export function StatCards() {
     color: string;
     bg: string;
     bar: string;
+    view: DashboardView;
   }[] = [
     {
       key: "stat_active_projects",
@@ -67,6 +71,7 @@ export function StatCards() {
       color: "text-chart-1",
       bg: "bg-chart-1/10",
       bar: "bg-chart-1",
+      view: "projects",
     },
     {
       key: "stat_proposals_generated",
@@ -76,6 +81,7 @@ export function StatCards() {
       color: "text-chart-3",
       bg: "bg-chart-3/10",
       bar: "bg-chart-3",
+      view: "proposals",
     },
     {
       key: "stat_compliance_score",
@@ -86,6 +92,7 @@ export function StatCards() {
       color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10",
       bar: "bg-emerald-500",
+      view: "compliance",
     },
     {
       key: "stat_documents_processed",
@@ -95,6 +102,7 @@ export function StatCards() {
       color: "text-chart-4",
       bg: "bg-chart-4/10",
       bar: "bg-chart-4",
+      view: "documents",
     },
   ];
 
@@ -104,59 +112,66 @@ export function StatCards() {
         const Icon = c.icon;
         const up = c.trend !== null && c.trend >= 0;
         return (
-          <Card
+          <button
             key={c.key}
-            className="relative overflow-hidden p-4 lg:p-5 border-border/60 hover:shadow-md transition-shadow group"
+            type="button"
+            onClick={() => {
+              if (c.view === "projects") navigateToView("projects");
+              else navigateToView(c.view);
+            }}
+            className="text-start w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <div className="flex items-start justify-between mb-3">
-              <div className={cn("size-10 rounded-lg flex items-center justify-center", c.bg)}>
-                <Icon className={cn("size-5", c.color)} />
+            <Card className="relative overflow-hidden p-4 lg:p-5 border-border/60 hover:shadow-md transition-shadow group">
+              <div className="flex items-start justify-between mb-3">
+                <div className={cn("size-10 rounded-lg flex items-center justify-center", c.bg)}>
+                  <Icon className={cn("size-5", c.color)} />
+                </div>
+                {c.trend !== null && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={cn(
+                          "flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded cursor-help",
+                          up ? "text-emerald-600 bg-emerald-500/10" : "text-destructive bg-destructive/10"
+                        )}
+                      >
+                        {up ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
+                        {Math.abs(c.trend)}%
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[220px]">
+                      {tr("stat_trend_tooltip", locale)}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+              <div className="text-2xl lg:text-3xl font-bold tracking-tight tabular-nums">
+                {isLoading ? (
+                  <span className="inline-block h-8 w-16 rounded shimmer align-bottom" />
+                ) : (
+                  <>
+                    {c.value}
+                    {c.suffix}
+                  </>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1 truncate">
+                {tr(c.key, locale)}
               </div>
               {c.trend !== null && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      className={cn(
-                        "flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded cursor-help",
-                        up ? "text-emerald-600 bg-emerald-500/10" : "text-destructive bg-destructive/10"
-                      )}
-                    >
-                      {up ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
-                      {Math.abs(c.trend)}%
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[220px]">
-                    {tr("stat_trend_tooltip", locale)}
-                  </TooltipContent>
-                </Tooltip>
+                <div className="text-[10px] text-muted-foreground/80 mt-0.5 truncate">
+                  {tr("stat_trend_vs_prior_7d", locale)}
+                </div>
               )}
-            </div>
-            <div className="text-2xl lg:text-3xl font-bold tracking-tight tabular-nums">
-              {isLoading ? (
-                <span className="inline-block h-8 w-16 rounded shimmer align-bottom" />
-              ) : (
-                <>
-                  {c.value}
-                  {c.suffix}
-                </>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 truncate">
-              {tr(c.key, locale)}
-            </div>
-            {c.trend !== null && (
-              <div className="text-[10px] text-muted-foreground/80 mt-0.5 truncate">
-                {tr("stat_trend_vs_prior_7d", locale)}
-              </div>
-            )}
-            {/* decorative bar — explicit mapping to survive purge */}
-            <div
-              className={cn(
-                "absolute bottom-0 inset-x-0 h-0.5 opacity-60 group-hover:opacity-100 transition-opacity",
-                c.bar
-              )}
-            />
-          </Card>
+              {/* decorative bar — explicit mapping to survive purge */}
+              <div
+                className={cn(
+                  "absolute bottom-0 inset-x-0 h-0.5 opacity-60 group-hover:opacity-100 transition-opacity",
+                  c.bar
+                )}
+              />
+            </Card>
+          </button>
         );
       })}
     </div>
