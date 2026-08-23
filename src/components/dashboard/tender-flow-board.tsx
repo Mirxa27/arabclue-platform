@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, startTransition } from "react";
+import { useMemo, useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,88 +21,106 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
-
-type ProjectRow = {
-  id: string;
-  title: string;
-  status: string;
-  _count?: { documents: number; agentRuns: number; proposals: number };
-};
+import { useNavigateToView } from "@/components/dashboard/view-navigation";
+import {
+  overviewStepView,
+  resolveOverviewNextStep,
+  type OverviewStepId,
+} from "@/lib/overview-next-step";
 
 /**
  * Linear-style guided tender flow for the overview — replaces the dumped stack.
  */
 export function TenderFlowBoard() {
   const { locale } = useLocale();
-  const { setView, setActiveProjectId } = useUI();
+  const { setActiveProjectId } = useUI();
+  const navigateToView = useNavigateToView();
   const { projects, active, activeProjectId } = useEnsureActiveProject();
   const ar = locale === "ar";
   const [wizardOpen, setWizardOpen] = useState(false);
 
   const projectId = active?.id ?? null;
   const { data: projectMeta } = useProjectEtimadMeta(projectId);
+
+  const docs = active?._count?.documents ?? 0;
+  const runs = active?._count?.agentRuns ?? 0;
+  const proposals = active?._count?.proposals ?? 0;
+  const nextId = resolveOverviewNextStep({
+    projectCount: projects.length,
+    documentCount: docs,
+    agentRunCount: runs,
+    proposalCount: proposals,
+  });
+
   const steps = useMemo(() => {
-    const docs = active?._count?.documents ?? 0;
-    const runs = active?._count?.agentRuns ?? 0;
-    const proposals = active?._count?.proposals ?? 0;
+    const runStep = (stepId: OverviewStepId) => {
+      if (stepId === "create") {
+        setWizardOpen(true);
+        return;
+      }
+      if (active) setActiveProjectId(active.id);
+      const view = overviewStepView(stepId);
+      if (view) navigateToView(view);
+    };
+
     return [
       {
-        id: "create",
+        id: "create" as const,
         title: ar ? "إعداد المناقصة" : "Set up tender",
         body: ar
           ? "الهوية · النوع · الأهداف · الميزانية"
           : "Identity · type · targets · budget",
         done: projects.length > 0,
-        action: () => setWizardOpen(true),
+        action: () => runStep("create"),
         actionLabel: ar ? "مناقصة جديدة" : "New tender",
         icon: FolderKanban,
       },
       {
-        id: "upload",
+        id: "upload" as const,
         title: ar ? "رفع كراسة الشروط" : "Upload RFP pack",
         body: ar
           ? "PDF / DOCX / ZIP للمستندات"
           : "PDF / DOCX / ZIP into Documents",
         done: docs > 0,
-        action: () => {
-          if (active) setActiveProjectId(active.id);
-          startTransition(() => setView("documents"));
-        },
+        action: () => runStep("upload"),
         actionLabel: ar ? "المستندات" : "Documents",
         icon: FileUp,
       },
       {
-        id: "agents",
+        id: "agents" as const,
         title: ar ? "تشغيل الوكلاء" : "Run agents",
         body: ar
           ? "امتثال · فني · مالي · عرض · عقد"
           : "Compliance · tech · finance · proposal · contract",
         done: runs > 0,
-        action: () => {
-          if (active) setActiveProjectId(active.id);
-          startTransition(() => setView("agents"));
-        },
+        action: () => runStep("agents"),
         actionLabel: ar ? "الوكلاء" : "Agents",
         icon: Bot,
       },
       {
-        id: "export",
+        id: "export" as const,
         title: ar ? "معاينة وتصدير PDF" : "Preview & export PDF",
         body: ar
           ? "عرض · عقد · حزمة ZIP"
           : "Proposal · contract · ZIP package",
         done: proposals > 0,
-        action: () => {
-          if (active) setActiveProjectId(active.id);
-          startTransition(() => setView(proposals > 0 ? "proposals" : "contracts"));
-        },
+        action: () => runStep("export"),
         actionLabel: ar ? "المخرجات" : "Outputs",
         icon: Scale,
       },
     ];
-  }, [active, ar, projects.length, setActiveProjectId, setView]);
+  }, [
+    active,
+    ar,
+    docs,
+    navigateToView,
+    projects.length,
+    proposals,
+    runs,
+    setActiveProjectId,
+  ]);
 
-  const next = steps.find((s) => !s.done) ?? steps[steps.length - 1];
+  const next = steps.find((s) => s.id === nextId) ?? steps[steps.length - 1];
 
   return (
     <>
@@ -133,7 +151,7 @@ export function TenderFlowBoard() {
         <ol className="grid gap-0 sm:grid-cols-2 xl:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-border/40">
           {steps.map((step, i) => {
             const Icon = step.icon;
-            const isNext = step.id === next.id;
+            const isNext = step.id === nextId;
             return (
               <li key={step.id} className="p-4">
                 <button

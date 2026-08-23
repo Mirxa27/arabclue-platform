@@ -30,6 +30,8 @@ import { TenderFlowBoard } from "./tender-flow-board";
 import { Loader2, ShieldCheck, FileText } from "lucide-react";
 import { ONBOARDING_STEPS } from "@/lib/onboarding-steps";
 import { Button } from "@/components/ui/button";
+import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
+import { shouldShowOverviewWorkPanels } from "@/lib/overview-next-step";
 
 function PanelLoading() {
   return (
@@ -276,26 +278,28 @@ function RouteNotice({
 
 function OverviewView() {
   const { locale } = useLocale();
+  const { projects, isSuccess } = useEnsureActiveProject();
+  const showWork = isSuccess && shouldShowOverviewWorkPanels(projects.length);
   return (
     <PageSection>
       <PageHeader
         title={tr("nav_dashboard", locale)}
-        subtitle={
-          locale === "ar"
-            ? "مسار واضح: إعداد مناقصة → رفع الكراسة → تشغيل الوكلاء → تصدير PDF"
-            : "Clear path: set up tender → upload RFP → run agents → export PDF"
-        }
+        subtitle={tr("overview_subtitle", locale)}
         locale={locale}
       />
       <OnboardingBanner />
       <div className="space-y-4">
         <TenderFlowBoard />
       </div>
-      <StatCards />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <FileIngestion />
-        <AgentWorkflow />
-      </div>
+      {showWork ? (
+        <>
+          <StatCards />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <FileIngestion />
+            <AgentWorkflow />
+          </div>
+        </>
+      ) : null}
     </PageSection>
   );
 }

@@ -17,6 +17,10 @@ export const localizationRegistry = {
 
   // Navigation
   nav_dashboard: { ar: "لوحة التحكم", en: "Dashboard" },
+  overview_subtitle: {
+    ar: "المطلوب الآن على المناقصة النشطة",
+    en: "What this tender needs next",
+  },
   nav_projects: { ar: "المشاريع", en: "Projects" },
   nav_documents: { ar: "المستندات", en: "Documents" },
   nav_proposals: { ar: "العطاءات", en: "Proposals" },

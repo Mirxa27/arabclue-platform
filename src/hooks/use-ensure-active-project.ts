@@ -50,5 +50,5 @@ export function useEnsureActiveProject() {
   const active =
     projects.find((p) => p.id === activeProjectId) ?? projects[0] ?? null;
 
-  return { projects, active, activeProjectId: active?.id ?? null };
+  return { projects, active, activeProjectId: active?.id ?? null, isSuccess };
 }
