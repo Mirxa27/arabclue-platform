@@ -75,3 +75,6 @@ public/downloads/*.zip
 # Runtime artifacts
 dev.pid
 test-results/
+
+# Isolated git worktrees
+.worktrees/
