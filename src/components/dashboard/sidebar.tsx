@@ -243,14 +243,14 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
       {isError && !collapsed && (
         <div className="px-3 py-2 border-b border-[var(--hairline)] flex items-center gap-2 text-[11px] text-foreground/55">
           <span className="min-w-0 truncate">
-            {locale === "ar" ? "تعذر تحميل مساحة العمل" : "Could not load workspace"}
+            {tr("workspace_load_error", locale)}
           </span>
           <button
             type="button"
             onClick={() => refetch()}
             className="shrink-0 text-[11px] font-[600] text-foreground/70 hover:text-foreground underline-offset-2 hover:underline"
           >
-            {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+            {tr("workspace_retry", locale)}
           </button>
         </div>
       )}
@@ -263,7 +263,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
       {/* Nav — Linear: 6 microstates crafted */}
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-2.5 py-3 space-y-0.5">
         {groups.map((group, groupIndex) => (
-          <div key={group.key}>
+          <div key={group.key} className="space-y-0.5">
             <NavGroupHeading
               labelKey={group.key}
               collapsed={collapsed}
