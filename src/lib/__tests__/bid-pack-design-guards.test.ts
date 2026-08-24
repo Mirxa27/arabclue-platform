@@ -22,10 +22,24 @@ describe("bid pack organisation design", () => {
     const source = read("src/lib/structured-bid-package.ts");
     expect(source).toContain("Cover_Letterhead.html");
     expect(source).toContain("Submission_Letter.html");
+    expect(source).toContain("projectTitleAr: opts.project.titleAr");
   });
 
   test("account brand copy says exports use this identity", () => {
     const source = read("src/components/dashboard/brand-setup.tsx");
     expect(source).toContain("brand_exports_note");
+  });
+
+  test("designed-draft downloads label export engine designed-draft-v1", () => {
+    const source = read("src/app/api/proposals/[id]/download/route.ts");
+    expect(source).toContain("designed-draft-v1");
+    // Audit and header must choose designed-draft-v1 when designedDraft is set —
+    // not hard-code the third branch solely to legacy-markdown.
+    expect(source).toMatch(
+      /designedDraft\s*!==\s*null\s*\n\s*\?\s*"designed-draft-v1"/
+    );
+    const legacyOnlyThirdBranch =
+      /contractRenderSnapshot !== null\s*\n\s*\?\s*"contract-render-v1"\s*\n\s*:\s*"legacy-markdown"/g;
+    expect([...source.matchAll(legacyOnlyThirdBranch)]).toHaveLength(0);
   });
 });

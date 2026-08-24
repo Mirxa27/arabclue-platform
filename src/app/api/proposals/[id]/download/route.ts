@@ -1209,7 +1209,9 @@ export async function GET(
             ? "structured-v1"
             : contractRenderSnapshot !== null
               ? "contract-render-v1"
-              : "legacy-markdown",
+              : designedDraft !== null
+                ? "designed-draft-v1"
+                : "legacy-markdown",
         ...(structuredSnapshot === null
           ? contractRenderSnapshot === null
             ? {}
@@ -1266,7 +1268,9 @@ export async function GET(
             ? "structured-v1"
             : contractRenderSnapshot !== null
               ? "contract-render-v1"
-              : "legacy-markdown",
+              : designedDraft !== null
+                ? "designed-draft-v1"
+                : "legacy-markdown",
         "X-Proposal-Structured":
           structuredSnapshot === null ? "false" : "true",
         "X-Proposal-Authoritative":

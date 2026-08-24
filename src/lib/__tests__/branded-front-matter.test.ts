@@ -32,4 +32,44 @@ describe("branded front matter", () => {
     expect(html).toContain("Riyadh Systems");
     expect(html).not.toContain("PDPL Compliant");
   });
+
+  test("Arabic locale uses titleAr and nameAr when present", () => {
+    const arInput = {
+      ...input,
+      locale: "ar" as const,
+      projectTitleAr: "مناقصة تشغيل السحابة",
+    };
+    const cover = renderCoverLetterheadHtml(arInput);
+    const letter = renderSubmissionLetterHtml(arInput);
+    expect(cover).toContain("مناقصة تشغيل السحابة");
+    expect(cover).toContain("أنظمة الرياض");
+    expect(cover).not.toContain("Cloud operations tender");
+    expect(cover).not.toContain("PDPL");
+    expect(letter).toContain("مناقصة تشغيل السحابة");
+    expect(letter).toContain("أنظمة الرياض");
+    expect(letter).not.toContain("PDPL");
+  });
+
+  test("English locale keeps English title even when titleAr is set", () => {
+    const enInput = {
+      ...input,
+      locale: "en" as const,
+      projectTitleAr: "مناقصة تشغيل السحابة",
+    };
+    const cover = renderCoverLetterheadHtml(enInput);
+    expect(cover).toContain("Cloud operations tender");
+    expect(cover).not.toContain("مناقصة تشغيل السحابة");
+    expect(cover).toContain("Riyadh Systems");
+    expect(cover).not.toContain("PDPL");
+  });
+
+  test("Arabic locale falls back to title when titleAr is blank", () => {
+    const cover = renderCoverLetterheadHtml({
+      ...input,
+      locale: "ar",
+      projectTitleAr: "   ",
+    });
+    expect(cover).toContain("Cloud operations tender");
+    expect(cover).toContain("أنظمة الرياض");
+  });
 });

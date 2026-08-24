@@ -91,6 +91,7 @@ export async function generateStructuredBidPackageZIP(opts: {
     brand: opts.brand,
     company: opts.company ?? null,
     projectTitle: opts.project.title,
+    projectTitleAr: opts.project.titleAr,
     etimadRef: opts.project.etimadRef,
   };
   const coverHtml = renderCoverLetterheadHtml(frontMatter);
