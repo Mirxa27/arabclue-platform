@@ -241,7 +241,7 @@ function BrandForm({
           <div>
             <h3 className="text-sm font-semibold">{tr("section_brand", locale)}</h3>
             <p className="text-[11px] text-muted-foreground">
-              {locale === "ar" ? "تكوين هوية الشركة" : "Configure company identity"}
+              {tr("brand_exports_note", locale)}
             </p>
           </div>
         </div>

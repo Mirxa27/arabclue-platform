@@ -36,6 +36,11 @@ import {
 } from "@/lib/text-quality";
 import type { FinancialExtract } from "@/lib/types";
 import { letterheadCompanyName } from "@/lib/letterhead";
+import {
+  applyWorkspaceBrandToSnapshot,
+  compileDraftProposalSnapshot,
+} from "@/lib/proposal-draft-snapshot";
+import type { ProposalSnapshot } from "@/lib/proposal-layouts";
 import { sanitizeFilename } from "@/lib/storage";
 import {
   documentExportGate,
@@ -635,6 +640,25 @@ export async function GET(
     contractRenderSnapshot?.snapshot.proposal.locale ??
     resolveLocale(proposal, pdfLocale);
 
+  let designedDraft: ProposalSnapshot | null = null;
+  if (!isContract && structuredSnapshot === null) {
+    designedDraft = applyWorkspaceBrandToSnapshot(
+      compileDraftProposalSnapshot({
+        proposalId: proposal.id,
+        version: proposal.version,
+        contentMd: proposal.contentMd,
+        locale: exportLocale === "ar" ? "ar" : "en",
+        projectTitle: proposal.project.title,
+        projectTitleAr: proposal.project.titleAr,
+        etimadRef: proposal.project.etimadRef,
+        bidderNameEn: letterheadCompanyName("en", brand, companyLetterhead),
+        bidderNameAr: letterheadCompanyName("ar", brand, companyLetterhead),
+        brand: brand ?? {},
+      }),
+      brand ?? {}
+    );
+  }
+
   // Drop Q&A scraps previously stored as BoQ lines; fall back to standard phases.
   if (boqItems?.length) {
     const hadJunk = boqItems.some((b) => !isQualityMilestoneName(b.item));
@@ -721,6 +745,14 @@ export async function GET(
           );
           contentType = "application/pdf";
           filename = "Draft_Contract_Bilingual.pdf";
+        } else if (designedDraft !== null) {
+          const artifact = await exportProposalLayout(designedDraft, {
+            channel: "PDF",
+            presetKey: "government-formal",
+          });
+          buffer = artifact.buffer;
+          contentType = artifact.mediaType;
+          filename = "Structured_Proposal_Bilingual.pdf";
         } else {
           buffer = await generateProposalPDF(
             proposal,
@@ -756,6 +788,15 @@ export async function GET(
           buffer = generateBilingualContractHTML(contractOptions);
           contentType = "text/html; charset=utf-8";
           filename = "Draft_Contract_Bilingual.html";
+        } else if (designedDraft !== null) {
+          const artifact = await exportProposalLayout(designedDraft, {
+            channel: "HTML",
+            presetKey: "government-formal",
+            render: { target: "screen", includeDocumentShell: true },
+          });
+          buffer = artifact.buffer;
+          contentType = artifact.mediaType;
+          filename = "Structured_Proposal_Bilingual.html";
         } else {
           buffer = generateProposalHTMLPreview(
             proposal,
@@ -843,6 +884,14 @@ export async function GET(
               presetKey: structuredSnapshot.presetKey,
             }
           );
+          buffer = artifact.buffer;
+          contentType = artifact.mediaType;
+          filename = "Structured_Proposal_Bilingual.pptx";
+        } else if (designedDraft !== null) {
+          const artifact = await exportProposalLayout(designedDraft, {
+            channel: "PPTX",
+            presetKey: "government-formal",
+          });
           buffer = artifact.buffer;
           contentType = artifact.mediaType;
           filename = "Structured_Proposal_Bilingual.pptx";
@@ -1009,6 +1058,39 @@ export async function GET(
           buffer = await generateStructuredBidPackageZIP({
             snapshot: structuredSnapshot.snapshot,
             presetKey: structuredSnapshot.presetKey,
+            proposalId: proposal.id,
+            proposalVersion: proposal.version,
+            proposalStatus: proposal.status,
+            proposalContentMd: proposal.contentMd,
+            proposalApprovedAt: proposal.approvedAt,
+            project: proposal.project,
+            brand,
+            checks,
+            boqItems: boqItems ?? [],
+            validation: gateReport,
+            company: companyLetterhead,
+            locale: exportLocale,
+          });
+          contentType = "application/zip";
+          {
+            const companyName = letterheadCompanyName(
+              exportLocale,
+              brand,
+              companyLetterhead
+            );
+            const companySlug =
+              sanitizeFilename(companyName)
+                .replace(/\s+/g, "_")
+                .replace(/_+/g, "_") || "Bid_Package";
+            filename = `${companySlug}_Structured_Bid_Package.zip`;
+          }
+        } else if (designedDraft !== null) {
+          const { generateStructuredBidPackageZIP } = await import(
+            "@/lib/structured-bid-package"
+          );
+          buffer = await generateStructuredBidPackageZIP({
+            snapshot: designedDraft,
+            presetKey: "government-formal",
             proposalId: proposal.id,
             proposalVersion: proposal.version,
             proposalStatus: proposal.status,

@@ -266,6 +266,10 @@ export const localizationRegistry = {
   action_add_project: { ar: "إضافة مشروع", en: "Add Project" },
 
   // Brand
+  brand_exports_note: {
+    ar: "تُطبَّق هذه الهوية على كل تصدير للعروض من هذه المنشأة.",
+    en: "This identity is applied to every bid export from this organisation.",
+  },
   brand_logo: { ar: "شعار الشركة", en: "Company Logo" },
   brand_primary_color: { ar: "اللون الأساسي", en: "Primary Color" },
   brand_secondary_color: { ar: "اللون الثانوي", en: "Secondary Color" },

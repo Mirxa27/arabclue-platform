@@ -8,6 +8,15 @@ import type { ProposalSnapshot } from "@/lib/proposal-layouts";
 import { generateComplianceMatrixXLSX, generateBoQXLSX, type PdfLocale } from "@/lib/generators";
 import type { BrandProfile, TenderProject } from "@prisma/client";
 import type { ValidationReport } from "@/lib/validation-gate";
+import {
+  renderCoverLetterheadHtml,
+  renderSubmissionLetterHtml,
+} from "@/lib/branded-front-matter";
+
+export const BRANDED_FRONT_MATTER_ZIP_FILES = [
+  "Cover_Letterhead.html",
+  "Submission_Letter.html",
+] as const;
 
 type BoqRow = {
   item: string;
@@ -46,7 +55,7 @@ export async function generateStructuredBidPackageZIP(opts: {
   company?: Parameters<typeof generateComplianceMatrixXLSX>[3];
 }): Promise<Buffer> {
   const zip = new JSZip();
-  const locale = opts.locale === "ar" ? "ar" : "en";
+  const locale: "ar" | "en" = opts.locale === "ar" ? "ar" : "en";
   const presetKey = opts.presetKey as
     | import("@/lib/proposal-layouts").ProposalLayoutKey
     | undefined;
@@ -76,6 +85,18 @@ export async function generateStructuredBidPackageZIP(opts: {
     render: { target: "screen", includeDocumentShell: true },
   });
   zip.file("Structured_Proposal_Bilingual.html", html.buffer);
+
+  const frontMatter = {
+    locale,
+    brand: opts.brand,
+    company: opts.company ?? null,
+    projectTitle: opts.project.title,
+    etimadRef: opts.project.etimadRef,
+  };
+  const coverHtml = renderCoverLetterheadHtml(frontMatter);
+  const letterHtml = renderSubmissionLetterHtml(frontMatter);
+  zip.file("Cover_Letterhead.html", coverHtml);
+  zip.file("Submission_Letter.html", letterHtml);
 
   const matrix = await generateComplianceMatrixXLSX(
     opts.project,
@@ -124,6 +145,8 @@ export async function generateStructuredBidPackageZIP(opts: {
           { name: "Structured_Proposal_Bilingual.pdf", type: "PDF", bytes: pdf.buffer },
           { name: "Structured_Proposal_Bilingual.pptx", type: "PPTX", bytes: pptx.buffer },
           { name: "Structured_Proposal_Data.xlsx", type: "XLSX", bytes: xlsx.buffer },
+          { name: "Cover_Letterhead.html", type: "HTML", bytes: Buffer.from(coverHtml) },
+          { name: "Submission_Letter.html", type: "HTML", bytes: Buffer.from(letterHtml) },
           { name: "Compliance_Matrix.xlsx", type: "XLSX", bytes: matrix },
           { name: "Financial_BoQ.xlsx", type: "XLSX", bytes: boq },
         ],
