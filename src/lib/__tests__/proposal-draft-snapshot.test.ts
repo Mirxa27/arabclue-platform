@@ -77,4 +77,72 @@ describe("compileDraftProposalSnapshot", () => {
     expect(branded.brand.secondaryColor).toBe("#112233");
     expect(branded.brand.accentColor).toBe("#445566");
   });
+
+  test("moves an unmapped markdown heading into the technical module", () => {
+    const snapshot = compileDraftProposalSnapshot({
+      ...baseInput,
+      contentMd: "## Random notes\nUnmapped content lands somewhere useful.",
+    });
+    const technical = snapshot.modules.find((m) => m.key === "technical-solution");
+    const block = technical?.blocks[0];
+    expect(block && block.type === "NARRATIVE" ? block.body.en : "").toContain(
+      "Unmapped content lands somewhere useful."
+    );
+  });
+
+  test("strips a mapped section's own heading line from its body", () => {
+    const snapshot = compileDraftProposalSnapshot({
+      ...baseInput,
+      locale: "en",
+      contentMd: "## Technical solution\nRedundant dual-region design.",
+    });
+    const technical = snapshot.modules.find((m) => m.key === "technical-solution");
+    const body = technical?.blocks[0];
+    const text = body && body.type === "NARRATIVE" ? body.body.en : "";
+    // The module already renders its bilingual title; repeating the raw
+    // markdown heading inside the body duplicates it in the export.
+    expect(text.startsWith("Technical solution")).toBe(false);
+    expect(text).toContain("Redundant dual-region design.");
+  });
+
+  test("a mapped heading with no body stays honestly undrafted", () => {
+    const snapshot = compileDraftProposalSnapshot({
+      ...baseInput,
+      contentMd: "## Executive summary",
+    });
+    const summary = snapshot.modules.find((m) => m.key === "executive-summary");
+    const body = summary?.blocks[0];
+    const text = body && body.type === "NARRATIVE" ? body.body.en : "";
+    expect(text).toContain("not been drafted yet");
+  });
+
+  test("blank Arabic project title falls back to the English title", () => {
+    const snapshot = compileDraftProposalSnapshot({
+      ...baseInput,
+      projectTitleAr: "   ",
+    });
+    expect(snapshot.projectTitle.ar).toBe("Cloud operations tender");
+    expect(snapshot.projectTitle.en).toBe("Cloud operations tender");
+  });
+
+  test("blank Arabic bidder name falls back to the English bidder name", () => {
+    const snapshot = compileDraftProposalSnapshot({
+      ...baseInput,
+      bidderNameAr: "",
+    });
+    expect(snapshot.bidderName.ar).toBe("Riyadh Systems");
+  });
+
+  test("partial brand overlay preserves colors it does not provide", () => {
+    const snapshot = compileDraftProposalSnapshot(baseInput);
+    const before = snapshot.brand;
+    const partial = applyWorkspaceBrandToSnapshot(snapshot, {
+      primaryColor: "#0A1B2C",
+    });
+    expect(partial.brand.primaryColor).toBe("#0A1B2C");
+    expect(partial.brand.secondaryColor).toBe(before.secondaryColor);
+    expect(partial.brand.accentColor).toBe(before.accentColor);
+    const empty = applyWorkspaceBrandToSnapshot(snapshot, {});
+    expect(empty.brand).toEqual(before);
+  });
 });

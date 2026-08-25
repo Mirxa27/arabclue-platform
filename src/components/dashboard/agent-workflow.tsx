@@ -170,6 +170,8 @@ export function AgentWorkflow() {
   const [runStatus, setRunStatus] = useState<string | null>(null);
   const [llmFallback, setLlmFallback] = useState(false);
   const [llmProvider, setLlmProvider] = useState<string | null>(null);
+  const [llmFailureKind, setLlmFailureKind] = useState<string | null>(null);
+  const [llmTruncated, setLlmTruncated] = useState(false);
   const [proposalId, setProposalId] = useState<string | null>(null);
   const [contractId, setContractId] = useState<string | null>(null);
   const [coveragePercent, setCoveragePercent] = useState<number | null>(null);
@@ -252,6 +254,8 @@ export function AgentWorkflow() {
       finalArtifact?: {
         fallback?: boolean;
         provider?: string | null;
+        failureKind?: string | null;
+        truncated?: boolean;
         proposalId?: string;
         contractId?: string;
         coverage?: { coveragePercent?: number };
@@ -297,6 +301,8 @@ export function AgentWorkflow() {
     if (fa) {
       setLlmFallback(!!fa.fallback);
       setLlmProvider(fa.provider ?? null);
+      setLlmFailureKind(fa.failureKind ?? null);
+      setLlmTruncated(!!fa.truncated);
       setProposalId(data.proposalId ?? fa.proposalId ?? null);
       setContractId(data.contractId ?? fa.contractId ?? null);
       setCoveragePercent(
@@ -525,6 +531,7 @@ export function AgentWorkflow() {
         }
         applyStatusPayload(data);
         if (data.status === "COMPLETED") {
+          const failureKind = data.finalArtifact?.failureKind;
           toast({
             title:
               locale === "ar"
@@ -532,8 +539,8 @@ export function AgentWorkflow() {
                 : "Proposal & contract complete",
             description: data.finalArtifact?.fallback
               ? locale === "ar"
-                ? "تم الإنشاء بوضع احتياطي (بدون LLM خارجي)"
-                : `Generated via ${data.finalArtifact?.provider ?? "deterministic"} fallback`
+                ? `تم الإنشاء بوضع احتياطي${failureKind ? ` (${failureKind})` : ""}`
+                : `Generated via ${data.finalArtifact?.provider ?? "deterministic"} fallback${failureKind ? ` (${failureKind})` : ""}`
               : locale === "ar"
                 ? "العطاء + مسودة العقد الثنائية جاهزان للمراجعة"
                 : "Proposal + bilingual contract draft ready for review",
@@ -1178,9 +1185,13 @@ export function AgentWorkflow() {
                   LLM: {llmProvider}
                   {llmFallback
                     ? locale === "ar"
-                      ? " (احتياطي)"
-                      : " (fallback)"
-                    : ""}
+                      ? ` (احتياطي${llmFailureKind ? `: ${llmFailureKind}` : ""})`
+                      : ` (fallback${llmFailureKind ? `: ${llmFailureKind}` : ""})`
+                    : llmTruncated
+                      ? locale === "ar"
+                        ? " (مقتطع)"
+                        : " (truncated)"
+                      : ""}
                 </span>
               )}
             </div>

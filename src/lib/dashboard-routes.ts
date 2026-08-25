@@ -43,6 +43,7 @@ export type DashboardView =
   | "proposal-builder"
   | "marketplace"
   | "analytics"
+  | "setup"
   // Admin views
   | "admin_overview"
   | "admin_ai"
@@ -90,6 +91,7 @@ export const VIEW_PATHS: Readonly<Record<DashboardView, string>> = Object.freeze
   "proposal-builder": "proposal-builder",
   marketplace: "marketplace",
   analytics: "analytics",
+  setup: "setup",
   admin_overview: "admin",
   admin_ai: "admin/ai",
   admin_env: "admin/env",

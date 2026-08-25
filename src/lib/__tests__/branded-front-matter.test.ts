@@ -72,4 +72,35 @@ describe("branded front matter", () => {
     expect(cover).toContain("Cloud operations tender");
     expect(cover).toContain("أنظمة الرياض");
   });
+
+  test("hostile titles and refs are escaped in both documents", () => {
+    const hostile = {
+      ...input,
+      projectTitle: `<script>alert("x")</script> & <img src=x onerror=alert(1)>`,
+      etimadRef: `ETM-1"><svg onload=alert(2)>`,
+    };
+    for (const html of [
+      renderCoverLetterheadHtml(hostile),
+      renderSubmissionLetterHtml(hostile),
+    ]) {
+      expect(html).not.toContain("<script>");
+      expect(html).not.toContain("<svg");
+      expect(html).not.toContain("<img");
+      expect(html).toContain("&lt;script&gt;");
+      expect(html).toContain("&amp;");
+    }
+  });
+
+  test("both documents are complete HTML shells with a letterhead", () => {
+    for (const html of [
+      renderCoverLetterheadHtml(input),
+      renderSubmissionLetterHtml(input),
+    ]) {
+      expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
+      expect(html).toContain('lang="en"');
+      expect(html).toContain('dir="ltr"');
+      expect(html).toContain("letterhead-bar");
+      expect(html).toContain("</html>");
+    }
+  });
 });

@@ -1070,6 +1070,10 @@ export async function runAgentPipeline(opts: {
           model: draft.model,
           tokensUsed: draft.tokensUsed,
           fallback: draft.fallback,
+          // Stable reason when the live model degraded to the deterministic
+          // template, plus a flag when the completion hit the token ceiling.
+          failureKind: draft.failureKind ?? null,
+          truncated: draft.truncated,
           validation: validationReport,
           knowledgeFindings,
           exportReady: !validationReport.blocking,

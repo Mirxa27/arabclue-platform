@@ -149,6 +149,11 @@ const KnowledgeApprovalQueueView = dynamic(
     import("./knowledge-approval-queue").then((m) => ({ default: m.KnowledgeApprovalQueue })),
   { loading: PanelLoading }
 );
+const SetupWizardView = dynamic(
+  () =>
+    import("./onboarding-wizard").then((m) => ({ default: m.OnboardingWizard })),
+  { loading: PanelLoading }
+);
 
 /**
  * Thin view router (App Router SPA equivalent of a PageController).
@@ -177,6 +182,7 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   "proposal-builder": ProposalBuilderView,
   marketplace: MarketplaceView,
   analytics: AnalyticsView,
+  setup: SetupWizardView,
   admin_overview: AdminOverviewView,
   admin_ai: AdminAIView,
   admin_env: AdminEnvView,
@@ -782,9 +788,9 @@ function OnboardingBanner() {
       <button
         type="button"
         className="underline font-medium"
-        onClick={() => startTransition(() => setView("account"))}
+        onClick={() => startTransition(() => setView("setup"))}
       >
-        {locale === "ar" ? "فتح الإعداد" : "Open setup"}
+        {locale === "ar" ? "فتح الإعداد الموجّه" : "Open guided setup"}
       </button>
     </div>
   );

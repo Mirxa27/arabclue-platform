@@ -116,13 +116,19 @@ function splitMarkdownSections(contentMd: string): Map<
       if (!trimmed) continue;
       const firstLine = trimmed.split(/\n/, 1)[0] ?? "";
       const rest = trimmed.slice(firstLine.length).trim();
-      const body = rest.length > 0 ? `${firstLine}\n\n${rest}` : firstLine;
       const match = HEADING_TO_MODULE.find((row) => row.pattern.test(firstLine));
       if (match) {
+        // A mapped section renders its own bilingual module title, so the raw
+        // markdown heading line would be duplicated in the export. Keep only
+        // the body; a bare heading carries no content and stays undrafted.
+        if (!rest) continue;
         const prev = assigned.get(match.key) ?? [];
-        prev.push(body);
+        prev.push(rest);
         assigned.set(match.key, prev);
       } else {
+        // Unmapped headings are kept verbatim so their context survives the
+        // move into the technical module.
+        const body = rest.length > 0 ? `${firstLine}\n\n${rest}` : firstLine;
         leftover.push(body);
       }
     }
@@ -158,6 +164,24 @@ function brandColors(brand: DraftBrandInput) {
   };
 }
 
+/**
+ * Overlay semantics: a field the workspace brand omits (null, undefined, or
+ * blank) keeps whatever color the snapshot already carries; an invalid value
+ * also falls back to the current color rather than resetting to the platform
+ * default. Only explicit, well-formed values win; the platform default is the
+ * last resort when neither side provides a usable value.
+ */
+function overlayColor(
+  current: string | undefined,
+  incoming: string | null | undefined,
+  platformDefault: string
+): string {
+  const base = current ?? platformDefault;
+  const value = incoming?.trim();
+  if (!value) return base;
+  return normalizeDocumentBrandColor(value, base);
+}
+
 export function applyWorkspaceBrandToSnapshot(
   snapshot: ProposalSnapshot,
   brand: DraftBrandInput
@@ -165,8 +189,21 @@ export function applyWorkspaceBrandToSnapshot(
   return {
     ...snapshot,
     brand: {
-      ...snapshot.brand,
-      ...brandColors(brand),
+      primaryColor: overlayColor(
+        snapshot.brand.primaryColor,
+        brand.primaryColor,
+        DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+      ),
+      secondaryColor: overlayColor(
+        snapshot.brand.secondaryColor,
+        brand.secondaryColor,
+        DEFAULT_DOCUMENT_BRAND_COLORS.secondaryColor
+      ),
+      accentColor: overlayColor(
+        snapshot.brand.accentColor,
+        brand.accentColor,
+        DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
+      ),
     },
   };
 }

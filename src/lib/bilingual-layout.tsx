@@ -186,13 +186,28 @@ export interface PairedChartBlock {
   readonly chart: DocumentChartDefinition;
 }
 
+export interface BilingualKpiItem {
+  readonly id: string;
+  readonly label: Localized<readonly BilingualInlineNode[]>;
+  readonly value: Localized<readonly BilingualInlineNode[]>;
+  readonly hint?: Localized<readonly BilingualInlineNode[]>;
+}
+
+export interface PairedKpiBlock {
+  readonly type: "kpi";
+  readonly id: string;
+  /** Between one and six metrics; larger sets belong in a table. */
+  readonly items: readonly BilingualKpiItem[];
+}
+
 export type PairedBlock =
   | PairedHeadingBlock
   | PairedParagraphBlock
   | PairedListBlock
   | PairedTableBlock
   | PairedImageBlock
-  | PairedChartBlock;
+  | PairedChartBlock
+  | PairedKpiBlock;
 
 export interface PairedSection {
   readonly id: string;
@@ -242,6 +257,43 @@ export interface RenderBilingualDocumentOptions {
    */
   readonly target?: "screen" | "print";
   readonly includeDocumentShell?: boolean;
+  /** Render a full branded cover page before the document body. */
+  readonly cover?: BilingualDocumentCover;
+  /** Insert a bilingual table of contents linking every titled section. */
+  readonly tableOfContents?: boolean;
+  /** Prefix section headings (and TOC entries) with hierarchical numbers. */
+  readonly sectionNumbering?: boolean;
+  /**
+   * Draft artifacts carry the honest draft footer; final artifacts are
+   * approved/authoritative exports and say so instead.
+   */
+  readonly lifecycle?: "draft" | "final";
+  /**
+   * Workspace brand colors mapped onto the document palette. Invalid values
+   * fall back to the built-in defaults; low-contrast secondary colors never
+   * replace body ink.
+   */
+  readonly palette?: BilingualBrandPalette;
+}
+
+/** Content shown on a generated cover page. All fields are optional. */
+export interface BilingualDocumentCover {
+  /** Small label above the title, e.g. "Technical proposal". */
+  readonly kicker?: Localized<string>;
+  readonly subtitle?: Localized<string>;
+  readonly bidderName?: Localized<string>;
+  readonly tenderReference?: string;
+  readonly dateLabel?: Localized<string>;
+}
+
+/**
+ * Brand color overrides for the document palette. Values must be hex colors
+ * (`#RGB` or `#RRGGBB`); anything else keeps the built-in default.
+ */
+export interface BilingualBrandPalette {
+  readonly primaryColor?: string | null;
+  readonly secondaryColor?: string | null;
+  readonly accentColor?: string | null;
 }
 
 export type BilingualValidationIssueCode =
@@ -838,6 +890,9 @@ function validateBlock(
     case "chart":
       validateChart(value, path, issues);
       return true;
+    case "kpi":
+      validateKpi(value, path, issues, stats, ids);
+      return true;
     default:
       addIssue(
         issues,
@@ -853,8 +908,7 @@ function validateChart(
   chartBlock: Readonly<Record<string, unknown>>,
   path: string,
   issues: BilingualValidationIssue[],
-): void {
-  if (!isRecord(chartBlock.chart)) {
+): void {  if (!isRecord(chartBlock.chart)) {
     addIssue(
       issues,
       "INVALID_CHART",
@@ -880,6 +934,62 @@ function validateChart(
       `${path}.chart`,
       error instanceof Error ? error.message : "Invalid document chart.",
     );
+  }
+}
+
+const MAX_KPI_ITEMS = 6;
+
+function validateKpi(
+  block: Readonly<Record<string, unknown>>,
+  path: string,
+  issues: BilingualValidationIssue[],
+  stats: ValidationStats,
+  ids: Set<string>,
+): void {
+  if (!Array.isArray(block.items) || block.items.length === 0) {
+    addIssue(
+      issues,
+      "INVALID_BLOCK",
+      `${path}.items`,
+      "A KPI block must contain at least one metric.",
+    );
+    return;
+  }
+  if (block.items.length > MAX_KPI_ITEMS) {
+    addIssue(
+      issues,
+      "INVALID_BLOCK",
+      `${path}.items`,
+      `A KPI block must contain at most ${String(MAX_KPI_ITEMS)} metrics.`,
+    );
+  }
+  for (const [index, item] of block.items.entries()) {
+    const itemPath = `${path}.items[${String(index)}]`;
+    if (!isRecord(item)) {
+      addIssue(
+        issues,
+        "INVALID_BLOCK",
+        itemPath,
+        "A KPI metric must be a structured object.",
+      );
+      continue;
+    }
+    validateStableId(item.id, `${itemPath}.id`, issues, ids);
+    validateLocalizedInline(
+      item.label,
+      `${itemPath}.label`,
+      issues,
+      stats,
+    );
+    validateLocalizedInline(
+      item.value,
+      `${itemPath}.value`,
+      issues,
+      stats,
+    );
+    if (item.hint !== undefined) {
+      validateLocalizedInline(item.hint, `${itemPath}.hint`, issues, stats);
+    }
   }
 }
 
@@ -1841,6 +1951,23 @@ function renderBlockForLanguage(
         direction: language === "ar" ? "rtl" : "ltr",
         instanceKey: block.id,
       }).html;
+    case "kpi":
+      return `<div class="bilingual-kpi-grid" role="list">${block.items
+        .map((item) => {
+          const hint = item.hint
+            ? `<span class="bilingual-kpi-hint">${renderSafeInline(
+                item.hint[language],
+              )}</span>`
+            : "";
+          return `<div class="bilingual-kpi-card" role="listitem" data-kpi-id="${escapeBilingualHtml(
+            item.id,
+          )}"><span class="bilingual-kpi-value">${renderSafeInline(
+            item.value[language],
+          )}</span><span class="bilingual-kpi-label">${renderSafeInline(
+            item.label[language],
+          )}</span>${hint}</div>`;
+        })
+        .join("")}</div>`;
     default:
       return assertNever(block);
   }
@@ -2149,10 +2276,16 @@ function renderSection(
   section: PairedSection,
   config: BilingualLayoutConfig,
   flattenForPrint: boolean,
+  numberLabel?: string,
 ): string {
   const compiledBlocks = section.blocks.flatMap(compileBlockRenderFragments);
   const headingOffset = section.title ? 1 : 0;
   const fragmentCount = compiledBlocks.length + headingOffset;
+  const numberPrefix = numberLabel
+    ? `<span class="bilingual-section-number">${escapeBilingualHtml(
+        numberLabel,
+      )}</span> `
+    : "";
   const sectionHeading = section.title
     ? renderPairedFragment({
         section,
@@ -2160,8 +2293,8 @@ function renderSection(
         content: {
           en: `<h2 id="${escapeBilingualHtml(
             section.id,
-          )}--heading">${renderSafeInline(section.title.en)}</h2>`,
-          ar: `<h2>${renderSafeInline(section.title.ar)}</h2>`,
+          )}--heading">${numberPrefix}${renderSafeInline(section.title.en)}</h2>`,
+          ar: `<h2>${numberPrefix}${renderSafeInline(section.title.ar)}</h2>`,
         },
         config,
         kind: "section-heading",
@@ -2264,8 +2397,45 @@ function resolveConfig(
   return deepFreeze(config);
 }
 
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+function normalizedHexColor(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed || !HEX_COLOR_PATTERN.test(trimmed)) return null;
+  if (trimmed.length === 4) {
+    return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`.toLowerCase();
+  }
+  return trimmed.toLowerCase();
+}
+
+function hexToRgbChannel(hex: string): readonly [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = hexToRgbChannel(hex).map((channel) => {
+    const srgb = channel / 255;
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio; used to keep body ink readable over white paper. */
+function contrastRatio(foreground: string, background: string): number {
+  const luminanceForeground = relativeLuminance(foreground);
+  const luminanceBackground = relativeLuminance(background);
+  const lighter = Math.max(luminanceForeground, luminanceBackground);
+  const darker = Math.min(luminanceForeground, luminanceBackground);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 export function generateBilingualCSS(
   config: BilingualLayoutConfig = DEFAULT_BILINGUAL_CONFIG,
+  palette?: BilingualBrandPalette,
 ): string {
   const issues: BilingualValidationIssue[] = [];
   validateConfig(config, "$.layout", issues);
@@ -2275,17 +2445,31 @@ export function generateBilingualCSS(
   const mobileEnOrder = config.mobileOrder === "en-first" ? 1 : 2;
   const mobileArOrder = config.mobileOrder === "ar-first" ? 1 : 2;
 
+  // Brand palette override: invalid values silently keep defaults; a brand
+  // secondary may only become body ink when it stays WCAG-readable on paper.
+  const DEFAULT_PRIMARY = "#0F766E";
+  const DEFAULT_INK = "#173F5F";
+  const DEFAULT_ACCENT = "#B45309";
+  const primary = normalizedHexColor(palette?.primaryColor) ?? DEFAULT_PRIMARY;
+  const accent = normalizedHexColor(palette?.accentColor) ?? DEFAULT_ACCENT;
+  const secondaryCandidate = normalizedHexColor(palette?.secondaryColor);
+  const ink =
+    secondaryCandidate &&
+    contrastRatio(secondaryCandidate, "#FFFFFF") >= 4.5
+      ? secondaryCandidate
+      : DEFAULT_INK;
+
   return `
 :root {
-  --bilingual-primary: #0F766E;
-  --bilingual-ink: #173F5F;
+  --bilingual-primary: ${primary};
+  --bilingual-ink: ${ink};
   --bilingual-ink-deep: #0F172A;
   --bilingual-muted: #475569;
   --bilingual-border: #E2E8F0;
   --bilingual-border-strong: #94A3B8;
   --bilingual-surface: #F8FAFC;
   --bilingual-surface-strong: #EEF2F6;
-  --bilingual-accent: #B45309;
+  --bilingual-accent: ${accent};
   --bilingual-paper: #FFFFFF;
   --bilingual-en-column: ${String(enPercent)}fr;
   --bilingual-ar-column: ${String(arPercent)}fr;
@@ -2366,6 +2550,213 @@ body {
 
 .bilingual-section--new-page {
   break-before: page;
+}
+
+.bilingual-section-number {
+  display: inline-block;
+  min-inline-size: 1.6em;
+  color: var(--bilingual-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------------ */
+/* Cover page                                                          */
+/* ------------------------------------------------------------------ */
+
+.bilingual-cover {
+  break-after: page;
+  page-break-after: always;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-block-size: 240mm;
+  margin-block-end: 1.5rem;
+}
+
+.bilingual-cover__band {
+  position: relative;
+  padding: 18mm 12mm 14mm;
+  margin-block-start: -1.5rem;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--bilingual-primary) 92%, #000000) 0%,
+    var(--bilingual-primary) 55%,
+    color-mix(in srgb, var(--bilingual-primary) 72%, var(--bilingual-accent)) 100%
+  );
+  color: #ffffff;
+}
+
+.bilingual-cover__band-accent {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 2.5mm;
+  background: var(--bilingual-accent);
+}
+
+.bilingual-cover__kicker-row .bilingual-cover__line {
+  font-size: 8.5pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.bilingual-cover__title {
+  margin-block: 10mm 0;
+  color: #ffffff;
+}
+
+.bilingual-cover__title-line {
+  display: block;
+  font-size: 21pt;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.bilingual-cover__subtitle-row .bilingual-cover__line {
+  margin-block-start: 6mm;
+  font-size: 11pt;
+  line-height: 1.5;
+  opacity: 0.92;
+}
+
+.bilingual-cover__row + .bilingual-cover__subtitle-row,
+.bilingual-cover__kicker-row + .bilingual-cover__title + .bilingual-cover__subtitle-row {
+  margin-block-start: 6mm;
+}
+
+.bilingual-cover__meta {
+  padding: 0 12mm 4mm;
+}
+
+.bilingual-cover__meta-item {
+  margin-block-end: 5mm;
+}
+
+.bilingual-cover__meta-label {
+  display: block;
+  font-size: 7.5pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bilingual-muted);
+}
+
+.bilingual-cover__meta-value {
+  font-size: 12pt;
+  font-weight: 650;
+  color: var(--bilingual-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.bilingual-cover__bidder-row .bilingual-cover__line,
+.bilingual-cover__date-row .bilingual-cover__line {
+  font-size: 11.5pt;
+  font-weight: 600;
+  color: var(--bilingual-ink);
+  border-top: var(--bilingual-hairline);
+  padding-block-start: 4mm;
+  margin-block-end: 0;
+}
+
+.bilingual-cover__date-row { margin-block-start: 4mm; }
+
+@media print {
+  .bilingual-cover {
+    min-block-size: auto;
+    block-size: 100vh;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Table of contents                                                   */
+/* ------------------------------------------------------------------ */
+
+[data-bilingual-toc] {
+  margin-block-end: 1rem;
+}
+
+.bilingual-toc__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: none;
+}
+
+.bilingual-toc__item {
+  margin-block: 0.28rem;
+  break-inside: avoid;
+}
+
+.bilingual-toc__link {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  color: inherit;
+  text-decoration: none;
+  font-size: 10.5pt;
+}
+
+.bilingual-toc__link::after {
+  content: "";
+  order: 2;
+  flex: 1;
+  border-block-end: 1px dotted var(--bilingual-border-strong);
+  transform: translateY(-0.25em);
+}
+
+.bilingual-toc__title {
+  order: 1;
+}
+
+.bilingual-toc__link:hover .bilingual-toc__title {
+  color: var(--bilingual-primary);
+}
+
+/* ------------------------------------------------------------------ */
+/* KPI stat cards                                                      */
+/* ------------------------------------------------------------------ */
+
+.bilingual-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.7rem;
+  margin-block: 0.35rem 0.7rem;
+}
+
+.bilingual-kpi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--bilingual-surface);
+  border: 1px solid var(--bilingual-border);
+  border-inline-start: 3px solid var(--bilingual-primary);
+  break-inside: avoid-page;
+  page-break-inside: avoid;
+}
+
+.bilingual-kpi-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--bilingual-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.bilingual-kpi-label {
+  font-size: 8.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bilingual-muted);
+}
+
+.bilingual-kpi-hint {
+  font-size: 7.5pt;
+  color: var(--bilingual-muted);
+  opacity: 0.85;
 }
 
 .bilingual-pair {
@@ -2788,29 +3179,48 @@ export class BilingualLayoutEngine {
     const config = resolveConfig(this.config, document.layout);
     const target = options.target ?? "screen";
     const includeDocumentShell = options.includeDocumentShell ?? true;
+    const flattenForPrint = target === "print";
     const effectiveViewerMode = "both";
+    const lifecycle = options.lifecycle === "final" ? "final" : "draft";
+
+    const numberedSections = options.sectionNumbering
+      ? assignSectionNumbers(document.sections)
+      : [];
+    const coverHtml = options.cover
+      ? renderCoverPage(options.cover, document, config)
+      : "";
+    const tocHtml =
+      options.tableOfContents && document.sections.length > 0
+        ? renderTableOfContents(
+            document.sections,
+            numberedSections,
+            config,
+            flattenForPrint,
+          )
+        : "";
+
     const root = `<main class="bilingual-document" data-bilingual-document data-document-id="${escapeBilingualHtml(
       document.id,
     )}" data-layout-mode="${config.mode}" data-viewer-preference="${
       config.viewer.mode
     }" data-viewer-mode="${effectiveViewerMode}" data-viewer-language="${
       config.viewer.defaultLanguage
-    }" data-render-target="${target}" data-bilingual-layout-state="pending" data-bilingual-layout-ready="false">
+    }" data-render-target="${target}" data-lifecycle="${lifecycle}" data-bilingual-layout-state="pending" data-bilingual-layout-ready="false">
 ${renderViewerMetadata(document.id, config, target)}
-${renderDocumentTitle(document, config, target === "print")}
+${coverHtml}
+${tocHtml}
+${renderDocumentTitle(document, config, flattenForPrint)}
 ${document.sections
-  .map((section) => renderSection(section, config, target === "print"))
+  .map((section, sectionIndex) =>
+    renderSection(
+      section,
+      config,
+      flattenForPrint,
+      numberedSections[sectionIndex],
+    ),
+  )
   .join("\n")}
-<footer class="bilingual-document-footer" data-bilingual-footer aria-label="Document identity">
-  <div class="bilingual-document-footer__cell bilingual-document-footer__cell--en" lang="en" dir="ltr">
-    <span class="bilingual-document-footer__brand">Print-ready draft</span>
-    <span class="bilingual-document-footer__meta">Human author is final authority · Confidential</span>
-  </div>
-  <div class="bilingual-document-footer__cell bilingual-document-footer__cell--ar" lang="ar" dir="rtl">
-    <span class="bilingual-document-footer__brand">مسودة جاهزة للطباعة</span>
-    <span class="bilingual-document-footer__meta">المؤلف البشري هو المرجع النهائي · سري</span>
-  </div>
-</footer>
+${renderDocumentFooter(lifecycle)}
 </main>`;
 
     if (!includeDocumentShell) return root;
@@ -2826,7 +3236,7 @@ ${document.sections
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${escapeBilingualHtml(title)}</title>
-<style>${generateBilingualCSS(config)}</style>
+<style>${generateBilingualCSS(config, options.palette)}</style>
 </head>
 <body>
 ${root}
@@ -2844,4 +3254,171 @@ export function renderBilingualHTML(
       ? (document.layout as BilingualLayoutOverrides)
       : {};
   return new BilingualLayoutEngine(documentLayout).render(document, options);
+}
+
+// ============================================================================
+// Document chrome: cover page, table of contents, numbering, lifecycle footer
+// ============================================================================
+
+/**
+ * Assign hierarchical decimal numbers ("1", "2", …) to titled sections in
+ * order. Untitled sections are skipped without consuming a number so the
+ * visible numbering always matches what readers can see.
+ */
+export function assignSectionNumbers(
+  sections: readonly PairedSection[],
+): readonly string[] {
+  let counter = 0;
+  return sections.map((section) => {
+    if (!section.title) return "";
+    counter += 1;
+    return String(counter);
+  });
+}
+
+function renderCoverPage(
+  cover: BilingualDocumentCover,
+  document: BilingualDocumentSpec,
+  _config: BilingualLayoutConfig,
+): string {
+  const line = (
+    value: Localized<string> | undefined,
+    className: string,
+  ): string => {
+    if (!value || (!value.en.trim() && !value.ar.trim())) return "";
+    return `<div class="bilingual-cover__row ${className}">
+  <p class="bilingual-cover__line bilingual-cover__line--en" lang="en" dir="ltr">${escapeBilingualHtml(
+    value.en,
+  )}</p>
+  <p class="bilingual-cover__line bilingual-cover__line--ar" lang="ar" dir="rtl">${escapeBilingualHtml(
+    value.ar,
+  )}</p>
+</div>`;
+  };
+  const ref = cover.tenderReference?.trim();
+  // The cover is presentation chrome: its titles are styled <span>s, not
+  // headings, so the document keeps exactly one semantic <h1> and the PDF
+  // single-h1 quality gate stays satisfied.
+  return `<section class="bilingual-cover" data-bilingual-cover aria-label="Cover page">
+  <div class="bilingual-cover__band">
+    <span class="bilingual-cover__band-accent"></span>
+    ${line(cover.kicker, "bilingual-cover__kicker-row")}
+    <div class="bilingual-cover__title">
+      <span class="bilingual-cover__title-line" lang="en" dir="ltr">${escapeBilingualHtml(
+        inlineText(document.title.en),
+      )}</span>
+      <span class="bilingual-cover__title-line" lang="ar" dir="rtl">${escapeBilingualHtml(
+        inlineText(document.title.ar),
+      )}</span>
+    </div>
+    ${line(cover.subtitle, "bilingual-cover__subtitle-row")}
+  </div>
+  <div class="bilingual-cover__meta">
+    ${
+      ref
+        ? `<div class="bilingual-cover__meta-item"><span class="bilingual-cover__meta-label" lang="en" dir="ltr">Tender reference</span><span class="bilingual-cover__meta-value">${escapeBilingualHtml(
+            ref,
+          )}</span></div>`
+        : ""
+    }
+    ${cover.bidderName ? line(cover.bidderName, "bilingual-cover__bidder-row") : ""}
+    ${line(cover.dateLabel, "bilingual-cover__date-row")}
+  </div>
+</section>`;
+}
+
+function renderTableOfContents(
+  sections: readonly PairedSection[],
+  numberLabels: readonly string[],
+  config: BilingualLayoutConfig,
+  flattenForPrint: boolean,
+): string {
+  const entries = sections
+    .map((section, index) => ({ section, label: numberLabels[index] ?? "" }))
+    .filter((entry) => entry.section.title !== undefined);
+  if (entries.length === 0) return "";
+
+  const cellFor = (language: DocumentLanguage): string =>
+    `<ol class="bilingual-toc__list">${
+      entries
+        .map(({ section, label }) => {
+          const titleNodes = section.title![language];
+          const numberSpan = label
+            ? `<span class="bilingual-section-number">${escapeBilingualHtml(label)}</span> `
+            : "";
+          return `<li class="bilingual-toc__item"><a class="bilingual-toc__link" href="#${escapeBilingualHtml(
+            section.id,
+          )}--heading">${numberSpan}<span class="bilingual-toc__title">${renderSafeInline(
+            titleNodes,
+          )}</span></a></li>`;
+        })
+        .join("")
+    }</ol>`;
+
+  const tocContext = {
+    id: "bilingual-toc",
+    alignmentKey: "bilingual.toc",
+  } as PairedSection;
+  const headingPair = renderPairedFragment({
+    section: tocContext,
+    fragmentId: "bilingual-toc--heading",
+    content: {
+      en: `<h2 id="bilingual-toc--anchor">Table of contents</h2>`,
+      ar: `<h2>المحتويات</h2>`,
+    },
+    config,
+    kind: "toc-heading",
+    keepTogether: true,
+    keepWithNext: true,
+    fragmentIndex: 0,
+    fragmentCount: 2,
+    breakBefore: false,
+    sectionMarker: flattenForPrint,
+  });
+  const listPair = renderPairedFragment({
+    section: tocContext,
+    fragmentId: "bilingual-toc--list",
+    content: { en: cellFor("en"), ar: cellFor("ar") },
+    config,
+    kind: "toc-list",
+    keepTogether: entries.length <= 24,
+    keepWithNext: false,
+    fragmentIndex: 1,
+    fragmentCount: 2,
+    breakBefore: false,
+    sectionMarker: flattenForPrint,
+  });
+  return `<div data-bilingual-toc>${headingPair}${listPair}</div>`;
+}
+
+const LIFECYCLE_FOOTER: Record<
+  "draft" | "final",
+  { brandEn: string; metaEn: string; brandAr: string; metaAr: string }
+> = {
+  draft: {
+    brandEn: "Print-ready draft",
+    metaEn: "Human author is final authority · Confidential",
+    brandAr: "مسودة جاهزة للطباعة",
+    metaAr: "المؤلف البشري هو المرجع النهائي · سري",
+  },
+  final: {
+    brandEn: "Authoritative export",
+    metaEn: "Approved content · Handle per classification · Confidential",
+    brandAr: "نسخة معتمدة للتصدير",
+    metaAr: "محتوى معتمد · تعامل وفق التصنيف · سري",
+  },
+};
+
+function renderDocumentFooter(lifecycle: "draft" | "final"): string {
+  const copy = LIFECYCLE_FOOTER[lifecycle];
+  return `<footer class="bilingual-document-footer" data-bilingual-footer data-lifecycle="${lifecycle}" aria-label="Document identity">
+  <div class="bilingual-document-footer__cell bilingual-document-footer__cell--en" lang="en" dir="ltr">
+    <span class="bilingual-document-footer__brand">${escapeBilingualHtml(copy.brandEn)}</span>
+    <span class="bilingual-document-footer__meta">${escapeBilingualHtml(copy.metaEn)}</span>
+  </div>
+  <div class="bilingual-document-footer__cell bilingual-document-footer__cell--ar" lang="ar" dir="rtl">
+    <span class="bilingual-document-footer__brand">${escapeBilingualHtml(copy.brandAr)}</span>
+    <span class="bilingual-document-footer__meta">${escapeBilingualHtml(copy.metaAr)}</span>
+  </div>
+</footer>`;
 }

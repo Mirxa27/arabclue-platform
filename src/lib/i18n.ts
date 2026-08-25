@@ -29,6 +29,7 @@ export const localizationRegistry = {
   nav_account: { ar: "إعداد الحساب", en: "Account Setup" },
   nav_business_profile: { ar: "ملف الشركة", en: "Business Profile" },
   nav_copilot: { ar: "الوكيل الصوتي", en: "Voice Copilot" },
+  nav_setup: { ar: "الإعداد الموجّه", en: "Guided Setup" },
 
   // Copilot processing view (Mission Control)
   copilot_proc_title: { ar: "حالة المعالجة", en: "Processing status" },

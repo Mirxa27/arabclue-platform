@@ -15,6 +15,15 @@ import {
   providerServesEngine,
   requireConfiguredModelId,
 } from "./model-catalog";
+import {
+  LLMTransportError,
+  classifyFailure,
+  trimToSafeBoundary,
+  withRetries,
+  type LLMFailureKind,
+} from "./resilience";
+
+export type { LLMFailureKind } from "./resilience";
 
 export type { LLMMessage };
 export type { AgentEngine } from "./model-catalog";
@@ -65,6 +74,16 @@ export interface LLMResult {
   confidence: number;
   fallback: boolean;
   engine?: string;
+  /**
+   * Stable classification of why a call degraded (or "none" on success).
+   * Lets the pipeline, UI, and audit trail distinguish a misconfigured
+   * provider from a transient outage instead of a bare `fallback: true`.
+   */
+  failureKind?: LLMFailureKind;
+  /** True when the provider hit its token ceiling mid-completion. */
+  truncated?: boolean;
+  /** Transport attempts consumed (>= 1) when a provider was contacted. */
+  attempts?: number;
 }
 
 export async function generateCompletion(
@@ -88,6 +107,7 @@ export async function generateCompletion(
       confidence: 0,
       fallback: true,
       engine,
+      failureKind: "deterministic_mode",
     };
   }
 
@@ -101,6 +121,7 @@ export async function generateCompletion(
       confidence: 0,
       fallback: true,
       engine,
+      failureKind: "no_provider",
     };
   }
 
@@ -119,6 +140,7 @@ export async function generateCompletion(
         confidence: 0,
         fallback: true,
         engine,
+        failureKind: "missing_key",
       };
     }
   }
@@ -142,16 +164,26 @@ export async function generateCompletion(
       confidence: 1,
       fallback: false,
       engine,
+      failureKind: "pricing_refusal",
     };
   }
 
   const finalize = (
     raw: string,
     baseConfidence: number,
-    tokensUsed: number
+    tokensUsed: number,
+    meta: { truncated?: boolean; attempts?: number } = {}
   ): LLMResult => {
+    // A completion that hit the ceiling mid-sentence must not ship as-is.
+    let content = raw;
+    let truncated = meta.truncated ?? false;
+    if (truncated && content) {
+      const repaired = trimToSafeBoundary(content);
+      content = repaired.text;
+      truncated = repaired.removedChars > 0;
+    }
     const guarded = applyOutputGuardrails(
-      raw,
+      content,
       provider,
       filteredMessages,
       baseConfidence
@@ -169,6 +201,8 @@ export async function generateCompletion(
         ),
         fallback: true,
         engine,
+        failureKind: "guardrail_rejected",
+        attempts: meta.attempts,
       };
     }
     return {
@@ -179,41 +213,63 @@ export async function generateCompletion(
       confidence: guarded.confidence,
       fallback: false,
       engine,
+      failureKind: "none",
+      truncated,
+      attempts: meta.attempts,
     };
   };
 
   try {
+    const runTransport = async (
+      operation: () => Promise<{
+        text: string;
+        tokensUsed: number;
+        truncated: boolean;
+      }>,
+      baseConfidence: number
+    ): Promise<LLMResult> => {
+      const { result, attempts } = await withRetries({ operation });
+      return finalize(
+        result.text,
+        baseConfidence,
+        result.tokensUsed ||
+          estimateTokens(result.text + JSON.stringify(filteredMessages)),
+        { truncated: result.truncated, attempts }
+      );
+    };
+
     if (pid === "zai") {
       // Prefer OpenAI-compatible path when apiBase is configured (live models)
       if (provider.apiBase?.trim()) {
-        const content = await callOpenAiCompatible(
-          provider,
-          filteredMessages,
-          temperature,
-          maxTokens
-        );
-        return finalize(
-          content.text,
-          0.92,
-          content.tokensUsed ||
-            estimateTokens(content.text + JSON.stringify(filteredMessages))
+        return await runTransport(
+          () => callOpenAiCompatible(provider, filteredMessages, temperature, maxTokens),
+          0.92
         );
       }
       const model = requireConfiguredModelId(provider.modelId);
       const zai = await getZai();
-      const completion = await zai.chat.completions.create({
-        model,
-        messages: filteredMessages.map((m) => ({
-          role: m.role === "system" ? "assistant" : m.role,
-          content: m.content,
-        })),
-        thinking: { type: "disabled" },
+      const { result: completion, attempts } = await withRetries({
+        operation: () =>
+          zai.chat.completions.create({
+            model,
+            messages: filteredMessages.map((m) => ({
+              role: m.role === "system" ? "assistant" : m.role,
+              content: m.content,
+            })),
+            thinking: { type: "disabled" },
+          }),
       });
       const content = completion.choices[0]?.message?.content ?? "";
       return finalize(
         content,
         Math.min(0.97, 0.85 + content.length / 4000),
-        estimateTokens(content + JSON.stringify(filteredMessages))
+        estimateTokens(content + JSON.stringify(filteredMessages)),
+        {
+          truncated:
+            completion.choices[0]?.finish_reason === "length" ||
+            completion.choices[0]?.finish_reason === "stop_sequence",
+          attempts,
+        }
       );
     }
 
@@ -223,56 +279,44 @@ export async function generateCompletion(
       pid === "ollama" ||
       pid === "azure_openai"
     ) {
-      const content = await callOpenAiCompatible(
-        provider,
-        filteredMessages,
-        temperature,
-        maxTokens
-      );
-      return finalize(
-        content.text,
-        0.92,
-        content.tokensUsed ||
-          estimateTokens(content.text + JSON.stringify(filteredMessages))
+      return await runTransport(
+        () => callOpenAiCompatible(provider, filteredMessages, temperature, maxTokens),
+        0.92
       );
     }
 
     if (pid === "anthropic") {
-      const content = await callAnthropic(
-        provider,
-        filteredMessages,
-        temperature,
-        maxTokens
-      );
-      return finalize(
-        content.text,
-        0.93,
-        content.tokensUsed ||
-          estimateTokens(content.text + JSON.stringify(filteredMessages))
+      return await runTransport(
+        () => callAnthropic(provider, filteredMessages, temperature, maxTokens),
+        0.93
       );
     }
 
     if (pid === "mistral") {
-      const content = await callOpenAiCompatible(
-        {
-          ...provider,
-          apiBase: provider.apiBase || "https://api.mistral.ai/v1",
-        },
-        filteredMessages,
-        temperature,
-        maxTokens
-      );
-      return finalize(
-        content.text,
-        0.9,
-        content.tokensUsed ||
-          estimateTokens(content.text + JSON.stringify(filteredMessages))
+      return await runTransport(
+        () =>
+          callOpenAiCompatible(
+            {
+              ...provider,
+              apiBase: provider.apiBase || "https://api.mistral.ai/v1",
+            },
+            filteredMessages,
+            temperature,
+            maxTokens
+          ),
+        0.9
       );
     }
 
-    throw new Error(`Unsupported provider: ${provider.provider}`);
+    throw new LLMTransportError(`Unsupported provider: ${provider.provider}`, {
+      kind: "invalid_response",
+    });
   } catch (err) {
-    console.error("[llm] completion failed, using fallback", err);
+    const failureKind = classifyFailure(err);
+    console.error(
+      `[llm] completion failed (kind=${failureKind}), using fallback`,
+      err
+    );
     const fallback = buildDeterministicFallback(filteredMessages, provider);
     return {
       content: fallback,
@@ -282,16 +326,23 @@ export async function generateCompletion(
       confidence: provider.confidenceThreshold * 0.9,
       fallback: true,
       engine,
+      failureKind,
     };
   }
 }
+
+type TransportCompletion = {
+  text: string;
+  tokensUsed: number;
+  truncated: boolean;
+};
 
 async function callOpenAiCompatible(
   provider: AIProviderConfig,
   messages: LLMMessage[],
   temperature: number,
   maxTokens: number
-): Promise<{ text: string; tokensUsed: number }> {
+): Promise<TransportCompletion> {
   const key = await resolveProviderApiKey(
     provider.provider,
     provider.apiKeyEnvKey
@@ -299,8 +350,9 @@ async function callOpenAiCompatible(
   const pid = provider.provider.toLowerCase();
   // Ollama often runs without auth
   if (!key && pid !== "ollama") {
-    throw new Error(
-      `API key missing for ${provider.provider} (${provider.apiKeyEnvKey || "default env"})`
+    throw new LLMTransportError(
+      `API key missing for ${provider.provider} (${provider.apiKeyEnvKey || "default env"})`,
+      { kind: "missing_key" }
     );
   }
 
@@ -339,14 +391,19 @@ async function callOpenAiCompatible(
     });
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(
-        `${provider.provider} HTTP ${res.status}: ${errText.slice(0, 200)}`
+      throw new LLMTransportError(
+        `${provider.provider} HTTP ${res.status}: ${errText.slice(0, 200)}`,
+        { status: res.status }
       );
     }
     const data = await res.json();
+    const choice = data.choices?.[0];
     return {
-      text: data.choices?.[0]?.message?.content ?? "",
+      text: choice?.message?.content ?? "",
       tokensUsed: data.usage?.total_tokens ?? 0,
+      truncated:
+        choice?.finish_reason === "length" ||
+        choice?.finish_reason === "stop_sequence",
     };
   } finally {
     clearTimeout(timer);
@@ -358,12 +415,16 @@ async function callAnthropic(
   messages: LLMMessage[],
   temperature: number,
   maxTokens: number
-): Promise<{ text: string; tokensUsed: number }> {
+): Promise<TransportCompletion> {
   const key = await resolveProviderApiKey(
     provider.provider,
     provider.apiKeyEnvKey
   );
-  if (!key) throw new Error("ANTHROPIC_API_KEY missing");
+  if (!key) {
+    throw new LLMTransportError("ANTHROPIC_API_KEY missing", {
+      kind: "missing_key",
+    });
+  }
 
   const system = messages
     .filter((m) => m.role === "system")
@@ -394,14 +455,21 @@ async function callAnthropic(
     });
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`Anthropic HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      throw new LLMTransportError(
+        `Anthropic HTTP ${res.status}: ${errText.slice(0, 200)}`,
+        { status: res.status }
+      );
     }
     const data = await res.json();
     const text =
       data.content?.map((c: { text?: string }) => c.text ?? "").join("") ?? "";
     const tokensUsed =
       (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0);
-    return { text, tokensUsed };
+    return {
+      text,
+      tokensUsed,
+      truncated: data.stop_reason === "max_tokens",
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -476,14 +544,25 @@ export async function embedText(text: string): Promise<number[]> {
           };
           if (key) headers.Authorization = `Bearer ${key}`;
 
-          const res = await fetch(`${base}/embeddings`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model: requireConfiguredModelId(provider.modelId),
-              input: trimmed,
-            }),
-          });
+          const controller = new AbortController();
+          const timer = setTimeout(
+            () => controller.abort(),
+            provider.timeoutMs || 30000
+          );
+          let res: Response;
+          try {
+            res = await fetch(`${base}/embeddings`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                model: requireConfiguredModelId(provider.modelId),
+                input: trimmed,
+              }),
+              signal: controller.signal,
+            });
+          } finally {
+            clearTimeout(timer);
+          }
           if (res.ok) {
             const data = await res.json();
             const emb = data.data?.[0]?.embedding as number[] | undefined;

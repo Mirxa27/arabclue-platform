@@ -11,6 +11,9 @@ import type {
   Locale,
 } from "../types";
 
+/** Hard ceiling on the assembled drafting prompt, in characters. */
+const MAX_PROMPT_CHARS = 90_000;
+
 export async function draftProposal(opts: {
   projectTitle: string;
   etimadRef: string | null;
@@ -31,6 +34,9 @@ export async function draftProposal(opts: {
   tokensUsed: number;
   fallback: boolean;
   locale: Locale;
+  /** Why the LLM path degraded (null when a live draft was produced). */
+  failureKind: string | null;
+  truncated: boolean;
 }> {
   const locale: Locale = opts.locale === "en" ? "en" : "ar";
   const complianceJson = JSON.stringify(
@@ -68,6 +74,7 @@ export async function draftProposal(opts: {
     2
   );
 
+  const ragContext = opts.technical.ragContext.slice(0, MAX_PROMPT_CHARS);
   const user = draftingUserPrompt({
     projectTitle: opts.projectTitle,
     etimadRef: opts.etimadRef,
@@ -95,7 +102,7 @@ export async function draftProposal(opts: {
     ),
     financialJson: JSON.stringify(opts.financial, null, 2),
     coverageJson,
-    ragContext: opts.technical.ragContext,
+    ragContext,
     restrictions: opts.restrictions,
   });
 
@@ -126,6 +133,11 @@ export async function draftProposal(opts: {
     tokensUsed: result.tokensUsed,
     fallback: usedFallback || !result.content,
     locale,
+    failureKind:
+      usedFallback || result.fallback
+        ? (result.failureKind ?? "unknown")
+        : null,
+    truncated: result.truncated === true && !usedFallback,
   };
 }
 

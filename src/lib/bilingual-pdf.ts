@@ -16,6 +16,7 @@ import {
   type BilingualDocumentSpec,
   type PairedBlock,
   type PairedImageBlock,
+  type RenderBilingualDocumentOptions,
 } from "./bilingual-layout";
 import {
   DEFAULT_BILINGUAL_FONT_PAIR_ID,
@@ -461,6 +462,12 @@ export function inspectBilingualHtml(html: string): BilingualHtmlQualityReport {
 export interface BilingualRenderOptions {
   readonly target?: "screen" | "print";
   readonly fontPair?: BilingualFontPairId;
+  /** Render a full branded cover page before the document body. */
+  readonly cover?: RenderBilingualDocumentOptions["cover"];
+  readonly tableOfContents?: boolean;
+  readonly sectionNumbering?: boolean;
+  readonly lifecycle?: RenderBilingualDocumentOptions["lifecycle"];
+  readonly palette?: RenderBilingualDocumentOptions["palette"];
 }
 
 export interface BilingualRenderArtifact {
@@ -484,6 +491,15 @@ export async function renderBilingualArtifact(
   const baseHtml = renderBilingualHTML(document, {
     target: options.target ?? "screen",
     includeDocumentShell: true,
+    ...(options.cover !== undefined ? { cover: options.cover } : {}),
+    ...(options.tableOfContents !== undefined
+      ? { tableOfContents: options.tableOfContents }
+      : {}),
+    ...(options.sectionNumbering !== undefined
+      ? { sectionNumbering: options.sectionNumbering }
+      : {}),
+    ...(options.lifecycle !== undefined ? { lifecycle: options.lifecycle } : {}),
+    ...(options.palette !== undefined ? { palette: options.palette } : {}),
   });
 
   const { generatePremiumPrintCss } = await import("./pdf/print-ready");
@@ -726,6 +742,8 @@ export async function generateBilingualPdf(
     synchronizeBilingualLayout: true,
     readySelector: BILINGUAL_LAYOUT_READY_SELECTOR,
     tagged: true,
+    // Semantic h1/h2 headings become a navigable PDF bookmark tree.
+    outline: true,
   } as HtmlToPdfOptions;
   const parsedPdfOptions = htmlToPdfOptionsSchema.parse(pdfOptions);
   const pdfDimensions = resolvePdfContentDimensions(parsedPdfOptions);
@@ -736,6 +754,15 @@ export async function generateBilingualPdf(
   const artifact = await renderBilingualArtifact(document, {
     target: "print",
     fontPair: options.fontPair,
+    ...(options.cover !== undefined ? { cover: options.cover } : {}),
+    ...(options.tableOfContents !== undefined
+      ? { tableOfContents: options.tableOfContents }
+      : {}),
+    ...(options.sectionNumbering !== undefined
+      ? { sectionNumbering: options.sectionNumbering }
+      : {}),
+    ...(options.lifecycle !== undefined ? { lifecycle: options.lifecycle } : {}),
+    ...(options.palette !== undefined ? { palette: options.palette } : {}),
   });
   const pdf = await htmlToPdf(artifact.html, pdfOptions);
   if (!isPdfBuffer(pdf)) {

@@ -10,7 +10,9 @@
 import {
   parseBilingualDocument,
   renderBilingualHTML,
+  type BilingualDocumentCover,
   type BilingualDocumentSpec,
+  type BilingualBrandPalette,
   type BilingualInlineNode,
   type BilingualTableColumn,
   type BilingualTableRow,
@@ -75,10 +77,11 @@ export interface ProposalLayoutExportDiagnostic {
 export interface ProposalLayoutExportMetadata {
   readonly schemaVersion: 1;
   /**
-   * ProposalSnapshot has no approval field. Structured exports therefore stay
-   * visibly DRAFT; callers must not infer approval from successful rendering.
+   * Draft is the default: ProposalSnapshot itself carries no approval field,
+   * so callers must explicitly opt into FINAL after verifying the proposal's
+   * approval state. Rendering success alone never implies approval.
    */
-  readonly lifecycle: "DRAFT";
+  readonly lifecycle: "DRAFT" | "FINAL";
   readonly channel: ProposalChannel;
   readonly presetKey: ProposalLayoutKey;
   readonly snapshotId: string;
@@ -88,9 +91,23 @@ export interface ProposalLayoutExportMetadata {
   readonly sourceRefs: readonly string[];
 }
 
+/**
+ * Presentation chrome derived from the snapshot and applied automatically by
+ * the render/PDF helpers unless a caller overrides individual fields.
+ */
+export interface ProposalDocumentChrome {
+  readonly cover: BilingualDocumentCover;
+  readonly tableOfContents: boolean;
+  readonly sectionNumbering: boolean;
+  readonly lifecycle: "draft" | "final";
+  readonly palette: BilingualBrandPalette;
+}
+
 export interface CompileProposalLayoutDocumentOptions {
   readonly channel?: ProposalChannel;
   readonly presetKey?: ProposalLayoutKey;
+  /** "draft" (default) prefixes titles with the draft marker; "final" does not. */
+  readonly lifecycle?: "DRAFT" | "FINAL";
 }
 
 export type ProposalLayoutDocumentCompilation =
@@ -100,6 +117,7 @@ export type ProposalLayoutDocumentCompilation =
       document: BilingualDocumentSpec;
       plan: CompiledProposalLayout;
       metadata: ProposalLayoutExportMetadata;
+      chrome: ProposalDocumentChrome;
       diagnostics: readonly ProposalLayoutExportDiagnostic[];
     }>
   | Readonly<{
@@ -171,11 +189,12 @@ function sortDiagnostics(
 
 function buildMetadata(
   snapshot: ProposalSnapshot,
-  plan: CompiledProposalLayout
+  plan: CompiledProposalLayout,
+  lifecycle: "DRAFT" | "FINAL"
 ): ProposalLayoutExportMetadata {
   return Object.freeze({
     schemaVersion: 1 as const,
-    lifecycle: "DRAFT" as const,
+    lifecycle,
     channel: plan.channel,
     presetKey: plan.presetKey,
     snapshotId: plan.snapshotId,
@@ -570,12 +589,12 @@ function kpiBlocks(
   block: Extract<ProposalBlock, { type: "KPI" }>,
   baseId: string
 ): readonly PairedBlock[] {
+  // Native stat-card block: value/label/hint render as a metric grid instead
+  // of degrading to a plain text paragraph in HTML and PDF.
   const inlineFor = (
     language: "en" | "ar"
   ): readonly BilingualInlineNode[] => {
-    const nodes: BilingualInlineNode[] = [
-      { type: "text", text: `${block.label[language]}: ` },
-    ];
+    const nodes: BilingualInlineNode[] = [];
     if (block.value === null) {
       nodes.push({ type: "text", text: NOT_AVAILABLE[language] });
     } else {
@@ -584,20 +603,31 @@ function kpiBlocks(
     if (block.unit) {
       nodes.push({ type: "text", text: ` ${block.unit[language]}` });
     }
-    if (block.asOf) {
-      nodes.push({
-        type: "text",
-        text: language === "ar" ? " · كما في: " : " · As of: ",
-      });
-      nodes.push(value(block.asOf, language, "date"));
-    }
     return nodes;
   };
+  // The card already shows the label, so the hint carries only the extra
+  // "as of" provenance; without a date there is nothing extra to say.
+  const hasHint = Boolean(block.asOf);
+  const hintFor = (
+    language: "en" | "ar"
+  ): readonly BilingualInlineNode[] => [
+    { type: "text", text: language === "ar" ? "كما في: " : "As of: " },
+    value(block.asOf ?? "", language, "date"),
+  ];
   return [
     {
-      type: "paragraph",
+      type: "kpi",
       id: `${baseId}.kpi`,
-      content: { en: inlineFor("en"), ar: inlineFor("ar") },
+      items: [
+        {
+          id: `${baseId}.metric`,
+          label: localizedText(block.label),
+          value: { en: inlineFor("en"), ar: inlineFor("ar") },
+          ...(hasHint
+            ? { hint: { en: hintFor("en"), ar: hintFor("ar") } }
+            : {}),
+        },
+      ],
     },
   ];
 }
@@ -992,12 +1022,21 @@ function buildDocument(
   plan: CompiledProposalLayout,
   metadata: ProposalLayoutExportMetadata
 ): BilingualDocumentSpec {
+  const isFinal = metadata.lifecycle === "FINAL";
   return parseBilingualDocument({
     id: "proposal-structured-export",
     version: `${metadata.snapshotVersion}:${metadata.planHash}`,
     title: {
-      en: text(`DRAFT — ${snapshot.projectTitle.en}`),
-      ar: text(`مسودة — ${snapshot.projectTitle.ar}`),
+      en: text(
+        isFinal
+          ? snapshot.projectTitle.en
+          : `DRAFT — ${snapshot.projectTitle.en}`
+      ),
+      ar: text(
+        isFinal
+          ? snapshot.projectTitle.ar
+          : `مسودة — ${snapshot.projectTitle.ar}`
+      ),
     },
     layout: {
       mode: "parallel",
@@ -1017,6 +1056,63 @@ function buildDocument(
   } satisfies BilingualDocumentSpec);
 }
 
+const PRESET_KICKER: Record<ProposalLayoutKey, LocalizedProposalText> = {
+  "government-formal": {
+    en: "Government tender submission",
+    ar: "عرض مناقصة حكومي",
+  },
+  "executive-impact": { en: "Executive proposal", ar: "عرض تنفيذي" },
+  "technical-deep-dive": {
+    en: "Technical proposal",
+    ar: "عرض فني تفصيلي",
+  },
+  "compliance-evidence": {
+    en: "Compliance and evidence dossier",
+    ar: "ملف الامتثال والأدلة",
+  },
+  "bilingual-parallel": {
+    en: "Bilingual proposal",
+    ar: "عرض ثنائي اللغة",
+  },
+  "compact-addendum": { en: "Proposal addendum", ar: "ملحق العرض" },
+};
+
+/**
+ * Presentation chrome derived from the snapshot: a branded cover carrying the
+ * bidder identity and tender reference, a table of contents with numbered
+ * sections, brand colors from the snapshot palette, and the caller-declared
+ * lifecycle. Rendering stays honest by default — draft chrome until the
+ * caller proves otherwise.
+ */
+function deriveChrome(
+  snapshot: ProposalSnapshot,
+  plan: CompiledProposalLayout,
+  lifecycle: "DRAFT" | "FINAL"
+): ProposalDocumentChrome {
+  const exportedAt = new Date();
+  return Object.freeze({
+    cover: Object.freeze({
+      kicker: PRESET_KICKER[plan.presetKey],
+      bidderName: snapshot.bidderName,
+      ...(snapshot.tenderReference
+        ? { tenderReference: snapshot.tenderReference }
+        : {}),
+      dateLabel: {
+        en: exportedAt.toISOString().slice(0, 10),
+        ar: exportedAt.toISOString().slice(0, 10),
+      },
+    }),
+    tableOfContents: true,
+    sectionNumbering: true,
+    lifecycle: lifecycle === "FINAL" ? ("final" as const) : ("draft" as const),
+    palette: Object.freeze({
+      primaryColor: snapshot.brand.primaryColor ?? null,
+      secondaryColor: snapshot.brand.secondaryColor ?? null,
+      accentColor: snapshot.brand.accentColor ?? null,
+    }),
+  });
+}
+
 /**
  * Compile a proposal snapshot into the Phase 2 bilingual document AST.
  *
@@ -1029,11 +1125,12 @@ export function compileProposalLayoutDocument(
   options: CompileProposalLayoutDocumentOptions = {}
 ): ProposalLayoutDocumentCompilation {
   const channel = options.channel ?? "HTML";
+  const lifecycle = options.lifecycle === "FINAL" ? "FINAL" : "DRAFT";
   const plan = compileProposalLayout(snapshot, {
     channel,
     presetKey: options.presetKey,
   });
-  const metadata = buildMetadata(snapshot, plan);
+  const metadata = buildMetadata(snapshot, plan, lifecycle);
   const diagnostics = adapterDiagnostics(snapshot, plan);
   if (
     diagnostics.length > 0 ||
@@ -1055,6 +1152,7 @@ export function compileProposalLayoutDocument(
     document: buildDocument(snapshot, plan, metadata),
     plan,
     metadata,
+    chrome: deriveChrome(snapshot, plan, lifecycle),
     diagnostics,
   });
 }
@@ -1071,6 +1169,33 @@ function requireDocument(
   return compilation.document;
 }
 
+/**
+ * Layer caller render options over the chrome derived from the snapshot.
+ * Caller fields win; derived chrome fills anything unspecified so exports
+ * get cover/TOC/numbering/palette without every call site repeating them.
+ */
+function mergeChrome(
+  compilation: ProposalLayoutDocumentCompilation,
+  options: RenderBilingualDocumentOptions
+): RenderBilingualDocumentOptions {
+  if (compilation.status !== "READY") return options;
+  const { chrome } = compilation;
+  return {
+    ...options,
+    ...(options.cover === undefined ? { cover: chrome.cover } : {}),
+    ...(options.tableOfContents === undefined
+      ? { tableOfContents: chrome.tableOfContents }
+      : {}),
+    ...(options.sectionNumbering === undefined
+      ? { sectionNumbering: chrome.sectionNumbering }
+      : {}),
+    ...(options.lifecycle === undefined
+      ? { lifecycle: chrome.lifecycle }
+      : {}),
+    ...(options.palette === undefined ? { palette: chrome.palette } : {}),
+  };
+}
+
 /** Render safe HTML from a previously validated canonical AST compilation. */
 export function renderProposalLayoutHTML(
   compilation: ProposalLayoutDocumentCompilation,
@@ -1079,7 +1204,10 @@ export function renderProposalLayoutHTML(
     includeDocumentShell: true,
   }
 ): string {
-  return renderBilingualHTML(requireDocument(compilation), options);
+  return renderBilingualHTML(
+    requireDocument(compilation),
+    mergeChrome(compilation, options)
+  );
 }
 
 /** Generate a font-embedded PDF from the same canonical AST as HTML. */
@@ -1087,11 +1215,27 @@ export async function generateProposalLayoutPdf(
   compilation: ProposalLayoutDocumentCompilation,
   options: GenerateBilingualPdfOptions = {}
 ): Promise<BilingualPdfArtifact> {
-  return generateBilingualPdf(requireDocument(compilation), options);
+  const merged = mergeChrome(compilation, options);
+  return generateBilingualPdf(requireDocument(compilation), {
+    ...options,
+    ...(merged.cover !== undefined ? { cover: merged.cover } : {}),
+    ...(merged.tableOfContents !== undefined
+      ? { tableOfContents: merged.tableOfContents }
+      : {}),
+    ...(merged.sectionNumbering !== undefined
+      ? { sectionNumbering: merged.sectionNumbering }
+      : {}),
+    ...(merged.lifecycle !== undefined
+      ? { lifecycle: merged.lifecycle }
+      : {}),
+    ...(merged.palette !== undefined ? { palette: merged.palette } : {}),
+  });
 }
 
 export interface ExportProposalLayoutBaseOptions {
   readonly presetKey?: ProposalLayoutKey;
+  /** Draft (default) keeps draft chrome; FINAL requires proven approval. */
+  readonly lifecycle?: "DRAFT" | "FINAL";
 }
 
 export interface ExportProposalLayoutHtmlOptions
@@ -1171,7 +1315,8 @@ export type ProposalLayoutExportArtifact =
 function requireValidNativePlan(
   snapshot: ProposalSnapshot,
   channel: "PPTX" | "XLSX",
-  presetKey: ProposalLayoutKey | undefined
+  presetKey: ProposalLayoutKey | undefined,
+  lifecycle: "DRAFT" | "FINAL" = "DRAFT"
 ): Readonly<{
   plan: CompiledProposalLayout;
   metadata: ProposalLayoutExportMetadata;
@@ -1203,7 +1348,7 @@ function requireValidNativePlan(
   }
   return {
     plan,
-    metadata: buildMetadata(snapshot, plan),
+    metadata: buildMetadata(snapshot, plan, lifecycle),
   };
 }
 
@@ -1258,7 +1403,8 @@ export async function exportProposalLayout(
     const { plan, metadata } = requireValidNativePlan(
       snapshot,
       "XLSX",
-      options.presetKey
+      options.presetKey,
+      options.lifecycle ?? "DRAFT"
     );
     const { buffer, notRepresentable } = await exportProposalLayoutXLSX(
       snapshot,
@@ -1288,7 +1434,8 @@ export async function exportProposalLayout(
     const { plan, metadata } = requireValidNativePlan(
       renderSnapshot,
       "PPTX",
-      options.presetKey
+      options.presetKey,
+      options.lifecycle ?? "DRAFT"
     );
     let buffer: Buffer;
     try {
@@ -1322,6 +1469,7 @@ export async function exportProposalLayout(
   const compilation = compileProposalLayoutDocument(snapshot, {
     channel: options.channel,
     presetKey: options.presetKey,
+    lifecycle: options.lifecycle,
   });
   const document = requireDocument(compilation);
   if (options.channel === "HTML") {

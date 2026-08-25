@@ -722,6 +722,11 @@ export async function GET(
     let contentType: string;
     let filename: string;
     let layoutPlanHash: string | null = null;
+    // Only a fully validated authoritative export (approved status, bound
+    // approval chain, persisted snapshot) earns FINAL chrome; everything else
+    // stays honestly marked as draft.
+    const chromeLifecycle: "DRAFT" | "FINAL" =
+      exportLifecycle.authoritative ? "FINAL" : "DRAFT";
 
     switch (format) {
       case "pdf":
@@ -731,6 +736,7 @@ export async function GET(
             {
               channel: "PDF",
               presetKey: structuredSnapshot.presetKey,
+              lifecycle: chromeLifecycle,
             }
           );
           buffer = artifact.buffer;
@@ -749,6 +755,7 @@ export async function GET(
           const artifact = await exportProposalLayout(designedDraft, {
             channel: "PDF",
             presetKey: "government-formal",
+            lifecycle: chromeLifecycle,
           });
           buffer = artifact.buffer;
           contentType = artifact.mediaType;
@@ -772,6 +779,7 @@ export async function GET(
             {
               channel: "HTML",
               presetKey: structuredSnapshot.presetKey,
+              lifecycle: chromeLifecycle,
               render: {
                 target: "screen",
                 includeDocumentShell: true,
@@ -792,6 +800,7 @@ export async function GET(
           const artifact = await exportProposalLayout(designedDraft, {
             channel: "HTML",
             presetKey: "government-formal",
+            lifecycle: chromeLifecycle,
             render: { target: "screen", includeDocumentShell: true },
           });
           buffer = artifact.buffer;
@@ -827,6 +836,7 @@ export async function GET(
             {
               channel: "XLSX",
               presetKey: structuredSnapshot.presetKey,
+              lifecycle: chromeLifecycle,
               locale: xlsxLocale,
             }
           );
@@ -882,6 +892,7 @@ export async function GET(
             {
               channel: "PPTX",
               presetKey: structuredSnapshot.presetKey,
+              lifecycle: chromeLifecycle,
             }
           );
           buffer = artifact.buffer;
@@ -891,6 +902,7 @@ export async function GET(
           const artifact = await exportProposalLayout(designedDraft, {
             channel: "PPTX",
             presetKey: "government-formal",
+            lifecycle: chromeLifecycle,
           });
           buffer = artifact.buffer;
           contentType = artifact.mediaType;

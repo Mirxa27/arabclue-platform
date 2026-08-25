@@ -59,22 +59,31 @@ export async function generateStructuredBidPackageZIP(opts: {
   const presetKey = opts.presetKey as
     | import("@/lib/proposal-layouts").ProposalLayoutKey
     | undefined;
+  // A ZIP built from an approved proposal carries authoritative chrome;
+  // drafts keep the honest draft marking on every artifact inside.
+  const chromeLifecycle: "DRAFT" | "FINAL" =
+    opts.proposalStatus === "APPROVED" || opts.proposalStatus === "EXPORTED"
+      ? "FINAL"
+      : "DRAFT";
 
   const pdf = await exportProposalLayout(opts.snapshot, {
     channel: "PDF",
     presetKey,
+    lifecycle: chromeLifecycle,
   });
   zip.file("Structured_Proposal_Bilingual.pdf", pdf.buffer);
 
   const pptx = await exportProposalLayout(opts.snapshot, {
     channel: "PPTX",
     presetKey,
+    lifecycle: chromeLifecycle,
   });
   zip.file("Structured_Proposal_Bilingual.pptx", pptx.buffer);
 
   const xlsx = await exportProposalLayout(opts.snapshot, {
     channel: "XLSX",
     presetKey,
+    lifecycle: chromeLifecycle,
     locale,
   });
   zip.file("Structured_Proposal_Data.xlsx", xlsx.buffer);
@@ -82,6 +91,7 @@ export async function generateStructuredBidPackageZIP(opts: {
   const html = await exportProposalLayout(opts.snapshot, {
     channel: "HTML",
     presetKey,
+    lifecycle: chromeLifecycle,
     render: { target: "screen", includeDocumentShell: true },
   });
   zip.file("Structured_Proposal_Bilingual.html", html.buffer);

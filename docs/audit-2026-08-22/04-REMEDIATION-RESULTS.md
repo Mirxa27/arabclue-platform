@@ -231,21 +231,21 @@ secrecy can be raised by data but never lowered by it.
 
 ### Additional High findings from that mapper, not yet addressed
 
-These are **new** and are not counted in the 34 originally approved. They are
-recorded here rather than fixed, because they arrived after the remediation
-pass and several need design decisions.
+These are **new** and are not counted in the 34 originally approved. They were
+recorded here on arrival; all seven have since been remediated and pinned by
+tests (status column updated after verification against the current code).
 
-| Finding | Location |
+| Finding | Status |
 | --- | --- |
-| SUPER_ADMIN protection nested inside `if (body.role)`, so an ADMIN can send `{active:false}` or `{mfaEnabled:false}` against a SUPER_ADMIN | `admin/users/[id]/route.ts:27` |
-| Direct `workspaceMember.create` bypasses the invitation service's seat allowance, token, expiry and invitee consent | `workspaces/route.ts:148` |
-| Cron secret accepted from `?secret=`, every cron route exports `GET`, and the comparison is not constant time | `lib/cron-auth.ts:24` |
-| ADMIN can rotate the MyFatoorah API key and webhook secret, bypassing the SUPER_ADMIN gate that guards the same rows via `/api/admin/env` | `admin/myfatoorah/route.ts:202` |
-| Unauthenticated credential oracle: no audit on failure, no reserved-identity check, email-only rate key, returns the account holder's name | `auth/precheck/route.ts:48` |
-| Recurring-charge handler failures are swallowed and fall through to `PROCESSED` + HTTP 200, so the provider never retries an unapplied charge | `billing/webhook/route.ts:178` |
-| `take:100` with no cursor and no "already notified" predicate, so logged rows permanently occupy the scan window | `cron/expiry-notifications/route.ts:30` |
-| Raw `err.message` returned to the client; `body.apiBase` is an unvalidated fetch target used with a bearer credential | **Done with N9.** Models POST now uses `withAdmin` + Zod; fetch failures stay redacted and never echo `err.message`. `apiKeyEnvKey` remains allowlisted. |
-| Eleven of fourteen admin handlers predate the controller: no `try/catch`, no Zod, hand-rolled 403s, Prisma errors escape as 500s | **Done (N9).** Every `src/app/api/admin/**/route.ts` method is wrapped in `withAdmin`. Write bodies and audit query params parse through Zod. Business-rule 403s keep string `error` so the admin UI can read `data.error`. |
+| SUPER_ADMIN protection nested inside `if (body.role)`, so an ADMIN could send `{active:false}` or `{mfaEnabled:false}` against a SUPER_ADMIN | **fixed** — guard hoisted before any field write in `admin/users/[id]/route.ts` PATCH, matching DELETE |
+| Direct `workspaceMember.create` bypasses the invitation service's seat allowance | **fixed** — seat check (`readSeatUsage` + `isSeatAllowanceExhausted`) now gates every membership creation in `workspaces/route.ts` POST |
+| Cron secret accepted from `?secret=`, comparison not constant time | **fixed** — `lib/cron-auth.ts` compares header secrets with `timingSafeEqual` over fixed-width buffers, rejects the query form with a warning log |
+| ADMIN can rotate the MyFatoorah API key and webhook secret via the panel | **fixed** — secret rotation in `admin/myfatoorah/route.ts` requires `SUPER_ADMIN`, mirroring `/api/admin/env` |
+| Unauthenticated credential oracle: no audit on failure, no reserved-identity check, email-only rate key, returns the account holder's name | **fixed** — `auth/precheck` audits failures (incl. reserved identities), timing-equalises misses with a dummy scrypt hash, tightens to the login limiter budget, and returns only `{ ok, mfaRequired }` |
+| Recurring-charge handler failures swallowed and fall through to `PROCESSED` + HTTP 200 | **fixed** — both charge branches mark the event `FAILED` and answer 500 so MyFatoorah retries an unapplied charge |
+| `take:100` with no cursor and no "already notified" predicate blocked progress past 100 notified rows | **fixed** — keyset-cursor paging over unnotified certificates with an emit budget in `cron/expiry-notifications/route.ts`; subscriptions keep their per-row dedupe lookup |
+| Raw `err.message` returned to the client; `body.apiKeyEnvKey` fetch target unvalidated | **Done with N9.** Models POST uses `withAdmin` + Zod; failures redacted, `apiKeyEnvKey` allowlisted. |
+| Eleven of fourteen admin handlers predate the controller | **Done (N9).** Every `src/app/api/admin/**/route.ts` method wrapped in `withAdmin`, bodies parse through Zod. |
 
 ---
 
