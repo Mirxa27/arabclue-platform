@@ -141,6 +141,15 @@ export function OnboardingWizard() {
     },
   });
 
+  const { data: onboardingStatus } = useQuery({
+    queryKey: ["onboarding"],
+    queryFn: async () => {
+      const r = await fetch("/api/onboarding");
+      if (!r.ok) return { readyForProposals: false, missing: [] as string[] };
+      return r.json() as Promise<{ readyForProposals: boolean; missing: string[] }>;
+    },
+  });
+
   // Prefill once
   useEffect(() => {
     if (session?.user?.name && !draftName) setDraftName(session.user.name);
@@ -339,6 +348,21 @@ export function OnboardingWizard() {
     else if (step === 4) {
       if (!mission) {
         toast({ title: ar ? "اختر مهمة أولى" : "Pick a first mission", variant: "destructive" });
+        return;
+      }
+      // Honest gating: the platform still requires an evidence-backed track
+      // record before AI proposal generation. If the wizard hasn't satisfied
+      // it yet, route to the detailed account setup instead of promising an
+      // immediate draft that would be blocked by ONBOARDING_INCOMPLETE.
+      const needsTrackRecord = onboardingStatus?.missing?.includes("trackRecord") ?? false;
+      if (mission === "PROPOSAL" && needsTrackRecord) {
+        startTransition(() => setView("account" as never));
+        toast({
+          title: ar ? "خطوة أخيرة — أضف سجل مشروع واحد" : "One last step — add a past project",
+          description: ar
+            ? "سجل المشاريع مطلوب لفحص الأهلية قبل توليد العطاءات. سنفتح لك نموذج الإضافة الموجّه."
+            : "Track record is required for qualification checks before proposal generation. Opening the guided add form.",
+        });
         return;
       }
       const target = WIZARD_MISSION_CATALOG.find((m) => m.id === mission)?.targetView ?? "overview";
