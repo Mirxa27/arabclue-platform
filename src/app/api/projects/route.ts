@@ -9,9 +9,12 @@ export const dynamic = "force-dynamic";
 // GET /api/projects — list tender projects for caller's workspace
 export async function GET() {
   return withTenant("session", async ({ workspace }) => {
+    // Bound the result set. Sorting by updatedAt keeps the freshest work
+    // near the top for workspaces that accumulate many drafts.
     const projects = await db.tenderProject.findMany({
       where: { workspaceId: workspace.id },
-      orderBy: { createdAt: "desc" },
+      orderBy: { updatedAt: "desc" },
+      take: 100,
       include: {
         _count: {
           select: {
@@ -29,22 +32,40 @@ export async function GET() {
       },
     });
 
-    const enriched = await Promise.all(
-      projects.map(async (p) => {
-        const checks = await db.complianceCheck.findMany({
-          where: { projectId: p.id },
-          select: { status: true },
-        });
-        const compliant = checks.filter((c) => c.status === "COMPLIANT").length;
-        const score =
-          checks.length > 0 ? Math.round((compliant / checks.length) * 100) : 0;
-        return {
-          ...p,
-          complianceScore: score,
-          latestAgentRun: p.agentRuns[0] ?? null,
-        };
-      })
-    );
+    // Compliance score was previously computed with one findMany per project
+    // (N+1). A single groupBy over (projectId, status) collapses that into
+    // one round trip. Skipped entirely when there are no projects.
+    const projectIds = projects.map((p) => p.id);
+    const totalsByProject = new Map<string, { total: number; compliant: number }>();
+    if (projectIds.length > 0) {
+      const grouped = await db.complianceCheck.groupBy({
+        by: ["projectId", "status"],
+        where: { projectId: { in: projectIds } },
+        _count: { _all: true },
+      });
+      for (const row of grouped) {
+        const bucket =
+          totalsByProject.get(row.projectId) ?? { total: 0, compliant: 0 };
+        bucket.total += row._count._all;
+        if (row.status === "COMPLIANT") {
+          bucket.compliant += row._count._all;
+        }
+        totalsByProject.set(row.projectId, bucket);
+      }
+    }
+
+    const enriched = projects.map((p) => {
+      const bucket = totalsByProject.get(p.id);
+      const score =
+        bucket && bucket.total > 0
+          ? Math.round((bucket.compliant / bucket.total) * 100)
+          : 0;
+      return {
+        ...p,
+        complianceScore: score,
+        latestAgentRun: p.agentRuns[0] ?? null,
+      };
+    });
 
     return jsonOk({ projects: enriched });
   }, "projects GET");

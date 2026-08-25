@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import { draftContractWithAi } from "@/lib/ai/contract-drafting-assistant";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import type { ContractTemplateKey } from "@/lib/document-templates/contract-templates";
 import type { IngestionEntities, ComplianceMatrixRow } from "@/lib/types";
 
@@ -37,6 +38,14 @@ export async function POST(request: NextRequest) {
     }
 
     const { workspace } = await getTenantContext(session.user.id);
+
+    const blocked = await checkAiRateLimit({
+      route: "ai.contract-draft",
+      identifier: workspace.id,
+      limit: 10,
+      windowMs: 60_000,
+    });
+    if (blocked) return blocked;
 
     const body = await request.json();
     const parsed = requestSchema.safeParse(body);

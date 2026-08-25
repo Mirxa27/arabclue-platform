@@ -8,6 +8,8 @@ import {
   isAgentRunStale,
   parseAgentRunConfig,
 } from "@/lib/proposal-studio";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
+import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -85,6 +87,30 @@ export async function GET(req: NextRequest) {
     ) {
       const cfg = parseAgentRunConfig(run.configJson);
       if (cfg && !resumeLocks.has(runId)) {
+        // Resume is a real side-effect that spends LLM tokens. Bound how
+        // often a workspace can trigger it — real polling only needs 1 or
+        // 2 resumes per run, but a stuck tab could hammer this.
+        const blocked = await checkAiRateLimit({
+          route: "agents.status.resume",
+          identifier: workspace.id,
+          limit: 10,
+          windowMs: 60_000,
+        });
+        if (blocked) {
+          // Fall through to a plain read below — we still return current state.
+          return NextResponse.json({
+            runId: run.id,
+            status: run.status,
+            overallProgress: run.overallProgress,
+            agentStates: run.agentStates ? JSON.parse(run.agentStates) : [],
+            finalArtifact: run.finalArtifact
+              ? JSON.parse(run.finalArtifact)
+              : null,
+            errorMessage: run.errorMessage,
+            resumed: false,
+            rateLimited: true,
+          });
+        }
         resumeLocks.add(runId);
         resumed = true;
         // Touch updatedAt so concurrent polls don't stampede
@@ -106,6 +132,21 @@ export async function GET(req: NextRequest) {
           targetProposalId: cfg.targetProposalId,
           logLabel: "[agents/status resume]",
         });
+        // Audit the resume so operators can trace phantom pipeline restarts.
+        try {
+          await audit({
+            userId: session.user.id,
+            action: AUDIT_ACTIONS.AGENT_RUN,
+            resource: "AgentRun",
+            resourceId: runId,
+            details: {
+              via: "agents/status GET",
+              reason: "stale run auto-resume",
+            },
+          });
+        } catch (auditErr) {
+          console.warn("[agents/status] audit failed", auditErr);
+        }
         // Clear lock after a short delay so concurrent polls don't double-resume
         // while after() is still scheduling the same run.
         setTimeout(() => resumeLocks.delete(runId), 5_000);

@@ -4,6 +4,8 @@ import {
   getVoiceLiveConfig,
   mintVoiceLiveSession,
 } from "@/lib/agents/platform/realtime";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
+import { getTenantContext } from "@/lib/workspace-context";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,6 +28,23 @@ export async function POST(req: Request) {
   const session = await requireSession();
   if (!session) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Voice sessions cost real money (~$0.06/min minimum). Bound how often a
+  // workspace can mint fresh live-voice credentials to catch abuse loops.
+  try {
+    const tenant = await getTenantContext(session.user.id);
+    const blocked = await checkAiRateLimit({
+      route: "platform-agent.realtime.setup",
+      identifier: tenant.workspace.id,
+      limit: 6,
+      windowMs: 60_000,
+    });
+    if (blocked) return blocked;
+  } catch (tenantErr) {
+    console.error("[platform-agent/realtime/setup] tenant", tenantErr);
+    // Fall through — if we can't identify the workspace we still enforce
+    // auth above, and mintVoiceLiveSession will error cleanly below.
   }
 
   try {

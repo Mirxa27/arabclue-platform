@@ -13,6 +13,7 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { startRecurringProfile, RecurringBillingError } from "@/lib/recurring-billing";
 import { isCompletionErrorCode } from "@/lib/i18n";
 import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +46,25 @@ export async function POST(req: NextRequest) {
         "EMAIL_VERIFICATION_REQUIRED"
       );
     }
+
+    // Cap invoice creation attempts. Real users rarely trigger checkout more
+    // than a few times per minute; a script scraping payment URLs to embed
+    // in phishing pages would trigger this quickly.
+    const blocked = await checkAiRateLimit({
+      route: "billing.checkout",
+      identifier: session.user.id,
+      scope: "user",
+      limit: 6,
+      windowMs: 60_000,
+    });
+    if (blocked) {
+      throw new ApiError(
+        "Too many checkout attempts. Please wait a moment.",
+        429,
+        "RATE_LIMITED"
+      );
+    }
+
     const parsed = await parseJsonBody(req, billingCheckoutSchema);
     if (!parsed.ok) return parsed.response;
     const { planId, billingCycle, billingMode, locale } = parsed.data;

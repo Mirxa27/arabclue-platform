@@ -1,8 +1,6 @@
 "use client";
 
-import { startTransition } from "react";
-
-import { useLocale, useUI } from "@/lib/store";
+import { useLocale } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { EmptyState, Panel, QueryState } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
@@ -44,7 +42,6 @@ type RedlineEntry = {
 
 export function ReviewsQueue() {
   const { locale } = useLocale();
-  const { setView } = useUI();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [comments, setComments] = useState<Record<string, string>>({});
@@ -217,7 +214,9 @@ export function ReviewsQueue() {
                       </Badge>
                     ) : null}
                     <Badge variant="outline">
-                      Step {r.stepIndex + 1} · {r.stepRole}
+                      {locale === "ar"
+                        ? `الخطوة ${r.stepIndex + 1} · ${r.stepRole}`
+                        : `Step ${r.stepIndex + 1} · ${r.stepRole}`}
                     </Badge>
                     {r.proposal.project?.title && (
                       <span className="text-xs text-muted-foreground">
@@ -244,8 +243,10 @@ export function ReviewsQueue() {
                         if (isContract) {
                           setContractId(r.proposal?.id ?? null);
                         } else {
+                          // Keep the in-place ProposalEditorDialog mounted.
+                          // Do NOT switch view — that unmounts ReviewsQueue and
+                          // destroys the dialog before it can render.
                           setEditId(r.proposal?.id ?? null);
-                          startTransition(() => setView("proposals"));
                         }
                       }}
                     >

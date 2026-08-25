@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import { generateComplianceScorecard } from "@/lib/ai/compliance-analyzer";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import type { IngestionEntities } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,14 @@ export async function POST(request: NextRequest) {
     }
 
     const { workspace } = await getTenantContext(session.user.id);
+
+    const blocked = await checkAiRateLimit({
+      route: "ai.compliance-analyze",
+      identifier: workspace.id,
+      limit: 20,
+      windowMs: 60_000,
+    });
+    if (blocked) return blocked;
 
     const body = await request.json();
     const parsed = requestSchema.safeParse(body);

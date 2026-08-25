@@ -346,16 +346,33 @@ export function ContractsPanel() {
                     <Download className="size-3.5" />
                     HTML
                   </Button>
+                  {/*
+                    The row's "PDF" control used to open the studio dialog
+                    instead of downloading, which conflicted with its icon
+                    and label. The list button now downloads the current
+                    revision the same way the studio does; export-readiness
+                    is still enforced server-side, and the preview lives on
+                    its own "Preview" button above.
+                  */}
                   <Button
                     size="sm"
                     variant="ghost"
                     className="gap-1"
-                    onClick={() => {
-                      setOpenStudioMode("preview");
-                      setOpenId(c.id);
-                    }}
+                    disabled={busyFormat === "pdf"}
+                    onClick={() =>
+                      void downloadContract(
+                        c.id,
+                        "pdf",
+                        "Contract.pdf",
+                        false
+                      )
+                    }
                   >
-                    <FileDown className="size-3.5" />
+                    {busyFormat === "pdf" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <FileDown className="size-3.5" />
+                    )}
                     PDF
                   </Button>
                 </div>

@@ -1,58 +1,131 @@
-# Task 2 Report: Contract studio MDX + branded masthead
+# Task 2 report: Branded cover + letter + ZIP + preview route
 
-**Status:** DONE  
-**Branch:** `cursor/docs-generation-complete-ab64`  
-**Commit message:** `feat(contracts): MDX studio with client branded masthead`
+**Status:** DONE (implementation already present; this report is the SDD handoff, not a new implementer commit)
 
-## Summary
+## What was implemented
 
-Replaced the contract studio raw textarea edit mode with the shared MDX studio editor and removed the hardcoded ArabClue masthead label from the user-facing contract studio chrome.
+- `renderCoverLetterheadHtml` / `renderSubmissionLetterHtml` using `letterheadBarHtml`
+- ZIP files `Cover_Letterhead.html` and `Submission_Letter.html` via `generateStructuredBidPackageZIP`
+- Preview download (non-contract, no persisted snapshot, pdf|html|pptx|zip) compiles a draft snapshot, applies workspace brand, and uses `exportProposalLayout` / structured ZIP
+- Account copy `brand_exports_note` in `localizationRegistry` and `brand-setup.tsx`
 
-## Changes
+Landed in `fa04428` (same SHA as `main` / this feature branch).
 
-### `src/components/dashboard/contract-studio.tsx`
+## Tests
 
-- Added a `/api/brand` query using the same React Query pattern as the proposal editor.
-- Passed `primaryColor` and `accentColor` from `BrandProfile` into `MarkdownStudioEditor`.
-- Replaced the edit-mode `Textarea` with `MarkdownStudioEditor` using split preview and read-only handling for locked contracts.
-- Replaced `ArabClue · أراب كلاو` in the masthead with the workspace brand tagline:
-  - Uses both English and Arabic taglines when both exist and differ.
-  - Uses the localized tagline when only one locale is needed.
-  - Falls back to neutral bilingual copy: `Client brand · هوية العميل`.
-- Applied the brand accent color to the masthead brand mark when available.
+Controller re-ran after checkout:
 
-## Verification
+```
+bun test src/lib/__tests__/branded-front-matter.test.ts src/lib/__tests__/bid-pack-design-guards.test.ts
+```
 
-| Check | Result |
-|-------|--------|
-| `rg "ArabClue\|أراب كلاو\|Textarea\|MarkdownStudioEditor" src/components/dashboard/contract-studio.tsx` | Pass: no hardcoded ArabClue masthead or Textarea remains; `MarkdownStudioEditor` is present |
-| `bun run lint` | Pass (exit 0) |
-| `bunx tsc --noEmit` | Pass (exit 0) |
-| `git diff --check` | Pass (exit 0) |
+5/5 passing. Output pristine.
 
-## Constraints
+## TDD Evidence
 
-- Did not implement Tasks 3-5.
-- No schema changes.
-- No dependency changes.
+Not available for this commit. Tests and implementation shipped together in `fa04428`. RED phase was not recorded.
+
+## Files changed (this task’s portion of fa04428)
+
+- Create: `src/lib/branded-front-matter.ts`
+- Create: `src/lib/__tests__/branded-front-matter.test.ts`
+- Create: `src/lib/__tests__/bid-pack-design-guards.test.ts`
+- Modify: `src/lib/structured-bid-package.ts`
+- Modify: `src/app/api/proposals/[id]/download/route.ts`
+- Modify: `src/lib/i18n.ts`
+- Modify: `src/components/dashboard/brand-setup.tsx`
+
+## Self-review
+
+- `generateProposalPDF` / legacy ZIP remain as else-branches; for non-contract drafts `designedDraft` is always compiled, so those branches should be unreachable for the preview path.
+- Audit / `X-Arabclue-Proposal-Engine` still label designed-draft downloads as `legacy-markdown`.
 
 ## Concerns
 
-None.
+Same single commit as Task 1. Review the front-matter, ZIP, route, and brand copy only.
 
-## Task 2 Review Fix
+---
 
-**Commit message:** `fix(contracts): company masthead and LTR MDX editor`
+# Fix pass — Arabic titleAr + designed-draft-v1 label
 
-### Changes
+**Status:** DONE  
+**Commit:** `df4c9fa` — fix(export): use Arabic titleAr on covers and label designed-draft-v1
 
-- Extended `/api/brand` GET with workspace company letterhead fields (`name`, `nameAr`, `crNumber`, `vatNumber`).
-- Updated the contract studio masthead to resolve its company label with `letterheadCompanyName(locale, brand, company)`.
-- Restored the contract MDX edit surface to LTR by passing `locale="en"` and `dir="ltr"` to `MarkdownStudioEditor`.
+## What was implemented
 
-### Verification
+1. **Arabic cover/letter title** — Optional `projectTitleAr` on `BrandedFrontMatterInput`; `resolveFrontMatterProjectTitle` picks trimmed `titleAr` when `locale === "ar"`, else `title`. ZIP call site passes `opts.project.titleAr`. Blank/null `titleAr` keeps English `title` (no invented translation). English locale always uses `title`.
+2. **designed-draft engine label** — When `designedDraft !== null` and there is no persisted structured or contract-render snapshot, both `audit(...).details.exportEngine` and `X-Arabclue-Proposal-Engine` emit `"designed-draft-v1"`. Other labels unchanged (`structured-v1`, `contract-render-v1`, true legacy → `legacy-markdown`).
 
-| Check | Result |
-|-------|--------|
-| `bunx tsc --noEmit` | Pass (exit 0; no diagnostics) |
-| `bun run lint` | Pass (exit 0; output: `$ eslint .`) |
+## What was tested and results
+
+```
+bun test src/lib/__tests__/branded-front-matter.test.ts src/lib/__tests__/bid-pack-design-guards.test.ts
+```
+
+**GREEN:** 9 pass, 0 fail (718ms).
+
+## TDD Evidence
+
+### RED (before implementation)
+
+Command:
+
+```
+bun test src/lib/__tests__/branded-front-matter.test.ts src/lib/__tests__/bid-pack-design-guards.test.ts
+```
+
+Relevant failures (7 pass, 2 fail — expected):
+
+- `designed-draft downloads label export engine designed-draft-v1` — `expect(source).toContain("designed-draft-v1")` failed because the download route still hard-coded the third branch to `"legacy-markdown"`.
+- `Arabic locale uses titleAr and nameAr when present` — cover HTML still contained `Cloud operations tender` instead of `مناقصة تشغيل السحابة` because front-matter ignored `projectTitleAr`.
+
+### GREEN (after implementation)
+
+Command (same):
+
+```
+bun test src/lib/__tests__/branded-front-matter.test.ts src/lib/__tests__/bid-pack-design-guards.test.ts
+```
+
+Output:
+
+```
+bun test v1.3.9 (cf6cdbbb)
+
+src/lib/__tests__/bid-pack-design-guards.test.ts:
+(pass) bid pack organisation design > preview download compiles a branded draft snapshot
+(pass) bid pack organisation design > structured ZIP ships branded cover and letter
+(pass) bid pack organisation design > account brand copy says exports use this identity
+(pass) bid pack organisation design > designed-draft downloads label export engine designed-draft-v1
+
+src/lib/__tests__/branded-front-matter.test.ts:
+(pass) branded front matter > cover includes company, title, and letterhead
+(pass) branded front matter > submission letter is a preview, not a filing claim
+(pass) branded front matter > Arabic locale uses titleAr and nameAr when present
+(pass) branded front matter > English locale keeps English title even when titleAr is set
+(pass) branded front matter > Arabic locale falls back to title when titleAr is blank
+
+ 9 pass
+ 0 fail
+ 32 expect() calls
+Ran 9 tests across 2 files. [718.00ms]
+```
+
+## Files changed
+
+- `src/lib/branded-front-matter.ts` — `projectTitleAr` + `resolveFrontMatterProjectTitle`
+- `src/lib/structured-bid-package.ts` — pass `projectTitleAr: opts.project.titleAr`
+- `src/app/api/proposals/[id]/download/route.ts` — designed-draft audit/header → `designed-draft-v1`
+- `src/lib/__tests__/branded-front-matter.test.ts` — Arabic/English/fallback title cases
+- `src/lib/__tests__/bid-pack-design-guards.test.ts` — designed-draft-v1 source guard + ZIP `titleAr` wiring
+
+## Self-review findings
+
+- **Completeness:** Both Important findings only; Task 2 Minors (ZIP constant unused, filename helper) left untouched.
+- **Quality:** Title selection is trim-aware and locale-gated; no snapshot 409 behavior changed; snapshot route untouched.
+- **Discipline (YAGNI):** No new packages; download route edited only on the two label branches plus existing designedDraft variable already in scope.
+- **Testing:** Real HTML assertions for title/nameAr/no PDPL; source-guard for engine label and ZIP wiring. TDD RED→GREEN recorded above.
+
+## Issues or concerns
+
+None for this fix scope. Manifest `project.title` in the ZIP still uses the English Prisma `title` field (unchanged; out of finding scope).

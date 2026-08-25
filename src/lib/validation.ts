@@ -314,6 +314,21 @@ export const workspaceInviteSchema = z.object({
   role: z.enum(["ADMIN", "MEMBER"]).default("MEMBER"),
 });
 
+// Fields a workspace owner/admin can update on the workspace profile.
+// Bounds keep raw body from silently writing 100KB strings straight to the
+// legal registry columns.
+export const workspaceProfileSchema = z
+  .object({
+    crNumber: z.string().trim().max(50).nullable().optional(),
+    vatNumber: z.string().trim().max(50).nullable().optional(),
+    name: z.string().trim().min(1).max(200).optional(),
+    nameAr: z.string().trim().max(200).nullable().optional(),
+  })
+  .refine(
+    (v) => Object.values(v).some((x) => x !== undefined),
+    { message: "At least one field must be provided" }
+  );
+
 export const certificateSchema = z.object({
   certType: z.enum(["ISO", "GOSI", "VAT", "ZAKAT", "LICENSE", "OTHER"]),
   name: z.string().trim().min(1).max(300),

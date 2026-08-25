@@ -19,7 +19,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Panel, EmptyState, ErrorState, QueryState } from "@/components/patterns";
+import {
+  Panel,
+  EmptyState,
+  ErrorState,
+  QueryState,
+  ConfirmDialog,
+} from "@/components/patterns";
 import { apiJson } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -426,36 +432,57 @@ export function BillingPanel() {
                           : `${plan.maxDocuments} ${locale === "ar" ? "مستند" : "documents"}`}
                       </li>
                     </ul>
-                    <Button
-                      size="sm"
-                      className="w-full gap-1.5"
-                      disabled={
-                        isCurrent ||
-                        price <= 0 ||
-                        checkout.isPending ||
-                        !data?.myfatoorahConfigured
-                      }
-                      onClick={() =>
-                        checkout.mutate({ planId: plan.id, billingCycle: cycle })
-                      }
-                    >
-                      {checkout.isPending ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <ExternalLink className="size-3.5" />
-                      )}
-                      {isCurrent
-                        ? locale === "ar"
-                          ? "الباقة الحالية"
-                          : "Current plan"
-                        : price <= 0
+                    {price <= 0 ? (
+                      // Free plans are provisioned by an admin, not through
+                      // the paid checkout flow. A dead disabled button that
+                      // just said "Via admin" left users confused — replace
+                      // it with an explicit note that names where to go.
+                      <div
+                        className={cn(
+                          "rounded-md border border-dashed px-2 py-2 text-[10px]",
+                          isCurrent
+                            ? "border-primary/30 bg-primary/5 text-primary"
+                            : "border-border/50 bg-muted/30 text-muted-foreground"
+                        )}
+                      >
+                        {isCurrent
                           ? locale === "ar"
-                            ? "عبر المسؤول"
-                            : "Via admin"
+                            ? "الباقة الحالية — تُدار من قِبل المسؤول."
+                            : "Current plan — managed by your workspace admin."
+                          : locale === "ar"
+                            ? "لا حاجة لدفع. اطلب من مسؤول المنطقة تفعيلها."
+                            : "No payment needed. Ask a workspace admin to activate."}
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="w-full gap-1.5"
+                        disabled={
+                          isCurrent ||
+                          checkout.isPending ||
+                          !data?.myfatoorahConfigured
+                        }
+                        onClick={() =>
+                          checkout.mutate({
+                            planId: plan.id,
+                            billingCycle: cycle,
+                          })
+                        }
+                      >
+                        {checkout.isPending ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <ExternalLink className="size-3.5" />
+                        )}
+                        {isCurrent
+                          ? locale === "ar"
+                            ? "الباقة الحالية"
+                            : "Current plan"
                           : locale === "ar"
                             ? "ادفع عبر مي فاتورة"
                             : "Pay with MyFatoorah"}
-                    </Button>
+                      </Button>
+                    )}
                   </div>
                 );
               })}
@@ -523,6 +550,10 @@ function RecurringProfileCard({
   isCanceling: boolean;
   isResuming: boolean;
 }) {
+  // Cancel is destructive and irreversible without a fresh checkout flow.
+  // A single stray click used to permanently cancel auto-renewal — gate it
+  // behind an explicit confirmation.
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const isActive = profile.status === "ACTIVE";
   const isCanceled = profile.status === "CANCELED";
   const intervalLabel =
@@ -587,7 +618,7 @@ function RecurringProfileCard({
             variant="outline"
             className="h-7 text-[10px] gap-1"
             disabled={isCanceling}
-            onClick={onCancel}
+            onClick={() => setConfirmingCancel(true)}
           >
             {isCanceling ? (
               <Loader2 className="size-3 animate-spin" />
@@ -614,6 +645,33 @@ function RecurringProfileCard({
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmingCancel}
+        onOpenChange={(open) => {
+          if (!isCanceling) setConfirmingCancel(open);
+        }}
+        title={
+          locale === "ar"
+            ? "إلغاء التجديد التلقائي؟"
+            : "Cancel automatic renewal?"
+        }
+        description={
+          locale === "ar"
+            ? "سيتوقف الاشتراك عن التجديد في نهاية دورة الفوترة الحالية. يمكنك الاستئناف لاحقًا، لكن قد تحتاج إلى إعادة عملية الدفع."
+            : "The subscription will stop renewing at the end of the current billing cycle. You can resume later, but you may need to restart checkout."
+        }
+        confirmLabel={
+          locale === "ar" ? "نعم، إلغاء التجديد" : "Yes, cancel renewal"
+        }
+        cancelLabel={locale === "ar" ? "الاحتفاظ بالاشتراك" : "Keep subscription"}
+        destructive
+        loading={isCanceling}
+        onConfirm={() => {
+          onCancel();
+          setConfirmingCancel(false);
+        }}
+      />
     </div>
   );
 }

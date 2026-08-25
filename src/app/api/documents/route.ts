@@ -15,27 +15,34 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await requireSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { workspace } = await getTenantContext(session.user.id);
+    const projectId = req.nextUrl.searchParams.get("projectId");
+
+    const docs = await db.uploadedDocument.findMany({
+      where: {
+        workspaceId: workspace.id,
+        ...(projectId ? { projectId } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      // Bound to keep response size predictable; the UI shows only recent
+      // documents and requests per-project when a project is active.
+      take: 200,
+      include: {
+        uploadedBy: { select: { name: true } },
+        versions: { orderBy: { version: "desc" }, take: 10 },
+        _count: { select: { versions: true } },
+      },
+    });
+
+    return NextResponse.json({ documents: docs });
+  } catch (err) {
+    return toErrorResponse(err, "documents GET");
   }
-  const { workspace } = await getTenantContext(session.user.id);
-  const projectId = req.nextUrl.searchParams.get("projectId");
-
-  const docs = await db.uploadedDocument.findMany({
-    where: {
-      workspaceId: workspace.id,
-      ...(projectId ? { projectId } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    include: {
-      uploadedBy: { select: { name: true } },
-      versions: { orderBy: { version: "desc" }, take: 10 },
-      _count: { select: { versions: true } },
-    },
-  });
-
-  return NextResponse.json({ documents: docs });
 }
 
 export async function POST(req: NextRequest) {

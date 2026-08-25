@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
 import { detectPricingRequest } from "@/lib/guardrails";
 import { syncMissionTranscript } from "@/lib/agents/platform/mission-transcript";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -61,6 +62,17 @@ export async function POST(req: Request) {
     );
     const { getTenantContext } = await import("@/lib/workspace-context");
     const tenant = await getTenantContext(session.user.id);
+
+    // Cost-DoS shield: a leaked session cookie or runaway UI loop could rip
+    // through LLM tokens. Cap at 30 chat turns/min per workspace.
+    const blocked = await checkAiRateLimit({
+      route: "platform-agent.chat",
+      identifier: tenant.workspace.id,
+      limit: 30,
+      windowMs: 60_000,
+    });
+    if (blocked) return blocked;
+
     const locale = session.user.locale === "en" ? "en" : "ar";
     const mission = await getOrCreateMission({
       workspaceId: tenant.workspace.id,

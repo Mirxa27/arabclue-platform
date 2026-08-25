@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { ClipboardList, Link2, Unlink } from "lucide-react";
 import type { ApiCertificate, ApiStaffMember } from "@/lib/api-types";
+import { readApiError } from "@/lib/http-error";
 import { useToast } from "@/hooks/use-toast";
 import { ListSkeleton } from "./loading-skeletons";
 
@@ -35,6 +36,12 @@ type ReqItem = {
   status: string;
   linkedResourceType?: string | null;
   linkedResourceId?: string | null;
+};
+
+const STATUS_LABEL: Record<string, { en: string; ar: string }> = {
+  COVERED: { en: "Covered", ar: "مغطى" },
+  IN_PROGRESS: { en: "In progress", ar: "قيد الإنجاز" },
+  MISSING: { en: "Missing", ar: "غير مغطى" },
 };
 
 export function RequirementsMatrix() {
@@ -96,7 +103,24 @@ export function RequirementsMatrix() {
     },
   });
 
-  const evidenceUnavailable = certsError || staffError || libraryError;
+  const {
+    data: methodologiesData,
+    isError: methodologiesError,
+    refetch: refetchMethodologies,
+  } = useQuery({
+    queryKey: ["methodologies"],
+    enabled: !!activeProjectId,
+    queryFn: async () => {
+      const res = await fetch("/api/methodologies");
+      if (!res.ok) throw new Error("Failed to load methodologies");
+      return res.json() as Promise<{
+        items: { id: string; title: string; titleAr?: string | null }[];
+      }>;
+    },
+  });
+
+  const evidenceUnavailable =
+    certsError || staffError || libraryError || methodologiesError;
 
   const patch = useMutation({
     mutationFn: async (body: {
@@ -110,7 +134,14 @@ export function RequirementsMatrix() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await res.json()).error);
+      if (!res.ok) {
+        throw new Error(
+          await readApiError(
+            res,
+            ar ? "تعذر تحديث المتطلب" : "Could not update requirement"
+          )
+        );
+      }
     },
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["requirements", activeProjectId] }),
@@ -156,12 +187,21 @@ export function RequirementsMatrix() {
     id: string;
     title: string;
   }[];
+  const methodologies = (methodologiesData?.items ?? []) as {
+    id: string;
+    title: string;
+    titleAr?: string | null;
+  }[];
 
   return (
     <Panel
       icon={ClipboardList}
       title={ar ? "مصفوفة المتطلبات" : "Requirements matrix"}
-      subtitle={`${summary.COVERED} covered · ${summary.IN_PROGRESS} in progress · ${summary.MISSING} missing`}
+      subtitle={
+        ar
+          ? `${summary.COVERED} مغطى · ${summary.IN_PROGRESS} قيد الإنجاز · ${summary.MISSING} غير مغطى`
+          : `${summary.COVERED} covered · ${summary.IN_PROGRESS} in progress · ${summary.MISSING} missing`
+      }
       actions={
         <Button size="sm" variant="outline" onClick={() => startTransition(() => setView("documents"))}>
           {ar ? "المستندات" : "Documents"}
@@ -212,6 +252,7 @@ export function RequirementsMatrix() {
                   void refetchCerts();
                   void refetchStaff();
                   void refetchLibrary();
+                  void refetchMethodologies();
                 }}
               >
                 {ar ? "إعادة المحاولة" : "Retry"}
@@ -255,9 +296,17 @@ export function RequirementsMatrix() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="COVERED">COVERED</SelectItem>
-                        <SelectItem value="IN_PROGRESS">IN_PROGRESS</SelectItem>
-                        <SelectItem value="MISSING">MISSING</SelectItem>
+                        <SelectItem value="COVERED">
+                          {ar ? STATUS_LABEL.COVERED.ar : STATUS_LABEL.COVERED.en}
+                        </SelectItem>
+                        <SelectItem value="IN_PROGRESS">
+                          {ar
+                            ? STATUS_LABEL.IN_PROGRESS.ar
+                            : STATUS_LABEL.IN_PROGRESS.en}
+                        </SelectItem>
+                        <SelectItem value="MISSING">
+                          {ar ? STATUS_LABEL.MISSING.ar : STATUS_LABEL.MISSING.en}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </td>
@@ -288,15 +337,16 @@ export function RequirementsMatrix() {
                             {ar ? "بدون ربط" : "Unlinked"}
                           </SelectItem>
                           <SelectItem value="CERTIFICATE">
-                            Certificate
+                            {ar ? "شهادة" : "Certificate"}
                           </SelectItem>
-                          <SelectItem value="STAFF">Staff / CV</SelectItem>
-                          <SelectItem value="LIBRARY">Library</SelectItem>
+                          <SelectItem value="STAFF">
+                            {ar ? "كادر / سيرة ذاتية" : "Staff / CV"}
+                          </SelectItem>
+                          <SelectItem value="LIBRARY">
+                            {ar ? "مكتبة" : "Library"}
+                          </SelectItem>
                           <SelectItem value="METHODOLOGY">
-                            Methodology
-                          </SelectItem>
-                          <SelectItem value="PAST_PROJECT">
-                            Past project
+                            {ar ? "منهجية" : "Methodology"}
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -433,11 +483,54 @@ export function RequirementsMatrix() {
                         </SelectContent>
                       </Select>
                     ) : null}
+                    {r.linkedResourceType === "METHODOLOGY" ? (
+                      <Select
+                        value={r.linkedResourceId ?? ""}
+                        onValueChange={(linkedResourceId) =>
+                          patch.mutate({
+                            id: r.id,
+                            linkedResourceType: "METHODOLOGY",
+                            linkedResourceId,
+                            status: "COVERED",
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-[11px]">
+                          <SelectValue
+                            placeholder={
+                              ar ? "اختر منهجية" : "Pick methodology"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {methodologies.length === 0 ? (
+                            <SelectItem value="__none" disabled>
+                              {ar
+                                ? "أضف منهجيات من الحساب"
+                                : "Add methodologies in Account"}
+                            </SelectItem>
+                          ) : (
+                            methodologies.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {ar ? m.titleAr ?? m.title : m.title}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    ) : null}
+                    {r.linkedResourceType === "PAST_PROJECT" ? (
+                      <p className="text-[10px] text-muted-foreground">
+                        {ar
+                          ? "الأعمال السابقة تُدار من الحساب. سيتم إدراجها تلقائياً في العرض."
+                          : "Past projects are managed in Account; they will appear automatically in the proposal."}
+                      </p>
+                    ) : null}
                     {!r.linkedResourceType ? (
                       <p className="text-[10px] text-muted-foreground">
                         {ar
-                          ? "اربط شهادة أو كادر أو نص مكتبة كدليل."
-                          : "Link a certificate, staff CV, or library text as evidence."}
+                          ? "اربط شهادة أو كادر أو نص مكتبة أو منهجية كدليل."
+                          : "Link a certificate, staff CV, library text, or methodology as evidence."}
                       </p>
                     ) : null}
                   </td>

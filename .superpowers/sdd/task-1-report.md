@@ -1,149 +1,44 @@
-# Task 1 Report: Brand Excel / PPTX / slides / ZIP chrome
+# Task 1 report: Draft snapshot compiler
 
-## Status
+**Status:** DONE (implementation already present; this report is the SDD handoff, not a new implementer commit)
 
-DONE
+## What was implemented
 
-## Implementation
+`compileDraftProposalSnapshot` and `applyWorkspaceBrandToSnapshot` in `src/lib/proposal-draft-snapshot.ts`.
 
-- Added `brandArgb(hex: string): string` in `src/lib/letterhead.ts`.
-- Added Office helpers for mappable font faces and RGB colors.
-- Updated Compliance Matrix XLSX and Financial BoQ XLSX to:
-  - set workbook creator to the resolved company/brand name,
-  - include the company/brand name in the title cell,
-  - use `BrandProfile.primaryColor` for title/header fills,
-  - stop discarding `brand`.
-- Updated slides HTML to:
-  - use the resolved company/brand name on the title slide and HTML title,
-  - use brand primary/accent colors,
-  - load and apply the resolved brand font stack.
-- Updated PPTX generation to:
-  - set author/title metadata from the resolved company/brand name,
-  - use the company/brand name on the title and closing slides,
-  - use brand primary/accent colors,
-  - apply a mappable brand font face.
-- Added `buildBidPackageReadme` and wired ZIP README generation to start with the client company name.
-- Passed `ProposalCompanyLetterhead` through ZIP generation and standalone download routes for XLSX, slides HTML, and PPTX.
+- Required government-formal modules plus `submission-letter`
+- Sources are only `TENDER` | `WORKSPACE` | `USER_ENTRY`
+- Heading split maps known titles; leftover body goes to `technical-solution`
+- Missing language uses an honest “not provided” line
+- Empty sections use bilingual “not drafted yet”
+- Brand colors go through `normalizeDocumentBrandColor`
+
+Landed in `fa04428 feat(docs): design preview bid packs with each organisation's brand` (same SHA as `main` / this feature branch).
 
 ## Tests
 
-- Red check before implementation:
-  - `bun test src/lib/__tests__/generators-brand.test.ts` failed because `brandArgb` was missing.
-- Verification after implementation:
-  - `bun test src/lib/__tests__/generators-brand.test.ts` — 6 pass, 0 fail.
-  - `bun test src/lib/__tests__/generators-brand.test.ts src/lib/__tests__/core.test.ts src/lib/__tests__/production.test.ts` — 36 pass, 0 fail.
-  - `bun test src/lib/__tests__` — 219 pass, 0 fail.
-  - `bunx tsc --noEmit` — pass.
+Controller re-ran after checkout:
 
-## Concerns
+```
+bun test src/lib/__tests__/proposal-draft-snapshot.test.ts
+```
 
-- No unresolved concerns.
-# Task 1 Report: QueryState consistency for docs/contracts/history
+5/5 passing (empty diagnostics, no APPROVED_KNOWLEDGE, technical heading map, HTML export, brand overlay). Output pristine.
 
-**Status:** DONE  
-**Branch:** `cursor/remaining-gaps-sdd-ab64`  
-**Commit:** `1e703b7` — `fix(ui): adopt QueryState on docs contracts history panels`
+## TDD Evidence
 
-## Summary
+Not available for this commit. Tests and implementation shipped together in `fa04428`. RED phase was not recorded.
 
-Replaced hand-rolled loading/error/empty branches in three dashboard panels with the shared `QueryState` + `EmptyState` pattern from `@/components/patterns`, aligning docs, contracts, and version history with existing panels (`projects-list`, `proposals-list`, `requirements-matrix`, `billing-panel`).
+## Files changed (this task’s portion of fa04428)
 
-## Changes
-
-### `src/components/dashboard/document-matrix.tsx`
-
-- Imported `QueryState`, `EmptyState` from `@/components/patterns`.
-- `useQuery` already exposed `isError`, `error`, and `refetch` — no hook change needed.
-- Wrapped the document table in `QueryState` with:
-  - `loading={<ListSkeleton rows={3} />}` (was 4; aligned to brief)
-  - `empty` using `EmptyState` + `FileText` icon + `tr("no_data", locale)`
-  - `onRetry={() => refetch()}`
-  - `errorMessage` from caught fetch error when available
-
-### `src/components/dashboard/version-history.tsx`
-
-- Imported `QueryState`, `EmptyState`.
-- Added `error` to `useQuery` destructuring.
-- Replaced inline spinner/error/empty blocks with `QueryState`:
-  - Loading now uses `ListSkeleton rows={3}` instead of inline `Loader2` (consistent with other panels).
-  - Error state now includes retry via `onRetry={() => refetch()}` — **UX improvement** over prior version which showed error text only.
-  - Empty state uses `EmptyState` + `History` icon + `tr("no_data", locale)`.
-  - Preserved bilingual fallback error copy when `error` is not an `Error` instance.
-
-### `src/components/dashboard/contracts-panel.tsx`
-
-- Imported `QueryState`, `EmptyState`.
-- Added `error` to `useQuery` destructuring.
-- Replaced ternary loading/error/empty/list with `QueryState`:
-  - Preserved bilingual empty copy split into `title` + `description`.
-  - **Retained Projects and Agents CTAs** in `EmptyState.action` wrapped in `flex gap-2`.
-  - Empty state wrapped in `Card className="border-dashed"` to preserve prior dashed-border styling.
-  - Error retry uses `onRetry={() => void refetch()}` matching prior behavior.
-
-## Verification
-
-| Check | Result |
-|-------|--------|
-| `bunx tsc --noEmit` | Pass (exit 0) |
-| Linter on modified files | No issues |
+- Create: `src/lib/proposal-draft-snapshot.ts`
+- Create: `src/lib/__tests__/proposal-draft-snapshot.test.ts`
 
 ## Self-review
 
-### Strengths
-
-- All three panels now expose the same `isLoading` / `isError` / `isEmpty` / `onRetry` / `locale` contract via `QueryState`.
-- Bilingual copy preserved everywhere copy was touched.
-- Contracts empty state still routes to Projects and Agents views.
-- Version history gains retry on fetch failure (previously missing).
-
-### Minor notes (non-blocking)
-
-- `document-matrix` empty state uses only `title` (`no_data`); prior UI had no description either — consistent.
-- `contracts-panel` empty `EmptyState` uses `className="max-w-md mx-auto"` on the inner div; outer `Card` provides dashed border — slight layout shift vs monolithic empty card but functionally equivalent.
-- Filtered-empty in `document-matrix` (category filter with no matches) still shows generic `no_data` — same as before.
-
-## Files modified
-
-- `src/components/dashboard/document-matrix.tsx`
-- `src/components/dashboard/version-history.tsx`
-- `src/components/dashboard/contracts-panel.tsx`
+- Unmapped leftover body is implemented but not directly unit-tested (the existing test uses a heading that already matches `technical-solution`).
+- Cover / document-control / submission-letter get synthesized draft text when markdown has no matching section.
 
 ## Concerns
 
-None.
-
----
-
-## Fix: locale-aware company name on brand chrome
-
-**Status:** DONE  
-**Commit:** `36372ad` — `fix(export): locale-aware company name on brand chrome`
-
-### Summary
-
-`exportCompanyName` now accepts an optional `PdfLocale` (default `"ar"`) and delegates to `letterheadCompanyName`. Proposal-backed generators resolve locale via exported `resolveLocale(proposal, override)`; XLSX generators accept an optional locale parameter. Download route passes `exportLocale` through all non-PDF export paths and ZIP packaging.
-
-### Tests
-
-```bash
-bun test src/lib/__tests__/generators-brand.test.ts
-bunx tsc --noEmit
-```
-
-```
-bun test v1.3.14 (0d9b296a)
-
-src/lib/__tests__/generators-brand.test.ts:
-(pass) export brand chrome > brandArgb normalizes hex colors for Office fills
-(pass) export brand chrome > compliance workbook uses client brand for creator title and header fill
-(pass) export brand chrome > BoQ workbook uses client brand for creator title and header fill
-(pass) export brand chrome > slides HTML uses client company name, font, and brand colors
-(pass) export brand chrome > PPTX uses client company author, title slide, font, and brand colors
-(pass) export brand chrome > compliance workbook uses Arabic company name when locale is ar and only nameAr is set
-(pass) export brand chrome > ZIP README starts with client company name
-
- 7 pass
- 0 fail
-```
-
-`bunx tsc --noEmit` — pass.
+Implementation landed on `main` in a docs-titled commit rather than a Task-1-only commit on this branch. Review the snapshot compiler only; Task 2 files in the same commit are out of scope for this task’s quality verdict except as neighboring context.

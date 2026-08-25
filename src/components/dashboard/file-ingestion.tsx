@@ -80,7 +80,11 @@ export function FileIngestion() {
   const { projects, active } = useEnsureActiveProject();
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<DocCategory>("RFP");
+  // Empty string = Auto (per-file guess). Default keeps files honest instead of
+  // stamping every drop with RFP.
+  const [selectedCategory, setSelectedCategory] = useState<DocCategory | "">(
+    ""
+  );
   const [previewDoc, setPreviewDoc] = useState<ApiDocument | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
@@ -317,12 +321,35 @@ export function FileIngestion() {
       )}
 
       {/* Category selector */}
-      <div className="px-5 pt-4 pb-3 flex flex-wrap gap-1.5">
+      <div
+        className="px-5 pt-4 pb-3 flex flex-wrap gap-1.5"
+        role="radiogroup"
+        aria-label={
+          locale === "ar" ? "تصنيف المستند" : "Document category"
+        }
+      >
+        <button
+          type="button"
+          role="radio"
+          aria-checked={selectedCategory === ""}
+          onClick={() => setSelectedCategory("")}
+          className={cn(
+            "text-[11px] font-medium px-2.5 py-1 rounded-md border transition-all",
+            selectedCategory === ""
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
+          )}
+        >
+          {tr("cat_AUTO", locale)}
+        </button>
         {CATEGORIES.map((c) => {
           const active = selectedCategory === c.value;
           return (
             <button
               key={c.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
               onClick={() => setSelectedCategory(c.value)}
               className={cn(
                 "text-[11px] font-medium px-2.5 py-1 rounded-md border transition-all",
@@ -340,6 +367,9 @@ export function FileIngestion() {
       {/* Drop zone */}
       <div className="px-5 pb-4">
         <div
+          role="button"
+          tabIndex={0}
+          aria-label={tr("ingest_title", locale)}
           onDragOver={(e) => {
             e.preventDefault();
             setDragOver(true);
@@ -347,8 +377,14 @@ export function FileIngestion() {
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
           onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
           className={cn(
-            "relative rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-all",
+            "relative rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
             dragOver
               ? "border-primary bg-primary/5 scale-[1.01]"
               : "border-border hover:border-primary/40 hover:bg-muted/30"
@@ -374,7 +410,18 @@ export function FileIngestion() {
           </div>
           <p className="text-sm font-semibold mb-1">{tr("ingest_title", locale)}</p>
           <p className="text-xs text-muted-foreground mb-3">{tr("ingest_subtitle", locale)}</p>
-          <Button size="sm" variant="outline" className="gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={(e) => {
+              // Parent drop zone already triggers file picker on click.
+              // Stop propagation so it only fires once.
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+          >
             <UploadCloud className="size-3.5" />
             {tr("ingest_browse", locale)}
           </Button>
@@ -426,8 +473,14 @@ export function FileIngestion() {
                   {f.status === "error" && <AlertCircle className="size-4 text-destructive" />}
                 </div>
                 <button
+                  type="button"
                   onClick={() => setFiles((prev) => prev.filter((x) => x.id !== f.id))}
                   className="shrink-0 text-muted-foreground hover:text-foreground"
+                  aria-label={
+                    locale === "ar"
+                      ? `إزالة ${f.name}`
+                      : `Remove ${f.name}`
+                  }
                 >
                   <X className="size-3.5" />
                 </button>

@@ -153,6 +153,7 @@ export const localizationRegistry = {
   ingest_supported: { ar: "الصيغ المدعومة: PDF, DOCX, XLSX, ZIP", en: "Supported: PDF, DOCX, XLSX, ZIP" },
 
   // Doc categories
+  cat_AUTO: { ar: "تلقائي", en: "Auto detect" },
   cat_RFP: { ar: "كراسة الشروط", en: "RFP / Conditions Booklet" },
   cat_TECHNICAL_SPECS: { ar: "المواصفات الفنية", en: "Technical Specs" },
   cat_IT_CONTRACT: { ar: "عقد تقنية المعلومات", en: "IT Contract Template" },
