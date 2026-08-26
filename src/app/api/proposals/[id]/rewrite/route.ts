@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireWriter } from "@/lib/auth";
 import { generateCompletion } from "@/lib/llm";
+import {
+  ProviderUnavailableError,
+  guardOrThrow,
+} from "@/lib/ai/provider-unavailable";
 import { systemRewrite } from "@/lib/agents/prompts";
 import type { Locale } from "@/lib/types";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -96,6 +100,24 @@ Return Markdown only.`,
       .trim();
   }
   if (!rewritten || result.fallback) {
+    try {
+      guardOrThrow(result, "api:proposals-rewrite");
+    } catch (err) {
+      if (err instanceof ProviderUnavailableError) {
+        return NextResponse.json(
+          {
+            error: "AI rewrite unavailable",
+            fallback: true,
+            failureKind: err.failureKind,
+            llmFailureKind: err.llmFailureKind ?? null,
+            provider: result.provider,
+            content: selection,
+          },
+          { status: 503 }
+        );
+      }
+      throw err;
+    }
     return NextResponse.json(
       {
         error: "AI rewrite unavailable",

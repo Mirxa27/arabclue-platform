@@ -16,6 +16,11 @@
 
 import { generateCompletion, type LLMMessage } from "../llm";
 import {
+  ProviderUnavailableError,
+  guardCaughtOrThrow,
+  guardOrThrow,
+} from "./provider-unavailable";
+import {
   NO_PRICING_RULE,
   REGULATORY_PRECISION_RULE,
 } from "../agents/prompts";
@@ -381,7 +386,10 @@ export async function matchVendors(
       maxTokens: 8192,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "vendor-matching-engine:matchVendors");
+      return deterministic;
+    }
 
     const parsed = safeParseMatchScores(result.content, input.vendors);
     if (!parsed || parsed.length === 0) return deterministic;
@@ -398,7 +406,9 @@ export async function matchVendors(
 
     return parsed.map((m) => ({ ...m, provenance }));
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[vendor-matching-engine] LLM matching failed, using deterministic", err);
+    guardCaughtOrThrow(err, "vendor-matching-engine:matchVendors");
     return deterministic;
   }
 }
@@ -508,7 +518,10 @@ export async function predictVendorSuccess(
       maxTokens: 4096,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "vendor-matching-engine:predictVendorSuccess");
+      return deterministic;
+    }
 
     const parsed = safeParsePredictions(result.content, input.vendors);
     if (!parsed || parsed.length === 0) return deterministic;
@@ -525,7 +538,9 @@ export async function predictVendorSuccess(
 
     return parsed.map((p) => ({ ...p, provenance }));
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[vendor-matching-engine] LLM prediction failed, using deterministic", err);
+    guardCaughtOrThrow(err, "vendor-matching-engine:predictVendorSuccess");
     return deterministic;
   }
 }

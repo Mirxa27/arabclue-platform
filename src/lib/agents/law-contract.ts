@@ -4,6 +4,11 @@
  */
 
 import { generateCompletion } from "../llm";
+import {
+  ProviderUnavailableError,
+  guardCaughtOrThrow,
+  guardOrThrow,
+} from "../ai/provider-unavailable";
 import { LEGAL_DISCLAIMER } from "../procurement-rules";
 import {
   researchSaudiLawForContract,
@@ -336,6 +341,10 @@ export async function draftLawContract(opts: {
       { engine: "LAW", temperature: 0.15, maxTokens: 8192 }
     );
 
+    if (completion.fallback) {
+      guardOrThrow(completion, "law-contract:draftContract");
+    }
+
     const md = completion.content?.trim() || deterministic.contentMd;
     const articles = parseContractArticles(md);
     const useMd =
@@ -359,7 +368,9 @@ export async function draftLawContract(opts: {
       locale: "bilingual",
     };
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[law-contract] LLM draft failed, using deterministic", err);
+    guardCaughtOrThrow(err, "law-contract:draftContract");
     return {
       contentMd: deterministic.contentMd,
       articles: deterministic.articles,

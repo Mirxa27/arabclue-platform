@@ -15,6 +15,11 @@
 
 import { generateCompletion, type LLMMessage } from "../llm";
 import {
+  ProviderUnavailableError,
+  guardCaughtOrThrow,
+  guardOrThrow,
+} from "./provider-unavailable";
+import {
   NO_PRICING_RULE,
   REGULATORY_PRECISION_RULE,
 } from "../agents/prompts";
@@ -308,7 +313,10 @@ export async function scanCompliance(
       maxTokens: 8192,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "compliance-analyzer:scanCompliance");
+      return deterministic;
+    }
 
     const parsed = safeParseFindings(result.content);
     if (!parsed || parsed.length === 0) return deterministic;
@@ -325,7 +333,9 @@ export async function scanCompliance(
 
     return parsed.map((f) => ({ ...f, provenance }));
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[compliance-analyzer] LLM scan failed, using deterministic", err);
+    guardCaughtOrThrow(err, "compliance-analyzer:scanCompliance");
     return deterministic;
   }
 }
@@ -410,7 +420,10 @@ export async function analyzeComplianceGaps(
       maxTokens: 4096,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "compliance-analyzer:analyzeComplianceGaps");
+      return deterministic;
+    }
 
     const parsed = safeParseGaps(result.content);
     if (!parsed || parsed.length === 0) return deterministic;
@@ -427,7 +440,9 @@ export async function analyzeComplianceGaps(
 
     return parsed.map((g) => ({ ...g, provenance }));
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[compliance-analyzer] LLM gap analysis failed, using deterministic", err);
+    guardCaughtOrThrow(err, "compliance-analyzer:analyzeComplianceGaps");
     return deterministic;
   }
 }

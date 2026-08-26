@@ -1,4 +1,5 @@
 import { generateCompletion } from "../llm";
+import { guardOrThrow } from "../ai/provider-unavailable";
 import { systemDrafting, draftingUserPrompt } from "./prompts";
 import { LEGAL_DISCLAIMER, LEGAL_DISCLAIMER_AR } from "../procurement-rules";
 import { isPlaceholderCompanyName, isQualityScopeText } from "../text-quality";
@@ -123,6 +124,7 @@ export async function draftProposal(opts: {
   }
   const usedFallback = !contentMd || result.fallback;
   if (usedFallback) {
+    guardOrThrow(result, "drafting:generateProposal");
     contentMd = buildDeterministicProposal({ ...opts, locale });
   }
 

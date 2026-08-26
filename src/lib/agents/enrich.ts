@@ -1,4 +1,5 @@
 import { generateCompletion } from "../llm";
+import { guardOrThrow } from "../ai/provider-unavailable";
 import {
   SYSTEM_INGESTION,
   SYSTEM_COMPLIANCE,
@@ -43,6 +44,7 @@ async function enrichJson(
     { maxTokens: 2048, temperature: 0.2, engine }
   );
   if (result.fallback || !result.content) {
+    guardOrThrow(result, `enrich:${kind}`);
     return { data: null, provider: result.provider, tokensUsed: result.tokensUsed, fallback: true };
   }
   const data = extractJsonObject(result.content);

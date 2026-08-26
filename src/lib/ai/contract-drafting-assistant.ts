@@ -29,6 +29,11 @@ import {
 } from "../document-templates/contract-templates";
 import { validateContractDraft } from "../agents/law-contract";
 import {
+  ProviderUnavailableError,
+  guardCaughtOrThrow,
+  guardOrThrow,
+} from "./provider-unavailable";
+import {
   NO_PRICING_RULE,
   REGULATORY_PRECISION_RULE,
 } from "../agents/prompts";
@@ -338,6 +343,7 @@ export async function generateClauseSuggestions(
     });
 
     if (result.fallback || !result.content) {
+      guardOrThrow(result, "contract-drafting-assistant:generateClauseSuggestions");
       return deterministic;
     }
 
@@ -359,7 +365,9 @@ export async function generateClauseSuggestions(
       provenance,
     }));
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[contract-drafting-assistant] LLM clause generation failed, using deterministic", err);
+    guardCaughtOrThrow(err, "contract-drafting-assistant:generateClauseSuggestions");
     return deterministic;
   }
 }
@@ -447,7 +455,10 @@ export async function inferTemplateVariables(
       maxTokens: 4096,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "contract-drafting-assistant:inferTemplateVariables");
+      return deterministic;
+    }
 
     const parsed = safeParseVariableInferences(result.content);
     if (!parsed || parsed.length === 0) return deterministic;
@@ -467,7 +478,9 @@ export async function inferTemplateVariables(
       provenance,
     }));
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[contract-drafting-assistant] LLM variable inference failed, using deterministic", err);
+    guardCaughtOrThrow(err, "contract-drafting-assistant:inferTemplateVariables");
     return deterministic;
   }
 }
@@ -541,7 +554,10 @@ export async function validateBilingualConsistency(
       maxTokens: 4096,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "contract-drafting-assistant:validateBilingualConsistency");
+      return deterministic;
+    }
 
     const parsed = safeParseConsistencyChecks(result.content);
     if (!parsed || parsed.length === 0) return deterministic;
@@ -561,7 +577,9 @@ export async function validateBilingualConsistency(
       provenance,
     }));
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[contract-drafting-assistant] LLM consistency check failed, using deterministic", err);
+    guardCaughtOrThrow(err, "contract-drafting-assistant:validateBilingualConsistency");
     return deterministic;
   }
 }

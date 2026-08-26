@@ -26,6 +26,11 @@ import type {
   Locale,
 } from "../types";
 import type { CoveragePlan } from "../agents/coverage";
+import {
+  ProviderUnavailableError,
+  guardCaughtOrThrow,
+  guardOrThrow,
+} from "./provider-unavailable";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -423,7 +428,10 @@ export async function scoreProposal(
       maxTokens: 4096,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "proposal-optimizer:scoreProposal");
+      return deterministic;
+    }
 
     const parsed = safeParseScore(result.content);
     if (!parsed) return deterministic;
@@ -441,7 +449,9 @@ export async function scoreProposal(
       },
     };
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[proposal-optimizer] LLM scoring failed, using deterministic", err);
+    guardCaughtOrThrow(err, "proposal-optimizer:scoreProposal");
     return deterministic;
   }
 }
@@ -523,7 +533,10 @@ export async function generateImprovementSuggestions(
       maxTokens: 4096,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "proposal-optimizer:generateImprovementSuggestions");
+      return deterministic;
+    }
 
     const parsed = safeParseSuggestions(result.content);
     if (!parsed || parsed.length === 0) return deterministic;
@@ -540,7 +553,9 @@ export async function generateImprovementSuggestions(
 
     return parsed.map((s) => ({ ...s, provenance }));
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[proposal-optimizer] LLM suggestions failed, using deterministic", err);
+    guardCaughtOrThrow(err, "proposal-optimizer:generateImprovementSuggestions");
     return deterministic;
   }
 }
@@ -640,7 +655,10 @@ export async function optimizeSection(
       maxTokens: 4096,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "proposal-optimizer:optimizeSection");
+      return deterministic;
+    }
 
     const parsed = safeParseSectionOptimization(result.content, sectionId, sectionContent);
     if (!parsed) return deterministic;
@@ -663,7 +681,9 @@ export async function optimizeSection(
       },
     };
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[proposal-optimizer] LLM section optimization failed, using deterministic", err);
+    guardCaughtOrThrow(err, "proposal-optimizer:optimizeSection");
     return deterministic;
   }
 }
@@ -742,7 +762,10 @@ export async function estimateWinProbability(
       maxTokens: 2048,
     });
 
-    if (result.fallback || !result.content) return deterministic;
+    if (result.fallback || !result.content) {
+      guardOrThrow(result, "proposal-optimizer:estimateWinProbability");
+      return deterministic;
+    }
 
     const parsed = safeParseWinProbability(result.content);
     if (!parsed) return deterministic;
@@ -760,7 +783,9 @@ export async function estimateWinProbability(
       },
     };
   } catch (err) {
+    if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[proposal-optimizer] LLM win probability failed, using deterministic", err);
+    guardCaughtOrThrow(err, "proposal-optimizer:estimateWinProbability");
     return deterministic;
   }
 }
