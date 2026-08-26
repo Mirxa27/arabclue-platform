@@ -102,13 +102,6 @@ function PreviewBlock({ tool, ar, status }: { tool: TheaterToolEvent; ar: boolea
   const docPreview = useMemo(() => (tool.output ? extractDocumentPreview(tool.output) : null), [tool.output]);
   const regPreview = useMemo(() => (tool.output ? extractRegulatoryPreview(tool.output) : null), [tool.output]);
   const [expanded, setExpanded] = useState(status === "active");
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    if (status !== "active") return;
-    const id = window.setInterval(() => setTick((v) => v + 1), 180);
-    return () => window.clearInterval(id);
-  }, [status]);
 
   useEffect(() => {
     if (status === "active") setExpanded(true);
@@ -116,60 +109,51 @@ function PreviewBlock({ tool, ar, status }: { tool: TheaterToolEvent; ar: boolea
 
   const inputSummary = summarizeToolInput(tool.input, ar);
   const outputSummary = summarizeToolOutput(tool.output, ar);
-  const isDoc = toolKind(tool.name) === "document" || toolKind(tool.name) === "proposal" || toolKind(tool.name) === "pipeline";
-  const isReg = toolKind(tool.name) === "compliance";
 
+  // Active tool with no structured preview yet: show only what the tool
+  // actually gave us. No fabricated phrase-cycler (was 180ms setInterval
+  // through "Analyzing → Aligning → Building" strings that had no relation
+  // to the real work being done — the classic agent-theater anti-pattern).
   if (status === "active" && !docPreview && !regPreview) {
     return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 rounded-lg border border-teal-500/15 bg-teal-500/[0.04] px-2.5 py-2">
-          <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
-          <span className="text-[11px] font-mono text-teal-800/80 dark:text-teal-200/80 truncate">
-            {inputSummary || (ar ? "يعالج المدخلات…" : "Processing input…")}
-          </span>
-          <span className="ms-auto flex gap-0.5">
-            <span className="size-1 rounded-full bg-teal-500 animate-[bounce_1s_infinite]" />
-            <span className="size-1 rounded-full bg-teal-500 animate-[bounce_1s_0.15s_infinite]" />
-            <span className="size-1 rounded-full bg-teal-500 animate-[bounce_1s_0.3s_infinite]" />
-          </span>
-        </div>
-        {isDoc ? (
-          <div className="grid gap-1.5">
-            {[
-              ar ? "تحليل المتطلبات" : "Analyzing requirements",
-              ar ? "محاذاة معايير التقييم" : "Aligning evaluation criteria",
-              ar ? "بناء مصفوفة التغطية" : "Building coverage matrix",
-            ]
-              .slice(0, 1 + (tick % 3))
-              .map((l, i, arr) => (
-                <div key={l} className="flex items-center gap-2 text-[11px] text-zinc-700 dark:text-zinc-300">
-                  <span className="text-teal-600/60">›</span>
-                  <span className={cn(i === arr.length - 1 && "text-teal-700 dark:text-teal-300")}>{l}</span>
-                  {i === arr.length - 1 ? <span className="inline-block h-3 w-1.5 bg-teal-500 animate-pulse" /> : null}
-                </div>
-              ))}
-          </div>
-        ) : null}
+      <div className="flex items-center gap-2 rounded-lg border border-teal-500/15 bg-teal-500/[0.04] px-2.5 py-2">
+        <Loader2 className="size-3 animate-spin text-teal-600 dark:text-teal-300 shrink-0" />
+        <span className="text-[11px] font-mono text-teal-800/80 dark:text-teal-200/80 truncate">
+          {inputSummary || (ar ? "قيد التنفيذ…" : "Running…")}
+        </span>
       </div>
     );
   }
 
   if (docPreview) {
-    const progress = docPreview.progress ?? (status === "done" ? 1 : 0.4);
+    // Only render the progress bar when the tool actually reports progress,
+    // or when it's finished. Faking a 40% bar for every active document tool
+    // is exactly the same agent-theater lie as the phrase cycler — the tool
+    // did not tell us it was 40% done.
+    const reportedProgress =
+      typeof docPreview.progress === "number"
+        ? docPreview.progress
+        : status === "done"
+          ? 1
+          : null;
     return (
       <div className="space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[12px] font-medium leading-snug truncate">{docPreview.title}</p>
-          <span className="font-mono text-[10px] text-zinc-500">{Math.round(progress * 100)}%</span>
+          {reportedProgress !== null ? (
+            <span className="font-mono text-[10px] text-zinc-500">{Math.round(reportedProgress * 100)}%</span>
+          ) : null}
         </div>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-white/10">
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-400"
-            initial={{ width: 0 }}
-            animate={{ width: `${Math.round(progress * 100)}%` }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-          />
-        </div>
+        {reportedProgress !== null ? (
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-white/10">
+            <motion.div
+              className="h-full rounded-full bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-400"
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.round(reportedProgress * 100)}%` }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            />
+          </div>
+        ) : null}
         {(docPreview.sections?.length ?? 0) > 0 ? (
           <div className="rounded-xl border border-white/40 dark:border-white/10 bg-white/50 dark:bg-black/20 px-2.5 py-2 space-y-1">
             {docPreview.sections.slice(0, expanded ? 8 : 3).map((s, i) => (

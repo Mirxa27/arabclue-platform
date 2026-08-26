@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -249,12 +249,6 @@ function RegulatoryForge({ locale, tools, voiceLive }: { locale: "ar" | "en"; to
   const active = [...regTools].reverse().find((t) => isToolRunning(t.state) || t.preliminary) || [...regTools].reverse().find((t) => isToolDone(t.state) && t.output != null);
   const preview = active?.output ? extractRegulatoryPreview(active.output) : null;
   const running = active ? isToolRunning(active.state) || !!active.preliminary : false;
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    const id = window.setInterval(() => setTick((t) => t + 1), 140);
-    return () => window.clearInterval(id);
-  }, [running]);
 
   if (!active && !voiceLive) {
     return (
@@ -264,7 +258,10 @@ function RegulatoryForge({ locale, tools, voiceLive }: { locale: "ar" | "en"; to
     );
   }
 
-  const visibleFindings = preview?.findings.slice(0, running ? Math.min(preview.findings.length, 1 + (tick % 5)) : preview?.findings.length) ?? [];
+  // Show every finding the tool actually returned. The old code sliced by
+  // `1 + (tick % 5)` on a 140ms interval, which pretended findings streamed
+  // in one-by-one when they had all arrived in the same tool response.
+  const visibleFindings = preview?.findings ?? [];
 
   return (
     <motion.div layout className={cn("relative overflow-hidden rounded-[18px] border backdrop-blur-xl", "border-emerald-500/15 dark:border-emerald-400/15 bg-white/70 dark:bg-zinc-900/50", running && "shadow-[0_0_0_1px_rgba(16,185,129,0.12),0_0_28px_-10px_rgba(16,185,129,0.35)]")}>
