@@ -330,6 +330,25 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
     reverse:
       'ALTER TABLE "SubscriptionPlan" DROP COLUMN "priceMonthlyDecimal"; ALTER TABLE "SubscriptionPlan" DROP COLUMN "priceYearlyDecimal"; ALTER TABLE "BillingRecord" DROP COLUMN "amountDecimal"; ALTER TABLE "PaymentCheckout" DROP COLUMN "amountDecimal";',
   },
+  {
+    id: "20261126000000_autonomy_slice_1",
+    position: 25,
+    capabilities: [
+      "autonomy shell",
+      "company profile Markdown",
+      "residency preference",
+      "agent plan panel",
+      "agent interrupt",
+      "agent failure taxonomy",
+      "tender artifact public link",
+      "inbox retention loop",
+      "proposal public review link",
+      "saved tender filters",
+    ],
+    createsTables: ["InboxItem", "ProposalReviewToken", "SavedTenderFilter"],
+    reverse:
+      'DROP TABLE "SavedTenderFilter"; DROP TABLE "ProposalReviewToken"; DROP TABLE "InboxItem"; ALTER TABLE "AgentRun" DROP COLUMN "planStepsJson"; ALTER TABLE "AgentRun" DROP COLUMN "currentStepName"; ALTER TABLE "AgentRun" DROP COLUMN "failureKind"; ALTER TABLE "TenderProject" DROP COLUMN "artifactUrlToken"; ALTER TABLE "Workspace" DROP COLUMN "companyProfileMd"; ALTER TABLE "Workspace" DROP COLUMN "residencyPreference";',
+  },
 ]);
 
 /** Every declared migration identifier, in apply order. */

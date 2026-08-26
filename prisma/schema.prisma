@@ -61,59 +61,62 @@ model User {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  workspaces               WorkspaceMember[]
-  projects                 TenderProject[]
-  documents                UploadedDocument[]
-  proposals                GeneratedProposal[]
-  agentRuns                AgentRun[]
-  sessions                 UserSession[]
-  mfaRecoveryCodes         MfaRecoveryCode[]
-  auditLogs                AuditLog[]
-  billingRecords           BillingRecord[]
-  paymentCheckouts         PaymentCheckout[]
-  subscription             Subscription?
-  approvalSteps            ApprovalStep[]
-  proposalReviews          ProposalReview[]
-  copilotMissions          CopilotMission[]
-  copilotMessages          CopilotMessage[]
-  copilotAttachments       CopilotAttachment[]
-  copilotActions           CopilotAction[]
-  notificationDismissals   NotificationDismissal[]
-  obligationUpdates        ContractObligationState[]
-  createdTemplates         ContractTemplate[]               @relation("TemplateCreator")
-  approvedTemplates        ContractTemplate[]               @relation("TemplateApprover")
-  templateVersions         ContractTemplateVersion[]
-  generatedContracts       GeneratedContract[]
-  reviewedPastProjects     PastProject[]                    @relation("PastProjectReviewer")
-  revokedPastProjects      PastProject[]                    @relation("PastProjectRevoker")
-  reviewedCertificates     Certificate[]                    @relation("CertificateReviewer")
-  revokedCertificates      Certificate[]                    @relation("CertificateRevoker")
-  reviewedMethodologies    MethodologyAsset[]               @relation("MethodologyReviewer")
-  revokedMethodologies     MethodologyAsset[]               @relation("MethodologyRevoker")
-  reviewedLibraryItems     ContentLibraryItem[]             @relation("LibraryItemReviewer")
-  revokedLibraryItems      ContentLibraryItem[]             @relation("LibraryItemRevoker")
-  updatedProposalSnapshots GeneratedProposal[]              @relation("ProposalSnapshotUpdater")
-  builderSections          ProposalBuilderSection[]
-  createdTemplatesMarket   TemplateMarketplaceEntry[]
-  collaborationComments    CollaborationComment[]
-  analyticsEvents          AnalyticsEvent[]
-  verificationTokens       VerificationToken[]
-  recoveryTokens           RecoveryToken[]
-  sentInvitations          WorkspaceInvitation[]            @relation("InvitationInviter")
-  contractVersions         GeneratedContractVersion[]
-  marketplaceRatings       TemplateMarketplaceRating[]
-  proposalPresences        ProposalPresence[]
-  notificationDeliveries   NotificationDelivery[]
-  inAppNotifications       InAppNotification[]
-  recurringProfiles        MyFatoorahRecurringProfile[]
-  recurringCheckoutIntents RecurringCheckoutIntent[]        @relation("RecurringCheckoutIntentCreator")
-  marketplaceApplications  TemplateMarketplaceApplication[] @relation("MarketplaceApplicationActor")
-  submittedPastProjects    PastProject[]                    @relation("PastProjectSubmitter")
-  submittedCertificates    Certificate[]                    @relation("CertificateSubmitter")
-  submittedMethodologies   MethodologyAsset[]               @relation("MethodologySubmitter")
-  submittedLibraryItems    ContentLibraryItem[]             @relation("LibraryItemSubmitter")
-  reviewedStaffMembers     StaffMember[]                    @relation("StaffMemberReviewer")
-  submittedStaffMembers    StaffMember[]                    @relation("StaffMemberSubmitter")
+  workspaces                  WorkspaceMember[]
+  projects                    TenderProject[]
+  documents                   UploadedDocument[]
+  proposals                   GeneratedProposal[]
+  agentRuns                   AgentRun[]
+  sessions                    UserSession[]
+  mfaRecoveryCodes            MfaRecoveryCode[]
+  auditLogs                   AuditLog[]
+  billingRecords              BillingRecord[]
+  paymentCheckouts            PaymentCheckout[]
+  subscription                Subscription?
+  approvalSteps               ApprovalStep[]
+  proposalReviews             ProposalReview[]
+  copilotMissions             CopilotMission[]
+  copilotMessages             CopilotMessage[]
+  copilotAttachments          CopilotAttachment[]
+  copilotActions              CopilotAction[]
+  notificationDismissals      NotificationDismissal[]
+  obligationUpdates           ContractObligationState[]
+  createdTemplates            ContractTemplate[]               @relation("TemplateCreator")
+  approvedTemplates           ContractTemplate[]               @relation("TemplateApprover")
+  templateVersions            ContractTemplateVersion[]
+  generatedContracts          GeneratedContract[]
+  reviewedPastProjects        PastProject[]                    @relation("PastProjectReviewer")
+  revokedPastProjects         PastProject[]                    @relation("PastProjectRevoker")
+  reviewedCertificates        Certificate[]                    @relation("CertificateReviewer")
+  revokedCertificates         Certificate[]                    @relation("CertificateRevoker")
+  reviewedMethodologies       MethodologyAsset[]               @relation("MethodologyReviewer")
+  revokedMethodologies        MethodologyAsset[]               @relation("MethodologyRevoker")
+  reviewedLibraryItems        ContentLibraryItem[]             @relation("LibraryItemReviewer")
+  revokedLibraryItems         ContentLibraryItem[]             @relation("LibraryItemRevoker")
+  updatedProposalSnapshots    GeneratedProposal[]              @relation("ProposalSnapshotUpdater")
+  builderSections             ProposalBuilderSection[]
+  createdTemplatesMarket      TemplateMarketplaceEntry[]
+  collaborationComments       CollaborationComment[]
+  analyticsEvents             AnalyticsEvent[]
+  verificationTokens          VerificationToken[]
+  recoveryTokens              RecoveryToken[]
+  sentInvitations             WorkspaceInvitation[]            @relation("InvitationInviter")
+  contractVersions            GeneratedContractVersion[]
+  marketplaceRatings          TemplateMarketplaceRating[]
+  proposalPresences           ProposalPresence[]
+  notificationDeliveries      NotificationDelivery[]
+  inAppNotifications          InAppNotification[]
+  recurringProfiles           MyFatoorahRecurringProfile[]
+  recurringCheckoutIntents    RecurringCheckoutIntent[]        @relation("RecurringCheckoutIntentCreator")
+  marketplaceApplications     TemplateMarketplaceApplication[] @relation("MarketplaceApplicationActor")
+  submittedPastProjects       PastProject[]                    @relation("PastProjectSubmitter")
+  submittedCertificates       Certificate[]                    @relation("CertificateSubmitter")
+  submittedMethodologies      MethodologyAsset[]               @relation("MethodologySubmitter")
+  submittedLibraryItems       ContentLibraryItem[]             @relation("LibraryItemSubmitter")
+  reviewedStaffMembers        StaffMember[]                    @relation("StaffMemberReviewer")
+  submittedStaffMembers       StaffMember[]                    @relation("StaffMemberSubmitter")
+  inboxItems                  InboxItem[]
+  createdProposalReviewTokens ProposalReviewToken[]            @relation("ProposalReviewTokenCreator")
+  savedTenderFilters          SavedTenderFilter[]
 }
 
 model UserSession {
@@ -143,15 +146,17 @@ model MfaRecoveryCode {
 // ─── Workspaces (multi-tenant) ───────────────────────────────────────────────
 
 model Workspace {
-  id        String   @id @default(cuid())
-  name      String
-  nameAr    String?
-  slug      String   @unique
-  plan      String   @default("ENTERPRISE") // STARTER | PRO | ENTERPRISE
-  crNumber  String? // Commercial Registration
-  vatNumber String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  name                String
+  nameAr              String?
+  slug                String   @unique
+  plan                String   @default("ENTERPRISE") // STARTER | PRO | ENTERPRISE
+  crNumber            String? // Commercial Registration
+  vatNumber           String?
+  companyProfileMd    String? // Autonomy shell: Markdown company profile (replaces 3 wizards)
+  residencyPreference String? // Autonomy shell: KSA | GLOBAL | null (residency gate for tender routing)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   members                  WorkspaceMember[]
   projects                 TenderProject[]
@@ -184,6 +189,9 @@ model Workspace {
   recurringCheckoutIntents RecurringCheckoutIntent[]
   marketplaceApplications  TemplateMarketplaceApplication[]
   notificationDeliveries   NotificationDelivery[]
+  inboxItems               InboxItem[]
+  proposalReviewTokens     ProposalReviewToken[]
+  savedTenderFilters       SavedTenderFilter[]
 }
 
 model WorkspaceMember {
@@ -215,6 +223,7 @@ model TenderProject {
   status             String    @default("DRAFT") // DRAFT | PARSING | DRAFTING | REVIEW | SUBMITTED | ARCHIVED
   saudizationTarget  Float? // percentage
   localContentTarget Float? // percentage
+  artifactUrlToken   String?   @unique // Autonomy shell: signed token for /t/{id} public artifact link
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -226,6 +235,7 @@ model TenderProject {
   complianceChecks   ComplianceCheck[]
   requirements       TenderRequirement[]
   generatedContracts GeneratedContract[]
+  inboxItems         InboxItem[]
 
   @@index([workspaceId])
   @@index([status])
@@ -487,11 +497,15 @@ model AgentRun {
   finalArtifact   String? // JSON summary of generated artifacts
   configJson      String? // JSON: durable run config for resume (locale, workspace, regenerate mode)
   errorMessage    String?
+  planStepsJson   String? // Autonomy shell: JSON array of 3-8 plan steps rendered in plan panel
+  currentStepName String? // Autonomy shell: identifier of the currently executing plan step (interrupt anchor)
+  failureKind     String? // Autonomy shell: PROVIDER_UNAVAILABLE | RATE_LIMIT | INVALID_INPUT | INTERNAL | USER_CANCELLED
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   project     TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   triggeredBy User          @relation(fields: [triggeredById], references: [id])
+  inboxItems  InboxItem[]
 
   @@index([projectId])
   @@index([status])
@@ -566,6 +580,7 @@ model GeneratedProposal {
   collaborationComments       CollaborationComment[]
   presences                   ProposalPresence[]
   marketplaceApplications     TemplateMarketplaceApplication[]
+  reviewTokens                ProposalReviewToken[]
 
   @@index([workspaceId])
   @@index([projectId])
@@ -1757,4 +1772,83 @@ model InAppNotification {
   @@index([userId, createdAt])
   @@index([userId, createdAt(sort: Desc), id], map: "InAppNotification_userId_createdAt_id_cursor_idx")
   @@index([eventId])
+}
+
+// ─── Autonomy shell (Slice 1) ────────────────────────────────────────────────
+
+// Retention loop across agent questions, tender matches, amendments, and
+// deadlines. Powers the "Inbox" pill in the composer surface.
+model InboxItem {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String? // null when the item is workspace-scoped (e.g. tender match)
+  kind        String // AGENT_QUESTION | TENDER_MATCH | TENDER_AMENDMENT | DEADLINE_REMINDER | REVIEW_REQUEST | RUN_FAILED
+  title       String
+  titleAr     String?
+  bodyMd      String? // English body (Markdown)
+  bodyMdAr    String? // Arabic body (Markdown) — authoritative when locale=ar
+  linkPath    String? // in-app deep link, e.g. /t/<tenderProjectId> or /app?run=<agentRunId>
+  agentRunId  String? // set when kind=AGENT_QUESTION or RUN_FAILED
+  projectId   String? // set when kind=TENDER_MATCH, TENDER_AMENDMENT, DEADLINE_REMINDER, REVIEW_REQUEST
+  priority    String    @default("NORMAL") // URGENT | HIGH | NORMAL | LOW
+  status      String    @default("UNREAD") // UNREAD | READ | ARCHIVED | ACTED
+  dueAt       DateTime?
+  readAt      DateTime?
+  actedAt     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  agentRun  AgentRun?      @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  project   TenderProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status])
+  @@index([workspaceId, kind])
+  @@index([userId, status])
+  @@index([agentRunId])
+  @@index([projectId])
+}
+
+// Signed URL grant for public proposal review (/review/{token}).
+model ProposalReviewToken {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  proposalId   String
+  createdById  String
+  token        String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  lastViewedAt DateTime?
+  viewCount    Int       @default(0)
+  scope        String    @default("READ_ONLY") // READ_ONLY | COMMENT (COMMENT reserved for future work)
+  createdAt    DateTime  @default(now())
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  proposal  GeneratedProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  createdBy User              @relation("ProposalReviewTokenCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId])
+  @@index([proposalId])
+}
+
+// User-defined saved query over the tender feed (keywords, sector, budget,
+// saudization, deadline window). Optionally raises a TENDER_MATCH inbox item
+// when new tenders match.
+model SavedTenderFilter {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  userId        String
+  name          String
+  nameAr        String?
+  queryJson     String // JSON: { keywords, sectors, budgetMin, budgetMax, saudizationMin, deadlineWithinDays, ... }
+  notifyOnMatch Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([userId])
 }
