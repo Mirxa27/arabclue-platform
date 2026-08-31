@@ -46,6 +46,7 @@ import type { SaudiLawResearchBrief } from "@/lib/saudi-law-research";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import type { ApiProposal, ApiProposalVersion } from "@/lib/api-types";
 import { MarkdownStudioEditor } from "./markdown-studio-editor";
+import { CopilotRail } from "./copilot-rail";
 import { DocumentPreviewFrame } from "./document-preview-frame";
 import { ErrorState } from "@/components/patterns";
 
@@ -665,7 +666,7 @@ export function BilingualContractStudio({
           />
         </div>
       ) : studioMode === "edit" ? (
-        <div className="h-[min(70vh,720px)] p-4 sm:p-6">
+        <div className="h-[min(70vh,720px)] p-4 sm:p-6 flex gap-2 overflow-hidden">
           <MarkdownStudioEditor
             markdown={draftMd}
             onChange={setDraftMd}
@@ -674,8 +675,18 @@ export function BilingualContractStudio({
             splitPreview
             brand={brandColors}
             readOnly={locked}
-            className="h-full min-h-[520px] border-white/10 bg-background text-foreground"
+            className="flex-1 min-w-0 min-h-[520px] border-white/10 bg-background text-foreground"
           />
+          {/* A locked contract is read-only, so proposing edits to it would
+              offer a button that cannot land. */}
+          {proposalId && !locked && (
+            <CopilotRail
+              proposalId={proposalId}
+              markdown={draftMd}
+              locale={locale}
+              onApply={setDraftMd}
+            />
+          )}
         </div>
       ) : studioMode === "versions" ? (
         <ScrollArea className="h-[min(70vh,720px)]">

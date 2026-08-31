@@ -43,7 +43,7 @@ export async function POST(
 
   const proposal = await db.generatedProposal.findUnique({
     where: { id },
-    select: { workspaceId: true, locale: true },
+    select: { workspaceId: true, locale: true, type: true },
   });
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
     return jsonApiFailure("RESOURCE_NOT_FOUND");
@@ -57,6 +57,10 @@ export async function POST(
       contentMd: parsed.data.contentMd,
       selection: parsed.data.selection,
       locale,
+      // Read off the stored row, not the request: the contract studio saves
+      // through this same resource, and a client-chosen framing would let a
+      // caller ask for contract review of a bid.
+      docKind: proposal.type === "CONTRACT" ? "contract" : "proposal",
     });
     return NextResponse.json(result);
   } catch (error) {
