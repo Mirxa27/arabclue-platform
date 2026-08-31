@@ -51,10 +51,35 @@ export async function POST(req: NextRequest) {
     }
 
     const passwordHash = await hashPassword(newPassword);
-    await db.user.update({
-      where: { id: user.id },
-      data: { passwordHash, mustChangePassword: false },
-    });
+    const changedAt = new Date();
+    // A password change is how someone answers a suspected compromise, so the
+    // old password's reach has to end with it: every other signed-in session,
+    // and any reset link still in flight. Rewriting the hash alone left both
+    // alive — and redeeming a stale reset link *does* revoke sessions, so the
+    // attacker would have ended up holding the only live one. The reset path
+    // has always done both together (recovery-service-prisma.ts:197-203); this
+    // is the same invariant reached through the other door. One transaction,
+    // because a crash between the steps produces exactly the state the change
+    // was meant to prevent.
+    const [, revokedSessions, consumedResets] = await db.$transaction([
+      db.user.update({
+        where: { id: user.id },
+        data: { passwordHash, mustChangePassword: false },
+      }),
+      db.userSession.deleteMany({
+        where: session.sessionToken
+          ? { userId: user.id, NOT: { token: session.sessionToken } }
+          : { userId: user.id },
+      }),
+      db.recoveryToken.updateMany({
+        where: {
+          userId: user.id,
+          consumedAt: null,
+          expiresAt: { gt: changedAt },
+        },
+        data: { consumedAt: changedAt },
+      }),
+    ]);
 
     await audit({
       userId: user.id,
@@ -62,6 +87,11 @@ export async function POST(req: NextRequest) {
       resource: "User",
       resourceId: user.id,
       severity: "WARN",
+      details: {
+        revokedSessions: revokedSessions.count,
+        consumedResetTokens: consumedResets.count,
+        keptCurrentSession: Boolean(session.sessionToken),
+      },
     });
 
     return NextResponse.json({ ok: true, mustChangePassword: false });
