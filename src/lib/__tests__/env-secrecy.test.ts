@@ -22,6 +22,7 @@ import {
   NON_SECRET_ENV_KEYS,
   isSecretEnvKey,
 } from "@/lib/constants";
+import { maskSecret } from "@/lib/crypto";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
 const read = (p: string) => readFileSync(join(REPO_ROOT, p), "utf8");
@@ -109,5 +110,46 @@ describe("bootstrap seeds secrecy from the allowlist", () => {
   test("no naming heuristic remains", () => {
     expect(source).not.toContain('e.key.includes("KEY")');
     expect(source).toContain("isSecret: isSecretEnvKey(e.key)");
+  });
+});
+
+describe("the admin create form uses the allowlist too", () => {
+  const source = read("src/components/admin/env-settings.tsx");
+
+  test("no local naming heuristic decides how the value is typed", () => {
+    // The form kept its own copy of the replaced heuristic, so entering
+    // DATABASE_URL, REDIS_URL, BLOB_READ_WRITE_TOKEN or SMTP_USER rendered the
+    // value in a cleartext input with a "not a secret" badge beside it.
+    expect(source).not.toContain("isLikelySecret");
+    expect(source).toContain("isSecretEnvKey(form.key)");
+  });
+});
+
+describe("maskSecret", () => {
+  test("reveals neither the prefix nor the length of a sealed value", () => {
+    // The masked form was `first2 + •×(len-4) + last2`, so an administrator's
+    // screenshot carried the credential's format prefix — which names the
+    // provider and often the account — and its exact length, which fingerprints
+    // the key type.
+    const shorter = maskSecret("sk-live-0123456789");
+    const longer = maskSecret("sk-live-0123456789abcdefghijklmnopqrstuv");
+    expect(shorter).toHaveLength(longer.length);
+    expect(shorter.startsWith("sk")).toBe(false);
+    expect(longer.startsWith("sk")).toBe(false);
+  });
+
+  test("keeps the last four characters so two keys stay distinguishable", () => {
+    // The whole point of the masked view: an operator has to be able to tell
+    // the key they just pasted from the one that was there before.
+    expect(maskSecret("0123456789abcdef")).toBe("••••••••cdef");
+  });
+
+  test("masks a short value whole, at the same width", () => {
+    // Four of eight characters is half the secret, so the tail is withheld
+    // here. The residual signal — all dots means eight characters or fewer —
+    // is the price of not leaking half of a weak value.
+    expect(maskSecret("abc")).toBe("••••••••••••");
+    expect(maskSecret("")).toBe("••••••••••••");
+    expect(maskSecret("abc")).toHaveLength(maskSecret("0123456789abcdef").length);
   });
 });

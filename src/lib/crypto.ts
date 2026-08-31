@@ -84,9 +84,19 @@ export function decryptValue(ciphertext: string): string {
   }
 }
 
+/**
+ * Fixed-width mask revealing only the last four characters.
+ *
+ * The width is constant on purpose: a mask that grew with the value published
+ * the credential's exact length, which fingerprints the key type, and the old
+ * leading two characters published the format prefix, which names the provider
+ * and often the account. The tail is kept because the masked view exists so an
+ * operator can tell the key they just pasted from the one it replaced.
+ */
 export function maskSecret(value: string): string {
-  if (value.length <= 8) return "••••••••";
-  return `${value.slice(0, 2)}${"•".repeat(Math.max(8, value.length - 4))}${value.slice(-2)}`;
+  // Four of eight characters is half the secret, so a short value keeps nothing.
+  if (value.length <= 8) return "••••••••••••";
+  return `••••••••${value.slice(-4)}`;
 }
 
 /**

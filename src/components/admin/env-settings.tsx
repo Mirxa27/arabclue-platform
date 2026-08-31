@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
+import { isSecretEnvKey } from "@/lib/constants";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -89,16 +90,6 @@ const CATEGORY_META: Record<string, { ar: string; en: string; color: string }> =
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function isLikelySecret(key: string): boolean {
-  const k = key.toUpperCase();
-  return (
-    k.includes("KEY") ||
-    k.includes("SECRET") ||
-    k.includes("PASSWORD") ||
-    k.includes("TOKEN")
-  );
-}
 
 function formatDate(iso: string | null, locale: "ar" | "en"): string {
   if (!iso) return "—";
@@ -652,7 +643,9 @@ function AddEnvForm({
     description: "",
   });
 
-  const isSecret = isLikelySecret(form.key);
+  // The same fail-closed allowlist the server masks with: an unrecognised key
+  // is typed as a secret until someone deliberately allowlists it.
+  const isSecret = isSecretEnvKey(form.key);
 
   const reset = (custom: boolean) => {
     setCustomMode(custom);
