@@ -217,7 +217,7 @@ function LoginForm() {
           <div className="mt-10 space-y-3">
             {[
               { icon: FileText, title: ar ? "مصفوفة متطلبات حية" : "Live requirements matrix", desc: ar ? "كل بند RFP قابل للتتبع" : "Every RFP clause tracked" },
-              { icon: ShieldCheck, title: ar ? "امتثال NCA/PDPL" : "NCA/PDPL compliance", desc: ar ? "مع أدلة قابلة للتدقيق" : "With auditable evidence" },
+              { icon: ShieldCheck, title: ar ? "ضوابط تراعي NCA/PDPL" : "NCA/PDPL-aware controls", desc: ar ? "مع أدلة قابلة للتدقيق" : "With auditable evidence" },
               { icon: Lock, title: ar ? "عزل مستأجر + MFA" : "Tenant isolation + MFA", desc: ar ? "أمان مؤسسي" : "Enterprise security" },
             ].map((f, i) => (
               <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 + i * 0.07 }} className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
@@ -230,7 +230,7 @@ function LoginForm() {
       </div>
       <div className="relative z-10 flex items-center justify-between text-[11px] text-white/40 border-t border-white/10 pt-6">
         <span>© {new Date().getFullYear()} Arabclue</span>
-        <span className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-emerald-500" /> {ar ? "PDPL متوافق" : "PDPL Compliant"}</span>
+        <span className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-emerald-500" /> {ar ? "يراعي PDPL" : "PDPL-Aware"}</span>
       </div>
     </div>
   );

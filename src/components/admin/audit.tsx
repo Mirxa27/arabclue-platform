@@ -216,8 +216,8 @@ export function AdminAudit() {
             </h3>
             <p className="text-[11px] text-muted-foreground">
               {locale === "ar"
-                ? "سجل أحداث النظام غير القابل للتعديل — PDPL / NCA"
-                : "Tamper-evident system event trail — PDPL / NCA compliant"}
+                ? "سجل أحداث النظام الإلحاقي — يراعي PDPL / NCA"
+                : "Append-only system event trail — PDPL / NCA-aligned"}
             </p>
           </div>
         </div>
@@ -345,8 +345,8 @@ export function AdminAudit() {
           <Separator className="my-3" />
           <div className="text-[10px] text-muted-foreground leading-relaxed">
             {locale === "ar"
-              ? "يتم تسجيل كل إجراء إداري في جدول AuditLog مع طابع زمني ومستوى خطورة. السجل إلحاقي ولا يمكن تعديله أو حذفه."
-              : "Every administrative action is written to the AuditLog table with timestamp and severity. The trail is append-only — no updates or deletes permitted."}
+              ? "يتم تسجيل كل إجراء إداري في جدول AuditLog مع طابع زمني ومستوى خطورة. التطبيق يضيف فقط ولا يصدر أي تعديل أو حذف. هذا مطبَّق في كود التطبيق، وليس بقيد في قاعدة البيانات أو سلسلة تجزئة."
+              : "Every administrative action is written to the AuditLog table with timestamp and severity. The application only appends — it issues no updates or deletes. That is enforced in application code, not by a database constraint or hash chain."}
           </div>
         </div>
       </div>
