@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useState, useCallback, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -157,7 +159,7 @@ export function ProposalBuilder() {
         error?: string;
       };
       if (!res.ok) {
-        throw new Error(body.error || `Save failed (${res.status})`);
+        throw new Error(apiErrorText(body, locale, `Save failed (${res.status})`));
       }
       return body;
     },

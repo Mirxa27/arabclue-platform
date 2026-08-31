@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useLocale } from "@/lib/store";
+import { apiErrorText } from "@/lib/api-failure-message";
+import type { Locale } from "@/lib/types";
 
 type ReviewStatus = "UNREVIEWED" | "APPROVED" | "REVOKED";
 
@@ -18,11 +20,8 @@ type EvidenceDocument = {
   versions?: Array<{ version: number; checksum?: string | null }>;
 };
 
-async function responseError(response: Response): Promise<string> {
-  const payload = (await response.json().catch(() => null)) as {
-    error?: string;
-  } | null;
-  return payload?.error ?? "Request failed";
+async function responseError(response: Response, locale: Locale): Promise<string> {
+  return apiErrorText(await response.json().catch(() => null), locale);
 }
 
 export function KnowledgeReviewControls({
@@ -49,7 +48,7 @@ export function KnowledgeReviewControls({
     queryKey: ["knowledge-evidence-documents"],
     queryFn: async () => {
       const response = await fetch("/api/documents");
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await responseError(response, locale));
       const payload = (await response.json()) as {
         documents?: EvidenceDocument[];
       };
@@ -66,7 +65,7 @@ export function KnowledgeReviewControls({
     queryKey: ["workspace-review-permissions"],
     queryFn: async () => {
       const response = await fetch("/api/workspaces");
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await responseError(response, locale));
       return (await response.json()) as { membershipRole?: string };
     },
     staleTime: 30_000,
@@ -97,7 +96,7 @@ export function KnowledgeReviewControls({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await responseError(response, locale));
     },
     onSuccess: async () => {
       setReason("");

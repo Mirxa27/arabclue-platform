@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -187,7 +189,7 @@ export function DocumentPreviewFrame({
             const data = (await res.json().catch(() => ({}))) as {
               error?: string;
             };
-            throw new Error(data.error || `HTML failed (${res.status})`);
+            throw new Error(apiErrorText(data, locale, `HTML failed (${res.status})`));
           }
           const html = await res.text();
           objectUrl = createHtmlPreviewObjectUrl(html);
@@ -215,7 +217,7 @@ export function DocumentPreviewFrame({
           const data = (await res.json().catch(() => ({}))) as {
             error?: string;
           };
-          throw new Error(data.error || `PDF failed (${res.status})`);
+          throw new Error(apiErrorText(data, locale, `PDF failed (${res.status})`));
         }
         const bytes = await res.arrayBuffer();
         objectUrl = createPdfPreviewObjectUrl(bytes);

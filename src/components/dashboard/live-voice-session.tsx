@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experimental_useRealtime } from "@ai-sdk/react";
@@ -171,7 +173,7 @@ export function LiveVoiceSession({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        return { ok: false, error: data.error || "Tool failed" };
+        return { ok: false, error: apiErrorText(data, locale, "Tool failed") };
       }
       const result = data.result as Record<string, unknown> | undefined;
       if (result && typeof result === "object") {

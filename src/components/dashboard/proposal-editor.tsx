@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useMemo, useState, useEffect } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -157,7 +159,7 @@ export function ProposalEditorDialog({
         const payload = (await res.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(payload?.error ?? "Failed to load brand");
+        throw new Error(apiErrorText(payload, locale));
       }
       return res.json();
     },
@@ -247,7 +249,7 @@ export function ProposalEditorDialog({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Save failed");
+        throw new Error(apiErrorText(err, locale));
       }
       return res.json();
     },
@@ -278,7 +280,7 @@ export function ProposalEditorDialog({
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Skill failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json;
     },
     onSuccess: (json) => {
@@ -408,7 +410,7 @@ export function ProposalEditorDialog({
         body: JSON.stringify({ boqItems: boqRows, currency: "SAR" }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Save failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json;
     },
     onSuccess: () => {
@@ -431,7 +433,7 @@ export function ProposalEditorDialog({
         { method: "POST" }
       );
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Revert failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json;
     },
     onSuccess: (json) => {
@@ -452,7 +454,7 @@ export function ProposalEditorDialog({
         `/api/proposals/${proposalId}/versions/compare?a=${compareA}&b=${compareB}`
       );
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Compare failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json;
     },
     onSuccess: (json) => {
@@ -476,7 +478,7 @@ export function ProposalEditorDialog({
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Regenerate failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return { ...json, regenerateMode };
     },
     onSuccess: (json) => {

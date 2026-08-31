@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { startTransition, useCallback, useMemo, useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -500,7 +502,7 @@ export function VersionHistory() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "revert failed");
+        throw new Error(apiErrorText(err, locale));
       }
       return res.json();
     },
@@ -526,7 +528,7 @@ export function VersionHistory() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "revert failed");
+        throw new Error(apiErrorText(err, locale));
       }
       return res.json();
     },

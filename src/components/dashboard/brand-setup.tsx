@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useEffect, useState, useRef } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -94,7 +96,7 @@ export function BrandSetup() {
         const payload = (await res.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(payload?.error ?? "Failed to load brand");
+        throw new Error(apiErrorText(payload, locale));
       }
       return res.json();
     },

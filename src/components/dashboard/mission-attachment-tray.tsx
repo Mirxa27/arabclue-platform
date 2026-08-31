@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useId, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -78,7 +80,7 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
     if (activeProjectId) form.set("activeProjectId", activeProjectId);
     const res = await fetch(`/api/platform-agent/missions/${missionId}/attachments`, { method: "POST", body: form });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Upload failed");
+    if (!res.ok) throw new Error(apiErrorText(data, locale));
     onUploaded(data);
   }
 
@@ -95,7 +97,7 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Import failed");
+    if (!res.ok) throw new Error(apiErrorText(data, locale));
     onUploaded(data);
   }
 
@@ -122,7 +124,7 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
         body: JSON.stringify({ url: url.trim(), activeProjectId }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "URL import failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       setUrl("");
       onUploaded(data);
     } catch (err) {

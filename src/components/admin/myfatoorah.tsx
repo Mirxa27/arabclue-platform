@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useState } from "react";
 import { useLocale } from "@/lib/store";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -87,7 +89,7 @@ export function AdminMyFatoorah() {
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "save failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json;
     },
     onSuccess: () => {
@@ -114,7 +116,7 @@ export function AdminMyFatoorah() {
         body: JSON.stringify({ action: "test_connection" }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "test failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json;
     },
     onSuccess: (json) => {
@@ -135,7 +137,7 @@ export function AdminMyFatoorah() {
         body: JSON.stringify({ action: "test_webhook_signature" }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "signature test failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json;
     },
     onSuccess: () =>

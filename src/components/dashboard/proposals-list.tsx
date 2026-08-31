@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { startTransition, useEffect, useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -88,7 +90,7 @@ export function ProposalsList() {
         code?: string;
       };
       if (!res.ok) {
-        throw new Error(body.error || `Submit failed (${res.status})`);
+        throw new Error(apiErrorText(body, locale, `Submit failed (${res.status})`));
       }
       return body;
     },

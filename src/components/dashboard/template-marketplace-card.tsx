@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { startTransition, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI } from "@/lib/store";
@@ -87,7 +89,7 @@ export function TemplateMarketplaceCard({
         error?: string;
       };
       if (!res.ok) {
-        throw new Error(body.error || "Failed to load template detail");
+        throw new Error(apiErrorText(body, ar ? "ar" : "en"));
       }
       return body.entry!;
     },
@@ -139,7 +141,7 @@ export function TemplateMarketplaceCard({
       });
       const body = (await res.json().catch(() => ({}))) as UseTemplateResponse;
       if (!res.ok) {
-        throw new Error(body.error || "Failed to use template");
+        throw new Error(apiErrorText(body, ar ? "ar" : "en"));
       }
       return body;
     },
@@ -171,7 +173,7 @@ export function TemplateMarketplaceCard({
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || "Failed to rate template");
+        throw new Error(apiErrorText(body, ar ? "ar" : "en"));
       }
       return res.json() as Promise<{ userRating: number; averageRating: number; ratingCount: number }>;
     },
@@ -203,7 +205,7 @@ export function TemplateMarketplaceCard({
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
-        throw new Error(body.error || "Failed to retire template");
+        throw new Error(apiErrorText(body, ar ? "ar" : "en"));
       }
       return res.json() as Promise<{ retired?: boolean; alreadyRetired?: boolean }>;
     },

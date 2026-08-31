@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -122,7 +124,7 @@ export function BilingualContractStudio({
         const payload = (await res.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(payload?.error ?? "Failed to load brand");
+        throw new Error(apiErrorText(payload, locale));
       }
       return res.json();
     },
@@ -236,7 +238,7 @@ export function BilingualContractStudio({
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Save failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json as { proposal: ApiProposal };
     },
     onSuccess: ({ proposal }) => {
@@ -263,7 +265,7 @@ export function BilingualContractStudio({
         { method: "POST" }
       );
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Revert failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json as { proposal: ApiProposal };
     },
     onSuccess: ({ proposal }) => {
@@ -287,7 +289,7 @@ export function BilingualContractStudio({
         `/api/proposals/${proposalId}/versions/compare?a=${a}&b=${b}`
       );
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Compare failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json as { contentDiff: string[] };
     },
     onSuccess: (json) => {
@@ -389,7 +391,7 @@ export function BilingualContractStudio({
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Update failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json;
     },
     onMutate: async (opts) => {

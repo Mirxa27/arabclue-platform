@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useRef, useState } from "react";
 import {
   useInfiniteQuery,
@@ -253,7 +255,7 @@ export function ContractTemplateCatalog() {
         const body = (await response.json().catch(() => ({}))) as {
           error?: string;
         };
-        throw new Error(body.error || `Preview failed (${response.status})`);
+        throw new Error(apiErrorText(body, locale, `Preview failed (${response.status})`));
       }
       const blob = await response.blob();
       const disposition = response.headers.get("content-disposition");

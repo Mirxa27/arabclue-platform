@@ -1,5 +1,8 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+import type { Locale } from "@/lib/types";
+
 import { startTransition } from "react";
 
 import { useState } from "react";
@@ -130,15 +133,15 @@ function apiErrorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
-async function assertOk(res: Response) {
+async function assertOk(res: Response, locale: Locale) {
   if (res.ok) return;
-  const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-  throw new Error(payload?.error ?? "Request failed");
+  const payload = await res.json().catch(() => null);
+  throw new Error(apiErrorText(payload, locale));
 }
 
-async function fetchJson(url: string) {
+async function fetchJson(url: string, locale: Locale) {
   const res = await fetch(url);
-  await assertOk(res);
+  await assertOk(res, locale);
   return res.json();
 }
 
@@ -348,7 +351,7 @@ function LegalPanel({
 
   const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["certificates"],
-    queryFn: () => fetchJson("/api/certificates"),
+    queryFn: () => fetchJson("/api/certificates", locale),
   });
 
   const saveLegal = useMutation({
@@ -358,7 +361,7 @@ function LegalPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ crNumber: cr || null, vatNumber: vat || null }),
       });
-      await assertOk(res);
+      await assertOk(res, locale);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["onboarding"] });
@@ -384,7 +387,7 @@ function LegalPanel({
           expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
         }),
       });
-      await assertOk(res);
+      await assertOk(res, locale);
     },
     onSuccess: () => {
       setCertName("");
@@ -410,7 +413,7 @@ function LegalPanel({
   const delCert = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/certificates?id=${id}`, { method: "DELETE" });
-      await assertOk(res);
+      await assertOk(res, locale);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["certificates"] });
@@ -648,7 +651,7 @@ function StaffPanel() {
 
   const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["staff"],
-    queryFn: () => fetchJson("/api/staff"),
+    queryFn: () => fetchJson("/api/staff", locale),
   });
 
   const add = useMutation({
@@ -662,7 +665,7 @@ function StaffPanel() {
           requirementTags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
       });
-      await assertOk(res);
+      await assertOk(res, locale);
     },
     onSuccess: () => {
       setName("");
@@ -687,7 +690,7 @@ function StaffPanel() {
   const del = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/staff?id=${id}`, { method: "DELETE" });
-      await assertOk(res);
+      await assertOk(res, locale);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff"] });
@@ -790,7 +793,7 @@ function SimpleCrudPanel({
 
   const { data, isError, isLoading, refetch } = useQuery({
     queryKey: [queryKey],
-    queryFn: () => fetchJson(endpoint),
+    queryFn: () => fetchJson(endpoint, locale),
   });
 
   const add = useMutation({
@@ -802,7 +805,7 @@ function SimpleCrudPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      await assertOk(res);
+      await assertOk(res, locale);
     },
     onSuccess: () => {
       setForm({});
@@ -830,7 +833,7 @@ function SimpleCrudPanel({
   const del = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`${endpoint}?id=${id}`, { method: "DELETE" });
-      await assertOk(res);
+      await assertOk(res, locale);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [queryKey] });
@@ -1081,7 +1084,7 @@ function ApprovalPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ steps: nextSteps }),
       });
-      await assertOk(res);
+      await assertOk(res, locale);
     },
     onSuccess: () => {
       setReviewerId("");

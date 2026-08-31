@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { startTransition } from "react";
 
 import { useMemo, useState } from "react";
@@ -186,7 +188,6 @@ export function BusinessProfileView() {
         if (!res.ok) {
           const body = contentType.includes("application/json")
             ? ((await res.json().catch(() => ({}))) as {
-                error?: string;
                 code?: string;
                 diagnostics?: Array<{
                   code?: string;
@@ -200,7 +201,7 @@ export function BusinessProfileView() {
           const detail =
             diagnosticLines.length > 0
               ? diagnosticLines.join(" · ")
-              : body.error || `Export failed (${res.status})`;
+              : apiErrorText(body, locale, `Export failed (${res.status})`);
           const err = new Error(detail) as Error & {
             code?: string;
             diagnostics?: typeof body.diagnostics;

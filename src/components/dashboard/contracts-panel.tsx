@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { startTransition } from "react";
 
 import { useMemo, useState } from "react";
@@ -121,7 +123,7 @@ export function ContractsPanel() {
         method: "POST",
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Submit failed");
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
       return json as { proposal?: ApiProposal };
     },
     onSuccess: (json) => {

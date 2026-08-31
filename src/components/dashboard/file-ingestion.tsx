@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { startTransition } from "react";
 
 import { useState, useCallback, useRef } from "react";
@@ -99,7 +101,7 @@ export function FileIngestion() {
       const res = await fetch(url);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to load documents");
+        throw new Error(apiErrorText(err, locale));
       }
       return res.json() as Promise<{ documents: ApiDocument[] }>;
     },
@@ -125,7 +127,7 @@ export function FileIngestion() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "upload failed");
+        throw new Error(apiErrorText(err, locale));
       }
       return res.json() as Promise<{ document: ApiDocument }>;
     },

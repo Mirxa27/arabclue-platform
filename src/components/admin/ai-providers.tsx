@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -94,7 +96,7 @@ export function AdminAIProviders() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "failed");
+        throw new Error(apiErrorText(err, locale));
       }
       return res.json();
     },
@@ -147,7 +149,7 @@ export function AdminAIProviders() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "failed");
+        throw new Error(apiErrorText(err, locale));
       }
     },
     onSuccess: () => {
@@ -190,7 +192,7 @@ export function AdminAIProviders() {
         body: JSON.stringify({ refreshAll: true }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "refresh failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       qc.invalidateQueries({ queryKey: ["admin-ai-providers"] });
       toast({
         title:
@@ -703,7 +705,7 @@ function ProviderEditForm({
       });
       const data = await res.json();
       if (!res.ok && !(data.models?.length > 0)) {
-        throw new Error(data.error || "fetch failed");
+        throw new Error(apiErrorText(data, locale));
       }
       setModels(data.models ?? []);
       if (data.fetchedAt) setFetchedAt(data.fetchedAt);
@@ -1151,7 +1153,7 @@ function AddProviderForm({
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "fetch failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       setModels(data.models ?? []);
       setModelsFetchedAt(data.fetchedAt ?? new Date().toISOString());
       setForm((f) => ({ ...f, modelId: "" }));
@@ -1199,7 +1201,7 @@ function AddProviderForm({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "failed");
+        throw new Error(apiErrorText(err, locale));
       }
       return res.json();
     },

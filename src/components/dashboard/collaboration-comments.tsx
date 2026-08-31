@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { CollaborationComment } from "@/lib/proposal-builder-types";
 import { tr } from "@/lib/i18n";
-import { selectApiFailureMessage } from "@/lib/api-failure-message";
+import { apiErrorText, selectApiFailureMessage } from "@/lib/api-failure-message";
 import type { Locale } from "@/lib/types";
 import { EmptyState, QueryState } from "@/components/patterns";
 
@@ -94,15 +94,17 @@ export function CollaborationComments({
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        error?: string;
         ok?: boolean;
       };
       if (!res.ok) {
         throw new Error(
-          body.error ||
-            (res.status === 501
+          apiErrorText(
+            body,
+            loc,
+            res.status === 501
               ? "Collaboration comments are not available on this database yet."
-              : "Failed to add comment")
+              : "Failed to add comment"
+          )
         );
       }
       return body;
@@ -146,7 +148,7 @@ export function CollaborationComments({
         if (body.error === "COMMENT_RESOLVED") {
           throw new Error(ar ? "لا يمكن تحرير تعليق محلول" : "Cannot edit a resolved comment");
         }
-        throw new Error(body.message || body.error || "Failed to edit comment");
+        throw new Error(apiErrorText(body, loc));
       }
       return body;
     },
@@ -178,7 +180,7 @@ export function CollaborationComments({
         if (body.error === "COMMENT_DELETE_FORBIDDEN") {
           throw new Error(ar ? "ليس لديك صلاحية حذف هذا التعليق" : "You do not have permission to delete this comment");
         }
-        throw new Error(body.message || body.error || "Failed to delete comment");
+        throw new Error(apiErrorText(body, loc));
       }
       return body;
     },
@@ -207,7 +209,7 @@ export function CollaborationComments({
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        throw new Error(body.error || "Failed to resolve comment");
+        throw new Error(apiErrorText(body, loc));
       }
       return body;
     },

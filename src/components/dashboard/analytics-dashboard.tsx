@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { startTransition, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useUI } from "@/lib/store";
@@ -90,7 +92,7 @@ export function AnalyticsDashboard() {
       const body = (await res.json().catch(() => ({}))) as AnalyticsResponse;
       if (!res.ok) {
         const code = (body as { code?: string }).code;
-        const err = new Error(body.error || "Failed to fetch analytics") as Error & {
+        const err = new Error(apiErrorText(body, locale)) as Error & {
           code?: string;
         };
         if (code) err.code = code;

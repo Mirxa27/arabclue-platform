@@ -81,6 +81,28 @@ export function selectApiFailureMessage(
   return null;
 }
 
+/**
+ * Displayable text for any failure body — the form to use when the result
+ * feeds `new Error(...)` or a toast.
+ *
+ * `selectApiFailureMessage` returns `null` for an unreadable body, which is
+ * what made `throw new Error(body.error ?? "Failed")` so tempting; that form
+ * stringifies the bilingual object to "[object Object]". This one always
+ * returns something a user can read. Pass `fallback` only when it carries
+ * information the generic text does not, such as an HTTP status.
+ */
+export function apiErrorText(
+  body: unknown,
+  locale: Locale,
+  fallback?: string
+): string {
+  return (
+    selectApiFailureMessage(body, locale) ??
+    fallback ??
+    (locale === "ar" ? "تعذر إكمال الطلب" : "Request failed")
+  );
+}
+
 /** Stable code of a failure body, or `null` when the body carries none. */
 export function selectApiFailureCode(body: unknown): string | null {
   if (!body || typeof body !== "object") return null;

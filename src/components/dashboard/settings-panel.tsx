@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useLocale } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { Panel } from "@/components/patterns";
@@ -82,7 +84,7 @@ export function SettingsPanel() {
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       setEmailPassword("");
       await update?.({
         name: data.user.name,
@@ -113,7 +115,7 @@ export function SettingsPanel() {
         body: JSON.stringify({ locale: next }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       await update?.({ locale: next } as never);
     } catch (e) {
       toast({
@@ -132,7 +134,7 @@ export function SettingsPanel() {
       fd.append("file", file);
       const res = await fetch("/api/auth/avatar", { method: "POST", body: fd });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Upload failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       setAvatarUrl(data.avatarUrl ?? data.user?.avatarUrl ?? null);
       await update?.({
         avatarUrl: data.avatarUrl ?? data.user?.avatarUrl,
@@ -169,7 +171,7 @@ export function SettingsPanel() {
         body: JSON.stringify({ currentPassword, newPassword }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -198,7 +200,7 @@ export function SettingsPanel() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "MFA setup failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       setQr(data.qrDataUrl ?? null);
       setMfaToken("");
       toast({
@@ -226,7 +228,7 @@ export function SettingsPanel() {
         body: JSON.stringify({ token: mfaToken, password: mfaPassword }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Invalid token");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       setQr(null);
       setMfaToken("");
       setCurrentMfaToken("");
@@ -258,7 +260,7 @@ export function SettingsPanel() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       setCurrentMfaToken("");
       setMfaPassword("");
       setRecoveryCodes([]);

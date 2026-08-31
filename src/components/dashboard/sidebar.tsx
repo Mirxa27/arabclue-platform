@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import Link from "next/link";
 import { startTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -364,7 +366,7 @@ function WorkspaceSwitcher({
         body: JSON.stringify({ workspaceId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Switch failed");
+      if (!res.ok) throw new Error(apiErrorText(data, locale));
       return data as { workspaceId?: string };
     },
     onSuccess: async (data, workspaceId) => {

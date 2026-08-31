@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { startTransition } from "react";
 
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -401,7 +403,7 @@ export function AgentWorkflow() {
             new Error(
               locale === "ar"
                 ? "ارفع مستندات المناقصة قبل تشغيل الوكلاء"
-                : err.error ?? NO_DOCUMENTS_PREFLIGHT.error
+                : NO_DOCUMENTS_PREFLIGHT.error
             ),
             { code: err.code }
           );
@@ -414,8 +416,7 @@ export function AgentWorkflow() {
             new Error(
               locale === "ar"
                 ? `أكمل إعداد الحساب أولاً${missing ? `: ${missing}` : ""}`
-                : err.error ??
-                    `Complete account onboarding first${missing ? `: ${missing}` : ""}`
+                : `Complete account onboarding first${missing ? `: ${missing}` : ""}`
             ),
             { code: err.code, missing: err.missing }
           );
@@ -425,12 +426,12 @@ export function AgentWorkflow() {
             new Error(
               locale === "ar"
                 ? "يوجد تشغيل نشط — أوقفه أو انتظر اكتماله"
-                : err.error ?? "An agent run is already in progress"
+                : "An agent run is already in progress"
             ),
             { code: err.code ?? "AGENT_RUN_IN_PROGRESS", runId: err.runId }
           );
         }
-        throw Object.assign(new Error(err.error ?? "run failed"), {
+        throw Object.assign(new Error(apiErrorText(err, locale)), {
           code: err.code,
         });
       }
@@ -501,7 +502,7 @@ export function AgentWorkflow() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "cancel failed");
+        throw new Error(apiErrorText(err, locale));
       }
       return res.json();
     },

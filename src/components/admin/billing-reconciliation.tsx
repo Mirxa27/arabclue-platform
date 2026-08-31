@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useState, useCallback } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
@@ -144,7 +146,7 @@ export function AdminBillingReconciliation() {
       }
       if (!res.ok) {
         const json = await res.json();
-        throw new Error(json.error || "Failed to fetch reconciliation report");
+        throw new Error(apiErrorText(json, locale));
       }
       return (await res.json()) as ReconciliationReport;
     },
@@ -162,7 +164,7 @@ export function AdminBillingReconciliation() {
       });
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(json.code || json.error || "Reconciliation failed");
+        throw new Error(apiErrorText(json, locale));
       }
       return json;
     },
@@ -218,7 +220,7 @@ export function AdminBillingReconciliation() {
       });
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(json.code || json.error || "Bulk reconciliation failed");
+        throw new Error(apiErrorText(json, locale));
       }
       return json as {
         applied: Array<{ ok: boolean; checkoutId: string; status?: string; code?: string }>;
