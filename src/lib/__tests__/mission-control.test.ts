@@ -32,6 +32,35 @@ describe("mission control domain", () => {
     expect(url.hostname).toBe("example.com");
   });
 
+  test("blocks every private range, not just the four the regex listed", () => {
+    // The original guard tested a literal-prefix regex plus a five-entry host
+    // set, so 127.0.0.2, CGNAT space and *.internal all sailed through to a
+    // server-side fetch whose body is handed back to the caller.
+    for (const raw of [
+      "http://127.0.0.2/secret",
+      "http://127.1/secret",
+      "http://2130706433/secret", // decimal-encoded 127.0.0.1
+      "http://0x7f000001/secret", // hex-encoded 127.0.0.1
+      "http://100.64.0.1/secret", // CGNAT
+      "http://0.0.0.0/secret",
+      "http://consul.internal/secret",
+      "http://redis.local/secret",
+      "http://[fd00::1]/secret",
+      "http://[fe80::1]/secret",
+    ]) {
+      expect(() => assertSafeExternalUrl(raw)).toThrow();
+    }
+  });
+
+  test("blocks IPv4-mapped IPv6, which reaches loopback and cloud metadata", () => {
+    // new URL("http://[::ffff:127.0.0.1]/").hostname is "[::ffff:7f00:1]" — it
+    // matches no IPv4 dotted-quad and no fc00::/fe80:: prefix, so a
+    // prefix-matching guard passes it straight through to 127.0.0.1.
+    expect(() => assertSafeExternalUrl("http://[::ffff:127.0.0.1]/")).toThrow();
+    expect(() => assertSafeExternalUrl("http://[::ffff:7f00:1]/")).toThrow();
+    expect(() => assertSafeExternalUrl("http://[::ffff:a9fe:a9fe]/")).toThrow();
+  });
+
   test("classifier autopilot threshold is stable", () => {
     expect(AUTOPILOT_CONFIDENCE).toBeGreaterThan(0.7);
     const d = classifyAttachment({

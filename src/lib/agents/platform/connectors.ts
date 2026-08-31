@@ -1,3 +1,5 @@
+import { isNonPublicHost } from "@/lib/net-guard";
+
 export type MissionConnectorId =
   | "upload"
   | "url"
@@ -104,14 +106,6 @@ export const MISSION_CONNECTORS: MissionConnector[] = [
   },
 ];
 
-const BLOCKED_HOSTS = new Set([
-  "localhost",
-  "127.0.0.1",
-  "0.0.0.0",
-  "::1",
-  "metadata.google.internal",
-]);
-
 export function assertSafeExternalUrl(raw: string): URL {
   let url: URL;
   try {
@@ -122,17 +116,34 @@ export function assertSafeExternalUrl(raw: string): URL {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Only http(s) URLs are allowed");
   }
-  if (BLOCKED_HOSTS.has(url.hostname.toLowerCase())) {
-    throw new Error("URL host is not allowed");
-  }
-  if (
-    /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.|169\.254\.)/.test(
-      url.hostname
-    )
-  ) {
+  if (isNonPublicHost(url.hostname)) {
     throw new Error("Private network URLs are blocked");
   }
   return url;
+}
+
+/** A public first hop says nothing about where its redirects point. */
+const MAX_REDIRECTS = 5;
+
+async function fetchAllowingSafeRedirectsOnly(
+  start: URL
+): Promise<{ res: Response; finalUrl: URL }> {
+  let url = start;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const res = await fetch(url, {
+      // Node/undici returns the real 3xx response here rather than an opaque
+      // one, which is what lets the guard run against each hop's target.
+      redirect: "manual",
+      signal: AbortSignal.timeout(20_000),
+      headers: { "User-Agent": "ArabClue-MissionControl/1.0" },
+    });
+    const location = res.headers.get("location");
+    if (res.status < 300 || res.status >= 400 || !location) {
+      return { res, finalUrl: url };
+    }
+    url = assertSafeExternalUrl(new URL(location, url).toString());
+  }
+  throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
 }
 
 export async function fetchUrlAsAttachment(rawUrl: string): Promise<{
@@ -141,12 +152,9 @@ export async function fetchUrlAsAttachment(rawUrl: string): Promise<{
   bytes: Buffer;
   textPreview: string;
 }> {
-  const url = assertSafeExternalUrl(rawUrl);
-  const res = await fetch(url, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(20_000),
-    headers: { "User-Agent": "ArabClue-MissionControl/1.0" },
-  });
+  const { res, finalUrl } = await fetchAllowingSafeRedirectsOnly(
+    assertSafeExternalUrl(rawUrl)
+  );
   if (!res.ok) {
     throw new Error(`URL fetch failed (${res.status})`);
   }
@@ -155,7 +163,8 @@ export async function fetchUrlAsAttachment(rawUrl: string): Promise<{
   if (buf.length > 15 * 1024 * 1024) {
     throw new Error("Remote file too large (max 15MB)");
   }
-  const pathName = url.pathname.split("/").filter(Boolean).pop() || "url-import";
+  const pathName =
+    finalUrl.pathname.split("/").filter(Boolean).pop() || "url-import";
   const textPreview = mimeType.startsWith("text/")
     ? buf.toString("utf8").slice(0, 4000)
     : "";

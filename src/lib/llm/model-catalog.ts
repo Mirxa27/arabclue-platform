@@ -4,6 +4,8 @@
  * (cached per admin connection). Capability defaults use heuristics only.
  */
 
+import { isNonPublicHost } from "@/lib/net-guard";
+
 export const AGENT_ENGINES = [
   "DEFAULT",
   "INGESTION",
@@ -363,27 +365,6 @@ const CANONICAL_CREDENTIAL_HOSTS: ReadonlyMap<string, readonly string[]> =
     hosts.set("AZURE_OPENAI_API_KEY", ["*.openai.azure.com"]);
     return hosts;
   })();
-
-/** Hostnames that are never a legitimate provider endpoint. */
-function isNonPublicHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (host === "localhost" || /\.(local|internal|localhost)$/.test(host)) {
-    return true;
-  }
-  if (host === "::1" || host === "::") return true;
-  if (/^f[cd][0-9a-f]{2}:/.test(host)) return true; // fc00::/7 unique-local
-  if (/^fe[89ab][0-9a-f]:/.test(host)) return true; // fe80::/10 link-local
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(host);
-  if (!v4) return false;
-  const first = Number(v4[1]);
-  const second = Number(v4[2]);
-  if (first === 0 || first === 10 || first === 127) return true;
-  if (first === 169 && second === 254) return true; // link-local + cloud IMDS
-  if (first === 172 && second >= 16 && second <= 31) return true;
-  if (first === 192 && second === 168) return true;
-  if (first === 100 && second >= 64 && second <= 127) return true; // CGNAT
-  return first >= 224; // multicast and reserved
-}
 
 function hostMatchesRule(host: string, rule: string): boolean {
   return rule.startsWith("*.")
