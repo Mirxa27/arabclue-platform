@@ -9,9 +9,9 @@ import {
 } from "@/lib/validation";
 import {
   inferModelCapabilities,
-  isAllowedProviderApiKeyEnv,
   parseProviderEngines,
 } from "@/lib/llm/model-catalog";
+import { providerConnectionGuardError } from "@/lib/llm/provider-connection-guard";
 import {
   deactivateConflictingProviders,
   enginesPayloadFromBody,
@@ -67,23 +67,18 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // See the POST handler: `apiKeyEnvKey` is resolved against `process.env` at
-  // call time, so an arbitrary name would read a platform secret and forward it
-  // to this connection's `apiBase`.
-  if (
-    body.apiKeyEnvKey != null &&
-    String(body.apiKeyEnvKey).trim() !== "" &&
-    !isAllowedProviderApiKeyEnv(String(body.apiKeyEnvKey))
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "apiKeyEnvKey must name a provider credential variable (for example OPENAI_API_KEY or OPENAI_API_KEY_TEAM_B).",
-        code: "api_key_env_not_allowed",
-      },
-      { status: 400 }
-    );
-  }
+  // Validated against the merged result, not the patch: changing only the base
+  // must be checked against the credential already stored on the row, and vice
+  // versa.
+  const guardError = providerConnectionGuardError({
+    provider: String(body.provider ?? existing.provider),
+    apiBase: body.apiBase !== undefined ? body.apiBase : existing.apiBase,
+    apiKeyEnvKey:
+      body.apiKeyEnvKey !== undefined
+        ? body.apiKeyEnvKey
+        : existing.apiKeyEnvKey,
+  });
+  if (guardError) return guardError;
 
   const data: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(body)) {

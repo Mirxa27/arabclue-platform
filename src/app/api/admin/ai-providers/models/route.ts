@@ -6,7 +6,7 @@ import { parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { adminAiProviderModelsSchema } from "@/lib/validation";
 import { parseModelsCache } from "@/lib/llm/model-catalog";
 import { fetchLiveProviderModels } from "@/lib/llm/fetch-models";
-import { isAllowedProviderApiKeyEnv } from "@/lib/llm/model-catalog";
+import { providerConnectionGuardError } from "@/lib/llm/provider-connection-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -35,24 +35,16 @@ export async function POST(req: NextRequest) {
     await getBootstrapContext();
     const body = await parseJsonBody(req, adminAiProviderModelsSchema);
 
-    // The connection's key name is resolved against process.env at fetch time
-    // and sent as a bearer token to `apiBase`, so an arbitrary name here would
-    // forward a platform secret to an administrator-chosen host. Same
-    // allowlist the provider write paths enforce.
-    if (
-      body.apiKeyEnvKey != null &&
-      String(body.apiKeyEnvKey).trim() !== "" &&
-      !isAllowedProviderApiKeyEnv(String(body.apiKeyEnvKey))
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "apiKeyEnvKey must name a provider credential variable (for example OPENAI_API_KEY).",
-          models: [],
-          code: "api_key_env_not_allowed",
-        },
-        { status: 400 }
-      );
+    // Same guard the provider write paths run. This answers a caller-supplied
+    // connection with a clear 400; rows loaded by `providerId` are checked
+    // again inside `fetchLiveProviderModels` before anything is dispatched.
+    if (!body.providerId) {
+      const guardError = providerConnectionGuardError({
+        provider: String(body.provider ?? "openai"),
+        apiBase: body.apiBase,
+        apiKeyEnvKey: body.apiKeyEnvKey,
+      });
+      if (guardError) return guardError;
     }
 
     try {

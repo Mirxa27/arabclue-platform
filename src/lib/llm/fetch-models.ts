@@ -4,6 +4,7 @@
 
 import { resolveProviderApiKey } from "../env-settings";
 import {
+  assertProviderCredentialOrigin,
   defaultApiBase,
   defaultApiKeyEnvKey,
   enrichRemoteModel,
@@ -73,9 +74,11 @@ async function fetchOpenAiCompatibleModels(
     );
   }
   if (!res.ok) {
-    const t = await res.text();
+    // The upstream body is not echoed: it is attacker-influenced text on a
+    // failure path that an administrator reads. The status is what diagnoses
+    // the connection (401 bad key, 404 wrong base).
     throw new Error(
-      `${provider} models HTTP ${res.status}: ${t.slice(0, 200)}. Verify the API key is valid for this provider.`
+      `${provider} models HTTP ${res.status}. Verify the API Base URL and that the API key is valid for this provider.`
     );
   }
   const data = await res.json();
@@ -105,8 +108,7 @@ async function fetchAnthropicModels(apiKey: string): Promise<ModelCapability[]> 
     cache: "no-store",
   });
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Anthropic models HTTP ${res.status}: ${t.slice(0, 200)}`);
+    throw new Error(`Anthropic models HTTP ${res.status}`);
   }
   const data = await res.json();
   const metas = extractModelsFromPayload(data);
@@ -145,9 +147,8 @@ async function fetchGoogleModels(
     );
   }
   if (!res.ok) {
-    const t = await res.text();
     throw new Error(
-      `Google models HTTP ${res.status}: ${t.slice(0, 200)}. Verify GOOGLE_GENERATIVE_AI_API_KEY is valid.`
+      `Google models HTTP ${res.status}. Verify GOOGLE_GENERATIVE_AI_API_KEY is valid.`
     );
   }
   const data = await res.json();
@@ -195,6 +196,13 @@ export async function fetchLiveProviderModels(opts: {
 }): Promise<FetchModelsResult> {
   const provider = (opts.provider || "openai").toLowerCase();
   const keyEnv = opts.apiKeyEnvKey || defaultApiKeyEnvKey(provider);
+  // Before any credential is resolved, let alone dispatched: `apiBase` is
+  // administrator-supplied and the key rides along on every request to it.
+  assertProviderCredentialOrigin({
+    apiBase: opts.apiBase,
+    apiKeyEnvKey: keyEnv,
+    provider,
+  });
   const key = await resolveProviderApiKey(provider, keyEnv || null);
   const fetchedAt = new Date().toISOString();
 

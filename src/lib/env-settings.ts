@@ -32,31 +32,37 @@ export async function getProviderApiKey(provider: string): Promise<string> {
 }
 
 /**
- * Resolve an API key using the connection's optional custom env key, then the
- * provider default.
+ * Resolve the API key for a provider connection.
  *
- * The custom name is administrator-supplied and `getDecryptedEnv` falls back to
+ * When the connection names a credential, that credential is the answer — it
+ * resolves to its value or to nothing. The provider default is used only when
+ * no name was given.
+ *
+ * No substitution, because the name is what binds a connection to a host. An
+ * operator pointing an `openai_compatible` connection at their own gateway
+ * names `OPENROUTER_API_KEY_TEAM_B`; falling back to the provider default when
+ * that variable is unset would send the platform's canonical `OPENAI_API_KEY`
+ * to that gateway. An empty result surfaces as "API key missing — configure it
+ * in Env Settings first", which is the accurate failure.
+ *
+ * The name is administrator-supplied and `getDecryptedEnv` falls back to
  * `process.env`, so it is checked against the provider-credential allowlist
- * first. A name outside that allowlist is ignored — and the provider default is
- * used instead — rather than being read and forwarded to the connection's
- * `apiBase`. Ignoring rather than throwing keeps an existing misconfigured row
- * working on its default credential instead of taking the AI surface down.
+ * before being read — otherwise it would address any variable in the process,
+ * including `NEXTAUTH_SECRET` and `DATABASE_URL`.
  */
 export async function resolveProviderApiKey(
   provider: string,
   apiKeyEnvKey?: string | null
 ): Promise<string> {
   const requested = apiKeyEnvKey?.trim();
-  if (requested) {
-    if (isAllowedProviderApiKeyEnv(requested)) {
-      const custom = await getDecryptedEnv(requested);
-      if (custom) return custom;
-    } else {
-      console.warn(
-        "[env-settings] ignoring provider apiKeyEnvKey outside the provider-credential allowlist",
-        { provider, apiKeyEnvKey: requested }
-      );
-    }
+  if (!requested) return getProviderApiKey(provider);
+
+  if (!isAllowedProviderApiKeyEnv(requested)) {
+    console.warn(
+      "[env-settings] provider apiKeyEnvKey is outside the provider-credential allowlist",
+      { provider, apiKeyEnvKey: requested }
+    );
+    return "";
   }
-  return getProviderApiKey(provider);
+  return getDecryptedEnv(requested);
 }

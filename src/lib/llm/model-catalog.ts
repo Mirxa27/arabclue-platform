@@ -334,6 +334,133 @@ export function isAllowedProviderApiKeyEnv(
   );
 }
 
+/**
+ * Hosts each canonical provider credential is allowed to reach, derived from
+ * `PROVIDER_CONNECTION_TEMPLATES` so the two cannot drift. A `*.` prefix means
+ * "this host or any subdomain of it".
+ */
+const CANONICAL_CREDENTIAL_HOSTS: ReadonlyMap<string, readonly string[]> =
+  (() => {
+    const hosts = new Map<string, string[]>();
+    for (const template of PROVIDER_CONNECTION_TEMPLATES) {
+      const envKey = template.apiKeyEnvKey.trim();
+      const base = template.apiBase.trim();
+      if (!envKey || !base) continue;
+      let host: string;
+      try {
+        host = new URL(base).hostname.toLowerCase();
+      } catch {
+        continue;
+      }
+      const existing = hosts.get(envKey) ?? [];
+      if (!existing.includes(host)) existing.push(host);
+      hosts.set(envKey, existing);
+    }
+    // Credentials with no connection template of their own: the Gemini key
+    // aliases, and Azure, whose host is per-tenant rather than fixed.
+    hosts.set("GOOGLE_API_KEY", ["generativelanguage.googleapis.com"]);
+    hosts.set("GEMINI_API_KEY", ["generativelanguage.googleapis.com"]);
+    hosts.set("AZURE_OPENAI_API_KEY", ["*.openai.azure.com"]);
+    return hosts;
+  })();
+
+/** Hostnames that are never a legitimate provider endpoint. */
+function isNonPublicHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || /\.(local|internal|localhost)$/.test(host)) {
+    return true;
+  }
+  if (host === "::1" || host === "::") return true;
+  if (/^f[cd][0-9a-f]{2}:/.test(host)) return true; // fc00::/7 unique-local
+  if (/^fe[89ab][0-9a-f]:/.test(host)) return true; // fe80::/10 link-local
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(host);
+  if (!v4) return false;
+  const first = Number(v4[1]);
+  const second = Number(v4[2]);
+  if (first === 0 || first === 10 || first === 127) return true;
+  if (first === 169 && second === 254) return true; // link-local + cloud IMDS
+  if (first === 172 && second >= 16 && second <= 31) return true;
+  if (first === 192 && second === 168) return true;
+  if (first === 100 && second >= 64 && second <= 127) return true; // CGNAT
+  return first >= 224; // multicast and reserved
+}
+
+function hostMatchesRule(host: string, rule: string): boolean {
+  return rule.startsWith("*.")
+    ? host.endsWith(rule.slice(1))
+    : host === rule;
+}
+
+/**
+ * Refuse to send a provider credential anywhere but that credential's vendor.
+ *
+ * `apiBase` is administrator-supplied and the resolved credential is attached to
+ * every request made against it — as a bearer token for OpenAI-compatible
+ * gateways, and as a URL query parameter for Google. Without this check,
+ * `{ provider: "openai", apiBase: "https://attacker.example" }` resolves the
+ * platform's real `OPENAI_API_KEY` and hands it to the attacker's host.
+ *
+ * A canonical credential (`OPENAI_API_KEY`) is pinned to its vendor origin. A
+ * suffixed operator credential (`OPENAI_API_KEY_TEAM_B`) is a deliberate
+ * bring-your-own-gateway slot, so it is allowed any public HTTPS host — but
+ * still not loopback, private, link-local, or internal-suffix hosts, which is
+ * where SSRF against the deployment's own network would land.
+ *
+ * This is a syntactic guard over operator config, layered on top of the ADMIN
+ * role gate. It does not defeat DNS rebinding: an allowed hostname that resolves
+ * to a private address at connect time still connects. Egress filtering is the
+ * control for that.
+ *
+ * @param provider Supplies the credential when `apiKeyEnvKey` is absent, which
+ *   is what `resolveProviderApiKey` falls back to in that case.
+ * @throws when the credential must not be sent to `apiBase`.
+ */
+export function assertProviderCredentialOrigin(opts: {
+  apiBase: string | null | undefined;
+  apiKeyEnvKey: string | null | undefined;
+  provider?: string | null;
+}): void {
+  const base = (opts.apiBase ?? "").trim();
+  // No custom base means the canonical default is used; nothing to validate.
+  if (!base) return;
+
+  const envKey =
+    (opts.apiKeyEnvKey ?? "").trim() ||
+    (opts.provider ? defaultApiKeyEnvKey(opts.provider) : "");
+  // No credential resolves for this connection, so none can be leaked.
+  if (!envKey) return;
+
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    throw new Error(`API Base URL is not a valid URL: ${base}`);
+  }
+
+  if (url.protocol !== "https:") {
+    throw new Error(
+      `API Base URL must use https when a credential is attached (got ${url.protocol.replace(":", "")}).`
+    );
+  }
+
+  const host = url.hostname.toLowerCase();
+  if (isNonPublicHost(host)) {
+    throw new Error(
+      `API Base URL must be a public host; "${host}" is loopback, private, or internal.`
+    );
+  }
+
+  // A suffixed operator credential has no canonical origin, so the public-host
+  // check above is the whole rule for it.
+  const allowed = CANONICAL_CREDENTIAL_HOSTS.get(envKey);
+  if (allowed && !allowed.some((rule) => hostMatchesRule(host, rule))) {
+    throw new Error(
+      `${envKey} may only be sent to ${allowed.join(" or ")}, not "${host}". ` +
+        `Use a suffixed credential (for example ${envKey}_GATEWAY) for a custom endpoint.`
+    );
+  }
+}
+
 export function defaultApiKeyEnvKey(provider: string): string {
   switch (provider) {
     case "openai":

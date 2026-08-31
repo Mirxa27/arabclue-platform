@@ -394,3 +394,27 @@ export function deriveWizardPreview(
     suggestions: suggestions.slice(0, 4),
   };
 }
+
+/**
+ * Persist the quick-setup approval chain. The API contract is
+ * `PUT /api/approval-policy` with `{ steps: [{ reviewerId }] }` — `stepRole`
+ * is defaulted server-side and the last step is promoted to FINAL there.
+ * Throws on any non-2xx so callers surface the failure instead of silently
+ * marking the step complete (regression: the wizard used POST → 405 swallowed).
+ */
+export async function saveApprovalChain(
+  reviewerIds: readonly string[],
+  fetchImpl: typeof fetch = fetch
+): Promise<void> {
+  if (reviewerIds.length === 0) return;
+  const res = await fetchImpl("/api/approval-policy", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      steps: reviewerIds.map((reviewerId) => ({ reviewerId })),
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`approval-policy save failed (HTTP ${res.status})`);
+  }
+}

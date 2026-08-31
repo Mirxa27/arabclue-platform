@@ -133,14 +133,14 @@ describe("resolveProviderApiKey", () => {
   // Regression: an administrator-supplied name outside the allowlist previously
   // read any variable in the process and forwarded it to the connection's
   // apiBase as a bearer token.
-  test("ignores a custom env key outside the allowlist and uses the provider default", async () => {
+  test("refuses a custom env key outside the allowlist without substituting the default", async () => {
     const prevSecret = process.env.NEXTAUTH_SECRET;
     const prevDefault = process.env.OPENAI_API_KEY;
     process.env.NEXTAUTH_SECRET = "super-secret-session-signing-key";
     process.env.OPENAI_API_KEY = "default-openai-key";
     try {
       const val = await resolveProviderApiKey("openai", "NEXTAUTH_SECRET");
-      expect(val).toBe("default-openai-key");
+      expect(val).toBe("");
       expect(val).not.toBe("super-secret-session-signing-key");
     } finally {
       if (prevSecret === undefined) delete process.env.NEXTAUTH_SECRET;
@@ -181,18 +181,27 @@ describe("resolveProviderApiKey", () => {
     }
   });
 
-  test("falls back to provider default when custom key not set", async () => {
+  // Regression: a named-but-unset credential used to resolve to the provider
+  // default instead. That silently put the platform's canonical OPENAI_API_KEY
+  // on the wire to whatever host the connection named — the whole point of
+  // naming a separate credential is that it binds the connection to its host.
+  test("a named credential that is unset resolves to nothing, not the provider default", async () => {
     const prev = process.env.OPENAI_API_KEY;
-    const prevCustom = process.env.MISSING_CUSTOM_KEY;
-    delete process.env.MISSING_CUSTOM_KEY;
-    process.env.OPENAI_API_KEY = "fallback-key";
+    const prevCustom = process.env.OPENAI_API_KEY_GATEWAY;
+    delete process.env.OPENAI_API_KEY_GATEWAY;
+    process.env.OPENAI_API_KEY = "canonical-platform-key";
     try {
-      const val = await resolveProviderApiKey("openai", "MISSING_CUSTOM_KEY");
-      expect(val).toBe("fallback-key");
+      const val = await resolveProviderApiKey(
+        "openai",
+        "OPENAI_API_KEY_GATEWAY"
+      );
+      expect(val).toBe("");
+      expect(val).not.toBe("canonical-platform-key");
     } finally {
       if (prev === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = prev;
-      if (prevCustom !== undefined) process.env.MISSING_CUSTOM_KEY = prevCustom;
+      if (prevCustom !== undefined)
+        process.env.OPENAI_API_KEY_GATEWAY = prevCustom;
     }
   });
 

@@ -1,81 +1,85 @@
-import { NextRequest, NextResponse } from "next/server";
-import { fulfillCheckout } from "@/lib/billing";
-import { withTenant, jsonOk, jsonError } from "@/lib/api-controller";
+import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import {
-  describeRateLimitDenial,
-  rateLimitAsync as rateLimit,
-} from "@/lib/rate-limit";
+import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
+import { fulfillCheckout } from "@/lib/billing";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-/**
- * GET /api/billing/callback?paymentId=...&Id=...&ref=...
- * Authenticated + ownership check: checkout must belong to caller.
- * Rate-limited to prevent ref guessing brute force.
- */
+// GET /api/billing/callback?ref=&paymentId=&status=
+//
+// Redirect-confirmation endpoint for the MyFatoorah return page
+// (`/billing/callback`). It never activates entitlements from the redirect
+// alone: it resolves the caller's own checkout and defers to
+// `fulfillCheckout`, which re-queries the gateway and verifies amounts.
+// The webhook and the reconcile cron remain the durable fulfillment paths;
+// this endpoint exists so the user who just paid sees the truth immediately.
 export async function GET(req: NextRequest) {
-  return withTenant("session", async ({ session, userId }) => {
-    const rl = await rateLimit({ key: `billing:callback:${userId}`, limit: 10, windowMs: 5 * 60 * 1000 });
-    if (!rl.ok) {
-      const denial = describeRateLimitDenial(rl);
-      return NextResponse.json(
-        { error: denial.error },
-        {
-          status: denial.status,
-          headers: { "Retry-After": String(denial.retryAfterSeconds) },
-        }
+  return withTenant("session", async ({ session }) => {
+    const params = new URL(req.url).searchParams;
+    const ref = params.get("ref");
+    const paymentId = params.get("paymentId");
+
+    // The one-time ErrorUrl is `/billing/callback?status=error` and carries no
+    // payment reference, so cancellation has to be read here or the user who
+    // backed out is told their reference is missing instead.
+    if (params.get("status") === "error" && !paymentId) {
+      return jsonOk({ ok: false, error: "payment_cancelled_or_failed" });
+    }
+
+    if (!ref && !paymentId) {
+      return jsonOk({ ok: false, error: "missing_payment_reference" });
+    }
+
+    // Status inquiries hit MyFatoorah; cap probing the same way checkout does.
+    const blocked = await checkAiRateLimit({
+      route: "billing.callback",
+      identifier: session.user.id,
+      scope: "user",
+      limit: 12,
+      windowMs: 60_000,
+    });
+    if (blocked) {
+      throw new ApiError(
+        "Too many confirmation attempts. Please wait a moment.",
+        429,
+        "RATE_LIMITED"
       );
     }
 
-    const paymentId =
-      req.nextUrl.searchParams.get("paymentId") ||
-      req.nextUrl.searchParams.get("PaymentId") ||
-      req.nextUrl.searchParams.get("Id");
-    const ref = req.nextUrl.searchParams.get("ref");
-    const status = req.nextUrl.searchParams.get("status");
+    const checkout = ref
+      ? await db.paymentCheckout.findUnique({
+          where: { customerReference: ref },
+        })
+      : await db.paymentCheckout.findFirst({ where: { paymentId } });
 
-    if (status === "error" && !paymentId) {
-      return jsonOk({
-        ok: false,
-        error: "payment_cancelled_or_failed",
-        customerReference: ref,
+    // Unknown reference and someone else's checkout answer identically so the
+    // endpoint cannot be used to probe other tenants' payment state. The
+    // operator still gets to see the probe.
+    if (checkout && checkout.userId !== session.user.id) {
+      await audit({
+        userId: session.user.id,
+        action: AUDIT_ACTIONS.BILLING_CALLBACK,
+        resource: "PaymentCheckout",
+        details: { reason: "callback_ownership_mismatch", ref, paymentId },
+        severity: "WARN",
+        success: false,
       });
     }
-
-    if (!paymentId && !ref) {
-      return jsonError("paymentId or ref is required", 400);
-    }
-
-    // Ownership pre-check when ref is provided
-    if (ref) {
-      const checkout = await db.paymentCheckout.findUnique({ where: { customerReference: ref } });
-      if (checkout && checkout.userId !== userId) {
-        await audit({
-          userId,
-          action: AUDIT_ACTIONS.BILLING_CHANGE,
-          details: { reason: "callback_ownership_mismatch", ref },
-          severity: "WARN",
-          success: false,
-        });
-        return jsonError("forbidden: checkout not owned", 403);
-      }
+    if (!checkout || checkout.userId !== session.user.id) {
+      return jsonOk({ ok: false, error: "checkout_not_found" });
     }
 
     const result = await fulfillCheckout({
+      checkoutId: checkout.id,
       paymentId,
-      customerReference: ref ?? undefined,
     });
 
-    // Post-fulfill ownership verification (in case paymentId path)
-    if (result.ok && result.checkoutId) {
-      const c = await db.paymentCheckout.findUnique({ where: { id: result.checkoutId } });
-      if (c && c.userId !== userId) {
-        return jsonError("forbidden", 403);
-      }
-    }
-
-    return jsonOk(result);
-  }, "billing callback");
+    return jsonOk(
+      result.ok
+        ? { ok: true }
+        : { ok: false, error: result.error ?? "not_paid" }
+    );
+  }, "billing-callback");
 }

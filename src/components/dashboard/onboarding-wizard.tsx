@@ -22,6 +22,7 @@ import {
   type WizardLegal,
   type WizardConnectState,
   type WizardMission,
+  saveApprovalChain,
 } from "@/lib/onboarding-wizard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -313,13 +314,8 @@ export function OnboardingWizard() {
       // Approval chain -> if reviewer selected, create policy
       // For wizard, use current user as approver if none selected (self-approval quick setup)
       const reviewerIds = wsData?.members?.slice(0, 1).map((m) => m.user.id) ?? [];
-      if (reviewerIds.length > 0) {
-        await fetch("/api/approval-policy", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ steps: reviewerIds.map((id) => ({ reviewerId: id })) }),
-        }).catch(() => null);
-      }
+      // Throws on failure so the step is not silently marked complete.
+      await saveApprovalChain(reviewerIds);
       setConnect({
         trackTender: draftTrack,
         tenderTitle: draftTenderTitle,

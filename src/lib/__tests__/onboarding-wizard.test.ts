@@ -10,6 +10,7 @@ import {
   wizardBrandSchema,
   wizardLegalSchema,
   type WizardCompletionInput,
+  saveApprovalChain,
 } from "@/lib/onboarding-wizard";
 
 const validProfile = {
@@ -267,5 +268,44 @@ describe("wizard constants", () => {
     for (const m of WIZARD_MISSION_CATALOG) {
       expect(m.targetView.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("saveApprovalChain", () => {
+  test("PUTs the approval-policy contract shape and resolves on ok", async () => {
+    // Arrange
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetchOk = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    // Act
+    await saveApprovalChain(["user-1", "user-2"], fetchOk);
+
+    // Assert — route exports only GET/PUT; POST returns 405 (regression: wizard used POST)
+    expect(calls).toHaveLength(1);
+    expect(calls[0].init.method).toBe("PUT");
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({
+      steps: [{ reviewerId: "user-1" }, { reviewerId: "user-2" }],
+    });
+  });
+
+  test("throws on non-ok response instead of swallowing the failure", async () => {
+    const fetch405 = (async () =>
+      new Response(JSON.stringify({ error: "Method Not Allowed" }), { status: 405 })) as unknown as typeof fetch;
+
+    await expect(saveApprovalChain(["user-1"], fetch405)).rejects.toThrow();
+  });
+
+  test("no-ops without reviewers", async () => {
+    let called = false;
+    const fetchSpy = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await saveApprovalChain([], fetchSpy);
+    expect(called).toBe(false);
   });
 });
