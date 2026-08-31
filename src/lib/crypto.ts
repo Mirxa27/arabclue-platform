@@ -55,6 +55,19 @@ function openSealed(ciphertext: string): string {
   }
 }
 
+/**
+ * Whether the current master key can open this ciphertext. Reveals nothing
+ * about the value, so it is safe to run across stored rows for diagnostics.
+ */
+export function canOpenSealed(ciphertext: string): boolean {
+  try {
+    openSealed(ciphertext);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function decryptValue(ciphertext: string): string {
   try {
     return openSealed(ciphertext);

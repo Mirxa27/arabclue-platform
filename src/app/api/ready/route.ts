@@ -11,6 +11,7 @@ import {
   probeDistributedRateLimitBackend,
   requiresDistributedRateLimit,
 } from "@/lib/rate-limit";
+import { summarizeSealedSecrets } from "@/lib/secret-readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,22 @@ export async function GET() {
         process.env.ARABCLUE_ENC_KEY && process.env.ARABCLUE_ENC_KEY.length >= 16
       ),
   };
+
+  // The check above only sees that the key is set. Whether it still opens the
+  // rows it sealed is a different question, and the answer is invisible
+  // everywhere else: a mismatched key reads as an empty settings table.
+  if (checks.database.ok) {
+    try {
+      const sealed = await db.envSetting.findMany({
+        select: { valueEncrypted: true },
+      });
+      checks.sealedSecrets = summarizeSealedSecrets(
+        sealed.map((row) => row.valueEncrypted)
+      );
+    } catch {
+      checks.sealedSecrets = { ok: false, detail: "secret_query_failed" };
+    }
+  }
 
   try {
     const activeProviders = await db.aIProviderConfig.count({
