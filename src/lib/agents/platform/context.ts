@@ -1,5 +1,9 @@
 import type { Session } from "next-auth";
 import type { BrandProfile, Workspace } from "@prisma/client";
+import {
+  DASHBOARD_VIEWS,
+  type DashboardView,
+} from "@/lib/dashboard-routes";
 
 export type PlatformAgentContext = {
   session: Session;
@@ -14,32 +18,10 @@ export type PlatformAgentContext = {
   activeProjectId?: string | null;
 };
 
-export const DASHBOARD_VIEWS = [
-  "overview",
-  "projects",
-  "documents",
-  "proposals",
-  "contracts",
-  "compliance",
-  "agents",
-  "history",
-  "account",
-  "business-profile",
-  "brand",
-  "reviews",
-  "billing",
-  "settings",
-  "proposal-builder",
-  "marketplace",
-  "analytics",
-  "admin_overview",
-  "admin_ai",
-  "admin_env",
-  "admin_billing",
-  "admin_myfatoorah",
-  "admin_security",
-  "admin_audit",
-  "copilot",
-] as const;
-
-export type PlatformDashboardView = (typeof DASHBOARD_VIEWS)[number];
+/**
+ * The screens the agent may name. Re-exported from the canonical route table so
+ * a new view is navigable the moment it is routable — a second hand-kept list
+ * silently drifted and left four screens unreachable by `navigateToView`.
+ */
+export { DASHBOARD_VIEWS };
+export type PlatformDashboardView = DashboardView;

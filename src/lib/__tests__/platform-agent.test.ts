@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 import { buildPlatformAgentInstructions } from "@/lib/agents/platform/instructions";
 import { DASHBOARD_VIEWS } from "@/lib/agents/platform/context";
+import { DASHBOARD_VIEWS as CANONICAL_VIEWS } from "@/lib/dashboard-routes";
 import { detectPricingRequest } from "@/lib/guardrails";
 import {
   AGENT_ENGINES,
@@ -47,6 +49,20 @@ describe("platform agent views", () => {
     expect(DASHBOARD_VIEWS).toContain("marketplace");
     expect(DASHBOARD_VIEWS).toContain("analytics");
     expect(DASHBOARD_VIEWS).toContain("brand");
+  });
+
+  test("the agent can navigate to every screen the app has", () => {
+    // A view the agent cannot name is a screen the user can only reach by
+    // hunting through the sidebar, which defeats "just ask the copilot".
+    expect([...DASHBOARD_VIEWS].sort()).toEqual([...CANONICAL_VIEWS].sort());
+  });
+
+  test("navigateToView accepts every canonical view", () => {
+    const schema = z.object({ view: z.enum(DASHBOARD_VIEWS) });
+    const rejected = CANONICAL_VIEWS.filter(
+      (view) => !schema.safeParse({ view }).success
+    );
+    expect(rejected).toEqual([]);
   });
 });
 
