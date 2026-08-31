@@ -1887,6 +1887,13 @@ export const localizationRegistry = {
     ar: "أكمل إعداد الحساب قبل تشغيل الوكلاء",
     en: "Complete account setup before running the agents",
   },
+  // The caller did nothing wrong — a run they already started is still going —
+  // so both locales name the wait and the alternative rather than reading as a
+  // rejection. The response carries `runId`, which is what the console opens.
+  AGENT_RUN_IN_PROGRESS: {
+    ar: "هناك تشغيل للوكلاء جارٍ بالفعل على هذا المشروع. انتظر انتهاءه أو افتح التشغيل الحالي",
+    en: "An agent run is already in progress for this project. Wait for it to finish, or open the run in progress",
+  },
   AI_RATE_LIMITED: {
     ar: "تم تجاوز حد الطلبات على المساعد الذكي. انتظر قليلاً ثم أعد المحاولة",
     en: "Too many AI assistant requests. Wait a moment and try again",
@@ -2528,6 +2535,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   NO_BRAND_PROFILE: { actionKey: "error_action_complete_request", messageKey: "NO_BRAND_PROFILE" },
   MISSION_NOT_FOUND: { actionKey: "error_action_run_agent", messageKey: "MISSION_NOT_FOUND" },
   ONBOARDING_INCOMPLETE: { actionKey: "error_action_run_agent", messageKey: "ONBOARDING_INCOMPLETE" },
+  AGENT_RUN_IN_PROGRESS: { actionKey: "error_action_run_agent", messageKey: "AGENT_RUN_IN_PROGRESS" },
   AI_RATE_LIMITED: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMITED" },
   NO_DOCUMENTS: { actionKey: "error_action_run_agent", messageKey: "NO_DOCUMENTS" },
   AI_RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMIT_UNAVAILABLE" },
