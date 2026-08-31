@@ -113,8 +113,8 @@ const FEATURES = [
   {
     titleEn: "Live matrix, zero blind spots",
     titleAr: "مصفوفة حيّة بلا ثغرات",
-    bodyEn: "Every clause: covered, in progress, missing. Share link with team — always synced.",
-    bodyAr: "كل فقرة: مغطاة، قيد العمل، مفقودة. رابط مشاركة مع الفريق — متزامن دائماً.",
+    bodyEn: "Every clause: covered, in progress, missing. Everyone in your workspace sees the same live matrix.",
+    bodyAr: "كل فقرة: مغطاة، قيد العمل، مفقودة. كل من في مساحة عملك يرى المصفوفة نفسها مباشرة.",
     icon: Layers,
     badgeEn: "Source-linked",
     badgeAr: "مرتبطة بالمصدر",
@@ -223,8 +223,8 @@ const FAQS = [
   {
     qEn: "What about Arabic PDFs and scanned documents?",
     qAr: "ماذا عن ملفات PDF العربية والممسوحة؟",
-    aEn: "Ingested with OCR + layout awareness. Tables, BoQ, drawings — mapped to matrix with source citations.",
-    aAr: "تُستوعب بـ OCR ووعي تخطيط. جداول وكميات ومخططات — تُحوّل لمصفوفة مع استشهاد بالمصدر.",
+    aEn: "Digital PDFs are read for text and layout, and image pages go through OCR. Tables, BoQ and drawings map to the matrix with source citations. A PDF that is purely a scan, with no text layer, is not read yet — upload those pages as images.",
+    aAr: "ملفات PDF الرقمية تُقرأ نصاً وتخطيطاً، والصفحات المصوّرة تمر عبر OCR. الجداول والكميات والمخططات تُحوّل لمصفوفة مع استشهاد بالمصدر. أما ملف PDF الممسوح بالكامل بلا طبقة نص فلا يُقرأ بعد — ارفع صفحاته كصور.",
   },
   {
     qEn: "Where is data hosted?",
@@ -652,7 +652,7 @@ function LandingContent() {
                     <div className="h-5 w-px bg-white/10" />
                     <div className="flex items-center gap-1.5 text-[12px] text-white/45">
                       <Lock className="h-3.5 w-3.5" />
-                      <span>{ar ? "آمن ومحلّي" : "Private & local-first"}</span>
+                      <span>{ar ? "مشفّر ومعزول لكل منشأة" : "Encrypted & tenant-isolated"}</span>
                     </div>
                   </div>
                 </motion.div>

@@ -22,9 +22,9 @@ const PILLARS = [
     titleEn: "PDPL-aware workflows",
     titleAr: "مسارات تراعي حماية البيانات",
     bodyEn:
-      "Tenant-scoped storage, session MFA, and role gates keep personal and commercial data inside membership boundaries.",
+      "Tenant-scoped storage, optional session MFA, and role gates keep personal and commercial data inside membership boundaries.",
     bodyAr:
-      "تخزين حسب المستأجر، ومصادقة ثنائية للجلسة، وحواجز أدوار تبقي البيانات الشخصية والتجارية ضمن حدود العضوية.",
+      "تخزين حسب المستأجر، ومصادقة ثنائية اختيارية للجلسة، وحواجز أدوار تبقي البيانات الشخصية والتجارية ضمن حدود العضوية.",
   },
   {
     icon: Eye,

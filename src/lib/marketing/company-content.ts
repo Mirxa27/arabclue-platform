@@ -176,8 +176,8 @@ export const faqItems: FaqItem[] = [
   {
     qEn: "Where is data hosted?",
     qAr: "أين تُستضاف البيانات؟",
-    aEn: "Default operational posture is KSA hosting where configured. See Privacy Policy and DPA for processing details.",
-    aAr: "الوضع التشغيلي الافتراضي هو الاستضافة في المملكة حيثما تم التكوين. راجع سياسة الخصوصية وملحق المعالجة للتفاصيل.",
+    aEn: "Hosting region is deployment-specific and is disclosed in your service agreement. We do not claim KSA residency unless the contracted deployment and provider region have been verified. See Privacy Policy and DPA for processing details.",
+    aAr: "تعتمد منطقة الاستضافة على إعداد النشر وتُذكر في اتفاقية الخدمة. لا ندّعي إقامة البيانات داخل المملكة إلا بعد التحقق من النشر المتعاقد عليه ومنطقة المزوّد. راجع سياسة الخصوصية وملحق المعالجة للتفاصيل.",
   },
   {
     qEn: "What are agent engines?",
