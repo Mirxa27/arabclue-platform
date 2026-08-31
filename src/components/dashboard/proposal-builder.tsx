@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -62,6 +63,7 @@ export function ProposalBuilder() {
     version: 1,
   });
   const [isDirty, setIsDirty] = useState(false);
+  useUnsavedChangesWarning(isDirty);
   const [validationSummary, setValidationSummary] = useState<ValidationSummary | null>(null);
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null);
   const [draftBanner, setDraftBanner] = useState<string | null>(null);

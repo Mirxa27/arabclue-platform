@@ -5,6 +5,7 @@ import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import {
   Loader2,
   Save,
@@ -203,6 +204,7 @@ export function ProposalEditorDialog({
         (draftLocale != null &&
           draftLocale !== (data?.proposal?.locale === "en" ? "en" : "ar"))
       : false;
+  useUnsavedChangesWarning(isDirty);
   const versions: {
     id: string;
     version: number;
