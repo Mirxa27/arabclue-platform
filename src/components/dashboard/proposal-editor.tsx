@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import {
+  ArrowLeft,
   Loader2,
   Save,
   FileDown,
@@ -89,14 +90,105 @@ const SKILLS: { id: ProposalSkill; en: string; ar: string }[] = [
   { id: "section", en: "Section only", ar: "قسم فقط" },
 ];
 
-export function ProposalEditorDialog({
+/**
+ * The studio renders in two places with the same body and different chrome: a
+ * modal for the quick look from the reviews queue, and a full-width page for
+ * actual authoring, where the editor, the preview and the co-pilot rail all need
+ * room at once. Only the wrapper differs, so both share one implementation.
+ */
+type StudioChrome = "dialog" | "page";
+
+function StudioShell({
+  chrome,
+  open,
+  onOpenChange,
+  title,
+  onBack,
+  backLabel,
+  children,
+}: {
+  chrome: StudioChrome;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: React.ReactNode;
+  onBack: () => void;
+  backLabel: string;
+  children: React.ReactNode;
+}) {
+  if (chrome === "page") {
+    return (
+      <section className="flex flex-col gap-3 h-[calc(100vh-7.5rem)] min-h-[36rem]">
+        <header className="shrink-0 flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1 text-[11px] shrink-0"
+            onClick={onBack}
+          >
+            <ArrowLeft className="size-3.5 rtl:rotate-180" />
+            {backLabel}
+          </Button>
+          <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
+            {title}
+          </div>
+        </header>
+        {children}
+      </section>
+    );
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-6xl w-[96vw] h-[92vh] flex flex-col gap-3 p-4 sm:p-6">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="flex items-center justify-between gap-2 pe-8">
+            {title}
+          </DialogTitle>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Modal chrome — the quick look from the reviews queue. */
+export function ProposalEditorDialog(props: {
+  proposalId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return <ProposalStudioBase {...props} chrome="dialog" />;
+}
+
+/** Page chrome — the authoring surface, rendered in place of a list. */
+export function ProposalStudio({
+  proposalId,
+  onClose,
+}: {
+  proposalId: string;
+  onClose: () => void;
+}) {
+  return (
+    <ProposalStudioBase
+      proposalId={proposalId}
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      chrome="page"
+    />
+  );
+}
+
+function ProposalStudioBase({
   proposalId,
   open,
   onOpenChange,
+  chrome,
 }: {
   proposalId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  chrome: StudioChrome;
 }) {
   const { locale } = useLocale();
   const { activeProjectId } = useUI();
@@ -543,10 +635,14 @@ export function ProposalEditorDialog({
   const exportBlocked = validationData != null && !validationData.exportReady;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl w-[96vw] h-[92vh] flex flex-col gap-3 p-4 sm:p-6">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center justify-between gap-2 pe-8">
+    <StudioShell
+      chrome={chrome}
+      open={open}
+      onOpenChange={onOpenChange}
+      onBack={() => onOpenChange(false)}
+      backLabel={locale === "ar" ? "رجوع" : "Back"}
+      title={
+        <>
             <span>{tr("proposal_editor", locale)}</span>
             <div className="flex items-center gap-1.5">
               <Badge variant="outline" className="font-mono text-[10px]">
@@ -570,9 +666,9 @@ export function ProposalEditorDialog({
                 </Badge>
               )}
             </div>
-          </DialogTitle>
-        </DialogHeader>
-
+        </>
+      }
+    >
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
@@ -1229,7 +1325,6 @@ export function ProposalEditorDialog({
             )}
           </>
         )}
-      </DialogContent>
-    </Dialog>
+    </StudioShell>
   );
 }

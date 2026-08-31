@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Panel, EmptyState, QueryState } from "@/components/patterns";
-import { ProposalEditorDialog } from "./proposal-editor";
+import { ProposalStudio } from "./proposal-editor";
 import { DocumentPreviewFrame } from "./document-preview-frame";
 import { apiJson } from "@/lib/api-client";
 import type { ApiProposal, ApiProposalArtifact } from "@/lib/api-types";
@@ -139,6 +139,12 @@ export function ProposalsList() {
   const proposals = (data?.proposals ?? []).filter((p) => p.type !== "CONTRACT");
   const canSubmitStatus = (status: string) =>
     status === "DRAFT" || status === "GENERATED" || status === "REJECTED";
+
+  // Authoring takes the whole page: the editor, the live preview and the
+  // co-pilot rail do not fit side by side in a modal.
+  if (editId) {
+    return <ProposalStudio proposalId={editId} onClose={() => setEditId(null)} />;
+  }
 
   return (
     <>
@@ -356,16 +362,6 @@ export function ProposalsList() {
           </QueryState>
         </ScrollArea>
       </Panel>
-
-      {editId && (
-        <ProposalEditorDialog
-          proposalId={editId}
-          open={!!editId}
-          onOpenChange={(o) => {
-            if (!o) setEditId(null);
-          }}
-        />
-      )}
 
       <Dialog
         open={Boolean(previewId)}
