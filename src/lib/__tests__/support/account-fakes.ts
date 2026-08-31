@@ -291,6 +291,54 @@ export function createFakeAccountRepository(): FakeAccountRepository {
       return stored;
     },
 
+    findUnverifiedAccountByNormalizedEmail: async (normalizedEmail) => {
+      const target = normalizedEmail.trim().toLowerCase();
+      const user = state.users.find(
+        (candidate) => candidate.email === target && !candidate.emailVerified
+      );
+      if (!user) return null;
+      // `activeWorkspaceId` is a plain scalar with no relation, so the
+      // workspace is resolved through the membership — as in the Prisma adapter.
+      const membership = state.members
+        .filter((candidate) => candidate.userId === user.id)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+      const workspace = state.workspaces.find(
+        (candidate) => candidate.id === membership?.workspaceId
+      );
+      if (!workspace) return null;
+      return {
+        userId: user.id,
+        email: user.email,
+        locale: user.locale === "en" ? "en" : "ar",
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+      };
+    },
+
+    replaceVerificationToken: async (input) => {
+      const staged = cloneState(state);
+      // Same sibling-invalidation semantics as `consumeVerificationToken`: at
+      // most one redeemable token per account at any time.
+      for (const sibling of staged.tokens) {
+        if (sibling.userId === input.userId && sibling.consumedAt === null) {
+          sibling.consumedAt = input.token.createdAt;
+        }
+      }
+      const tokenId = nextId("token");
+      staged.tokens.push({
+        id: tokenId,
+        userId: input.userId,
+        tokenHash: input.token.tokenHash,
+        hashSalt: input.token.hashSalt,
+        hashVersion: input.token.hashVersion,
+        createdAt: input.token.createdAt,
+        expiresAt: input.token.expiresAt,
+        consumedAt: null,
+      });
+      state = staged;
+      return tokenId;
+    },
+
     consumeVerificationToken: async (input) => {
       consumeCalls.push(input);
       const staged = cloneState(state);

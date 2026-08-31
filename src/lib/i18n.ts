@@ -361,6 +361,16 @@ export const localizationRegistry = {
     ar: "تم إنشاء الحساب لكن خدمة البريد غير مهيأة — تواصل مع الإدارة",
     en: "Account created but email service is not configured — contact admin",
   },
+  // Worded so the answer is identical for a registered, an already-verified and
+  // an unknown address — the endpoint must not reveal which one was submitted.
+  VERIFICATION_EMAIL_RESEND_ACCEPTED: {
+    ar: "إذا كان هذا البريد مسجلاً وغير مؤكد فستصلك رسالة تحقق جديدة",
+    en: "If this email is registered and unverified, a new verification message is on the way",
+  },
+  VERIFICATION_RESEND_INVALID: {
+    ar: "البريد الإلكتروني المُدخل غير صالح",
+    en: "The submitted email address is invalid",
+  },
   EMAIL_VERIFIED: { ar: "تم تأكيد البريد الإلكتروني بنجاح", en: "Email verified successfully" },
   EMAIL_VERIFICATION_REQUIRED: { ar: "تأكيد البريد الإلكتروني مطلوب", en: "Email verification required" },
   RECOVERY_REQUEST_ACCEPTED: {
@@ -1778,6 +1788,7 @@ export const localizationRegistry = {
   REGISTRATION_INVALID: { ar: "بيانات التسجيل غير صالحة: {{fieldPaths}}", en: "Registration data is invalid: {{fieldPaths}}" },
   REGISTRATION_RATE_LIMITED: { ar: "تم تجاوز حد محاولات إنشاء الحساب", en: "Account registration rate limit exceeded" },
   VERIFICATION_RATE_LIMITED: { ar: "تم تجاوز حد محاولات التحقق من البريد", en: "Email verification rate limit exceeded" },
+  VERIFICATION_RESEND_RATE_LIMITED: { ar: "تم تجاوز حد إعادة إرسال رسالة التحقق — حاول لاحقاً", en: "Verification resend limit exceeded — try again later" },
   VERIFICATION_EMAIL_SEND_FAILED: { ar: "تعذر إرسال رسالة التحقق بعد إنشاء الحساب", en: "Verification email could not be sent after account creation" },
   PASSWORD_RESET_COMPLETE: { ar: "اكتملت إعادة تعيين كلمة المرور", en: "Password reset completed" },
   RECOVERY_RATE_LIMITED: { ar: "تم تجاوز حد محاولات استعادة الحساب", en: "Account recovery rate limit exceeded" },
@@ -2385,6 +2396,8 @@ export const COMPLETION_ERROR_CONTRACTS = {
   VERIFICATION_TOKEN_INVALID: { actionKey: "error_action_verify_email", messageKey: "VERIFICATION_TOKEN_INVALID" },
   VERIFICATION_RATE_LIMITED: { actionKey: "error_action_verify_email", messageKey: "VERIFICATION_RATE_LIMITED" },
   VERIFICATION_EMAIL_UNCONFIGURED: { actionKey: "error_action_verify_email", messageKey: "VERIFICATION_EMAIL_UNCONFIGURED" },
+  VERIFICATION_RESEND_INVALID: { actionKey: "error_action_verify_email", messageKey: "VERIFICATION_RESEND_INVALID" },
+  VERIFICATION_RESEND_RATE_LIMITED: { actionKey: "error_action_verify_email", messageKey: "VERIFICATION_RESEND_RATE_LIMITED" },
   VERIFICATION_EMAIL_SEND_FAILED: { actionKey: "error_action_verify_email", messageKey: "VERIFICATION_EMAIL_SEND_FAILED" },
   EMAIL_VERIFICATION_REQUIRED: { actionKey: "error_action_verify_email", messageKey: "EMAIL_VERIFICATION_REQUIRED" },
   RECOVERY_TOKEN_INVALID: { actionKey: "error_action_recover_account", messageKey: "RECOVERY_TOKEN_INVALID" },

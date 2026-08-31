@@ -67,6 +67,9 @@ declare module "next-auth/jwt" {
 export const VERIFICATION_ALLOWLIST = [
   "/verify-email",
   "/api/auth/verify-email",
+  // The unverified session is the caller who needs a new link; denying the
+  // reissue here would make a failed send or a lapsed token unrecoverable.
+  "/api/auth/resend-verification",
   "/api/auth/session",
   "/api/auth/signout",
   "/api/auth/csrf",

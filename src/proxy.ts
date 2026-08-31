@@ -72,7 +72,8 @@ function isPasswordChangeAllowed(path: string): boolean {
 /**
  * The only paths an authenticated-but-unverified session may reach
  * (requirement 1.5): the account-verification surface, the verification action,
- * the sign-out action (with the CSRF token NextAuth requires to sign out), and
+ * the reissue action that recovers a failed send or a lapsed token, the
+ * sign-out action (with the CSRF token NextAuth requires to sign out), and
  * the minimum session-refresh path the verification page calls after success.
  * Everything else is denied. Keep in sync with VERIFICATION_ALLOWLIST in
  * src/lib/auth.ts.
@@ -80,6 +81,7 @@ function isPasswordChangeAllowed(path: string): boolean {
 const VERIFICATION_ALLOWED: string[] = [
   VERIFICATION_SURFACE_PATH,
   "/api/auth/verify-email",
+  "/api/auth/resend-verification",
   "/api/auth/session",
   "/api/auth/signout",
   "/api/auth/csrf",

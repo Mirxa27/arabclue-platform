@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense, type FormEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -28,6 +28,13 @@ function VerifyInner() {
   const ar = locale === "ar";
   const tokenFromUrl = searchParams.get("token")?.trim() ?? "";
   const emailHint = searchParams.get("email")?.trim() ?? "";
+  // The forced-verification redirect strips the query string, so the address is
+  // typed here rather than assumed present.
+  const [resendEmail, setResendEmail] = useState(emailHint);
+  const [isResending, setIsResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<
+    Readonly<{ ok: boolean; text: string }> | null
+  >(null);
 
   const verify = useCallback(
     async (token: string) => {
@@ -69,11 +76,51 @@ function VerifyInner() {
     [locale, refreshSession, router, sessionStatus]
   );
 
+  const resend = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setIsResending(true);
+      setResendNotice(null);
+      try {
+        const res = await fetch("/api/auth/resend-verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: resendEmail.trim() }),
+        });
+        const data = await res.json().catch(() => ({}));
+        setResendNotice(
+          res.ok
+            ? {
+                ok: true,
+                // Deliberately non-committal: the endpoint answers the same way
+                // for a registered and an unknown address.
+                text: tr("VERIFICATION_EMAIL_RESEND_ACCEPTED", locale),
+              }
+            : {
+                ok: false,
+                text:
+                  selectApiFailureMessage(data, locale) ??
+                  tr("auth_verify_failed", locale),
+              }
+        );
+      } catch {
+        setResendNotice({ ok: false, text: tr("auth_network_error", locale) });
+      } finally {
+        setIsResending(false);
+      }
+    },
+    [locale, resendEmail]
+  );
+
   useEffect(() => {
     if (tokenFromUrl) {
       verify(tokenFromUrl);
     }
   }, [tokenFromUrl, verify]);
+
+  // A failed verification is exactly when the recovery controls are needed, so
+  // they stay mounted in the error state instead of being replaced by it.
+  const showRecovery = status === "error" || (status === "idle" && !tokenFromUrl);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background relative overflow-hidden">
@@ -117,8 +164,28 @@ function VerifyInner() {
             {tr("account_verification_email_expiry", locale, { hours: 24 })}
           </p>
         )}
-        <div className="mt-6">
-          {status === "idle" && !tokenFromUrl && (
+        <div className="mt-6 space-y-5">
+          {status === "verifying" && (
+            <div className="flex items-center gap-2 text-[14px]">
+              <Loader2 className="size-5 animate-spin" /> {tr("auth_verifying", locale)}
+            </div>
+          )}
+          {status === "success" && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 flex gap-2 text-[13px] text-emerald-700 dark:text-emerald-300">
+              <CheckCircle2 className="size-5 shrink-0" />
+              {message}
+            </div>
+          )}
+          {status === "error" && (
+            <div
+              role="alert"
+              className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 flex gap-2 text-[13px] text-destructive"
+            >
+              <XCircle className="size-5 shrink-0" />
+              {message}
+            </div>
+          )}
+          {showRecovery && (
             <div className="text-[13px] text-muted-foreground leading-relaxed">
               <p>{tr("auth_verify_paste_hint", locale)}</p>
               <div className="mt-4 flex gap-2">
@@ -139,23 +206,49 @@ function VerifyInner() {
                   {tr("auth_verify_action", locale)}
                 </Button>
               </div>
-            </div>
-          )}
-          {status === "verifying" && (
-            <div className="flex items-center gap-2 text-[14px]">
-              <Loader2 className="size-5 animate-spin" /> {tr("auth_verifying", locale)}
-            </div>
-          )}
-          {status === "success" && (
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 flex gap-2 text-[13px] text-emerald-700 dark:text-emerald-300">
-              <CheckCircle2 className="size-5 shrink-0" />
-              {message}
-            </div>
-          )}
-          {status === "error" && (
-            <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 flex gap-2 text-[13px] text-destructive">
-              <XCircle className="size-5 shrink-0" />
-              {message}
+              <form onSubmit={resend} className="mt-5 border-t border-border pt-5">
+                <label
+                  htmlFor="resend-email"
+                  className="text-[12px] font-semibold text-foreground"
+                >
+                  {tr("auth_resend_verification", locale)}
+                </label>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    id="resend-email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    value={resendEmail}
+                    onChange={(event) => setResendEmail(event.target.value)}
+                    placeholder={tr("auth_email_placeholder", locale)}
+                    className="flex-1 h-11 rounded-xl border border-border bg-background px-3 text-[13px]"
+                  />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={isResending}
+                    className="rounded-full h-11"
+                  >
+                    {isResending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      tr("auth_resend_verification", locale)
+                    )}
+                  </Button>
+                </div>
+                {resendNotice && (
+                  <p
+                    role="status"
+                    className={cn(
+                      "mt-3 text-[12px]",
+                      resendNotice.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
+                    )}
+                  >
+                    {resendNotice.text}
+                  </p>
+                )}
+              </form>
             </div>
           )}
         </div>

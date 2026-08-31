@@ -27,7 +27,9 @@ import {
   type ConsumeVerificationTokenInput,
   type CreateAccountRecordsInput,
   type CreatedAccountRecords,
+  type ReplaceVerificationTokenInput,
   type StoredVerificationToken,
+  type UnverifiedAccountSnapshot,
 } from "./account-service";
 
 type PrismaClientLike = typeof db;
@@ -96,6 +98,45 @@ export function createPrismaAccountRepository(
 
     async consumeVerificationToken(input) {
       return withMappedFailures(() => runConsumeTransaction(client, input));
+    },
+
+    async findUnverifiedAccountByNormalizedEmail(normalizedEmail) {
+      return withMappedFailures(async () => {
+        const record = await client.user.findFirst({
+          where: {
+            email: { equals: normalizedEmail, mode: "insensitive" },
+            emailVerified: false,
+            // A deactivated account has nothing to unlock, so it is not mailed.
+            active: true,
+          },
+          select: {
+            id: true,
+            email: true,
+            locale: true,
+            // `activeWorkspaceId` is a plain scalar with no relation field, so
+            // the workspace is read through the founding membership.
+            workspaces: {
+              orderBy: { createdAt: "asc" },
+              take: 1,
+              select: { workspace: { select: { id: true, name: true } } },
+            },
+          },
+        });
+        const workspace = record?.workspaces[0]?.workspace;
+        if (!record || !workspace) return null;
+        const snapshot: UnverifiedAccountSnapshot = {
+          userId: record.id,
+          email: record.email,
+          locale: record.locale === "en" ? "en" : "ar",
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        };
+        return snapshot;
+      });
+    },
+
+    async replaceVerificationToken(input) {
+      return withMappedFailures(() => runReplaceTokenTransaction(client, input));
     },
   });
 }
@@ -244,6 +285,37 @@ async function runConsumeTransaction(
       });
 
       return true;
+    },
+    { isolationLevel: "Serializable" }
+  );
+}
+
+/**
+ * Retires the account's outstanding tokens and stores the replacement in one
+ * serializable transaction, so a reissue can never leave two redeemable links
+ * alive and a crash between the two writes cannot strand the account with none.
+ */
+async function runReplaceTokenTransaction(
+  client: PrismaClientLike,
+  input: ReplaceVerificationTokenInput
+): Promise<string> {
+  return client.$transaction(
+    async (tx) => {
+      await tx.verificationToken.updateMany({
+        where: { userId: input.userId, consumedAt: null },
+        data: { consumedAt: input.token.createdAt },
+      });
+      const created = await tx.verificationToken.create({
+        data: {
+          userId: input.userId,
+          tokenHash: input.token.tokenHash,
+          hashSalt: input.token.hashSalt,
+          hashVersion: input.token.hashVersion,
+          expiresAt: input.token.expiresAt,
+        },
+        select: { id: true },
+      });
+      return created.id;
     },
     { isolationLevel: "Serializable" }
   );

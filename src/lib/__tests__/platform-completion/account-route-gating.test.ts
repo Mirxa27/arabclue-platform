@@ -322,24 +322,22 @@ describe("verify-email route maps domain results to the shared contract", () => 
 });
 
 describe("unverified-session gating allowlist (requirement 1.5)", () => {
-  test("admits only the verification surface, sign-out, and session refresh", () => {
-    expect([...VERIFICATION_ALLOWLIST].sort()).toEqual(
-      [
-        "/verify-email",
-        "/api/auth/verify-email",
-        "/api/auth/session",
-        "/api/auth/signout",
-        "/api/auth/csrf",
-      ].sort()
-    );
-
-    for (const allowed of [
+  test("admits only the verification surface, its reissue, sign-out, and session refresh", () => {
+    // The reissue endpoint belongs here: the signed-in-but-unverified session is
+    // precisely the caller who needs a new link, and a 403 from the gate would
+    // leave a failed send or a lapsed token unrecoverable.
+    const allowedPaths = [
       "/verify-email",
       "/api/auth/verify-email",
+      "/api/auth/resend-verification",
       "/api/auth/session",
       "/api/auth/signout",
       "/api/auth/csrf",
-    ]) {
+    ];
+
+    expect([...VERIFICATION_ALLOWLIST].sort()).toEqual([...allowedPaths].sort());
+
+    for (const allowed of allowedPaths) {
       expect(isVerificationAllowedPath(allowed)).toBe(true);
     }
   });

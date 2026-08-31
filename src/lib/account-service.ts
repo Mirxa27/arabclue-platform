@@ -94,6 +94,16 @@ export const VERIFICATION_RATE_LIMIT = Object.freeze({
   windowMs: ONE_HOUR_MS,
 });
 
+/**
+ * Reissue is tighter than verification: each accepted call sends real mail, so
+ * the limit is applied to the source address *and* to the target address —
+ * rotating IPs must not turn the endpoint into a way to flood one inbox.
+ */
+export const VERIFICATION_RESEND_RATE_LIMIT = Object.freeze({
+  limit: 3,
+  windowMs: ONE_HOUR_MS,
+});
+
 /** Verification-email delivery deadline (criterion 1.13). */
 export const VERIFICATION_EMAIL_DEADLINE_MS = 30_000;
 
@@ -298,12 +308,28 @@ export type ConsumeVerificationTokenInput = Readonly<{
   verifiedAt: Date;
 }>;
 
+/** Everything a reissued verification email needs, and nothing more. */
+export type UnverifiedAccountSnapshot = Readonly<{
+  userId: string;
+  email: string;
+  locale: Locale;
+  workspaceId: string;
+  workspaceName: string;
+}>;
+
+export type ReplaceVerificationTokenInput = Readonly<{
+  userId: string;
+  token: AccountTokenDigest;
+}>;
+
 /**
  * Persistence boundary. `createAccountRecords` must commit user, workspace,
  * writer membership, and verification token together or persist none of them
  * (criterion 1.1); `consumeVerificationToken` must mark the user verified and
  * consume the token in one transaction, returning `false` when another request
- * consumed it first (criteria 1.6, 1.7).
+ * consumed it first (criteria 1.6, 1.7); `replaceVerificationToken` must
+ * invalidate the account's outstanding tokens and store the replacement in one
+ * transaction, so a reissue never leaves two redeemable links alive.
  */
 export interface AccountRepository {
   findUserIdByNormalizedEmail(normalizedEmail: string): Promise<string | null>;
@@ -316,6 +342,13 @@ export interface AccountRepository {
   consumeVerificationToken(
     input: ConsumeVerificationTokenInput
   ): Promise<boolean>;
+  findUnverifiedAccountByNormalizedEmail(
+    normalizedEmail: string
+  ): Promise<UnverifiedAccountSnapshot | null>;
+  /** Returns the id of the stored replacement token. */
+  replaceVerificationToken(
+    input: ReplaceVerificationTokenInput
+  ): Promise<string>;
 }
 
 /** Raised by a repository when the normalized-email unique index rejects a write. */
@@ -361,6 +394,7 @@ export type AccountAuditAction =
   | "REGISTRATION_CREATED"
   | "EMAIL_VERIFICATION_PENDING"
   | "EMAIL_VERIFICATION_SEND_FAILED"
+  | "EMAIL_VERIFICATION_RESENT"
   | "EMAIL_VERIFIED";
 
 export type AccountAuditReason =
@@ -441,6 +475,20 @@ export type AccountServiceDependencies = Readonly<{
 
 export type VerificationEmailDelivery = "SENT" | "UNCONFIGURED" | "FAILED";
 
+/**
+ * The subset of account state a verification send actually reads. Registration
+ * passes its full `RegisteredAccountState`; a reissue passes a snapshot loaded
+ * from persistence, which never holds a password hash or a token digest.
+ */
+export type VerificationEmailTarget = Readonly<{
+  userId: string;
+  email: string;
+  locale: Locale;
+  workspaceId: string;
+  workspaceName: string;
+  verificationTokenId: string;
+}>;
+
 /** Exact persisted state returned by a successful registration. */
 export type RegisteredAccountState = Readonly<{
   userId: string;
@@ -516,9 +564,42 @@ export type VerificationCommand = Readonly<{
   sourceAddress?: string | null;
 }>;
 
+export type ResendVerificationCommand = Readonly<{
+  email: unknown;
+  sourceAddress?: string | null;
+}>;
+
+/**
+ * Uniform acceptance. The accepted body is identical for an unverified account,
+ * an already-verified account, an address that was never registered, and a
+ * delivery that failed — so the endpoint reveals nothing about who has an
+ * account here. Delivery outcomes are observable in the audit trail instead.
+ */
+export type ResendVerificationResult =
+  | Readonly<{
+      ok: true;
+      status: 202;
+      code: "VERIFICATION_EMAIL_RESEND_ACCEPTED";
+    }>
+  | Readonly<{ ok: false; status: 400; code: "VERIFICATION_RESEND_INVALID" }>
+  | Readonly<{
+      ok: false;
+      status: 429;
+      code: "VERIFICATION_RESEND_RATE_LIMITED";
+      retryAfterSeconds: number;
+    }>;
+
 export interface AccountService {
   register(command: RegistrationCommand): Promise<RegistrationResult>;
   verifyEmail(command: VerificationCommand): Promise<VerificationResult>;
+  /**
+   * Reissues a verification email for an account that has not verified yet.
+   * Registration is the only other point that issues one, so without this a
+   * failed send or a lapsed 24-hour token is a permanent lockout.
+   */
+  resendVerificationEmail(
+    command: ResendVerificationCommand
+  ): Promise<ResendVerificationResult>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -710,7 +791,7 @@ export function createAccountService(
   }
 
   async function deliverVerificationEmail(input: {
-    readonly account: RegisteredAccountState;
+    readonly account: VerificationEmailTarget;
     readonly rawToken: string;
     readonly sourceAddress: string;
   }): Promise<VerificationEmailDelivery> {
@@ -760,7 +841,7 @@ export function createAccountService(
   }
 
   async function appendDeliveryAudit(
-    account: RegisteredAccountState,
+    account: VerificationEmailTarget,
     sourceAddress: string,
     reason: AccountAuditReason
   ): Promise<void> {
@@ -848,7 +929,81 @@ export function createAccountService(
     };
   }
 
-  return Object.freeze({ register, verifyEmail });
+  async function resendVerificationEmail(
+    command: ResendVerificationCommand
+  ): Promise<ResendVerificationResult> {
+    const sourceAddress = normalizeSourceAddress(command.sourceAddress);
+
+    const sourceLimit = await rateLimiter.consume({
+      key: `resend-verification:ip:${sourceAddress}`,
+      limit: VERIFICATION_RESEND_RATE_LIMIT.limit,
+      windowMs: VERIFICATION_RESEND_RATE_LIMIT.windowMs,
+    });
+    if (!sourceLimit.ok) return resendRateLimited(sourceLimit.retryAfterSeconds);
+
+    // Validated before it is used as a limiter key, so a malformed submission
+    // cannot inflate the key space.
+    const email = readSubmittedEmail(command.email);
+    if (!email) {
+      return { ok: false, status: 400, code: "VERIFICATION_RESEND_INVALID" };
+    }
+
+    // Consumed before the lookup: an existing and a non-existent address must
+    // cost the caller exactly the same, or the limit itself leaks membership.
+    const addressLimit = await rateLimiter.consume({
+      key: `resend-verification:email:${email}`,
+      limit: VERIFICATION_RESEND_RATE_LIMIT.limit,
+      windowMs: VERIFICATION_RESEND_RATE_LIMIT.windowMs,
+    });
+    if (!addressLimit.ok) {
+      return resendRateLimited(addressLimit.retryAfterSeconds);
+    }
+
+    const snapshot =
+      await repository.findUnverifiedAccountByNormalizedEmail(email);
+    if (!snapshot) return resendAccepted();
+
+    const issued = createTokenDigest({ randomness });
+    const createdAt = utcNow(clock);
+    const expiresAt = addUtcMilliseconds(createdAt, VERIFICATION_TOKEN_TTL_MS);
+    const verificationTokenId = await repository.replaceVerificationToken({
+      userId: snapshot.userId,
+      token: {
+        tokenHash: issued.tokenHash,
+        hashSalt: issued.hashSalt,
+        hashVersion: issued.hashVersion,
+        createdAt,
+        expiresAt,
+      },
+    });
+
+    const delivery = await deliverVerificationEmail({
+      account: { ...snapshot, verificationTokenId },
+      rawToken: issued.rawToken,
+      sourceAddress,
+    });
+
+    // A failed send already wrote its own audit row inside the delivery call.
+    if (delivery === "SENT") {
+      await appendAudit({
+        action: "EMAIL_VERIFICATION_RESENT",
+        userId: snapshot.userId,
+        resource: "VerificationToken",
+        resourceId: verificationTokenId,
+        severity: "INFO",
+        sourceAddress,
+        details: {
+          email: snapshot.email,
+          occurredAt: createdAt.toISOString(),
+          workspaceId: snapshot.workspaceId,
+        },
+      });
+    }
+
+    return resendAccepted();
+  }
+
+  return Object.freeze({ register, verifyEmail, resendVerificationEmail });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -857,6 +1012,28 @@ export function createAccountService(
 
 function invalidVerificationToken(): VerificationResult {
   return { ok: false, status: 400, code: "VERIFICATION_TOKEN_INVALID" };
+}
+
+function resendAccepted(): ResendVerificationResult {
+  return { ok: true, status: 202, code: "VERIFICATION_EMAIL_RESEND_ACCEPTED" };
+}
+
+function resendRateLimited(retryAfterSeconds: number): ResendVerificationResult {
+  return {
+    ok: false,
+    status: 429,
+    code: "VERIFICATION_RESEND_RATE_LIMITED",
+    retryAfterSeconds,
+  };
+}
+
+/** Normalized address, or null when the submission cannot be an address. */
+function readSubmittedEmail(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const email = value.trim();
+  if (!withinBounds(email.length, REGISTRATION_FIELD_BOUNDS.email)) return null;
+  if (!isEmailAddressFormat(email)) return null;
+  return normalizeAccountEmail(email);
 }
 
 /** Bounded, non-empty raw token, or null when the submission cannot be a token. */
