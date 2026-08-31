@@ -24,6 +24,7 @@ import type {
   StoredRecoveryToken,
 } from "../../recovery-service";
 import type { Locale } from "../../types";
+import { FAKE_EMAIL_FAILURE_DETAIL } from "./deterministic-runtime";
 
 export type FakeRecoveryUser = {
   id: string;
@@ -293,7 +294,7 @@ export function createFakeRecoveryEmailProvider(
           messages.push(message);
           return { ok: true };
         case "failed":
-          return { ok: false };
+          return { ok: false, error: FAKE_EMAIL_FAILURE_DETAIL };
         case "throws":
           throw new Error("Injected recovery email failure");
         case "hangs":

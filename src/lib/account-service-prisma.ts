@@ -12,7 +12,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { audit } from "./audit";
-import { isEmailConfigured, sendEmail } from "./email";
+import { describeEmailFailure, isEmailConfigured, sendEmail } from "./email";
 import { asSchemaMigrationPendingError } from "./api-failure";
 import {
   DuplicateAccountEmailError,
@@ -362,7 +362,13 @@ export function createResendAccountEmailProvider(): AccountEmailProvider {
         text: message.text,
       });
       if (result.ok) return { ok: true };
-      return { ok: false, skipped: result.skipped === true };
+      return {
+        ok: false,
+        skipped: result.skipped === true,
+        // Carried to the audit row only. Without it a real outage is
+        // indistinguishable from any other delivery failure.
+        error: describeEmailFailure(result),
+      };
     },
   });
 }

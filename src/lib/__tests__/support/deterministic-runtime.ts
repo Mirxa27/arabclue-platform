@@ -1,5 +1,13 @@
 const DEFAULT_RANDOM_SEED = 0x6d2b79f5;
 
+/**
+ * What every failing email fake reports as the provider's own words, so a test
+ * can assert the string survives the whole boundary instead of being collapsed
+ * into a fixed category.
+ */
+export const FAKE_EMAIL_FAILURE_DETAIL =
+  "Invalid login: 535 Incorrect authentication data";
+
 export class DeterministicClock {
   private currentMilliseconds: number;
 

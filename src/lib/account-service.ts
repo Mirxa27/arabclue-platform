@@ -368,6 +368,12 @@ export type EmailSendOutcome = Readonly<{
   ok: boolean;
   /** True when the provider declined because it is not configured. */
   skipped?: boolean;
+  /**
+   * What the transport reported, for the operator-only audit row. `reason` is a
+   * closed category; this is the only thing that distinguishes one outage
+   * (rejected sender, bad relay credentials, blocked port) from another.
+   */
+  error?: string;
 }>;
 
 export interface AccountEmailProvider {
@@ -419,6 +425,8 @@ export type AccountAuditEntry = Readonly<{
     occurredAt: string;
     workspaceId?: string;
     reason?: AccountAuditReason;
+    /** Bounded transport detail. Operator-only: never returned to the caller. */
+    providerError?: string;
   }>;
 }>;
 
@@ -826,16 +834,24 @@ export function createAccountService(
       const reason: AccountAuditReason = outcome.skipped
         ? "email_unconfigured"
         : "delivery_failed";
-      await appendDeliveryAudit(account, sourceAddress, reason);
+      await appendDeliveryAudit(account, sourceAddress, reason, outcome.error);
       return outcome.skipped ? "UNCONFIGURED" : "FAILED";
     } catch (error) {
       // Timeout and provider exception share the failure branch; the message
-      // itself is never logged, so no token can reach a log sink.
+      // itself is never logged, so no token can reach a log sink. For the same
+      // reason the thrown error's message is not carried into the audit row —
+      // a provider exception can quote the payload it rejected, and the payload
+      // holds the verification token. Its class is what an operator needs.
       const reason: AccountAuditReason =
         error instanceof ProviderDeadlineExceededError
           ? "delivery_timeout"
           : "delivery_failed";
-      await appendDeliveryAudit(account, sourceAddress, reason);
+      await appendDeliveryAudit(
+        account,
+        sourceAddress,
+        reason,
+        `provider threw ${error instanceof Error ? error.name : typeof error}`
+      );
       return "FAILED";
     }
   }
@@ -843,7 +859,8 @@ export function createAccountService(
   async function appendDeliveryAudit(
     account: VerificationEmailTarget,
     sourceAddress: string,
-    reason: AccountAuditReason
+    reason: AccountAuditReason,
+    providerError?: string
   ): Promise<void> {
     await appendAudit({
       action:
@@ -860,6 +877,7 @@ export function createAccountService(
         occurredAt: utcNow(clock).toISOString(),
         workspaceId: account.workspaceId,
         reason,
+        ...(providerError ? { providerError } : {}),
       },
     });
   }

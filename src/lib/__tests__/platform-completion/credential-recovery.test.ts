@@ -23,6 +23,7 @@ import { createTokenDigest } from "../../token-digest";
 import {
   DeterministicClock,
   DeterministicRandomSource,
+  FAKE_EMAIL_FAILURE_DETAIL,
   InjectedRecoveryWriteFailure,
   createFakeRecoveryEmailProvider,
   createFakeRecoveryRepository,
@@ -233,6 +234,22 @@ describe("recovery request (requirements 2.1, 2.2, 2.5, 2.7, 2.8)", () => {
     expect(
       harness.audit.entries.some((e) => e.action === "PASSWORD_RESET_EMAIL_FAILED")
     ).toBe(true);
+  });
+
+  test("records what the provider said so an operator can diagnose the failure", async () => {
+    // Without this the audit row said only "delivery_failed": a real outage
+    // (bad relay credentials, blocked port, rejected sender) was indistinguishable
+    // from any other, and the caller is answered 202 either way.
+    const harness = createHarness({ emailBehavior: { kind: "failed" } });
+    harness.repository.seedUser({ email: "buyer@example.com" });
+    await harness.service.requestRecovery({
+      payload: { email: "buyer@example.com" },
+      sourceAddress: "10.0.0.1",
+    });
+    const failure = harness.audit.entries.find(
+      (e) => e.action === "PASSWORD_RESET_EMAIL_FAILED"
+    );
+    expect(failure?.details?.providerError).toBe(FAKE_EMAIL_FAILURE_DETAIL);
   });
 
   test("bounds email delivery and treats a hang as a delivery failure", async () => {

@@ -291,7 +291,16 @@ export interface RecoveryRepository {
   resetPassword(input: ResetPasswordInput): Promise<ResetPasswordOutcome>;
 }
 
-export type RecoveryEmailSendOutcome = Readonly<{ ok: boolean; skipped?: boolean }>;
+export type RecoveryEmailSendOutcome = Readonly<{
+  ok: boolean;
+  skipped?: boolean;
+  /**
+   * What the transport reported, for the operator-only audit row. `reason` is a
+   * closed category; this is the only thing that distinguishes one outage
+   * (rejected sender, bad relay credentials, blocked port) from another.
+   */
+  error?: string;
+}>;
 
 export interface RecoveryEmailProvider {
   /** Whether the email Configuration_Boundary is set. */
@@ -324,6 +333,8 @@ export type RecoveryAuditEntry = Readonly<{
     occurredAt: string;
     reason?: string;
     error?: string;
+    /** Bounded transport detail. Operator-only: never returned to the caller. */
+    providerError?: string;
     replacedCount?: number;
     sessionsRevoked?: number;
   }>;
@@ -538,6 +549,7 @@ export function createRecoveryService(
           email: user.email,
           occurredAt: now.toISOString(),
           error: "delivery_failed",
+          ...(emailOutcome.error ? { providerError: emailOutcome.error } : {}),
         },
       });
     } else {
@@ -599,7 +611,16 @@ export function createRecoveryService(
         errorName: error instanceof Error ? error.name : typeof error,
         timedOut: error instanceof ProviderDeadlineExceededError,
       });
-      return { ok: false };
+      // The thrown error's own message is deliberately not carried: a provider
+      // exception can quote the payload it rejected, and the payload holds the
+      // reset token. The class of failure is what an operator needs anyway.
+      return {
+        ok: false,
+        error:
+          error instanceof ProviderDeadlineExceededError
+            ? "delivery deadline exceeded"
+            : `provider threw ${error instanceof Error ? error.name : typeof error}`,
+      };
     }
   }
 

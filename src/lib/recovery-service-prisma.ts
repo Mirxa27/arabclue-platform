@@ -10,7 +10,7 @@
  */
 
 import { db } from "./db";
-import { isEmailConfigured, sendEmail } from "./email";
+import { describeEmailFailure, isEmailConfigured, sendEmail } from "./email";
 import { audit } from "./audit";
 import { createRecoveryService } from "./recovery-service";
 import type {
@@ -242,12 +242,22 @@ export const resendRecoveryEmailProvider: RecoveryEmailProvider = Object.freeze(
         text: message.text,
       });
 
-      return { ok: result.ok };
+      if (result.ok) return { ok: true };
+      return {
+        ok: false,
+        skipped: result.skipped === true,
+        // Carried to the audit row only. Without it a real outage is
+        // indistinguishable from any other delivery failure.
+        error: describeEmailFailure(result),
+      };
     } catch (error) {
       console.error("[recovery-email-provider] send failed", {
         errorName: error instanceof Error ? error.name : typeof error,
       });
-      return { ok: false };
+      return {
+        ok: false,
+        error: `provider threw ${error instanceof Error ? error.name : typeof error}`,
+      };
     }
   },
 });

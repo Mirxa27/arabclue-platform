@@ -24,6 +24,7 @@ import {
 } from "../../account-service";
 import type { VerificationEmailContent } from "../../account-verification-email";
 import type { DeadlineScheduler } from "../../provider-timeout";
+import { FAKE_EMAIL_FAILURE_DETAIL } from "./deterministic-runtime";
 
 export type FakeUserRecord = {
   id: string;
@@ -412,7 +413,11 @@ export function createFakeAccountEmailProvider(
         case "sent":
           return { ok: true };
         case "failed":
-          return { ok: false, skipped: false };
+          return {
+            ok: false,
+            skipped: false,
+            error: FAKE_EMAIL_FAILURE_DETAIL,
+          };
         case "skipped":
           return { ok: false, skipped: true };
         case "throws":

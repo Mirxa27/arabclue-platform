@@ -93,6 +93,23 @@ export function isEmailConfigured(): boolean {
   return selectEmailTransport(process.env).kind !== "none";
 }
 
+/** Cap on the operator-facing failure detail persisted in an audit row. */
+export const EMAIL_FAILURE_DETAIL_MAX = 300;
+
+/**
+ * The provider's own words for a failed send, bounded so a relay cannot write an
+ * unbounded audit row. Callers pass this to an operator-only sink: it names the
+ * outage (bad relay credentials, blocked port, rejected sender) that a fixed
+ * `delivery_failed` category cannot distinguish.
+ */
+export function describeEmailFailure(
+  result: SendEmailResult
+): string | undefined {
+  if (result.ok) return undefined;
+  const detail = result.skipped ? result.reason : result.error;
+  return detail.slice(0, EMAIL_FAILURE_DETAIL_MAX);
+}
+
 export async function sendEmail(
   input: SendEmailInput
 ): Promise<SendEmailResult> {

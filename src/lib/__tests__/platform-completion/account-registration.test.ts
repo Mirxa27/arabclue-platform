@@ -29,6 +29,7 @@ import { createTokenDigest } from "../../token-digest";
 import {
   DeterministicClock,
   DeterministicRandomSource,
+  FAKE_EMAIL_FAILURE_DETAIL,
   InjectedWriteFailure,
   createFakeAccountEmailProvider,
   createFakeAccountRateLimiter,
@@ -385,7 +386,13 @@ describe("registration persistence and delivery (requirements 1.1, 1.4, 1.9, 1.1
     expect(failing.audit.entries[1]).toMatchObject({
       action: "EMAIL_VERIFICATION_SEND_FAILED",
       severity: "WARN",
-      details: { email: "buyer@example.com", reason: "delivery_failed" },
+      details: {
+        email: "buyer@example.com",
+        reason: "delivery_failed",
+        // `reason` is the closed category; what the relay actually said is the
+        // only thing that tells an operator which outage they are looking at.
+        providerError: FAKE_EMAIL_FAILURE_DETAIL,
+      },
     });
   });
 
