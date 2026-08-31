@@ -44,6 +44,19 @@ describe("proposal studio offers a Word download", () => {
   test("the control is labelled for what it produces", () => {
     expect(editor).toContain("Word");
   });
+
+  test("Word is withdrawn once the proposal stops being editable", () => {
+    // An APPROVED or EXPORTED proposal exports through the structured snapshot,
+    // which has no Word channel, so the route answers 409. Offering the button
+    // anyway would hand the user an English-only error for a document that is
+    // meant to be authoritative as a PDF, not editable in Word.
+    expect(editor).toContain('status !== "APPROVED" && status !== "EXPORTED"');
+    // Anti-vacuous: PDF stays available at every status.
+    const pdf = /onClick=\{\(\) => exportMutation\.mutate\("pdf"\)\}/.exec(
+      editor
+    );
+    expect(pdf, "pdf action not found").toBeTruthy();
+  });
 });
 
 describe("contract panel offers a Word download", () => {

@@ -636,6 +636,10 @@ function ProposalStudioBase({
   const showDocumentPreview = mode === "print" || mode === "preview";
   const issues = validationData?.validation?.issues ?? [];
   const exportBlocked = validationData != null && !validationData.exportReady;
+  // Word is the editable copy. Once approved or exported the proposal renders
+  // from its immutable structured snapshot, which has no Word channel, so the
+  // authoritative artifact is the PDF and the route would refuse docx anyway.
+  const wordAvailable = status !== "APPROVED" && status !== "EXPORTED";
 
   return (
     <StudioShell
@@ -903,30 +907,32 @@ function ProposalStudioBase({
                 PDF
               </Button>
               {/* Word is the format procurement actually redlines and returns. */}
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-[11px] gap-1"
-                disabled={
-                  exportMutation.isPending || downloadBusy || exportBlocked
-                }
-                title={
-                  exportBlocked
-                    ? validationData?.exportBlocker?.error ??
-                      (locale === "ar"
-                        ? "أكمل التحقق أولاً"
-                        : "Complete validation first")
-                    : undefined
-                }
-                onClick={() => exportMutation.mutate("docx")}
-              >
-                {busyFormat === "docx" ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <FileText className="size-3" />
-                )}
-                Word
-              </Button>
+              {wordAvailable ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px] gap-1"
+                  disabled={
+                    exportMutation.isPending || downloadBusy || exportBlocked
+                  }
+                  title={
+                    exportBlocked
+                      ? validationData?.exportBlocker?.error ??
+                        (locale === "ar"
+                          ? "أكمل التحقق أولاً"
+                          : "Complete validation first")
+                      : undefined
+                  }
+                  onClick={() => exportMutation.mutate("docx")}
+                >
+                  {busyFormat === "docx" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <FileText className="size-3" />
+                  )}
+                  Word
+                </Button>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">
               <Input
