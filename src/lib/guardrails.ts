@@ -35,10 +35,12 @@ const PRICING_INPUT_PATTERNS: RegExp[] = [
   /\b(price|pricing|unit\s*price|bid\s*total|discount|margin|markup)\b.{0,40}\b(suggest|recommend|propose|calculate|compute)\b/i,
   /\b(how\s+much\s+should\s+(we|i)\s+(bid|charge|price))\b/i,
   /\b(commercial\s+strategy|pricing\s+strategy|win\s+price|competitive\s+price)\b/i,
-  /\b(ما\s*هو\s*السعر|اقترح\s*سعر|احسب\s*السعر|هامش\s*الربح|خصم)\b/i,
-  /اقترح\s*سعر/,
-  /احسب\s*السعر/,
-  /ما\s*هو\s*السعر/,
+  // No `\b` around Arabic: JS word boundaries are ASCII-only, so `\b` can never
+  // hold either side of an Arabic alternative and silently kills the pattern.
+  /(ما\s*هو\s*السعر|اقترح\s*سعر|احسب\s*السعر|حدد\s*سعر)/,
+  /هامش\s*(ال)?ربح/,
+  // Bare خصم also reads as an ordinary contract term, so require the ask.
+  /(نسبة|قيمة|مقدار|احسب|حدد|اقترح)\s*(ال)?خصم/,
   /\bwhat\s+(unit\s*)?price\s+should\b/i,
   /\bfill\s+(in\s+)?(the\s+)?(boq|bill\s+of\s+quantities)\s+(prices|amounts)\b/i,
 ];
@@ -49,7 +51,7 @@ const PRICING_OUTPUT_PATTERNS: RegExp[] = [
   /\b(margin|markup)\s+(of\s+)?\d+(\.\d+)?\s*%/i,
   /\b(discount\s+of\s+\d+)\b/i,
   /\bunit\s*price\s*[:=]\s*[\d,]+(\.\d+)?/i,
-  /\b(نوصي\s*بسعر|السعر\s*المقترح|هامش\s*\d+\s*%)\b/i,
+  /(نوصي\s*بسعر|السعر\s*المقترح|هامش\s*\d+(\.\d+)?\s*%)/,
 ];
 
 export function detectPricingRequest(text: string): boolean {

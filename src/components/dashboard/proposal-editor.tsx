@@ -50,6 +50,7 @@ import {
 } from "@/lib/letterhead";
 import { DocumentPreviewFrame } from "./document-preview-frame";
 import { MarkdownStudioEditor } from "./markdown-studio-editor";
+import { CopilotRail } from "./copilot-rail";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
 import type { ArtifactDownloadFormat } from "@/lib/download-artifact";
 import {
@@ -1308,18 +1309,28 @@ function ProposalStudioBase({
                 />
               </div>
             ) : (
-              <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-2">
+              <div className="flex-1 min-h-0 overflow-hidden flex gap-2">
                 {(mode === "edit" || mode === "split") && (
-                  <MarkdownStudioEditor
-                    markdown={markdown}
-                    onChange={setMarkdown}
-                    locale={propLocale}
-                    dir={propLocale === "ar" ? "rtl" : "ltr"}
-                    splitPreview={mode === "split"}
-                    brand={brandColors}
-                    letterhead={splitLetterhead}
-                    className="flex-1 min-h-0"
-                  />
+                  <>
+                    <MarkdownStudioEditor
+                      markdown={markdown}
+                      onChange={setMarkdown}
+                      locale={propLocale}
+                      dir={propLocale === "ar" ? "rtl" : "ltr"}
+                      splitPreview={mode === "split"}
+                      brand={brandColors}
+                      letterhead={splitLetterhead}
+                      className="flex-1 min-h-0"
+                    />
+                    {proposalId && (
+                      <CopilotRail
+                        proposalId={proposalId}
+                        markdown={markdown}
+                        locale={propLocale}
+                        onApply={setMarkdown}
+                      />
+                    )}
+                  </>
                 )}
               </div>
             )}

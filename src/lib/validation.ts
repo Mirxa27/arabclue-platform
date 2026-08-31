@@ -165,6 +165,16 @@ export const proposalRewriteSchema = z.object({
     .optional(),
 });
 
+/**
+ * The co-pilot reviews the editor buffer, which is usually ahead of the saved
+ * row, so the live markdown comes in the body and the id is only for authz.
+ */
+export const copilotSuggestSchema = z.object({
+  contentMd: z.string().min(1).max(500_000),
+  selection: z.string().max(200_000).optional(),
+  locale: localeSchema.optional(),
+});
+
 export const agentCancelBodySchema = z.object({
   runId: z.string().min(1),
 });

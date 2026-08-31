@@ -18,10 +18,27 @@ describe("no-pricing guardrails (Section 2)", () => {
     expect(detectPricingRequest("Improve the methodology section")).toBe(false);
   });
 
+  test("detects Arabic commercial requests the dead \\b group never caught", () => {
+    expect(detectPricingRequest("ما هامش الربح المناسب لهذا العرض؟")).toBe(true);
+    expect(detectPricingRequest("حدد نسبة الخصم للبنود")).toBe(true);
+    // A contract clause about discounts is a drafting request, not a pricing one.
+    expect(detectPricingRequest("اشرح شروط الخصم في مسودة العقد")).toBe(false);
+    expect(detectPricingRequest("حسّن قسم المنهجية")).toBe(false);
+  });
+
   test("detects pricing suggestions in output", () => {
     expect(detectPricingSuggestion("Recommended unit price is 12000 SAR")).toBe(true);
     expect(detectPricingSuggestion("You should bid at 500000")).toBe(true);
     expect(detectPricingSuggestion("QLR is 1.2 based on statements")).toBe(false);
+  });
+
+  test("detects Arabic pricing suggestions in Arabic-only output", () => {
+    // `\b` is ASCII-word-based, so it can never hold either side of an Arabic
+    // alternative — these patterns matched nothing until that was removed.
+    expect(detectPricingSuggestion("السعر المقترح لهذه الخدمة هو 500,000 ريال.")).toBe(true);
+    expect(detectPricingSuggestion("نوصي بسعر 12000 ريال للوحدة")).toBe(true);
+    expect(detectPricingSuggestion("هامش 15 % على البنود")).toBe(true);
+    expect(detectPricingSuggestion("نسبة السيولة السريعة 1.2 حسب القوائم")).toBe(false);
   });
 
   test("applyPricingInputGuardrails refuses commercial prompts", () => {
