@@ -56,6 +56,7 @@ export async function POST(
     const result = await generateCopilotSuggestions({
       contentMd: parsed.data.contentMd,
       selection: parsed.data.selection,
+      instruction: parsed.data.instruction,
       locale,
       // Read off the stored row, not the request: the contract studio saves
       // through this same resource, and a client-chosen framing would let a

@@ -172,6 +172,8 @@ export const proposalRewriteSchema = z.object({
 export const copilotSuggestSchema = z.object({
   contentMd: z.string().min(1).max(500_000),
   selection: z.string().max(200_000).optional(),
+  /** What the writer typed into the rail. Bounded here, fenced in the prompt. */
+  instruction: z.string().trim().min(1).max(2_000).optional(),
   locale: localeSchema.optional(),
 });
 

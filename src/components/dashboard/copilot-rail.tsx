@@ -12,10 +12,16 @@
  * Passes are throttled to idle, never per keystroke — a suggestion arriving
  * mid-sentence is noise, and each pass is a model call. The writer can also
  * pause the rail entirely or trigger a pass on demand.
+ *
+ * The writer can ask for something too ("tighten the delivery clause"), and
+ * highlighting a passage first scopes the request to it. An answer comes back
+ * as the same anchored cards behind the same Accept gate — asking does not open
+ * a second door into the document.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowUp,
   Check,
   Loader2,
   Pause,
@@ -40,6 +46,9 @@ import {
 const IDLE_MS = 4000;
 /** Below this much changed text, another pass is not worth a model call. */
 const MIN_DELTA_CHARS = 40;
+
+/** A pass the writer asked for, rather than one the idle timer fired. */
+type Asked = { instruction: string; selection?: string };
 
 type RailState =
   | { kind: "idle" }
@@ -93,21 +102,31 @@ export function CopilotRail({
   const [suggestions, setSuggestions] = useState<CopilotSuggestion[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [paused, setPaused] = useState(false);
+  const [ask, setAsk] = useState("");
+  // The request the visible cards are answering, so a pass triggered by a
+  // question does not look identical to one that fired on idle.
+  const [answering, setAnswering] = useState<string | null>(null);
   // What the buffer looked like when the last pass ran, so an idle tick after a
   // trivial edit does not spend another model call.
   const reviewedRef = useRef("");
   const inFlightRef = useRef(false);
 
-  const review = useCallback(async () => {
+  const review = useCallback(async (asked?: Asked) => {
     if (inFlightRef.current || !markdown.trim()) return;
     inFlightRef.current = true;
     reviewedRef.current = markdown;
+    setAnswering(asked?.instruction ?? null);
     setState({ kind: "running" });
     try {
       const res = await fetch(`/api/proposals/${proposalId}/copilot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentMd: markdown, locale }),
+        body: JSON.stringify({
+          contentMd: markdown,
+          locale,
+          ...(asked?.instruction ? { instruction: asked.instruction } : {}),
+          ...(asked?.selection ? { selection: asked.selection } : {}),
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -172,6 +191,24 @@ export function CopilotRail({
       for (const s of visible) next.add(s.id);
       return next;
     });
+  };
+
+  const submitAsk = () => {
+    const instruction = ask.trim();
+    if (!instruction || state.kind === "running") return;
+    // ponytail: the browser already tracks what the writer highlighted, so the
+    // scope of a request comes from `window.getSelection()` rather than from
+    // reaching into the editor's AST for a cursor position. It has to be text
+    // that is actually in the buffer — a selection made in the rail itself, or
+    // in any chrome around the editor, is not part of the document.
+    const picked = window.getSelection()?.toString().trim() ?? "";
+    const selection = picked && markdown.includes(picked) ? picked : undefined;
+    setAsk("");
+    // An explicit request deserves a fresh answer: without this, a card whose
+    // content matches one dismissed earlier stays hidden and the rail looks
+    // like it ignored the question.
+    setDismissed(new Set());
+    void review({ instruction, selection });
   };
 
   return (
@@ -243,6 +280,12 @@ export function CopilotRail({
       )}
 
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pe-1">
+        {answering && (
+          <p className="text-[10px] text-muted-foreground border-s-2 border-primary/40 ps-2 leading-relaxed">
+            {t(locale, "رداً على", "Answering")}: {answering}
+          </p>
+        )}
+
         {state.kind === "error" && (
           <p className="text-[11px] text-destructive border border-destructive/30 rounded-md p-2">
             {state.message}
@@ -259,19 +302,25 @@ export function CopilotRail({
           <p className="text-[11px] text-muted-foreground p-2 leading-relaxed">
             {t(
               locale,
-              "اكتب، وسيراجع المساعد المستند عندما تتوقف. لا يُطبَّق أي تعديل قبل موافقتك.",
-              "Keep writing — the co-pilot reviews when you pause. Nothing is applied until you approve it."
+              "اكتب، وسيراجع المساعد المستند عندما تتوقف — أو اطلب تعديلاً محدداً بالأسفل. لا يُطبَّق أي تعديل قبل موافقتك.",
+              "Keep writing — the co-pilot reviews when you pause, or ask it for something specific below. Nothing is applied until you approve it."
             )}
           </p>
         )}
 
         {state.kind === "ready" && visible.length === 0 && (
           <p className="text-[11px] text-muted-foreground p-2 leading-relaxed">
-            {t(
-              locale,
-              "لا توجد اقتراحات الآن. راجع المستند بنفسك قبل التقديم.",
-              "Nothing to suggest right now. Review the document yourself before submitting."
-            )}
+            {answering
+              ? t(
+                  locale,
+                  "لم يجد المساعد تعديلاً يقترحه لهذا الطلب. جرّب صياغة أدق، أو حدّد الفقرة المقصودة أولاً.",
+                  "The co-pilot had no edit to propose for that. Try a more specific request, or highlight the passage you mean first."
+                )
+              : t(
+                  locale,
+                  "لا توجد اقتراحات الآن. راجع المستند بنفسك قبل التقديم.",
+                  "Nothing to suggest right now. Review the document yourself before submitting."
+                )}
           </p>
         )}
 
@@ -343,6 +392,46 @@ export function CopilotRail({
           );
         })}
       </div>
+
+      <form
+        className="shrink-0 flex items-end gap-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitAsk();
+        }}
+      >
+        <label htmlFor="copilot-ask" className="sr-only">
+          {t(locale, "اطلب من المساعد تعديلاً", "Ask the co-pilot for a change")}
+        </label>
+        <textarea
+          id="copilot-ask"
+          rows={2}
+          value={ask}
+          onChange={(e) => setAsk(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submitAsk();
+            }
+          }}
+          placeholder={t(
+            locale,
+            "اطلب تعديلاً… (حدّد نصاً لحصر الطلب فيه)",
+            "Ask for a change… (highlight text to scope it)"
+          )}
+          className="flex-1 min-w-0 resize-none rounded-md border bg-background px-2 py-1.5 text-[11px] leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <Button
+          type="submit"
+          size="sm"
+          className="h-8 w-8 p-0 shrink-0"
+          disabled={!ask.trim() || state.kind === "running"}
+          title={t(locale, "أرسل الطلب", "Send request")}
+        >
+          <ArrowUp className="size-3.5" aria-hidden />
+          <span className="sr-only">{t(locale, "أرسل", "Send")}</span>
+        </Button>
+      </form>
 
       {state.kind === "ready" && state.model && (
         <p
