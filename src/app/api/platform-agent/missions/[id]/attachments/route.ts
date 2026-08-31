@@ -7,6 +7,7 @@ import { getOrCreateMission } from "@/lib/agents/platform/mission";
 import { stageMissionAttachment } from "@/lib/agents/platform/stage-attachment";
 import { fetchUrlAsAttachment } from "@/lib/agents/platform/connectors";
 import { normalizeAttachmentSource } from "@/lib/agents/platform/classify-attachment";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
   const { id: missionId } = await ctx.params;
   const tenant = await getTenantContext(session.user.id);
+  // Every accepted attachment runs `classifyAttachmentWithAi` before it lands,
+  // so a loop over a folder is a loop over the provider.
+  const limited = await checkAiRateLimit({
+    route: "platform-agent.attachments",
+    identifier: tenant.workspace.id,
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const locale = session.user.locale === "en" ? "en" : "ar";
   const canWrite = canWriteRole(session.user.role);
 

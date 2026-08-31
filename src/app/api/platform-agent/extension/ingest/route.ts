@@ -5,6 +5,7 @@ import { requireSession, canWriteRole } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import { getOrCreateMission } from "@/lib/agents/platform/mission";
 import { stageMissionAttachment } from "@/lib/agents/platform/stage-attachment";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,16 @@ export async function POST(req: NextRequest) {
   }
 
   const tenant = await getTenantContext(session.user.id);
+  // Same `stageMissionAttachment` spend as the attachments route, but driven by
+  // a browser extension, so a tab that reloads in a loop bills the workspace.
+  const limited = await checkAiRateLimit({
+    route: "platform-agent.extension.ingest",
+    identifier: tenant.workspace.id,
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const locale = session.user.locale === "en" ? "en" : "ar";
   const canWrite = canWriteRole(session.user.role);
 

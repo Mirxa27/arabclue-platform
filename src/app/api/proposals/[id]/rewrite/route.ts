@@ -10,6 +10,7 @@ import { systemRewrite } from "@/lib/agents/prompts";
 import type { Locale } from "@/lib/types";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { parseJsonBody, proposalRewriteSchema } from "@/lib/validation";
 import {
   applySectionRewrite,
@@ -39,6 +40,16 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { workspace } = await getTenantContext(session.user.id);
+  // Lower than the copilot's 30/min next door: that one returns short
+  // suggestions, this one asks for up to 5000 output tokens per call.
+  const limited = await checkAiRateLimit({
+    route: "ai.proposal-rewrite",
+    identifier: workspace.id,
+    limit: 10,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const { id } = await params;
   const parsed = await parseJsonBody(req, proposalRewriteSchema);
   if (!parsed.ok) return parsed.response;

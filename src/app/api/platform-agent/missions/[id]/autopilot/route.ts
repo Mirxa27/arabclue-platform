@@ -13,6 +13,7 @@ import { AGENTS } from "@/lib/constants";
 import { tr } from "@/lib/i18n";
 import { seedComplianceChecks } from "@/lib/bootstrap";
 import { runAgentPipeline } from "@/lib/agents/orchestrator";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { assertWithinQuota, QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
 import type { AgentState } from "@/lib/types";
@@ -41,6 +42,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!canWrite) {
     return jsonApiFailure("WORKSPACE_ROLE_FORBIDDEN");
   }
+
+  // Matches `agents.status.resume`: one call fans out to the whole agent
+  // pipeline, so the ceiling is deliberately far below a chat turn's.
+  const limited = await checkAiRateLimit({
+    route: "platform-agent.autopilot",
+    identifier: tenant.workspace.id,
+    limit: 6,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
 
   const mission = await getOrCreateMission({
     workspaceId: tenant.workspace.id,

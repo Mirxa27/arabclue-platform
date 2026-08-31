@@ -2,6 +2,7 @@ import { jsonApiFailure, jsonFailure } from "@/lib/api-controller";
 import { validationFailure } from "@/lib/api-failure";
 import { requireSession } from "@/lib/auth";
 import { executeVoiceLiveTool } from "@/lib/agents/platform/realtime";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { detectPricingRequest } from "@/lib/guardrails";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,18 @@ export async function POST(req: Request) {
   if (detectPricingRequest(argsText) || detectPricingRequest(toolName)) {
     return jsonApiFailure("PRICING_REFUSED");
   }
+
+  // A voice session drives these, so the ceiling has to clear human speaking
+  // pace — 30/min is one call every two seconds. Scoped to the user: the
+  // session is the thing that can loop, and the tool resolves its own tenant.
+  const limited = await checkAiRateLimit({
+    route: "platform-agent.realtime.tools",
+    identifier: session.user.id,
+    scope: "user",
+    limit: 30,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
 
   try {
     const result = await executeVoiceLiveTool(

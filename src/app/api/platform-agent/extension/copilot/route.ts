@@ -3,6 +3,7 @@ import { jsonApiFailure, jsonFailure } from "@/lib/api-controller";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { detectPricingRequest } from "@/lib/guardrails";
 import { syncMissionTranscript } from "@/lib/agents/platform/mission-transcript";
 
@@ -40,6 +41,18 @@ export async function POST(req: Request) {
   if (detectPricingRequest(text)) {
     return jsonApiFailure("PRICING_REFUSED");
   }
+
+  // Matches `platform-agent.chat` — same agent, same turn shape, different
+  // client. Scoped to the user because the workspace is only resolved below,
+  // inside the try, and paying for a tenant lookup to rate-limit is backwards.
+  const limited = await checkAiRateLimit({
+    route: "platform-agent.extension.copilot",
+    identifier: session.user.id,
+    scope: "user",
+    limit: 30,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
 
   try {
     const { getOrCreateMission } = await import(

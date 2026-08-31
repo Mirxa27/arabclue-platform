@@ -13,6 +13,7 @@ import { assertOnboardingReady, computeOnboardingSteps } from "@/lib/onboarding"
 import { ApiError, toErrorResponse } from "@/lib/api-controller";
 import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
 import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { isAgentRunStale } from "@/lib/proposal-studio";
 import {
   analyticsRequestOrigin,
@@ -40,6 +41,17 @@ export async function POST(req: NextRequest) {
       (session.user.locale === "en" ? "en" : "ar");
     const regenerateMode = parsed.data.regenerateMode;
     const targetProposalId = parsed.data.targetProposalId;
+
+    // The per-project in-progress guard below only stops a second run on the
+    // *same* project. A script iterating a workspace's projects clears it every
+    // time, so the workspace ceiling has to exist separately.
+    const limited = await checkAiRateLimit({
+      route: "agents.run",
+      identifier: workspace.id,
+      limit: 6,
+      windowMs: 60_000,
+    });
+    if (limited) return limited;
 
     if (regenerateMode && !targetProposalId) {
       return NextResponse.json(

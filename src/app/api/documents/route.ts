@@ -6,6 +6,7 @@ import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { ingestDocumentForWorkspace } from "@/lib/agents/platform/ingest-document";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import {
   analyticsRequestOrigin,
   recordDocumentAnalyticsEvent,
@@ -53,6 +54,16 @@ export async function POST(req: NextRequest) {
     }
     const { workspace } = await getTenantContext(session.user.id);
     const userId = session.user.id;
+
+    // Ingestion embeds every chunk, so one upload is many provider calls and a
+    // bulk folder drag is a burst of them.
+    const limited = await checkAiRateLimit({
+      route: "documents.ingest",
+      identifier: workspace.id,
+      limit: 20,
+      windowMs: 60_000,
+    });
+    if (limited) return limited;
 
     try {
       await assertWithinQuota(userId, "document");

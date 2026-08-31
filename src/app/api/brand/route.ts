@@ -6,6 +6,7 @@ import {
   requireWriter,
 } from "@/lib/auth";
 import { embedText } from "@/lib/llm";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext } from "@/lib/workspace-context";
 import {
@@ -208,6 +209,16 @@ export async function POST(req: NextRequest) {
   if (!brandProfile) {
     return NextResponse.json({ error: "No brand profile" }, { status: 400 });
   }
+  // Every past project written here is embedded, and PUT re-embeds on edit, so
+  // the two handlers share one budget.
+  const limited = await checkAiRateLimit({
+    route: "brand.embed",
+    identifier: workspace.id,
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const parsed = pastProjectCreateSchema.safeParse(
     await req.json().catch(() => null)
   );
@@ -275,6 +286,14 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { workspace, membershipRole } = await getTenantContext(session.user.id);
+  const limited = await checkAiRateLimit({
+    route: "brand.embed",
+    identifier: workspace.id,
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (limited) return limited;
+
   const body: unknown = await req.json().catch(() => null);
   const parsed = pastProjectUpdateSchema.safeParse(body);
   if (!parsed.success) {
