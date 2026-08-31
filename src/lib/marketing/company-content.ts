@@ -101,13 +101,13 @@ export const securityContent = {
       titleEn: "Application controls",
       titleAr: "ضوابط التطبيق",
       bulletsEn: [
-        "Immutable audit log for administrative and sensitive actions.",
+        "Append-only audit log for administrative and sensitive actions.",
         "Safe ZIP intake with path-traversal and extension guards.",
         "Export manifests with content hashes for package integrity.",
         "LLM guardrails against pricing suggestions and toxic output.",
       ],
       bulletsAr: [
-        "سجل تدقيق غير قابل للتغيير لإجراءات الإدارة والإجراءات الحساسة.",
+        "سجل تدقيق بالإضافة فقط لإجراءات الإدارة والإجراءات الحساسة.",
         "استيعاب ZIP آمن مع حماية من اجتياز المسارات والامتدادات.",
         "بيانات بيان تصدير مع بصمات محتوى لسلامة الحزمة.",
         "حواجز نماذج اللغة ضد اقتراحات التسعير والمخرجات الضارة.",

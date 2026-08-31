@@ -55,11 +55,11 @@ export const privacyContent = {
       titleEn: "Purposes and legal bases",
       titleAr: "الأغراض والأسس النظامية",
       paragraphsEn: [
-        "We process data to provide the workspace, run AI agents you initiate, enforce quotas, bill subscriptions, secure accounts, and maintain immutable audit trails for regulated environments.",
+        "We process data to provide the workspace, run AI agents you initiate, enforce quotas, bill subscriptions, secure accounts, and maintain append-only audit trails for regulated environments.",
         "Processing is based on contract performance, legitimate interests in securing multi-tenant SaaS, and — where required — consent (for example optional marketing cookies if enabled).",
       ],
       paragraphsAr: [
-        "نعالج البيانات لتقديم مساحة العمل، وتشغيل وكلاء الذكاء الاصطناعي التي تبدأها، وفرض الحصص، وفوترة الاشتراكات، وتأمين الحسابات، والحفاظ على سجلات تدقيق غير قابلة للتغيير للبيئات الخاضعة للتنظيم.",
+        "نعالج البيانات لتقديم مساحة العمل، وتشغيل وكلاء الذكاء الاصطناعي التي تبدأها، وفرض الحصص، وفوترة الاشتراكات، وتأمين الحسابات، والحفاظ على سجلات تدقيق بالإضافة فقط للبيئات الخاضعة للتنظيم.",
         "تستند المعالجة إلى تنفيذ العقد، والمصلحة المشروعة في تأمين خدمة متعددة المستأجرين، وعند الاقتضاء الموافقة (مثل ملفات ارتباط تسويقية اختيارية إن وُجدت).",
       ],
     },

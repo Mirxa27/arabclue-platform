@@ -133,8 +133,8 @@ const FEATURES = [
   {
     titleEn: "Trust you can prove",
     titleAr: "ثقة يمكنك إثباتها",
-    bodyEn: "Reviewer chain, immutable log, and PDPL/NCA-aware workflow controls. Accountability amplified.",
-    bodyAr: "سلسلة مراجعين، سجل لا يُمس، وضوابط سير عمل تراعي PDPL وNCA. مسؤوليتك، مضاعفة.",
+    bodyEn: "Reviewer chain, append-only log, and PDPL/NCA-aware workflow controls. Accountability amplified.",
+    bodyAr: "سلسلة مراجعين، سجل بالإضافة فقط، وضوابط سير عمل تراعي PDPL وNCA. مسؤوليتك، مضاعفة.",
     icon: Award,
     badgeEn: "Review trail",
     badgeAr: "سجل مراجعة",
@@ -159,13 +159,13 @@ const COMPARISON = {
     { text: "Shared requirements matrix with source links", icon: CheckCircle2 },
     { text: "Every clause traced, gaps surfaced early", icon: ShieldCheck },
     { text: "Knowledge base reuses, brand-ready export", icon: Sparkles },
-    { text: "Reviewer chain, immutable audit", icon: Award },
+    { text: "Reviewer chain, append-only audit", icon: Award },
   ],
   newAr: [
     { text: "مصفوفة متطلبات مشتركة ومرتبطة بالمصادر", icon: CheckCircle2 },
     { text: "كل فقرة متتبعة، ثغرات مبكرة", icon: ShieldCheck },
     { text: "قاعدة معرفة تُعاد، تصدير بهويتك", icon: Sparkles },
-    { text: "سلسلة مراجعين وسجل لا يُمس", icon: Award },
+    { text: "سلسلة مراجعين وسجل بالإضافة فقط", icon: Award },
   ],
 };
 

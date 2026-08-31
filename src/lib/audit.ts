@@ -1,7 +1,12 @@
 import { db } from "./db";
 
-// Immutable audit trail logger — appends to AuditLog table.
-// Every admin action, config change, login, and generation event is recorded.
+// Audit trail logger — appends to AuditLog. Every admin action, config change,
+// login, and generation event is recorded.
+//
+// Append-only by discipline, not by construction: AuditLog carries no hash
+// chain or sequence, and the app role holds UPDATE/DELETE on the table. Nothing
+// here may grow an update or delete path without that claim being revisited —
+// audit-log-claims.test.ts fails if one appears.
 
 export interface AuditContext {
   userId?: string;

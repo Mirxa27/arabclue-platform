@@ -28,8 +28,8 @@ const PILLARS = [
   },
   {
     icon: Eye,
-    titleEn: "Immutable audit trail",
-    titleAr: "سجل تدقيق غير قابل للتغيير",
+    titleEn: "Append-only audit trail",
+    titleAr: "سجل تدقيق بالإضافة فقط",
     bodyEn:
       "Administrators review project, user, and configuration actions for regulated environments.",
     bodyAr:

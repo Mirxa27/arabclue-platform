@@ -713,8 +713,8 @@ function AdminAuditView() {
         title={tr("admin_audit", locale)}
         subtitle={
           locale === "ar"
-            ? "سجل تدقيق غير قابل للتغيير"
-            : "Immutable audit trail"
+            ? "سجل تدقيق المنصة — إضافة فقط"
+            : "Platform audit trail — append-only"
         }
         locale={locale}
       />

@@ -316,7 +316,7 @@ export const localizationRegistry = {
   admin_billing: { ar: "الفوترة وإدارة الباقات", en: "Billing & Package Management" },
   admin_myfatoorah: { ar: "المدفوعات — مي فاتورة", en: "Payments — MyFatoorah" },
   admin_security: { ar: "الأمن والتحكم في الوصول", en: "Security & Access Control" },
-  admin_audit: { ar: "سجل التدقيق غير القابل للتغيير", en: "Immutable Audit Trail" },
+  admin_audit: { ar: "سجل التدقيق", en: "Audit Trail" },
   admin_active_provider: { ar: "المزود النشط", en: "Active Provider" },
   admin_temperature: { ar: "درجة الحرارة", en: "Temperature" },
   admin_max_tokens: { ar: "الحد الأقصى للرموز", en: "Max Tokens" },
