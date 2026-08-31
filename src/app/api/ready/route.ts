@@ -23,6 +23,7 @@ import {
   type AgentEngine,
 } from "@/lib/llm/model-catalog";
 import { resolveProviderApiKey } from "@/lib/env-settings";
+import { getAutonomyFlagsFromProcessEnv } from "@/lib/autonomy-flags";
 
 export const dynamic = "force-dynamic";
 
@@ -168,6 +169,19 @@ export async function GET() {
   } catch {
     checks.aiCredential = { ok: false, detail: "credential_check_failed" };
   }
+
+  // Whether a degraded provider makes this deployment refuse (`strict`) or
+  // fabricate deterministic text presented as model output (`permissive`).
+  // The deploy is the trust boundary for that switch, so nothing outside the
+  // running instance can otherwise observe which behaviour is live. Read from
+  // `process.env` deliberately: that is the same source the guard itself reads,
+  // so the probe cannot report strict while enforcement is permissive.
+  // Never gates readiness — a policy flag must not pull the site out of the
+  // load balancer.
+  checks.realAi = {
+    ok: true,
+    detail: getAutonomyFlagsFromProcessEnv().realAiOnly ? "strict" : "permissive",
+  };
 
   try {
     const mf = await getMyFatoorahPublicConfig();
