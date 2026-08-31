@@ -122,3 +122,21 @@ export function engineNote(usedFallback: boolean, locale: Locale): string {
   }
   return locale === "ar" ? "أُنتج بالذكاء الاصطناعي" : "Produced by AI";
 }
+
+/** What the run poller should do with a `/api/agents/status` response. */
+export type PollDisposition = "read" | "retry" | "stop";
+
+/**
+ * Whether a status response is worth asking about again.
+ *
+ * The poller reschedules from its own `catch`, so "throw" means "retry in
+ * 2.5s, forever". That is correct for a bad gateway and wrong for a 404: a
+ * deleted run, another workspace's run, and an expired session never become
+ * readable, and each retry repainted a destructive toast. 429 is the single
+ * 4xx that does clear on its own, so it retries with the 5xx family.
+ */
+export function statusPollDisposition(httpStatus: number): PollDisposition {
+  if (httpStatus < 400) return "read";
+  if (httpStatus === 429 || httpStatus >= 500) return "retry";
+  return "stop";
+}

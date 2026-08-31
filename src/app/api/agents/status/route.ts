@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { toErrorResponse } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   try {
     const session = await requireSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return jsonApiFailure("UNAUTHORIZED", { status: 401 });
     }
     const { workspace } = await getTenantContext(session.user.id);
     const runIdParam = req.nextUrl.searchParams.get("runId");
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
         select: { id: true },
       });
       if (!project) {
-        return NextResponse.json({ error: "not found" }, { status: 404 });
+        return jsonApiFailure("PROJECT_NOT_FOUND", { status: 404 });
       }
       run = await db.agentRun.findFirst({
         where: { projectId },
@@ -62,14 +62,11 @@ export async function GET(req: NextRequest) {
     }
 
     if (!runIdParam && !projectId) {
-      return NextResponse.json(
-        { error: "runId or projectId required" },
-        { status: 400 }
-      );
+      return jsonApiFailure("AGENT_RUN_SELECTOR_MISSING", { status: 400 });
     }
 
     if (!run || !assertWorkspaceMatch(run.project.workspaceId, workspace.id)) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+      return jsonApiFailure("AGENT_RUN_NOT_FOUND", { status: 404 });
     }
 
     const runId = run.id;
@@ -159,7 +156,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!run) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+      return jsonApiFailure("AGENT_RUN_NOT_FOUND", { status: 404 });
     }
 
     const finalArtifact = run.finalArtifact

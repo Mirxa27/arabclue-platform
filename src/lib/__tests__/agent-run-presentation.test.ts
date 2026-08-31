@@ -15,6 +15,7 @@ import { join } from "node:path";
 import {
   agentOutputText,
   runHeadlineBadge,
+  statusPollDisposition,
 } from "../agents/run-presentation";
 import { buildIngestionSummary, parseTenderText } from "../agents/ingestion";
 
@@ -132,5 +133,57 @@ describe("no developer shorthand reaches the agent cards", () => {
     expect(source).not.toMatch(/BoQ lines=/);
     expect(source).not.toMatch(/generated via/);
     expect(source).not.toMatch(/registry fallback/);
+  });
+});
+
+/**
+ * The run poller reschedules itself from its own `catch`, so any thrown
+ * failure is retried every 2.5s for as long as the panel is mounted
+ * (agent-workflow.tsx:542). That is right for a dropped connection and wrong
+ * for a 404: a deleted run, a run owned by another workspace, or an expired
+ * session can never start succeeding, so the loop repainted a destructive
+ * "Retrying automatically…" toast forever against a request with no future.
+ *
+ * Splitting the decision out of the component is the only way it gets covered
+ * — this repo's runner has no DOM, per the note at the top of
+ * `run-presentation.ts`.
+ */
+describe("statusPollDisposition", () => {
+  test("a readable response is read", () => {
+    expect(statusPollDisposition(200)).toBe("read");
+    expect(statusPollDisposition(204)).toBe("read");
+  });
+
+  test("a server failure keeps polling", () => {
+    // The run may well still be alive behind a bad gateway. Giving up here
+    // would strand a genuinely running pipeline at whatever progress it had.
+    expect(statusPollDisposition(500)).toBe("retry");
+    expect(statusPollDisposition(502)).toBe("retry");
+    expect(statusPollDisposition(504)).toBe("retry");
+  });
+
+  test("a rate limit keeps polling", () => {
+    // 429 is the one 4xx that clears on its own.
+    expect(statusPollDisposition(429)).toBe("retry");
+  });
+
+  test("a client failure stops the loop", () => {
+    // AGENT_RUN_NOT_FOUND (404) and UNAUTHORIZED (401) are the two this route
+    // actually emits; neither becomes true by asking again.
+    expect(statusPollDisposition(401)).toBe("stop");
+    expect(statusPollDisposition(403)).toBe("stop");
+    expect(statusPollDisposition(404)).toBe("stop");
+    expect(statusPollDisposition(400)).toBe("stop");
+  });
+
+  test("the component defers to it rather than re-deriving the rule", () => {
+    // A second copy of `status < 500 && status !== 429` in the component would
+    // drift away from these cases without failing anything above.
+    const component = readFileSync(
+      join(REPO_ROOT, "src/components/dashboard/agent-workflow.tsx"),
+      "utf8"
+    );
+    expect(component).toContain("statusPollDisposition(res.status)");
+    expect(component).not.toMatch(/res\.status\s*<\s*500/);
   });
 });

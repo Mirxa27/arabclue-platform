@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { toErrorResponse } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import { requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = await requireWriter();
     if (!session) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return jsonApiFailure("FORBIDDEN", { status: 403 });
     }
     const parsed = await parseJsonBody(req, agentCancelBodySchema);
     if (!parsed.ok) return parsed.response;
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       include: { project: { select: { workspaceId: true } } },
     });
     if (!run || !assertWorkspaceMatch(run.project.workspaceId, workspace.id)) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+      return jsonApiFailure("AGENT_RUN_NOT_FOUND", { status: 404 });
     }
     if (
       run.status === "COMPLETED" ||

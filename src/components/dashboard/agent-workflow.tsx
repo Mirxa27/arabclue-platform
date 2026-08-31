@@ -40,6 +40,7 @@ import {
   agentOutputText,
   engineNote,
   runHeadlineBadge,
+  statusPollDisposition,
 } from "@/lib/agents/run-presentation";
 import { AgentRunHistory } from "./agent-run-history";
 import type { AgentRunHistoryItem } from "./agent-run-history";
@@ -138,12 +139,15 @@ export function AgentWorkflow() {
       const res = await fetch(`/api/projects/${activeProjectId}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        // apiErrorText reads a bilingual `error` as well as a legacy string,
+        // so the Arabic sentence survives once this route is mapped. The
+        // typeof guard it replaces silently discarded the bilingual shape.
         throw new Error(
-          typeof err.error === "string"
-            ? err.error
-            : locale === "ar"
-              ? "تعذر تحميل المشروع"
-              : "Failed to load project"
+          apiErrorText(
+            err,
+            locale,
+            locale === "ar" ? "تعذر تحميل المشروع" : "Failed to load project"
+          )
         );
       }
       return res.json() as Promise<{
@@ -168,11 +172,11 @@ export function AgentWorkflow() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(
-          typeof err.error === "string"
-            ? err.error
-            : locale === "ar"
-              ? "تعذر تحميل المستندات"
-              : "Failed to load documents"
+          apiErrorText(
+            err,
+            locale,
+            locale === "ar" ? "تعذر تحميل المستندات" : "Failed to load documents"
+          )
         );
       }
       return res.json() as Promise<{ documents: ApiDocument[] }>;
@@ -477,15 +481,29 @@ export function AgentWorkflow() {
     const poll = async () => {
       try {
         const res = await fetch(`/api/agents/status?runId=${runId}`);
+        const data = await res.json().catch(() => null);
         if (!res.ok) {
+          // A 4xx here is permanent: the run was deleted, the workspace does
+          // not own it, or the session expired. The catch below reschedules
+          // every 2.5s, so this used to repaint a destructive "Retrying
+          // automatically…" toast forever against a request that could never
+          // succeed. Say the server's own reason once, then stop.
+          if (statusPollDisposition(res.status) === "stop") {
+            toast({
+              title:
+                locale === "ar"
+                  ? "تعذر متابعة هذا التشغيل"
+                  : "Cannot track this run",
+              description: apiErrorText(data, locale, `status ${res.status}`),
+              variant: "destructive",
+            });
+            return;
+          }
           throw new Error(`status ${res.status}`);
         }
-        const data = await res.json();
-        if (data?.error && !data?.status) {
-          throw new Error(
-            typeof data.error === "string" ? data.error : "status failed"
-          );
-        }
+        // A 200 whose body will not parse is a transient proxy failure, not a
+        // payload — let the catch retry it rather than reading null below.
+        if (!data) throw new Error("unreadable status body");
         applyStatusPayload(data);
         if (data.status === "COMPLETED") {
           const failureKind = data.finalArtifact?.failureKind;

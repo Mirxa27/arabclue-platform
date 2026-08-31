@@ -2056,6 +2056,20 @@ export const localizationRegistry = {
     ar: "لم يتم العثور على العرض",
     en: "The proposal was not found",
   },
+  PROJECT_NOT_FOUND: {
+    ar: "لم يتم العثور على المشروع",
+    en: "The project was not found",
+  },
+  AGENT_RUN_NOT_FOUND: {
+    ar: "لم يتم العثور على تشغيل الوكلاء",
+    en: "The agent run was not found",
+  },
+  // `_MISSING`, not `_REQUIRED`: resolveFailureStatus maps a `_REQUIRED`
+  // suffix to 403, and this is a malformed query, not a permission problem.
+  AGENT_RUN_SELECTOR_MISSING: {
+    ar: "حدّد معرّف التشغيل أو معرّف المشروع",
+    en: "Provide either a run id or a project id",
+  },
 
   // Contract drafts: the route surface.
   CONTRACT_DRAFT_BODY_TOO_LARGE: {
@@ -2795,6 +2809,9 @@ export const COMPLETION_ERROR_CONTRACTS = {
   FORBIDDEN: { actionKey: "error_action_access_resource", messageKey: "FORBIDDEN" },
   UNAUTHORIZED: { actionKey: "error_action_access_resource", messageKey: "UNAUTHORIZED" },
   PROPOSAL_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "PROPOSAL_NOT_FOUND" },
+  PROJECT_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "PROJECT_NOT_FOUND" },
+  AGENT_RUN_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AGENT_RUN_NOT_FOUND" },
+  AGENT_RUN_SELECTOR_MISSING: { actionKey: "error_action_run_agent", messageKey: "AGENT_RUN_SELECTOR_MISSING" },
   CONTRACT_DRAFT_BODY_TOO_LARGE: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_BODY_TOO_LARGE" },
   CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED" },
   CONTRACT_DRAFT_INVALID_CONTENT_LENGTH: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_INVALID_CONTENT_LENGTH" },
