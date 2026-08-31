@@ -123,8 +123,8 @@ const FEATURES = [
   {
     titleEn: "Exports clients love",
     titleAr: "تصدير يحبه العميل",
-    bodyEn: "PDF, XLSX, full package — AR & EN, your logo, your fonts. Etimad-ready.",
-    bodyAr: "PDF، XLSX، حزمة كاملة — عربي وإنجليزي، شعارك، خطوطك. جاهز لاعتماد.",
+    bodyEn: "PDF, XLSX, full package — AR & EN. Your colours and fonts throughout, your logo on the PDF. Technical and financial split into separate files.",
+    bodyAr: "PDF، XLSX، حزمة كاملة — عربي وإنجليزي. ألوانك وخطوطك في كل مستند، وشعارك على ملف PDF. الفني والمالي في ملفين منفصلين.",
     icon: FileText,
     badgeEn: "Branded",
     badgeAr: "بهويتك",

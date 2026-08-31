@@ -325,7 +325,7 @@ export function PublicShell({
                         <Shield className="size-4" />
                       </div>
                       <span className="min-w-0 flex-1">
-                        {locale === "ar" ? "PDPL • NCA • Etimad جاهز • تشفير كامل" : "PDPL • NCA • Etimad Ready • Encrypted"}
+                        {locale === "ar" ? "PDPL • NCA • مسار اعتماد • تشفير كامل" : "PDPL • NCA • Etimad workflow • Encrypted"}
                       </span>
                       <Lock className="size-3.5 opacity-50 shrink-0" />
                     </div>
@@ -356,8 +356,8 @@ export function PublicShell({
                 />
                 <p className={cn("mt-5 text-[13.5px] leading-[1.65] max-w-[36ch] text-pretty", isDark ? "text-white/55" : "text-muted-foreground")}>
                   {locale === "ar"
-                    ? "من الاستيعاب إلى حزمة اعتماد جاهزة للمراجعة — عربي وإنجليزي، امتثال قابل للتدقيق، بهوية علامتك."
-                    : "From RFP intake to an Etimad-ready review pack — bilingual AR/EN, auditable compliance, your brand left intact."}
+                    ? "من الاستيعاب إلى حزمة مراجعة مبنية لمناقصات اعتماد — عربي وإنجليزي، امتثال قابل للتدقيق، بهوية علامتك."
+                    : "From RFP intake to a review pack built for Etimad tenders — bilingual AR/EN, auditable compliance, your brand left intact."}
                 </p>
                 <div className="mt-6 flex flex-wrap gap-1.5">
                   {["Etimad", "NCA", "PDPL", "ZATCA", "Vision 2030"].map((b) => (

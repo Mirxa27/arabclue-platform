@@ -94,6 +94,51 @@ const CLAIMS: readonly Claim[] = [
       "كل فقرة: مغطاة، قيد العمل، مفقودة. رابط مشاركة مع الفريق — متزامن دائماً.",
     ],
   },
+  {
+    id: "logo-on-spreadsheets",
+    // Brand colour does reach every format. The logo reaches one: the PDF,
+    // via the only <img> in any export path. Naming XLSX in the same breath
+    // as "your logo" is the false part, so that adjacency is what is banned —
+    // not either phrase alone, which are both fine on their own.
+    patterns: [
+      /\bXLSX\b[^.\n]{0,60}\byour logo\b/i,
+      /\byour logo\b[^.\n]{0,60}\bXLSX\b/i,
+      /XLSX[^.\n]{0,60}شعارك/,
+      /شعارك[^.\n]{0,60}XLSX/,
+    ],
+    shipped: [
+      "PDF, XLSX, full package — AR & EN, your logo, your fonts. Etimad-ready.",
+      "PDF، XLSX، حزمة كاملة — عربي وإنجليزي، شعارك، خطوطك. جاهز لاعتماد.",
+    ],
+  },
+  {
+    id: "etimad-ready",
+    // Etimad requires the technical and financial proposals as separate
+    // uploads, normally PDF — the two-envelope split is statutory, not a UI
+    // convention (Saudi Government Tenders and Procurement Law, Royal Decree
+    // M/128). The pack splits them correctly but ships the financial envelope
+    // as a spreadsheet, so it is not uploadable as it stands.
+    //
+    // Only "Etimad" directly adjacent to "ready" is banned. "Ready for your
+    // next Etimad tender?" asks the reader a question and stays legal; naming
+    // the market is not a conformance claim.
+    // The trust bar writes the brand in Latin and the claim in Arabic, so the
+    // mixed-script form needs its own pattern — neither single-script rule
+    // sees "Etimad جاهز".
+    patterns: [
+      /etimad[- ]?ready/i,
+      /etimad\s*جاهز/i,
+      /جاهز\s*لاعتماد/,
+      /اعتماد\s*جاهز/,
+    ],
+    shipped: [
+      "PDF, XLSX, full package — AR & EN, your logo, your fonts. Etimad-ready.",
+      "PDPL • NCA • Etimad Ready • Encrypted",
+      "PDPL • NCA • Etimad جاهز • تشفير كامل",
+      "From RFP intake to an Etimad-ready review pack",
+      "من الاستيعاب إلى حزمة اعتماد جاهزة للمراجعة",
+    ],
+  },
 ];
 
 describe("customer-facing copy does not promise absent capabilities", () => {
@@ -129,6 +174,11 @@ describe("customer-facing copy does not promise absent capabilities", () => {
       "Everyone in your workspace sees the same coverage matrix.",
       "تُقرأ الصور والصفحات المصوّرة عبر OCR.",
       "المحتوى المحلي والتوطين",
+      "Your logo goes on the PDF cover.",
+      "PDF, XLSX and the full package are all bilingual.",
+      "Ready for your next Etimad tender?",
+      "شعارك على ملف PDF",
+      "جاهز لعطاءك القادم على اعتماد؟",
     ];
     const wrong = benign.filter((b) =>
       CLAIMS.some((c) => c.patterns.some((p) => p.test(b)))
@@ -160,6 +210,57 @@ describe("the capabilities behind those claims are still absent", () => {
     const schema = read("prisma/schema.prisma");
     for (const token of ["shareToken", "shareLink", "publicLink"]) {
       expect(schema, `${token} exists — the share claim may be restored`).not.toContain(token);
+    }
+  });
+
+  test("the logo still reaches only the PDF/HTML channel", () => {
+    // One <img> in one builder is the whole of it. No export library calls
+    // addImage, so XLSX and PPTX carry brand colour and nothing else.
+    for (const lib of [
+      "src/lib/generators.ts",
+      "src/lib/proposal-workbook-xlsx.ts",
+      "src/lib/proposal-layout-export.ts",
+      "src/lib/contract-export.ts",
+      "src/lib/structured-bid-package.ts",
+      "src/lib/markdown-docx.ts",
+    ]) {
+      expect(read(lib), `${lib} embeds an image — the logo claim may widen`).not.toContain(
+        "addImage"
+      );
+    }
+  });
+
+  test("the XLSX writers still never set a brand font", () => {
+    // exceljs falls back to its own default whenever `name` is unset, so the
+    // workbook comes out in Calibri however the workspace configured itself.
+    const generators = read("src/lib/generators.ts");
+    const xlsxSection = generators.slice(
+      generators.indexOf("export async function generateComplianceMatrixXLSX"),
+      generators.indexOf("export function generateSlidesHTML")
+    );
+    expect(xlsxSection.length).toBeGreaterThan(1000);
+    for (const token of ["resolveBrandFontStack", "resolveOfficeFontFace", "fontFamily"]) {
+      expect(
+        xlsxSection,
+        `XLSX now uses ${token} — the "your fonts" claim may widen`
+      ).not.toContain(token);
+    }
+  });
+
+  test("the financial envelope is still spreadsheet-only", () => {
+    // Etimad wants technical and financial uploaded separately, normally as
+    // PDF. The split is right; the financial half is not a PDF, which is the
+    // reason "Etimad-ready" had to come off the export copy.
+    for (const packager of [
+      "src/lib/generators.ts",
+      "src/lib/structured-bid-package.ts",
+    ]) {
+      const source = read(packager);
+      expect(source).toContain('zip.file("Financial_BoQ.xlsx"');
+      expect(
+        source,
+        `${packager} now emits a financial PDF — revisit the Etimad-ready claim`
+      ).not.toContain("Financial_BoQ.pdf");
     }
   });
 
