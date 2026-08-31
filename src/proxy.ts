@@ -18,7 +18,7 @@ const VERIFICATION_SURFACE_PATH = "/verify-email";
  * the edge middleware free of a user-facing literal without importing the
  * Node-only response mapper.
  */
-function bilingualFailureBody(
+export function bilingualFailureBody(
   code: Parameters<typeof getCompletionErrorContract>[0]
 ) {
   const contract = getCompletionErrorContract(code);
@@ -26,7 +26,7 @@ function bilingualFailureBody(
 }
 
 /** Public marketing + health/auth surfaces (no session required). */
-const PUBLIC_PATHS = new Set<string>([
+export const PUBLIC_PATHS = new Set<string>([
   ...PUBLIC_PAGE_PATHS,
   "/api/health",
   "/api/ready",
@@ -61,6 +61,20 @@ function isPublicPath(path: string): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * An API route that needs a session, and so must answer an unauthenticated
+ * caller in JSON rather than by redirecting to the sign-in page.
+ *
+ * `withAuth` redirects whenever `authorized` returns false. For a navigation
+ * that is right; for a `fetch` it is not — the redirect is followed, the login
+ * page returns 200 text/html, and the caller sees `res.ok` with markup for a
+ * body. A lapsed session therefore read as "could not reach the server" on
+ * every client that did not sniff the content type.
+ */
+export function isProtectedApiPath(path: string): boolean {
+  return path.startsWith("/api/") && !isPublicPath(path);
 }
 
 function isPasswordChangeAllowed(path: string): boolean {
@@ -124,6 +138,15 @@ export default withAuth(
       return response;
     }
 
+    // A fetch with no session gets an answer it can parse. 401 rather than 403:
+    // the caller is not signed in, and "Sign in to continue" is what the
+    // bilingual body says.
+    if (!token && isProtectedApiPath(path)) {
+      return NextResponse.json(bilingualFailureBody("UNAUTHORIZED"), {
+        status: 401,
+      });
+    }
+
     // Force password change before any app/API use
     if (token?.mustChangePassword && !isPasswordChangeAllowed(path)) {
       if (path.startsWith("/api/")) {
@@ -172,6 +195,9 @@ export default withAuth(
         // Application-shell paths are handled inside the middleware so the
         // requested path can be retained in a signed cookie before redirecting.
         if (isAppPath(path)) return true;
+        // Likewise for APIs, so the answer can be a JSON status instead of the
+        // sign-in page `withAuth` would redirect to.
+        if (isProtectedApiPath(path)) return true;
         return !!token;
       },
     },
