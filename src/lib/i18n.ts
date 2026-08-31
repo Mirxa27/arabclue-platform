@@ -1883,6 +1883,10 @@ export const localizationRegistry = {
     ar: "تعذر تنفيذ أداة المساعد الذكي",
     en: "The AI assistant could not run that tool",
   },
+  AI_PROVIDER_UNAVAILABLE: {
+    ar: "لا يوجد مزوّد ذكاء اصطناعي متاح الآن، ولم يتم إنشاء أي محتوى. اطلب من المشرف ربط مزوّد",
+    en: "No AI provider is available right now, so nothing was generated. Ask your administrator to connect a provider",
+  },
   EXTENSION_PACK_FAILED: {
     ar: "تعذر تجهيز حزمة الإضافة",
     en: "Could not pack the browser extension",
@@ -2481,6 +2485,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   MISSION_NOT_FOUND: { actionKey: "error_action_run_agent", messageKey: "MISSION_NOT_FOUND" },
   ONBOARDING_INCOMPLETE: { actionKey: "error_action_run_agent", messageKey: "ONBOARDING_INCOMPLETE" },
   AI_RATE_LIMITED: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMITED" },
+  AI_PROVIDER_UNAVAILABLE: { actionKey: "error_action_run_agent", messageKey: "AI_PROVIDER_UNAVAILABLE" },
   PRICING_REFUSED: { actionKey: "error_action_run_agent", messageKey: "PRICING_REFUSED" },
   LIVE_VOICE_START_FAILED: { actionKey: "error_action_run_agent", messageKey: "LIVE_VOICE_START_FAILED" },
   AGENT_TOOL_FAILED: { actionKey: "error_action_run_agent", messageKey: "AGENT_TOOL_FAILED" },

@@ -162,6 +162,9 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   RECONCILE_ALREADY_APPLIED: 409,
   COMMENT_RESOLVED: 409,
   SCHEMA_MIGRATION_PENDING: 503,
+  // No provider answered, so the surface has nothing to show. 503 says
+  // "retryable once a provider is connected", which is exactly the fix.
+  AI_PROVIDER_UNAVAILABLE: 503,
   RECURRING_UNAVAILABLE: 503,
   PRESENCE_UNAVAILABLE: 503,
   RECURRING_PROVIDER_ERROR: 502,
@@ -444,6 +447,12 @@ export function mapErrorToApiFailure(error: unknown): MappedFailure {
   const shape = legacyShape(error);
   if (shape.name === "EmailVerificationRequiredError") {
     return mappedApiFailure("EMAIL_VERIFICATION_REQUIRED");
+  }
+  // Matched by name rather than by import: this module is the leaf every route
+  // funnels into, and importing the AI layer here would pull the LLM stack into
+  // routes that never touch it.
+  if (shape.name === "ProviderUnavailableError") {
+    return mappedApiFailure("AI_PROVIDER_UNAVAILABLE");
   }
 
   return internalFailure();
