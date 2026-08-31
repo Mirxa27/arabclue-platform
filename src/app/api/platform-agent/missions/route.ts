@@ -1,3 +1,4 @@
+import { jsonApiFailure } from "@/lib/api-controller";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
   const tenant = await getTenantContext(session.user.id);
   const locale = session.user.locale === "en" ? "en" : "ar";
@@ -31,7 +32,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
   const tenant = await getTenantContext(session.user.id);
   const body = (await req.json().catch(() => ({}))) as {

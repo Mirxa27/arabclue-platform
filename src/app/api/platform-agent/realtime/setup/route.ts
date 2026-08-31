@@ -1,4 +1,4 @@
-import { redactSensitiveText } from "@/lib/api-failure";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import {
   getVoiceLiveConfig,
@@ -14,7 +14,7 @@ export const maxDuration = 60;
 export async function GET() {
   const session = await requireSession();
   if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
   const config = await getVoiceLiveConfig();
   return Response.json(config);
@@ -27,7 +27,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const session = await requireSession();
   if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
 
   // Voice sessions cost real money (~$0.06/min minimum). Bound how often a
@@ -70,11 +70,6 @@ export async function POST(req: Request) {
     return Response.json(setup);
   } catch (err) {
     console.error("[platform-agent/realtime/setup]", err);
-    return Response.json(
-      {
-        error: redactSensitiveText(err instanceof Error ? err.message : "Failed to start live voice"),
-      },
-      { status: 500 }
-    );
+    return jsonApiFailure("LIVE_VOICE_START_FAILED");
   }
 }

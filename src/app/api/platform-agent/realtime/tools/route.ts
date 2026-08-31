@@ -1,4 +1,5 @@
-import { redactSensitiveText } from "@/lib/api-failure";
+import { jsonApiFailure, jsonFailure } from "@/lib/api-controller";
+import { validationFailure } from "@/lib/api-failure";
 import { requireSession } from "@/lib/auth";
 import { executeVoiceLiveTool } from "@/lib/agents/platform/realtime";
 import { detectPricingRequest } from "@/lib/guardrails";
@@ -14,7 +15,7 @@ export const maxDuration = 120;
 export async function POST(req: Request) {
   const session = await requireSession();
   if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
 
   let body: {
@@ -26,12 +27,12 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonApiFailure("INVALID_JSON_BODY");
   }
 
   const toolName = body.toolName?.trim();
   if (!toolName) {
-    return Response.json({ error: "toolName required" }, { status: 400 });
+    return jsonFailure(validationFailure(["toolName"]));
   }
 
   const argsText =
@@ -39,14 +40,7 @@ export async function POST(req: Request) {
       ? body.args
       : JSON.stringify(body.args ?? {});
   if (detectPricingRequest(argsText) || detectPricingRequest(toolName)) {
-    return Response.json(
-      {
-        error:
-          "ArabClue does not suggest bid prices, discounts, margins, or commercial strategy.",
-        code: "PRICING_REFUSED",
-      },
-      { status: 422 }
-    );
+    return jsonApiFailure("PRICING_REFUSED");
   }
 
   try {
@@ -61,12 +55,9 @@ export async function POST(req: Request) {
     );
     return Response.json({ ok: true, result });
   } catch (err) {
+    // The thrown reason can name a provider or a document body, and the voice
+    // session speaks the response text back to the caller.
     console.error("[platform-agent/realtime/tools]", err);
-    return Response.json(
-      {
-        error: redactSensitiveText(err instanceof Error ? err.message : "Tool execution failed"),
-      },
-      { status: 500 }
-    );
+    return jsonApiFailure("AGENT_TOOL_FAILED");
   }
 }

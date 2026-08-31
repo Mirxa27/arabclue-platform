@@ -1,4 +1,4 @@
-import { redactSensitiveText } from "@/lib/api-failure";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { existsSync } from "node:fs";
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
 
   try {
@@ -42,12 +42,7 @@ export async function GET() {
       },
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: "Failed to pack extension",
-        detail: redactSensitiveText(error instanceof Error ? error.message : "Unknown error"),
-      },
-      { status: 500 },
-    );
+    console.error("[extension/download]", error);
+    return jsonApiFailure("EXTENSION_PACK_FAILED");
   }
 }

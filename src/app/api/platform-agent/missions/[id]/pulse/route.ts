@@ -1,3 +1,4 @@
+import { jsonApiFailure } from "@/lib/api-controller";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -11,13 +12,13 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function GET(_req: Request, ctx: Ctx) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
   const { id } = await ctx.params;
   const tenant = await getTenantContext(session.user.id);
   const pulse = await loadMissionPulse(id, tenant.workspace.id);
   if (!pulse) {
-    return NextResponse.json({ error: "Mission not found" }, { status: 404 });
+    return jsonApiFailure("MISSION_NOT_FOUND");
   }
   return NextResponse.json({ ok: true, pulse });
 }

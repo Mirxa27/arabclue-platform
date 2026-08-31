@@ -1,5 +1,6 @@
 "use client";
 
+import { apiErrorText, sdkErrorText } from "@/lib/api-failure-message";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
@@ -163,9 +164,7 @@ export function PlatformAgentConsole() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(
-            typeof data?.error === "string" ? data.error : defaultError
-          );
+          throw new Error(apiErrorText(data, locale, defaultError));
         }
         if (!data?.mission?.id) {
           throw new Error(defaultError);
@@ -789,7 +788,7 @@ export function PlatformAgentConsole() {
                 role="alert"
                 aria-live="assertive"
               >
-                {error.message}
+                {sdkErrorText(error, locale)}
               </div>
             ) : null}
             {!missionId ? (

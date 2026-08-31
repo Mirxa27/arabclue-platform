@@ -1,4 +1,4 @@
-import { redactSensitiveText } from "@/lib/api-failure";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { createAgentUIStreamResponse } from "ai";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
@@ -12,7 +12,7 @@ export const maxDuration = 300;
 export async function POST(req: Request) {
   const session = await requireSession();
   if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
 
   let body: {
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonApiFailure("INVALID_JSON_BODY");
   }
 
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -46,14 +46,7 @@ export async function POST(req: Request) {
     (typeof lastUser?.content === "string" ? lastUser.content : "");
 
   if (userText && detectPricingRequest(userText)) {
-    return Response.json(
-      {
-        error:
-          "ArabClue does not suggest bid prices, discounts, margins, or commercial strategy. Enter amounts in financial forms.",
-        code: "PRICING_REFUSED",
-      },
-      { status: 422 }
-    );
+    return jsonApiFailure("PRICING_REFUSED");
   }
 
   try {
@@ -123,9 +116,10 @@ export async function POST(req: Request) {
       },
     });
   } catch (err) {
+    // The internal reason stays in the server log: it can name a provider,
+    // a table, or a document body, and the console renders the response text
+    // to the reader verbatim.
     console.error("[platform-agent/chat]", err);
-    const message =
-      redactSensitiveText(err instanceof Error ? err.message : "Platform agent failed");
-    return Response.json({ error: message }, { status: 500 });
+    return jsonApiFailure("INTERNAL_ERROR");
   }
 }

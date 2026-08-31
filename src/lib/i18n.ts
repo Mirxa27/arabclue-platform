@@ -1858,6 +1858,53 @@ export const localizationRegistry = {
   INVALID_VERSION: { ar: "رقم الإصدار غير صالح", en: "Invalid version" },
   NO_BRAND_PROFILE: { ar: "لا يوجد ملف تعريف علامة تجارية", en: "No brand profile" },
 
+  // Agent surface. The chat transport renders these verbatim, so both locales
+  // must read as a finished sentence to the person in the console.
+  MISSION_NOT_FOUND: { ar: "المهمة غير موجودة", en: "Mission not found" },
+  ONBOARDING_INCOMPLETE: {
+    ar: "أكمل إعداد الحساب قبل تشغيل الوكلاء",
+    en: "Complete account setup before running the agents",
+  },
+  AI_RATE_LIMITED: {
+    ar: "تم تجاوز حد الطلبات على المساعد الذكي. انتظر قليلاً ثم أعد المحاولة",
+    en: "Too many AI assistant requests. Wait a moment and try again",
+  },
+  PRICING_REFUSED: {
+    ar: "لا تقترح أرابكلو أسعار العطاءات أو الخصومات أو الهوامش أو الاستراتيجية التجارية. أدخل المبالغ في النماذج المالية",
+    en: "ArabClue does not suggest bid prices, discounts, margins, or commercial strategy. Enter amounts in the financial forms",
+  },
+  LIVE_VOICE_START_FAILED: {
+    ar: "تعذر بدء الجلسة الصوتية المباشرة",
+    en: "Could not start the live voice session",
+  },
+  AGENT_TOOL_FAILED: {
+    ar: "تعذر تنفيذ أداة المساعد الذكي",
+    en: "The AI assistant could not run that tool",
+  },
+  EXTENSION_PACK_FAILED: {
+    ar: "تعذر تجهيز حزمة الإضافة",
+    en: "Could not pack the browser extension",
+  },
+
+  // Plan limits. The reader has to know which limit they hit and that the fix
+  // is an upgrade, so each kind gets its own sentence.
+  QUOTA_DOCUMENTS_EXCEEDED: {
+    ar: "بلغت الحد الأقصى للمستندات في باقتك. رقِّ الباقة لرفع الحد",
+    en: "You have reached the document limit on your plan. Upgrade to raise it",
+  },
+  QUOTA_PROPOSALS_EXCEEDED: {
+    ar: "بلغت الحد الأقصى للعروض في باقتك. رقِّ الباقة لرفع الحد",
+    en: "You have reached the proposal limit on your plan. Upgrade to raise it",
+  },
+  QUOTA_TOKENS_EXCEEDED: {
+    ar: "بلغت الحد الأقصى لاستخدام الذكاء الاصطناعي في باقتك. رقِّ الباقة لرفع الحد",
+    en: "You have reached the AI usage limit on your plan. Upgrade to raise it",
+  },
+  SUBSCRIPTION_INACTIVE: {
+    ar: "اشتراكك غير نشط. جدِّد الاشتراك لمتابعة العمل",
+    en: "Your subscription is not active. Renew it to continue",
+  },
+
   // Action prefixes used by the stable bilingual error contract builder
   error_action_register_account: { ar: "تعذر إنشاء الحساب", en: "Unable to create the account" },
   error_action_verify_email: { ar: "تعذر التحقق من البريد الإلكتروني", en: "Unable to verify the email address" },
@@ -1882,6 +1929,7 @@ export const localizationRegistry = {
   error_action_access_resource: { ar: "تعذر الوصول إلى المورد", en: "Unable to access the resource" },
   error_action_validate_document_language: { ar: "تعذر التحقق من لغة المستند", en: "Unable to validate the document language" },
   error_action_complete_request: { ar: "تعذر إكمال الطلب", en: "Unable to complete the request" },
+  error_action_run_agent: { ar: "تعذر تنفيذ طلب المساعد الذكي", en: "Unable to complete the AI assistant request" },
   error_action_manage_mfa: { ar: "تعذر تنفيذ إجراء المصادقة الثنائية", en: "Unable to complete the MFA action" },
   error_action_change_password: { ar: "تعذر تغيير كلمة المرور", en: "Unable to change the password" },
 } as const satisfies Dict;
@@ -2428,6 +2476,17 @@ export const COMPLETION_ERROR_CONTRACTS = {
   INVALID_REQUEST: { actionKey: "error_action_validate_request", messageKey: "INVALID_REQUEST" },
   INVALID_VERSION: { actionKey: "error_action_complete_request", messageKey: "INVALID_VERSION" },
   NO_BRAND_PROFILE: { actionKey: "error_action_complete_request", messageKey: "NO_BRAND_PROFILE" },
+  MISSION_NOT_FOUND: { actionKey: "error_action_run_agent", messageKey: "MISSION_NOT_FOUND" },
+  ONBOARDING_INCOMPLETE: { actionKey: "error_action_run_agent", messageKey: "ONBOARDING_INCOMPLETE" },
+  AI_RATE_LIMITED: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMITED" },
+  PRICING_REFUSED: { actionKey: "error_action_run_agent", messageKey: "PRICING_REFUSED" },
+  LIVE_VOICE_START_FAILED: { actionKey: "error_action_run_agent", messageKey: "LIVE_VOICE_START_FAILED" },
+  AGENT_TOOL_FAILED: { actionKey: "error_action_run_agent", messageKey: "AGENT_TOOL_FAILED" },
+  EXTENSION_PACK_FAILED: { actionKey: "error_action_complete_request", messageKey: "EXTENSION_PACK_FAILED" },
+  QUOTA_DOCUMENTS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_DOCUMENTS_EXCEEDED" },
+  QUOTA_PROPOSALS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_PROPOSALS_EXCEEDED" },
+  QUOTA_TOKENS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_TOKENS_EXCEEDED" },
+  SUBSCRIPTION_INACTIVE: { actionKey: "error_action_complete_request", messageKey: "SUBSCRIPTION_INACTIVE" },
 } as const satisfies Readonly<Record<string, ErrorContractDefinition>>;
 
 export type CompletionErrorCode = keyof typeof COMPLETION_ERROR_CONTRACTS;

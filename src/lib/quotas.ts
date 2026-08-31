@@ -1,4 +1,5 @@
 import { db } from "./db";
+import type { CompletionErrorCode } from "./i18n";
 
 export class QuotaExceededError extends Error {
   constructor(
@@ -8,6 +9,28 @@ export class QuotaExceededError extends Error {
     super(message);
     this.name = "QuotaExceededError";
   }
+}
+
+const QUOTA_FAILURE_CODES = {
+  DOCUMENTS: "QUOTA_DOCUMENTS_EXCEEDED",
+  PROPOSALS: "QUOTA_PROPOSALS_EXCEEDED",
+  TOKENS: "QUOTA_TOKENS_EXCEEDED",
+  INACTIVE: "SUBSCRIPTION_INACTIVE",
+} as const satisfies Readonly<
+  Record<QuotaExceededError["code"], CompletionErrorCode>
+>;
+
+/**
+ * Bilingual failure code for an exhausted allowance.
+ *
+ * `QuotaExceededError.message` is an internal English string; a route must
+ * answer with this code so the reader learns which limit they hit in their own
+ * language.
+ */
+export function quotaFailureCode(
+  error: QuotaExceededError
+): CompletionErrorCode {
+  return QUOTA_FAILURE_CODES[error.code];
 }
 
 /** Enforce subscription plan limits before billable actions */

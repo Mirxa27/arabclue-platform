@@ -6,8 +6,9 @@
  * per-workspace budget that is far above legitimate interactive use but
  * catches automated abuse quickly.
  */
-import { NextResponse } from "next/server";
+import type { NextResponse } from "next/server";
 import { rateLimitAsync } from "@/lib/rate-limit";
+import { jsonApiFailure } from "@/lib/api-controller";
 
 export type AiRateLimitScope = "workspace" | "user";
 
@@ -35,16 +36,5 @@ export async function checkAiRateLimit(
   });
   if (rl.ok) return null;
   const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000));
-  return NextResponse.json(
-    {
-      error: "Rate limit exceeded",
-      retryAfterSeconds,
-    },
-    {
-      status: 429,
-      headers: {
-        "Retry-After": String(retryAfterSeconds),
-      },
-    }
-  );
+  return jsonApiFailure("AI_RATE_LIMITED", { retryAfterSeconds });
 }

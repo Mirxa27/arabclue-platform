@@ -1,4 +1,5 @@
-import { redactSensitiveText } from "@/lib/api-failure";
+import { validationFailure } from "@/lib/api-failure";
+import { jsonApiFailure, jsonFailure } from "@/lib/api-controller";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
@@ -16,7 +17,7 @@ export const maxDuration = 120;
 export async function POST(req: Request) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
 
   let body: {
@@ -28,23 +29,16 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonApiFailure("INVALID_JSON_BODY");
   }
 
   const text = String(body.text || body.message || "").trim();
   if (!text) {
-    return NextResponse.json({ error: "text is required" }, { status: 400 });
+    return jsonFailure(validationFailure(["text"]));
   }
 
   if (detectPricingRequest(text)) {
-    return NextResponse.json(
-      {
-        error:
-          "ArabClue does not suggest bid prices, discounts, margins, or commercial strategy. Enter amounts in financial forms.",
-        code: "PRICING_REFUSED",
-      },
-      { status: 422 }
-    );
+    return jsonApiFailure("PRICING_REFUSED");
   }
 
   try {
@@ -113,9 +107,9 @@ export async function POST(req: Request) {
       missionUrl: `/app?view=copilot&mission=${encodeURIComponent(missionId)}`,
     });
   } catch (err) {
+    // The reason stays server-side: the extension renders the response body
+    // text to the reader.
     console.error("[extension/copilot]", err);
-    const message =
-      redactSensitiveText(err instanceof Error ? err.message : "Extension copilot failed");
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonApiFailure("INTERNAL_ERROR");
   }
 }

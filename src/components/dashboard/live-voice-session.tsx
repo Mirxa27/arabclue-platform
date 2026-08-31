@@ -1,6 +1,6 @@
 "use client";
 
-import { apiErrorText } from "@/lib/api-failure-message";
+import { apiErrorText, sdkErrorText } from "@/lib/api-failure-message";
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -159,7 +159,20 @@ export function LiveVoiceSession({
     model,
     api: { token: tokenUrl },
     sessionConfig,
-    onError: (err) => setError(err.message),
+    onError: (err) => {
+      // The transport throws the raw response text; the mapped body carries the
+      // reader's language, so keep the raw reason in the console only.
+      console.error("[live-voice]", err);
+      setError(
+        sdkErrorText(
+          err,
+          locale,
+          ar
+            ? "تعذّر تشغيل الجلسة الصوتية المباشرة"
+            : "The live voice session could not run"
+        )
+      );
+    },
     onToolCall: async ({ toolCall }) => {
       const res = await fetch("/api/platform-agent/realtime/tools", {
         method: "POST",
@@ -331,11 +344,16 @@ export function LiveVoiceSession({
         /* ignore partial connect */
       }
       setError(
-        err instanceof Error
-          ? err.message
-          : ar
-            ? "فشل بدء الصوت المباشر"
-            : "Failed to start live voice"
+        sdkErrorText(
+          err,
+          locale,
+          // Mic failures already arrive localized from micErrorMessage.
+          err instanceof Error && err.message
+            ? err.message
+            : ar
+              ? "فشل بدء الصوت المباشر"
+              : "Failed to start live voice"
+        )
       );
     } finally {
       setStarting(false);

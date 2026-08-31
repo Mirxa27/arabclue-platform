@@ -1,4 +1,5 @@
-import { redactSensitiveText } from "@/lib/api-failure";
+import { validationFailure } from "@/lib/api-failure";
+import { jsonApiFailure, jsonFailure } from "@/lib/api-controller";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession, canWriteRole } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -6,7 +7,7 @@ import { getOrCreateMission } from "@/lib/agents/platform/mission";
 import { stageMissionAttachment } from "@/lib/agents/platform/stage-attachment";
 import { fetchUrlAsAttachment } from "@/lib/agents/platform/connectors";
 import { normalizeAttachmentSource } from "@/lib/agents/platform/classify-attachment";
-import { QuotaExceededError } from "@/lib/quotas";
+import { QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -16,7 +17,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function POST(req: NextRequest, ctx: Ctx) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
   const { id: missionId } = await ctx.params;
   const tenant = await getTenantContext(session.user.id);
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     locale,
   });
   if (mission.id !== missionId) {
-    return NextResponse.json({ error: "Mission not found" }, { status: 404 });
+    return jsonApiFailure("MISSION_NOT_FOUND");
   }
 
   try {
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const form = await req.formData();
       const file = form.get("file");
       if (!file || !(file instanceof File)) {
-        return NextResponse.json({ error: "file is required" }, { status: 400 });
+        return jsonFailure(validationFailure(["file"]));
       }
       const source = normalizeAttachmentSource(
         String(form.get("source") || "upload"),
@@ -111,21 +112,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json(result);
     }
 
-    return NextResponse.json(
-      { error: "Provide multipart file, url, or text" },
-      { status: 400 }
-    );
+    return jsonFailure(validationFailure(["file", "url", "text"]));
   } catch (err) {
     if (err instanceof QuotaExceededError) {
-      return NextResponse.json(
-        { error: err.message, code: err.code },
-        { status: 402 }
-      );
+      return jsonApiFailure(quotaFailureCode(err));
     }
     console.error("[mission attachments]", err);
-    return NextResponse.json(
-      { error: redactSensitiveText(err instanceof Error ? err.message : "failed") },
-      { status: 500 }
-    );
+    return jsonApiFailure("INTERNAL_ERROR");
   }
 }

@@ -103,6 +103,36 @@ export function apiErrorText(
   );
 }
 
+/**
+ * Displayable text for an error thrown by an AI SDK hook.
+ *
+ * The chat and realtime transports do not parse a non-OK response; they throw
+ * `new Error(await response.text())`, so the failure body arrives as a JSON
+ * string inside `.message`. Rendering that message shows the reader the raw
+ * body. Anything that is not JSON is a transport string ("Failed to fetch") or
+ * an upstream HTML error page — untranslated and not worth showing — so the
+ * caller's fallback is used and the raw text stays in the console.
+ */
+export function sdkErrorText(
+  error: unknown,
+  locale: Locale,
+  fallback?: string
+): string {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  let body: unknown = null;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    body = null;
+  }
+  return apiErrorText(body, locale, fallback);
+}
+
 /** Stable code of a failure body, or `null` when the body carries none. */
 export function selectApiFailureCode(body: unknown): string | null {
   if (!body || typeof body !== "object") return null;

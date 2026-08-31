@@ -1,10 +1,11 @@
-import { redactSensitiveText } from "@/lib/api-failure";
+import { validationFailure } from "@/lib/api-failure";
+import { jsonApiFailure, jsonFailure } from "@/lib/api-controller";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession, canWriteRole } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import { getOrCreateMission } from "@/lib/agents/platform/mission";
 import { stageMissionAttachment } from "@/lib/agents/platform/stage-attachment";
-import { QuotaExceededError } from "@/lib/quotas";
+import { QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,10 +18,7 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json(
-      { error: "Unauthorized — sign in at arabclue.com first" },
-      { status: 401 }
-    );
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
 
   const tenant = await getTenantContext(session.user.id);
@@ -158,10 +156,7 @@ export async function POST(req: NextRequest) {
 
     const text = (body.text || "").trim();
     if (!text) {
-      return NextResponse.json(
-        { error: "text or screenshotDataUrl is required" },
-        { status: 400 }
-      );
+      return jsonFailure(validationFailure(["text", "screenshotDataUrl"]));
     }
 
     const header = [
@@ -208,16 +203,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     if (err instanceof QuotaExceededError) {
-      return NextResponse.json(
-        { error: err.message, code: err.code },
-        { status: 402 }
-      );
+      return jsonApiFailure(quotaFailureCode(err));
     }
     console.error("[extension ingest]", err);
-    return NextResponse.json(
-      { error: redactSensitiveText(err instanceof Error ? err.message : "failed") },
-      { status: 500 }
-    );
+    return jsonApiFailure("INTERNAL_ERROR");
   }
 }
 

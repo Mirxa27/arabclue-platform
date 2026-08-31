@@ -9,6 +9,7 @@ import type {
 } from "../types";
 import { DEFAULT_SETTINGS, MSG, STORAGE } from "../constants";
 import { normalizeApiBase, dataUrlToBlob } from "../utils";
+import { apiErrorText } from "../shared/api-error";
 import { fetchDocumentAsBase64 } from "./downloader";
 
 async function queueFailedTender(tender: EtimadTender, reason: string): Promise<void> {
@@ -19,6 +20,12 @@ async function queueFailedTender(tender: EtimadTender, reason: string): Promise<
 async function getApiBase(): Promise<string> {
   const stored = await chrome.storage.sync.get({ apiBase: DEFAULT_SETTINGS.apiBase });
   return normalizeApiBase(stored.apiBase as string);
+}
+
+/** Reader language, used to pick the side of a bilingual failure body. */
+async function getLocale(): Promise<"ar" | "en"> {
+  const stored = await chrome.storage.sync.get({ locale: DEFAULT_SETTINGS.locale });
+  return stored.locale === "en" ? "en" : "ar";
 }
 
 /** Emit AGENT_EVENT to arabclue tabs so bridge fires extension-ingest */
@@ -58,6 +65,7 @@ export async function ingestTender(
   options: { skipQueue?: boolean } = {}
 ): Promise<ProposalPrepResult> {
   const base = await getApiBase();
+  const locale = await getLocale();
 
   const payload = {
     mode: "tender" as const,
@@ -101,13 +109,13 @@ export async function ingestTender(
 
     if (res.status === 401 || (!res.ok && isNetworkish(res.status))) {
       if (!options.skipQueue) {
-        await queueFailedTender(tender, (data.error as string) || `HTTP ${res.status}`);
+        await queueFailedTender(tender, apiErrorText(data, locale, `HTTP ${res.status}`));
       }
       return {
         ok: false,
         queued: true,
         status: res.status,
-        error: (data.error as string) || `Ingest failed (${res.status})`,
+        error: apiErrorText(data, locale, `Ingest failed (${res.status})`),
         message: res.status === 401 ? "Unauthorized — sign in first" : "Queued for retry",
       };
     }
@@ -116,8 +124,8 @@ export async function ingestTender(
       return {
         ok: false,
         status: res.status,
-        error: (data.error as string) || `Ingest failed (${res.status})`,
-        message: (data.error as string) || "Failed to ingest tender",
+        error: apiErrorText(data, locale, `Ingest failed (${res.status})`),
+        message: apiErrorText(data, locale, "Failed to ingest tender"),
       };
     }
 
@@ -159,6 +167,7 @@ export async function ingestCapture(
   options: { skipQueue?: boolean } = {}
 ): Promise<ProposalPrepResult> {
   const base = await getApiBase();
+  const locale = await getLocale();
   try {
     const res = await fetch(`${base}/api/platform-agent/extension/ingest`, {
       method: "POST",
@@ -171,13 +180,13 @@ export async function ingestCapture(
     if (res.status === 401 || (!res.ok && isNetworkish(res.status))) {
       if (!options.skipQueue) {
         const { enqueueCapture } = await import("./queue");
-        await enqueueCapture(payload, (data.error as string) || `HTTP ${res.status}`);
+        await enqueueCapture(payload, apiErrorText(data, locale, `HTTP ${res.status}`));
       }
       return {
         ok: false,
         queued: true,
         status: res.status,
-        error: (data.error as string) || `Capture ingest failed (${res.status})`,
+        error: apiErrorText(data, locale, `Capture ingest failed (${res.status})`),
         message: res.status === 401 ? "Unauthorized — sign in first" : "Queued for retry",
       };
     }
@@ -185,8 +194,8 @@ export async function ingestCapture(
       return {
         ok: false,
         status: res.status,
-        error: (data.error as string) || `Capture ingest failed (${res.status})`,
-        message: (data.error as string) || "Failed to ingest capture",
+        error: apiErrorText(data, locale, `Capture ingest failed (${res.status})`),
+        message: apiErrorText(data, locale, "Failed to ingest capture"),
       };
     }
     const missionId = data.missionId as string | undefined;
@@ -318,6 +327,7 @@ export async function sendCopilotChat(
   missionId?: string
 ): Promise<CopilotChatResult> {
   const base = await getApiBase();
+  const locale = await getLocale();
   let resolvedMission = missionId;
   if (!resolvedMission) {
     const stored = await chrome.storage.local.get({ [STORAGE.LAST_MISSION]: null });
@@ -346,7 +356,7 @@ export async function sendCopilotChat(
       if (res.status === 404) {
         return sendCopilotChatViaStream(text, resolvedMission, base);
       }
-      return { ok: false, error: (data.error as string) || `Chat failed (${res.status})` };
+      return { ok: false, error: apiErrorText(data, locale, `Chat failed (${res.status})`) };
     }
 
     if (data.missionId) resolvedMission = data.missionId as string;
@@ -377,6 +387,7 @@ async function sendCopilotChatViaStream(
   missionId: string | undefined,
   base: string
 ): Promise<CopilotChatResult> {
+  const locale = await getLocale();
   try {
     const res = await fetch(`${base}/api/platform-agent/chat`, {
       method: "POST",
@@ -406,7 +417,7 @@ async function sendCopilotChatViaStream(
     if (contentType.includes("application/json")) {
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
       if (!res.ok) {
-        return { ok: false, error: (data.error as string) || `Chat failed (${res.status})` };
+        return { ok: false, error: apiErrorText(data, locale, `Chat failed (${res.status})`) };
       }
       reply = String(data.reply || data.message || data.text || "").trim();
       if (data.missionId) resolvedMission = data.missionId as string;

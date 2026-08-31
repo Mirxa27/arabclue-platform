@@ -1,3 +1,5 @@
+import { ApiError, jsonApiFailure, jsonFailure } from "@/lib/api-controller";
+import { mapErrorToApiFailure } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession, canWriteRole } from "@/lib/auth";
 import {
@@ -11,9 +13,8 @@ import { AGENTS } from "@/lib/constants";
 import { tr } from "@/lib/i18n";
 import { seedComplianceChecks } from "@/lib/bootstrap";
 import { runAgentPipeline } from "@/lib/agents/orchestrator";
-import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
+import { assertWithinQuota, QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
-import { ApiError } from "@/lib/api-controller";
 import type { AgentState } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function POST(req: NextRequest, ctx: Ctx) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("AUTHENTICATION_REQUIRED");
   }
 
   const { id: missionId } = await ctx.params;
@@ -38,10 +39,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const canWrite = canWriteRole(session.user.role);
 
   if (!canWrite) {
-    return NextResponse.json(
-      { error: "Read-only role cannot start autopilot" },
-      { status: 403 }
-    );
+    return jsonApiFailure("WORKSPACE_ROLE_FORBIDDEN");
   }
 
   const mission = await getOrCreateMission({
@@ -50,7 +48,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     locale,
   });
   if (mission.id !== missionId) {
-    return NextResponse.json({ error: "Mission not found" }, { status: 404 });
+    return jsonApiFailure("MISSION_NOT_FOUND");
   }
 
   const body = (await req.json().catch(() => ({}))) as {
@@ -68,7 +66,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     await assertOnboardingReady(tenant.workspace.id);
   } catch (e) {
     if (e instanceof ApiError) {
-      return NextResponse.json({ error: e.message, code: e.code }, { status: 422 });
+      return jsonFailure(mapErrorToApiFailure(e));
     }
     throw e;
   }
@@ -77,7 +75,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     await assertWithinQuota(session.user.id, "proposal");
   } catch (e) {
     if (e instanceof QuotaExceededError) {
-      return NextResponse.json({ error: e.message, code: "QUOTA" }, { status: 429 });
+      return jsonApiFailure(quotaFailureCode(e));
     }
     throw e;
   }

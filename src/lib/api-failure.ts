@@ -168,6 +168,18 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   XLSX_EXPORT_FAILED: 500,
   NOTIFICATION_DELIVERY_FAILED: 500,
   INTERNAL_ERROR: 500,
+  // A refused request is well-formed and understood, so it is 422 rather than
+  // the 400 the default suffix rules would give it.
+  PRICING_REFUSED: 422,
+  LIVE_VOICE_START_FAILED: 500,
+  AGENT_TOOL_FAILED: 500,
+  EXTENSION_PACK_FAILED: 500,
+  // Plan limits answer 402: the request is well-formed and the caller is
+  // authorized, but the allowance is spent and the fix is a payment.
+  QUOTA_DOCUMENTS_EXCEEDED: 402,
+  QUOTA_PROPOSALS_EXCEEDED: 402,
+  QUOTA_TOKENS_EXCEEDED: 402,
+  SUBSCRIPTION_INACTIVE: 402,
 };
 
 /**
