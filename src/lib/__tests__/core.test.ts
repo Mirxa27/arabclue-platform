@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { parseTenderText, sanitizeText } from "../agents/ingestion";
 import { parseFinancialText, runFinancialAgent } from "../agents/financial";
 import { computeQuickLiquidityRatio, SLA_PENALTY_RULES } from "../procurement-rules";
-import { localEmbedText } from "../llm";
+import { localEmbedText } from "./support/dense-vector-fixture";
 import { cosineDense, retrieveRelevant } from "../rag";
 import { canGrantRole } from "../auth";
 import { generateSlidesHTML } from "../generators";

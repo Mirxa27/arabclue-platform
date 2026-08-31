@@ -3,7 +3,7 @@ import { hydrateUiMessages } from "@/lib/agents/platform/mission-transcript";
 import { isImageMime } from "@/lib/agents/ocr-image";
 import { chunkText } from "@/lib/document-chunks";
 import { retrieveRelevant } from "@/lib/rag";
-import { localEmbedText } from "@/lib/llm";
+import { localEmbedText } from "./support/dense-vector-fixture";
 
 describe("mission transcript hydrate", () => {
   test("restores parts and ids from stored JSON", () => {

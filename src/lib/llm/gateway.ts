@@ -9,11 +9,14 @@
  * up with a working copilot and a dead agent pipeline.
  */
 
-import { gateway, generateText } from "ai";
+import { embed, gateway, generateText } from "ai";
 import type { LLMMessage } from "../guardrails";
 
 /** Live gateway sonnet id (fetched 2026-07-22 from ai-gateway.vercel.sh/v1/models). */
 export const GATEWAY_MODEL_ID = "anthropic/claude-sonnet-5";
+
+/** Live gateway embedding id (fetched 2026-08-31 from ai-gateway.vercel.sh/v1/models). */
+export const GATEWAY_EMBEDDING_MODEL_ID = "openai/text-embedding-3-small";
 
 /**
  * Read synchronously and never cached: a deploy is the trust boundary, and an
@@ -60,4 +63,17 @@ export async function callGateway(
     tokensUsed: result.usage?.totalTokens ?? 0,
     truncated: result.finishReason === "length",
   };
+}
+
+/**
+ * Dense embedding for RAG. Throws on failure so `embedText` can report absence
+ * rather than substituting a vector the retrieval layer cannot distinguish from
+ * a real one.
+ */
+export async function embedViaGateway(text: string): Promise<number[]> {
+  const { embedding } = await embed({
+    model: gateway.textEmbeddingModel(GATEWAY_EMBEDDING_MODEL_ID),
+    value: text,
+  });
+  return embedding;
 }

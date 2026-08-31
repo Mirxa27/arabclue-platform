@@ -54,7 +54,7 @@ export async function indexDocumentChunks(opts: {
         projectId: opts.projectId,
         chunkIndex: i,
         content,
-        embeddingJson: JSON.stringify(embedding),
+        embeddingJson: embedding ? JSON.stringify(embedding) : null,
       },
     });
   }
@@ -156,7 +156,12 @@ export async function searchWorkspaceChunks(opts: {
 
   return {
     totalIndexed: rows.length,
-    mode: hasEmbeddings && hits.some((h) => h.score > 0) ? "embedding" : "lexical",
+    // Without a real query vector `retrieveRelevant` scored lexically, whatever
+    // the stored chunks carry.
+    mode:
+      queryEmbedding && hasEmbeddings && hits.some((h) => h.score > 0)
+        ? "embedding"
+        : "lexical",
     hits: hits.map((h) => {
       const row = byId.get(h.id)!;
       return {

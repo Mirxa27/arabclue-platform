@@ -22,7 +22,12 @@ import {
   withRetries,
   type LLMFailureKind,
 } from "./resilience";
-import { GATEWAY_MODEL_ID, callGateway, gatewayAvailable } from "./gateway";
+import {
+  GATEWAY_MODEL_ID,
+  callGateway,
+  embedViaGateway,
+  gatewayAvailable,
+} from "./gateway";
 
 export type { LLMFailureKind } from "./resilience";
 
@@ -496,44 +501,15 @@ async function callAnthropic(
   }
 }
 
-const LOCAL_EMBED_DIM = 256;
-
 /**
- * Deterministic local bag-of-hashed-ngrams embedding.
- * Used when OpenAI embeddings are unavailable so RAG still has dense vectors.
+ * Embed text via the EMBEDDING engine provider, then via the AI Gateway.
+ *
+ * Returns `null` when neither answered. Callers must not substitute a stand-in
+ * vector: once written to `embeddingJson` it is indistinguishable on read from
+ * a model-produced one, and `retrieveRelevant` already degrades honestly to
+ * lexical TF cosine when the query embedding is null.
  */
-export function localEmbedText(text: string, dim = LOCAL_EMBED_DIM): number[] {
-  const vec = new Array<number>(dim).fill(0);
-  const tokens = text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((t) => t.length > 1);
-  for (const token of tokens) {
-    let h = 2166136261;
-    for (let i = 0; i < token.length; i++) {
-      h ^= token.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    const idx = Math.abs(h) % dim;
-    vec[idx] += 1;
-    if (token.length > 3) {
-      let h2 = 2166136261;
-      for (let i = 0; i < Math.min(token.length, 6); i++) {
-        h2 ^= token.charCodeAt(i);
-        h2 = Math.imul(h2, 16777619);
-      }
-      vec[Math.abs(h2) % dim] += 0.5;
-    }
-  }
-  let norm = 0;
-  for (const v of vec) norm += v * v;
-  norm = Math.sqrt(norm) || 1;
-  return vec.map((v) => v / norm);
-}
-
-/** Embed text via EMBEDDING engine provider; otherwise local dense embedding */
-export async function embedText(text: string): Promise<number[]> {
+export async function embedText(text: string): Promise<number[] | null> {
   const trimmed = text.slice(0, 8000);
   try {
     const provider = await getProviderForEngine("EMBEDDING");
@@ -593,9 +569,18 @@ export async function embedText(text: string): Promise<number[]> {
       }
     }
   } catch {
-    /* fall through to local */
+    /* fall through to the gateway */
   }
-  return localEmbedText(trimmed);
+
+  if (gatewayAvailable()) {
+    try {
+      const emb = await embedViaGateway(trimmed);
+      if (emb.length) return emb;
+    } catch {
+      /* nothing left to try */
+    }
+  }
+  return null;
 }
 
 function estimateTokens(text: string): number {

@@ -560,10 +560,12 @@ export async function runAgentPipeline(opts: {
         : null;
       if (!embedding?.length) {
         embedding = await embedText(`${p.title}\n${p.summary}\n${p.sector ?? ""}\n${p.tags ?? ""}`);
-        await db.pastProject.update({
-          where: { id: p.id },
-          data: { embeddingJson: JSON.stringify(embedding) },
-        });
+        if (embedding) {
+          await db.pastProject.update({
+            where: { id: p.id },
+            data: { embeddingJson: JSON.stringify(embedding) },
+          });
+        }
       }
       ragDocs.push({
         id: p.id,

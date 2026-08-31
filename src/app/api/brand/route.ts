@@ -260,7 +260,7 @@ export async function POST(req: NextRequest) {
       summary: body.summary,
       summaryAr: body.summaryAr,
       tags: body.tags,
-      embeddingJson: JSON.stringify(embedding),
+      embeddingJson: embedding ? JSON.stringify(embedding) : null,
       ...markKnowledgeContentUnreviewed(
         pastProjectKnowledgeContent({
           ...body,
@@ -321,7 +321,7 @@ export async function PUT(req: NextRequest) {
   const data: {
     title?: string;
     summary?: string;
-    embeddingJson?: string;
+    embeddingJson?: string | null;
     approved?: boolean;
     reviewStatus?: "UNREVIEWED" | "APPROVED" | "REVOKED";
     evidenceRef?: string | null;
@@ -395,18 +395,18 @@ export async function PUT(req: NextRequest) {
     if (parsed.data.title !== undefined) data.title = parsed.data.title;
     if (parsed.data.summary !== undefined) data.summary = parsed.data.summary;
     Object.assign(data, markKnowledgeContentUnreviewed(content));
-    data.embeddingJson = JSON.stringify(
-      await embedText(
-        [
-          "title" in parsed.data ? parsed.data.title : existing.title,
-          "summary" in parsed.data ? parsed.data.summary : existing.summary,
-          existing.sector,
-          existing.tags,
-        ]
-          .filter(Boolean)
-          .join("\n")
-      )
+    const reembedded = await embedText(
+      [
+        "title" in parsed.data ? parsed.data.title : existing.title,
+        "summary" in parsed.data ? parsed.data.summary : existing.summary,
+        existing.sector,
+        existing.tags,
+      ]
+        .filter(Boolean)
+        .join("\n")
     );
+    // Null clears the stale vector rather than pinning it to the old text.
+    data.embeddingJson = reembedded ? JSON.stringify(reembedded) : null;
   }
 
   const project = await db.pastProject.update({
