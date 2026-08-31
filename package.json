@@ -3,7 +3,7 @@
   "version": "0.2.1",
   "private": true,
   "engines": {
-    "node": "22.x"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "bun run db:ensure && next dev -p 3000",
