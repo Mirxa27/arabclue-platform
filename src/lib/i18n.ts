@@ -373,9 +373,12 @@ export const localizationRegistry = {
   },
   EMAIL_VERIFIED: { ar: "تم تأكيد البريد الإلكتروني بنجاح", en: "Email verified successfully" },
   EMAIL_VERIFICATION_REQUIRED: { ar: "تأكيد البريد الإلكتروني مطلوب", en: "Email verification required" },
+  // A send that fails after the token is committed still answers with this
+  // code (naming the failure would reveal that the address is registered), so
+  // the wording has to leave the user a way out instead of an open-ended wait.
   RECOVERY_REQUEST_ACCEPTED: {
-    ar: "تم قبول طلب الاستعادة — إذا كان البريد موجوداً ستصلك رسالة",
-    en: "Recovery request accepted — if the email exists you will receive a message",
+    ar: "تم قبول طلب الاستعادة — إذا كان البريد موجوداً ستصلك رسالة خلال دقائق. تحقق من مجلد البريد المزعج، وإن لم تصل فأعد المحاولة أو راسل الدعم",
+    en: "Recovery request accepted — if the email exists a message arrives within a few minutes. Check your spam folder, then request again or contact support if nothing arrives",
   },
   RECOVERY_EMAIL_UNCONFIGURED: {
     ar: "خدمة البريد غير مهيأة لاستعادة كلمة المرور",

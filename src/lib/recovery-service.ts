@@ -453,34 +453,40 @@ export function createRecoveryService(
 
     // Only create token if user is active and verified (criterion 2.1)
     const user = await repository.findEligibleUserByEmail(request.email);
-    
+
+    // Check email configuration before creating token (criterion 2.7). Answered
+    // ahead of the unknown-address branch because whether recovery mail can be
+    // sent is a property of the deployment, not of the submitted address:
+    // reporting it only for a registered address would turn a switched-off
+    // transport into an account-enumeration oracle.
+    if (!emailProvider.isConfigured()) {
+      if (user) {
+        await appendAudit({
+          action: "PASSWORD_RESET_REQUEST",
+          userId: user.id,
+          resource: "RecoveryToken",
+          severity: "WARN",
+          sourceAddress,
+          details: {
+            email: user.email,
+            occurredAt: now.toISOString(),
+            reason: "email_unconfigured",
+          },
+        });
+      }
+      return {
+        ok: true,
+        status: 202,
+        code: "RECOVERY_EMAIL_UNCONFIGURED",
+      };
+    }
+
     // Anti-enumeration: return same response whether user exists or not
     if (!user) {
       return {
         ok: true,
         status: 202,
         code: "RECOVERY_REQUEST_ACCEPTED",
-      };
-    }
-
-    // Check email configuration before creating token (criterion 2.7)
-    if (!emailProvider.isConfigured()) {
-      await appendAudit({
-        action: "PASSWORD_RESET_REQUEST",
-        userId: user.id,
-        resource: "RecoveryToken",
-        severity: "WARN",
-        sourceAddress,
-        details: {
-          email: user.email,
-          occurredAt: now.toISOString(),
-          reason: "email_unconfigured",
-        },
-      });
-      return {
-        ok: true,
-        status: 202,
-        code: "RECOVERY_EMAIL_UNCONFIGURED",
       };
     }
 

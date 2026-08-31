@@ -53,14 +53,17 @@ function ForgotInner() {
         return;
       }
 
-      // Anti-enumeration: accepted paths share confirmation text; unconfigured
-      // delivery still returns 202 with its own stable code for operators.
-      setMsg(
-        bilingual ??
-          (code === "RECOVERY_EMAIL_UNCONFIGURED"
-            ? tr("RECOVERY_EMAIL_UNCONFIGURED", locale)
-            : tr("account_recovery_confirmation", locale))
-      );
+      // An unconfigured transport answers 202 for anti-enumeration reasons, but
+      // it is a deployment fault rather than a confirmation: showing it in the
+      // success notice told the user a message was on its way when none could
+      // be sent.
+      if (code === "RECOVERY_EMAIL_UNCONFIGURED") {
+        setError(bilingual ?? tr("RECOVERY_EMAIL_UNCONFIGURED", locale));
+        return;
+      }
+
+      // Anti-enumeration: every accepted path shares this confirmation text.
+      setMsg(bilingual ?? tr("account_recovery_confirmation", locale));
     } catch {
       setError(tr("auth_network_error", locale));
     } finally {

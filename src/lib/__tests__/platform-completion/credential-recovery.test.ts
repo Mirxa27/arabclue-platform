@@ -196,6 +196,31 @@ describe("recovery request (requirements 2.1, 2.2, 2.5, 2.7, 2.8)", () => {
     expect(harness.repository.snapshot().tokens).toHaveLength(0);
   });
 
+  test("answers RECOVERY_EMAIL_UNCONFIGURED for an unknown address too", async () => {
+    // Whether recovery mail can be sent is a property of the deployment, not of
+    // the submitted address. Answering it only for a registered address turns
+    // the switched-off transport into an account-enumeration oracle.
+    const harness = createHarness({ emailBehavior: { kind: "unconfigured" } });
+    harness.repository.seedUser({ email: "buyer@example.com" });
+    const registered = await harness.service.requestRecovery({
+      payload: { email: "buyer@example.com" },
+      sourceAddress: "10.0.0.1",
+    });
+    const unknown = await harness.service.requestRecovery({
+      payload: { email: "nobody@example.com" },
+      sourceAddress: "10.0.0.1",
+    });
+    expect(unknown).toEqual(registered);
+    expect(unknown.code).toBe("RECOVERY_EMAIL_UNCONFIGURED");
+    expect(harness.repository.snapshot().tokens).toHaveLength(0);
+    // The operator still gets the row that names the affected account.
+    expect(
+      harness.audit.entries.filter(
+        (e) => e.details?.reason === "email_unconfigured"
+      )
+    ).toHaveLength(1);
+  });
+
   test("keeps the committed token when post-commit email delivery fails", async () => {
     const harness = createHarness({ emailBehavior: { kind: "failed" } });
     harness.repository.seedUser({ email: "buyer@example.com" });
