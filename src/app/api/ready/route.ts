@@ -15,8 +15,13 @@ import { summarizeSealedSecrets } from "@/lib/secret-readiness";
 import {
   providerNeedsApiKey,
   summarizeAiCredential,
+  summarizeEngineCredentials,
 } from "@/lib/ai-credential-readiness";
-import { getProviderForEngine } from "@/lib/llm";
+import {
+  AGENT_ENGINES,
+  providerServesEngine,
+  type AgentEngine,
+} from "@/lib/llm/model-catalog";
 import { resolveProviderApiKey } from "@/lib/env-settings";
 
 export const dynamic = "force-dynamic";
@@ -96,32 +101,70 @@ export async function GET() {
     checks.llmProviders = { ok: false, detail: "provider_query_failed" };
   }
 
-  // `active:N` above counts rows. Whether the default engine can present a
+  // `active:N` above counts rows. Whether an engine can actually present a
   // credential is the question that decides if this deployment produces real
-  // model output or silent fallbacks, and nothing else reports it.
+  // model output or silent fallbacks, and nothing else reports it. Swept per
+  // engine, because a healthy DEFAULT hid a COMPLIANCE connection naming a
+  // credential outside the provider allowlist and a DRAFTING connection whose
+  // credential was sealed empty — both fabricated every answer.
   try {
-    const provider = await getProviderForEngine("DEFAULT");
-    if (!provider) {
-      checks.aiCredential = summarizeAiCredential({
-        hasActiveProvider: false,
-        needsApiKey: false,
-        apiKeyResolved: false,
-      });
-    } else {
-      const needsApiKey = providerNeedsApiKey(provider.provider);
-      checks.aiCredential = summarizeAiCredential({
-        hasActiveProvider: true,
-        needsApiKey,
-        apiKeyResolved: needsApiKey
-          ? Boolean(
-              await resolveProviderApiKey(
-                provider.provider,
-                provider.apiKeyEnvKey
-              )
-            )
+    const actives = await db.aIProviderConfig.findMany({
+      where: { isActive: true },
+      orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+    });
+
+    // Resolved from one fetch: calling getProviderForEngine per engine would
+    // repeat the same query ten times on a probe the load balancer polls.
+    const pickProvider = (engine: AgentEngine) =>
+      actives.find((row) => providerServesEngine(row, engine)) ??
+      (engine === "DEFAULT"
+        ? undefined
+        : actives.find((row) => providerServesEngine(row, "DEFAULT"))) ??
+      actives[0];
+
+    // Engines share credentials, so resolve each distinct name once.
+    const resolved = new Map<string, Promise<boolean>>();
+    const resolvesCredential = (provider: {
+      provider: string;
+      apiKeyEnvKey: string | null;
+    }): Promise<boolean> => {
+      const cacheKey = `${provider.provider}|${provider.apiKeyEnvKey ?? ""}`;
+      const hit = resolved.get(cacheKey);
+      if (hit) return hit;
+      const pending = resolveProviderApiKey(
+        provider.provider,
+        provider.apiKeyEnvKey
+      ).then(Boolean);
+      resolved.set(cacheKey, pending);
+      return pending;
+    };
+
+    const entries = await Promise.all(
+      AGENT_ENGINES.map(async (engine) => {
+        const provider = pickProvider(engine);
+        if (!provider) return { engine, resolved: false };
+        return {
+          engine,
+          resolved: providerNeedsApiKey(provider.provider)
+            ? await resolvesCredential(provider)
+            : true,
+        };
+      })
+    );
+    checks.aiEngines = summarizeEngineCredentials(entries);
+
+    const defaultProvider = pickProvider("DEFAULT");
+    const defaultNeedsKey = defaultProvider
+      ? providerNeedsApiKey(defaultProvider.provider)
+      : false;
+    checks.aiCredential = summarizeAiCredential({
+      hasActiveProvider: Boolean(defaultProvider),
+      needsApiKey: defaultNeedsKey,
+      apiKeyResolved:
+        defaultProvider && defaultNeedsKey
+          ? await resolvesCredential(defaultProvider)
           : false,
-      });
-    }
+    });
   } catch {
     checks.aiCredential = { ok: false, detail: "credential_check_failed" };
   }
