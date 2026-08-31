@@ -38,6 +38,11 @@ import { EmptyState, QueryState, ErrorState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
 import { cn } from "@/lib/utils";
 import { AGENTS } from "@/lib/constants";
+import {
+  agentOutputText,
+  engineNote,
+  runHeadlineBadge,
+} from "@/lib/agents/run-presentation";
 import type { AgentState, AgentId } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
 import { NO_DOCUMENTS_PREFLIGHT } from "@/lib/agents/run-preflight";
@@ -242,7 +247,13 @@ export function AgentWorkflow() {
     queryKey: ["agent-runs"],
     queryFn: async () => {
       const res = await fetch("/api/agents/runs?limit=50");
-      if (!res.ok) throw new Error("Failed to load run history");
+      if (!res.ok) {
+        throw new Error(
+          locale === "ar"
+            ? "تعذر تحميل سجل التشغيل"
+            : "Could not load run history"
+        );
+      }
       return res.json() as Promise<{ runs: AgentRunHistoryItem[] }>;
     },
   });
@@ -654,23 +665,32 @@ export function AgentWorkflow() {
               <h3 className="text-sm font-semibold">
                 {tr("section_agents", locale)}
               </h3>
-              {running ? (
-                <Badge className="bg-violet-600 hover:bg-violet-600 text-[10px]">
-                  {locale === "ar" ? "يعمل الآن" : "Live"}
-                </Badge>
-              ) : completed && runStatus === "COMPLETED" ? (
-                <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px]">
-                  {locale === "ar" ? "مكتمل" : "Completed"}
-                </Badge>
-              ) : completed && runStatus === "FAILED" ? (
-                <Badge variant="destructive" className="text-[10px]">
-                  {locale === "ar" ? "فشل" : "Failed"}
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-[10px]">
-                  {locale === "ar" ? "جاهز" : "Ready"}
-                </Badge>
-              )}
+              {(() => {
+                const badge = runHeadlineBadge(
+                  { running, completed, status: runStatus },
+                  locale
+                );
+                return (
+                  <Badge
+                    variant={
+                      badge.tone === "danger"
+                        ? "destructive"
+                        : badge.tone === "muted"
+                          ? "outline"
+                          : "default"
+                    }
+                    className={cn(
+                      "text-[10px]",
+                      badge.tone === "live" &&
+                        "bg-violet-600 hover:bg-violet-600",
+                      badge.tone === "success" &&
+                        "bg-emerald-600 hover:bg-emerald-600"
+                    )}
+                  >
+                    {badge.label}
+                  </Badge>
+                );
+              })()}
             </div>
             <p className="text-[11px] text-foreground/70 mt-0.5">
               {running && activeAgent
@@ -1011,6 +1031,7 @@ export function AgentWorkflow() {
           const isRunning = status === "running";
           const isDone = status === "completed";
           const isFailed = status === "failed";
+          const outputText = agentOutputText(a.output, locale);
           const isPending = status === "pending";
           const pct = isDone ? 100 : Math.round(a.progress || 0);
 
@@ -1126,15 +1147,15 @@ export function AgentWorkflow() {
                     </ul>
                   )}
 
-                  {a.output && isFailed && (
+                  {outputText && isFailed && (
                     <div className="mt-2 text-[10px] text-destructive bg-destructive/10 rounded-md px-2 py-1.5 border border-destructive/20">
-                      {a.output}
+                      {outputText}
                     </div>
                   )}
 
-                  {a.output && isDone && (
+                  {outputText && isDone && (
                     <div className="mt-2 text-[10px] text-emerald-800 dark:text-emerald-300 bg-emerald-500/10 rounded-md px-2 py-1.5 border border-emerald-500/20">
-                      ✓ {a.output}
+                      ✓ {outputText}
                     </div>
                   )}
                 </div>
@@ -1182,17 +1203,15 @@ export function AgentWorkflow() {
                 </span>
               )}
               {llmProvider && (
-                <span className="font-mono">
-                  LLM: {llmProvider}
-                  {llmFallback
+                // The provider id and failure kind stay in the title attribute:
+                // useful when reporting a problem, noise in the summary line.
+                <span title={`${llmProvider}${llmFailureKind ? ` · ${llmFailureKind}` : ""}`}>
+                  {engineNote(llmFallback, locale)}
+                  {!llmFallback && llmTruncated
                     ? locale === "ar"
-                      ? ` (احتياطي${llmFailureKind ? `: ${llmFailureKind}` : ""})`
-                      : ` (fallback${llmFailureKind ? `: ${llmFailureKind}` : ""})`
-                    : llmTruncated
-                      ? locale === "ar"
-                        ? " (مقتطع)"
-                        : " (truncated)"
-                      : ""}
+                      ? " (مقتطع)"
+                      : " (truncated)"
+                    : ""}
                 </span>
               )}
             </div>

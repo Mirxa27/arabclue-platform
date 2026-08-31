@@ -523,6 +523,14 @@ export function parseTenderText(
   };
 }
 
-export function buildIngestionSummary(entities: IngestionEntities, docNames: string[]): string {
-  return `Parsed ${docNames.length} document(s): ${docNames.join(", ")}. SOW: ${entities.scope.slice(0, 160)}… Evaluation ${entities.evaluation.technical}/${entities.evaluation.financial}. SLA ${entities.sla.perWeek}%/wk max ${entities.sla.maxPercent}%. Milestones: ${entities.milestones.length}.`;
+export function buildIngestionSummary(
+  entities: IngestionEntities,
+  docNames: string[]
+): { ar: string; en: string } {
+  const names = docNames.join("، ");
+  const scope = entities.scope.slice(0, 160);
+  return {
+    ar: `تمت قراءة ${docNames.length} مستند: ${names}. نطاق العمل: ${scope}… وزن التقييم ${entities.evaluation.technical}% فني و${entities.evaluation.financial}% مالي. غرامة التأخير ${entities.sla.perWeek}% أسبوعياً بحد أقصى ${entities.sla.maxPercent}%. عدد المراحل: ${entities.milestones.length}.`,
+    en: `Read ${docNames.length} document(s): ${docNames.join(", ")}. Scope of work: ${scope}… Evaluation weighting ${entities.evaluation.technical}% technical, ${entities.evaluation.financial}% financial. Delay penalty ${entities.sla.perWeek}% per week, capped at ${entities.sla.maxPercent}%. Milestones: ${entities.milestones.length}.`,
+  };
 }

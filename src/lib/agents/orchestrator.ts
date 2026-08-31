@@ -3,6 +3,7 @@ import { AGENTS, getTenderType } from "../constants";
 import { tr } from "../i18n";
 import type { AgentState, AgentId, IngestionEntities, ComplianceMatrixRow, FinancialExtract } from "../types";
 import { extractTextFromStorage, parseTenderText, buildIngestionSummary, sanitizeText } from "./ingestion";
+import { engineNote } from "./run-presentation";
 import { evaluateCompliance } from "./compliance";
 import { runTechnicalArchitect } from "./technical";
 import { runFinancialAgent } from "./financial";
@@ -249,7 +250,10 @@ export async function runAgentPipeline(opts: {
         status: "failed",
         progress: 100,
         completedAt: new Date().toISOString(),
-        output: "No documents uploaded",
+        output: {
+          ar: "لم يتم رفع أي مستند",
+          en: "No documents uploaded",
+        },
         findings: ["Upload at least one RFP / conditions booklet before running agents"],
       });
       const overall = await persist("FAILED", "No documents uploaded for ingestion");
@@ -316,7 +320,7 @@ export async function runAgentPipeline(opts: {
         where: { id: primary.id },
         data: {
           parseStatus: "PARSED",
-          parsedSummary: summary,
+          parsedSummary: summary.en,
           extractedEntities: JSON.stringify(entities),
         },
       });
@@ -458,7 +462,10 @@ export async function runAgentPipeline(opts: {
       status: "completed",
       progress: 100,
       completedAt: new Date().toISOString(),
-      output: `Compliance score ${score}% — ${rows.length} controls evaluated`,
+      output: {
+        ar: `نتيجة الامتثال ${score}% بعد تقييم ${rows.length} ضابطاً تنظيمياً`,
+        en: `Compliance score ${score}% across ${rows.length} regulatory controls`,
+      },
       findings: [...cFindings, ...logger.getEntries().filter(e=>e.agentId==="COMPLIANCE_REGULATORY").slice(-3).map(e=>`${e.ruleId}: ${e.message}`)],
     });
     metrics.completeAgent("COMPLIANCE_REGULATORY", { complianceScore: score, evidenceCount: rows.length, enriched: cFindings.some(f=>f.includes("AI skill applied")), fallback: cFindings.some(f=>f.includes("unavailable")) });
@@ -794,7 +801,16 @@ export async function runAgentPipeline(opts: {
       status: "completed",
       progress: 100,
       completedAt: new Date().toISOString(),
-      output: `QLR=${financial.quickLiquidityRatio ?? "N/A"}; BoQ lines=${financial.boqItems.length}`,
+      output: {
+        ar:
+          financial.quickLiquidityRatio === null
+            ? `جدول الكميات: ${financial.boqItems.length} بنداً. نسبة السيولة السريعة غير متاحة — القوائم المالية ناقصة`
+            : `نسبة السيولة السريعة ${financial.quickLiquidityRatio}. جدول الكميات: ${financial.boqItems.length} بنداً`,
+        en:
+          financial.quickLiquidityRatio === null
+            ? `Bill of quantities: ${financial.boqItems.length} line(s). Quick liquidity ratio unavailable — financial statements incomplete`
+            : `Quick liquidity ratio ${financial.quickLiquidityRatio}. Bill of quantities: ${financial.boqItems.length} line(s)`,
+      },
       findings: financial.findings,
     });
     metrics.completeAgent("FINANCIAL_QUALIFICATION", {
@@ -1127,7 +1143,10 @@ export async function runAgentPipeline(opts: {
       status: "completed",
       progress: 100,
       completedAt: new Date().toISOString(),
-      output: `Proposal ${proposal.id} generated via ${draft.provider}${draft.fallback ? " (fallback)" : ""}`,
+      output: {
+        ar: `تمت صياغة العطاء — تغطية المتطلبات ${coverage.coveragePercent}%. ${engineNote(draft.fallback, "ar")}`,
+        en: `Proposal drafted — ${coverage.coveragePercent}% requirement coverage. ${engineNote(draft.fallback, "en")}`,
+      },
       findings: [
         `Tokens: ${draft.tokensUsed}`,
         `Compliance score: ${score}%`,
@@ -1275,7 +1294,10 @@ export async function runAgentPipeline(opts: {
       status: "completed",
       progress: 100,
       completedAt: new Date().toISOString(),
-      output: `Contract ${contract.id} (${lawDraft.articles.length} articles) via ${lawDraft.provider}${lawDraft.fallback ? " (registry fallback)" : ""}`,
+      output: {
+        ar: `تمت صياغة العقد بـ${lawDraft.articles.length} مادة. ${engineNote(lawDraft.fallback, "ar")}`,
+        en: `Contract drafted with ${lawDraft.articles.length} article(s). ${engineNote(lawDraft.fallback, "en")}`,
+      },
       findings: [
         `Research sources: ${lawDraft.research.sources.length}`,
         `Findings: ${lawDraft.research.findings.length}`,

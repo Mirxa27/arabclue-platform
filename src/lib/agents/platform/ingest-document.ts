@@ -105,7 +105,9 @@ export async function ingestDocumentForWorkspace(input: IngestDocumentInput) {
   let summary: string;
   if (hasText) {
     entities = parseTenderText(text, input.tenderCategory || "IT");
-    summary = buildIngestionSummary(entities, [input.originalName]);
+    // parsedSummary is a stored record diffed across document versions, so it
+    // keeps a single stable language; the agent card localises separately.
+    summary = buildIngestionSummary(entities, [input.originalName]).en;
   } else if (imageDoc) {
     entities = parseTenderText(
       `Image attachment ${input.originalName} (${input.docCategory}). OCR found no readable text.`,

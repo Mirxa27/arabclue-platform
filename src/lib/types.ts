@@ -188,6 +188,12 @@ export interface TechnicalArchitectOutput {
   evaluationAlignment: string;
 }
 
+/**
+ * What an agent card shows when a step finishes. Runs persisted before agent
+ * output became bilingual still hold a bare string, so both forms are read.
+ */
+export type AgentOutput = string | { ar: string; en: string };
+
 export interface AgentState {
   id: AgentId;
   name: string;
@@ -196,7 +202,7 @@ export interface AgentState {
   progress: number; // 0-100
   startedAt?: string;
   completedAt?: string;
-  output?: string;
+  output?: AgentOutput;
   findings?: string[];
 }
 

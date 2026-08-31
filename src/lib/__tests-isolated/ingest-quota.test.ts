@@ -83,7 +83,7 @@ beforeAll(async () => {
   mock.module("@/lib/agents/ingestion", () => ({
     extractTextFromBuffer: mock(() => Promise.resolve("Tender scope text.")),
     parseTenderText: mock(() => ({ scope: "scope" })),
-    buildIngestionSummary: mock(() => "summary"),
+    buildIngestionSummary: mock(() => ({ ar: "ملخص", en: "summary" })),
     sanitizeText: (s: string) => s,
   }));
 
