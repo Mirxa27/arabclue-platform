@@ -27,6 +27,7 @@ import {
   LogIn,
   LogOut,
 } from "lucide-react";
+import { ErrorState } from "@/components/patterns";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -153,7 +154,7 @@ export function AdminAudit() {
   const [severityFilter, setSeverityFilter] = useState<string>("ALL");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery<AuditResponse>({
+  const { data, isLoading, isError, refetch } = useQuery<AuditResponse>({
     queryKey: ["admin-audit"],
     queryFn: async () => {
       const res = await fetch("/api/admin/audit?limit=200");
@@ -412,6 +413,15 @@ export function AdminAudit() {
             <Loader2 className="size-4 animate-spin" />
             {tr("loading", locale)}
           </div>
+        ) : isError ? (
+          <ErrorState
+            message={
+              locale === "ar"
+                ? "تعذر تحميل سجل التدقيق"
+                : "Failed to load the audit log"
+            }
+            onRetry={() => refetch()}
+          />
         ) : filtered.length === 0 ? (
           <div className="p-8 text-center">
             <ScrollText className="size-8 text-muted-foreground/40 mx-auto mb-2" />

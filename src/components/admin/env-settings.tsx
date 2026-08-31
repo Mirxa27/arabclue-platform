@@ -18,6 +18,7 @@ import {
   Search,
   Shield,
 } from "lucide-react";
+import { ErrorState } from "@/components/patterns";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -128,7 +129,7 @@ export function AdminEnvSettings() {
     Object.fromEntries(CATEGORIES.map((c) => [c, true]))
   );
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["admin-env"],
     queryFn: async () => {
       const res = await fetch("/api/admin/env");
@@ -312,6 +313,15 @@ export function AdminEnvSettings() {
             <Loader2 className="size-4 animate-spin" />
             {tr("loading", locale)}
           </div>
+        ) : isError ? (
+          <ErrorState
+            message={
+              locale === "ar"
+                ? "تعذر تحميل إعدادات البيئة"
+                : "Failed to load environment settings"
+            }
+            onRetry={() => refetch()}
+          />
         ) : totalCount === 0 ? (
           <div className="p-10 text-center text-xs text-muted-foreground">
             {tr("no_data", locale)}

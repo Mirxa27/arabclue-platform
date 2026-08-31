@@ -17,6 +17,7 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
+import { ErrorState } from "@/components/patterns";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -157,7 +158,7 @@ export function AdminSecurity() {
   const [editPlanId, setEditPlanId] = useState<string>("");
   const [editBilling, setEditBilling] = useState<"MONTHLY" | "YEARLY">("MONTHLY");
 
-  const { data, isLoading } = useQuery<{ users: AdminUser[] }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ users: AdminUser[] }>({
     queryKey: ["admin-users"],
     queryFn: async () => {
       const res = await fetch("/api/admin/users");
@@ -166,7 +167,7 @@ export function AdminSecurity() {
     },
   });
 
-  const { data: plansData } = useQuery<{ plans: Plan[] }>({
+  const { data: plansData, isError: plansError } = useQuery<{ plans: Plan[] }>({
     queryKey: ["admin-plans"],
     queryFn: async () => {
       const res = await fetch("/api/admin/plans");
@@ -312,6 +313,7 @@ export function AdminSecurity() {
               </DialogHeader>
               <CreateUserForm
                 plans={plans}
+                plansError={plansError}
                 onDone={() => setShowCreate(false)}
               />
             </DialogContent>
@@ -386,6 +388,15 @@ export function AdminSecurity() {
             <Loader2 className="size-4 animate-spin" />
             {tr("loading", locale)}
           </div>
+        ) : isError ? (
+          <ErrorState
+            message={
+              locale === "ar"
+                ? "تعذر تحميل المستخدمين"
+                : "Failed to load users"
+            }
+            onRetry={() => refetch()}
+          />
         ) : users.length === 0 ? (
           <div className="p-8 text-center">
             <Users className="size-8 text-muted-foreground/40 mx-auto mb-2" />
@@ -611,14 +622,10 @@ export function AdminSecurity() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="__none__" className="text-xs">
-                                    {locale === "ar" ? "— بدون —" : "— None —"}
-                                  </SelectItem>
-                                  {plans.map((p) => (
-                                    <SelectItem key={p.id} value={p.id} className="text-xs">
-                                      {locale === "ar" ? p.nameAr ?? p.name : p.name}
-                                    </SelectItem>
-                                  ))}
+                                  <PlanOptions
+                                    plans={plans}
+                                    plansError={plansError}
+                                  />
                                 </SelectContent>
                               </Select>
                             </div>
@@ -753,11 +760,46 @@ function CountChip({ label, value }: { label: string; value: number }) {
   );
 }
 
+/**
+ * Options for the two plan selectors. A failed `/api/admin/plans` used to
+ * render an empty dropdown, which reads as "this deployment has no plans"
+ * rather than "the list did not load".
+ */
+function PlanOptions({
+  plans,
+  plansError,
+}: {
+  plans: Plan[];
+  plansError: boolean;
+}) {
+  const { locale } = useLocale();
+  return (
+    <>
+      <SelectItem value="__none__" className="text-xs">
+        {locale === "ar" ? "— بدون —" : "— None —"}
+      </SelectItem>
+      {plansError ? (
+        <p className="px-2 py-1.5 text-[11px] text-destructive">
+          {locale === "ar" ? "تعذر تحميل الخطط" : "Could not load plans"}
+        </p>
+      ) : (
+        plans.map((p) => (
+          <SelectItem key={p.id} value={p.id} className="text-xs">
+            {locale === "ar" ? p.nameAr ?? p.name : p.name}
+          </SelectItem>
+        ))
+      )}
+    </>
+  );
+}
+
 function CreateUserForm({
   plans,
+  plansError,
   onDone,
 }: {
   plans: Plan[];
+  plansError: boolean;
   onDone: () => void;
 }) {
   const { locale } = useLocale();
@@ -897,14 +939,7 @@ function CreateUserForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__none__" className="text-xs">
-                {locale === "ar" ? "— بدون —" : "— None —"}
-              </SelectItem>
-              {plans.map((p) => (
-                <SelectItem key={p.id} value={p.id} className="text-xs">
-                  {locale === "ar" ? p.nameAr ?? p.name : p.name}
-                </SelectItem>
-              ))}
+              <PlanOptions plans={plans} plansError={plansError} />
             </SelectContent>
           </Select>
         </div>

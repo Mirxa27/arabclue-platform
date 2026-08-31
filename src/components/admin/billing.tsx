@@ -19,6 +19,7 @@ import {
   Scale,
 } from "lucide-react";
 import { AdminBillingReconciliation } from "./billing-reconciliation";
+import { ErrorState } from "@/components/patterns";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -176,7 +177,7 @@ export function AdminBilling() {
   const { toast } = useToast();
   const [showAddPlan, setShowAddPlan] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["admin-billing"],
     queryFn: async () => {
       const res = await fetch("/api/admin/billing");
@@ -330,6 +331,15 @@ export function AdminBilling() {
               <Loader2 className="size-4 animate-spin" />
               {tr("loading", locale)}
             </div>
+          ) : isError ? (
+            <ErrorState
+              message={
+                locale === "ar"
+                  ? "تعذر تحميل بيانات الفوترة"
+                  : "Failed to load billing data"
+              }
+              onRetry={() => refetch()}
+            />
           ) : plans.length === 0 ? (
             <div className="p-10 text-center text-xs text-muted-foreground">
               {tr("no_data", locale)}
@@ -371,7 +381,16 @@ export function AdminBilling() {
             </Badge>
           </div>
           <div className="max-h-96 overflow-y-auto scrollbar-thin">
-            {records.length === 0 ? (
+            {isError ? (
+              <ErrorState
+                message={
+                  locale === "ar"
+                    ? "تعذر تحميل سجل الفوترة"
+                    : "Failed to load billing records"
+                }
+                onRetry={() => refetch()}
+              />
+            ) : records.length === 0 ? (
               <div className="p-8 text-center text-xs text-muted-foreground">
                 {tr("no_data", locale)}
               </div>

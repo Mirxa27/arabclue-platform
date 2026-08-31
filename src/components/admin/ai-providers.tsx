@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Layers,
 } from "lucide-react";
+import { ErrorState } from "@/components/patterns";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,7 +70,7 @@ export function AdminAIProviders() {
   const [engineFilter, setEngineFilter] = useState<string>("ALL");
   const [refreshingAll, setRefreshingAll] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["admin-ai-providers"],
     queryFn: async () => {
       const res = await fetch("/api/admin/ai-providers");
@@ -316,6 +317,15 @@ export function AdminAIProviders() {
             <Loader2 className="size-4 animate-spin" />
             {tr("loading", locale)}
           </div>
+        ) : isError ? (
+          <ErrorState
+            message={
+              locale === "ar"
+                ? "تعذر تحميل مزودات الذكاء الاصطناعي"
+                : "Failed to load AI providers"
+            }
+            onRetry={() => refetch()}
+          />
         ) : filtered.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground">
             {locale === "ar"

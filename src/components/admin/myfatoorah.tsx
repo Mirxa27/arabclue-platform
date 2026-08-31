@@ -13,6 +13,7 @@ import {
   Save,
   Shield,
 } from "lucide-react";
+import { ErrorState } from "@/components/patterns";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,7 +65,7 @@ export function AdminMyFatoorah() {
   const [webhookSecret, setWebhookSecret] = useState("");
   const [mode, setMode] = useState<"sandbox" | "production_sa">("sandbox");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["admin-myfatoorah"],
     queryFn: async () => {
       const res = await fetch("/api/admin/myfatoorah");
@@ -158,8 +159,23 @@ export function AdminMyFatoorah() {
     return (
       <div className="flex items-center gap-2 p-6 text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Loading…
+        {locale === "ar" ? "جاري التحميل..." : "Loading…"}
       </div>
+    );
+  }
+
+  // Without this branch every field below falls back to "not set", so a failed
+  // request looks exactly like an integration nobody has configured yet.
+  if (isError) {
+    return (
+      <ErrorState
+        message={
+          locale === "ar"
+            ? "تعذر تحميل إعدادات مي فاتورة"
+            : "Failed to load MyFatoorah settings"
+        }
+        onRetry={() => refetch()}
+      />
     );
   }
 
