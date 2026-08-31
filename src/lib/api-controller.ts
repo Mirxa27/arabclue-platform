@@ -22,7 +22,7 @@ import {
   getTenantContext,
   type TenantContext,
 } from "@/lib/workspace-context";
-import { QuotaExceededError } from "@/lib/quotas";
+import { QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 import {
   ApiError,
   AuthenticationRequiredError,
@@ -106,11 +106,13 @@ type AuthMode = "session" | "writer";
 /** Maps any thrown value to the central bilingual failure and logs it redacted. */
 export function toErrorResponse(err: unknown, label: string): NextResponse {
   if (err instanceof QuotaExceededError) {
-    // Plan-quota codes predate the completion contract; the bilingual pair still
-    // comes from the registry so no locale receives an empty message.
+    // `err.code` is the internal enum ("DOCUMENTS"), which is not a registry
+    // key — passing it raw degraded every 402 to the generic internal-error
+    // sentence. `quotaFailureCode` translates it to the contract code, so the
+    // reader learns which limit they hit and that an upgrade is the fix.
     return jsonFailure({
       status: 402,
-      body: legacyFailureBody(err.code),
+      body: legacyFailureBody(quotaFailureCode(err)),
     });
   }
 

@@ -4,7 +4,7 @@ import type { CompletionErrorCode } from "./i18n";
 export class QuotaExceededError extends Error {
   constructor(
     message: string,
-    public code: "DOCUMENTS" | "PROPOSALS" | "TOKENS" | "INACTIVE"
+    public code: "DOCUMENTS" | "PROPOSALS" | "STORAGE" | "TOKENS" | "INACTIVE"
   ) {
     super(message);
     this.name = "QuotaExceededError";
@@ -14,6 +14,7 @@ export class QuotaExceededError extends Error {
 const QUOTA_FAILURE_CODES = {
   DOCUMENTS: "QUOTA_DOCUMENTS_EXCEEDED",
   PROPOSALS: "QUOTA_PROPOSALS_EXCEEDED",
+  STORAGE: "QUOTA_STORAGE_EXCEEDED",
   TOKENS: "QUOTA_TOKENS_EXCEEDED",
   INACTIVE: "SUBSCRIPTION_INACTIVE",
 } as const satisfies Readonly<
@@ -75,22 +76,28 @@ export async function assertWithinQuota(
       );
     }
   }
-  // Storage quota: maxStorageGb → bytes
+  // Storage quota: maxStorageGb → bytes. What binds is the accumulated total
+  // plus the incoming file, so a workspace cannot stay under the cap forever by
+  // uploading files that are each individually small enough.
   if (kind === "storage") {
     if (plan.maxStorageGb > 0) {
       const added = extra?.bytes ?? 0;
       const maxBytes = plan.maxStorageGb * 1024 * 1024 * 1024;
-      const used = sub.storageUsedBytes ?? 0;
+      // Clamped: the counter moves both ways (deletes credit bytes back), and a
+      // drifted negative would otherwise read as free space above the plan.
+      const used = Math.max(0, sub.storageUsedBytes ?? 0);
       if (used + added > maxBytes) {
         throw new QuotaExceededError(
           `Storage quota exceeded (${Math.round(used / 1024 / 1024)}MB / ${plan.maxStorageGb}GB)`,
-          "TOKENS"
+          "STORAGE"
         );
       }
     }
   }
-  // Tokens quota
-  if (kind === "tokens" || kind === "storage") {
+  // Tokens quota. Not consulted for uploads: a spent AI budget has nothing to do
+  // with disk, and refusing a file upload with "AI usage limit reached" sends
+  // the reader to buy the wrong thing.
+  if (kind === "tokens") {
     if (plan.maxTokensPerMonth > 0) {
       const added = extra?.tokens ?? 0;
       if (sub.tokensUsed + added > plan.maxTokensPerMonth) {

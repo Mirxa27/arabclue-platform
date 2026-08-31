@@ -5,6 +5,7 @@ import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { documentPatchSchema, parseJsonBody } from "@/lib/validation";
+import { bumpUsage } from "@/lib/quotas";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,11 @@ export async function DELETE(
       }
       throw error;
     }
+    // The bytes are gone, so the allowance comes back. Credited to the uploader
+    // because that is the subscription the upload was charged to — quotas hang
+    // off a user, documents hang off a workspace.
+    await bumpUsage(doc.uploadedById, "storage", -doc.sizeBytes);
+
     await audit({
       userId: session.user.id,
       action: AUDIT_ACTIONS.DOC_DELETE,

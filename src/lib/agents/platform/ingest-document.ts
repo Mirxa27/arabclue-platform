@@ -9,6 +9,7 @@ import { indexDocumentChunks } from "@/lib/document-chunks";
 import { saveUpload } from "@/lib/storage";
 import { validateUploadAllowlist } from "@/lib/safe-zip";
 import { ApiError } from "@/lib/api-failure";
+import { assertWithinQuota, bumpUsage } from "@/lib/quotas";
 import type { DocCategory } from "@/lib/types";
 
 export type IngestDocumentInput = {
@@ -63,6 +64,11 @@ export async function ingestDocumentForWorkspace(input: IngestDocumentInput) {
       throw new ApiError("Project not found", 404, "PROJECT_NOT_FOUND");
     }
   }
+
+  // Before the bytes land, not after: a storage check that runs once the file is
+  // already written is a log line, not a limit. The per-file 50MB ceiling above
+  // says nothing about the total the workspace has accumulated.
+  await assertWithinQuota(input.userId, "storage", { bytes: input.bytes.length });
 
   const stored = await saveUpload({
     workspaceId: input.workspaceId,
@@ -149,15 +155,11 @@ export async function ingestDocumentForWorkspace(input: IngestDocumentInput) {
     title: input.originalName,
   });
 
-  const sub = await db.subscription.findUnique({
-    where: { userId: input.userId },
-  });
-  if (sub) {
-    await db.subscription.update({
-      where: { id: sub.id },
-      data: { documentsUsed: { increment: 1 } },
-    });
-  }
+  // `stored.sizeBytes` rather than `input.bytes.length`: what the plan pays for
+  // is what is on disk, and the two differ once storage does anything to the
+  // payload on the way in.
+  await bumpUsage(input.userId, "document");
+  await bumpUsage(input.userId, "storage", stored.sizeBytes);
 
   await audit({
     userId: input.userId,

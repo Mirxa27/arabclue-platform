@@ -1921,6 +1921,10 @@ export const localizationRegistry = {
     ar: "بلغت الحد الأقصى للعروض في باقتك. رقِّ الباقة لرفع الحد",
     en: "You have reached the proposal limit on your plan. Upgrade to raise it",
   },
+  QUOTA_STORAGE_EXCEEDED: {
+    ar: "بلغت الحد الأقصى لمساحة التخزين في باقتك. احذف ملفات أو رقِّ الباقة",
+    en: "You have reached the storage limit on your plan. Delete files or upgrade",
+  },
   QUOTA_TOKENS_EXCEEDED: {
     ar: "بلغت الحد الأقصى لاستخدام الذكاء الاصطناعي في باقتك. رقِّ الباقة لرفع الحد",
     en: "You have reached the AI usage limit on your plan. Upgrade to raise it",
@@ -2514,6 +2518,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   EXTENSION_PACK_FAILED: { actionKey: "error_action_complete_request", messageKey: "EXTENSION_PACK_FAILED" },
   QUOTA_DOCUMENTS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_DOCUMENTS_EXCEEDED" },
   QUOTA_PROPOSALS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_PROPOSALS_EXCEEDED" },
+  QUOTA_STORAGE_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_STORAGE_EXCEEDED" },
   QUOTA_TOKENS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_TOKENS_EXCEEDED" },
   SUBSCRIPTION_INACTIVE: { actionKey: "error_action_complete_request", messageKey: "SUBSCRIPTION_INACTIVE" },
 } as const satisfies Readonly<Record<string, ErrorContractDefinition>>;

@@ -9,6 +9,7 @@ let updateManyCalls: Array<{ userId: string; field: string; amount: number }> = 
 type QuotasModule = typeof import("../quotas");
 let assertWithinQuota: QuotasModule["assertWithinQuota"];
 let bumpUsage: QuotasModule["bumpUsage"];
+let quotaFailureCode: QuotasModule["quotaFailureCode"];
 let QuotaExceededError: QuotasModule["QuotaExceededError"];
 
 beforeAll(async () => {
@@ -29,9 +30,8 @@ mock.module("../db", () => ({
   },
 }));
 
-({ assertWithinQuota, bumpUsage, QuotaExceededError } = await import(
-  "../quotas"
-));
+({ assertWithinQuota, bumpUsage, quotaFailureCode, QuotaExceededError } =
+  await import("../quotas"));
 });
 
 function resetMockState() {
@@ -147,13 +147,48 @@ describe("assertWithinQuota", () => {
     await expect(assertWithinQuota("user-1", "proposal")).resolves.toBeUndefined();
   });
 
-  test("throws TOKENS when storage bytes exceed quota", async () => {
+  test("throws STORAGE when storage bytes exceed quota", async () => {
     resetMockState();
     const maxBytes = 5 * 1024 * 1024 * 1024;
     mockSub = makeSub({ storageUsedBytes: maxBytes });
     await expect(
       assertWithinQuota("user-1", "storage", { bytes: 1024 })
     ).rejects.toThrow();
+    try {
+      await assertWithinQuota("user-1", "storage", { bytes: 1024 });
+    } catch (e: any) {
+      // Not "TOKENS": a reader who filled their disk must not be told they ran
+      // out of AI usage, because the fix for one is not the fix for the other.
+      expect(e.code).toBe("STORAGE");
+      expect(quotaFailureCode(e)).toBe("QUOTA_STORAGE_EXCEEDED");
+    }
+  });
+
+  test("a spent token budget does not block an upload", async () => {
+    resetMockState();
+    mockSub = makeSub({ tokensUsed: 999999, storageUsedBytes: 0 });
+    await expect(
+      assertWithinQuota("user-1", "storage", { bytes: 1024 })
+    ).resolves.toBeUndefined();
+  });
+
+  test("accumulated storage plus the incoming file is what counts", async () => {
+    resetMockState();
+    const maxBytes = 5 * 1024 * 1024 * 1024;
+    // Neither the stored bytes nor the new file exceeds the plan on its own;
+    // together they do. This is the case a per-file size check cannot catch.
+    mockSub = makeSub({ storageUsedBytes: maxBytes - 1024 });
+    await expect(
+      assertWithinQuota("user-1", "storage", { bytes: 4096 })
+    ).rejects.toThrow(QuotaExceededError);
+  });
+
+  test("a drifted negative counter does not read as free space", async () => {
+    resetMockState();
+    mockSub = makeSub({ storageUsedBytes: -(10 * 1024 * 1024 * 1024) });
+    await expect(
+      assertWithinQuota("user-1", "storage", { bytes: 6 * 1024 * 1024 * 1024 })
+    ).rejects.toThrow(QuotaExceededError);
   });
 
   test("allows storage when within limit", async () => {
@@ -195,6 +230,36 @@ describe("assertWithinQuota", () => {
     const err = new QuotaExceededError("test", "DOCUMENTS");
     expect(err.name).toBe("QuotaExceededError");
     expect(err.code).toBe("DOCUMENTS");
+  });
+});
+
+describe("quotaFailureCode", () => {
+  const CODES = [
+    "DOCUMENTS",
+    "PROPOSALS",
+    "STORAGE",
+    "TOKENS",
+    "INACTIVE",
+  ] as const;
+
+  test("every quota code resolves to a real bilingual sentence", async () => {
+    // The internal enum is not a registry key. A route that answers 402 with
+    // `err.code` instead of this mapping hands the reader the generic
+    // internal-error sentence and no clue which limit they hit.
+    const { legacyFailureBody } = await import("../api-failure");
+    const generic = legacyFailureBody(null).message;
+
+    for (const code of CODES) {
+      const raw = legacyFailureBody(code).message;
+      expect(raw).toEqual(generic);
+
+      const mapped = legacyFailureBody(
+        quotaFailureCode(new QuotaExceededError("internal", code))
+      ).message;
+      expect(mapped).not.toEqual(generic);
+      expect(mapped.ar.trim().length).toBeGreaterThan(0);
+      expect(mapped.en.trim().length).toBeGreaterThan(0);
+    }
   });
 });
 
