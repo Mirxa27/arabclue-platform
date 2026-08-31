@@ -201,14 +201,17 @@ export function MissionPipelineBar({
           </div>
           <AnimatePresence mode="popLayout">
             <motion.span
-              key={hasTelemetry ? `${completedSteps.size}-${activeStep}` : "indeterminate"}
+              key={activeStep >= 0 ? STEPS[activeStep].key : "indeterminate"}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
-              className="shrink-0 rounded-full border border-black/10 bg-white/70 dark:border-white/10 dark:bg-white/[0.06] px-2 py-0.5 font-mono text-[10px] tabular-nums text-zinc-600 dark:text-zinc-400"
+              className="shrink-0 rounded-full border border-black/10 bg-white/70 dark:border-white/10 dark:bg-white/[0.06] px-2 py-0.5 text-[10px] text-zinc-600 dark:text-zinc-400"
             >
-              {hasTelemetry
-                ? `${completedSteps.size}/${STEPS.length} · ${progressPct}%`
+              {/* The bar already carries the fraction. Say what is happening. */}
+              {activeStep >= 0
+                ? ar
+                  ? STEPS[activeStep].labelAr
+                  : STEPS[activeStep].labelEn
                 : ar
                   ? "جارٍ العمل"
                   : "Working"}

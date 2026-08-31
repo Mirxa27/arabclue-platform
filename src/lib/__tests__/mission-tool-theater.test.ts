@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   currentAgentAction,
   extractDocumentPreview,
@@ -6,14 +8,57 @@ import {
   extractTheaterTools,
   humanActionLabel,
   isToolRunning,
+  kindLabel,
+  summarizeStoredOutput,
   summarizeToolInput,
   summarizeToolOutput,
   toolDisplayName,
   unwrapToolPayload,
+  TOOL_META,
   type TheaterToolEvent,
 } from "@/lib/agents/platform/mission-tool-parts";
 import { listRegistrySnapshot } from "@/lib/agents/platform/regulatory-synthesis";
 import { researchSaudiLawForContract } from "@/lib/saudi-law-research";
+
+/**
+ * Every tool the agent can call is narrated to the user by name. A tool with no
+ * entry falls back to its camelCase identifier, so the user watches
+ * "orchestrate Tender Package" run instead of "Command the full team".
+ */
+describe("tool naming coverage", () => {
+  const toolsSource = readFileSync(
+    join(import.meta.dir, "..", "agents", "platform", "tools.ts"),
+    "utf8"
+  );
+  const toolNames = [
+    ...toolsSource.matchAll(/^ {4}([a-zA-Z][a-zA-Z0-9_]*): platformTool\(/gm),
+  ].map((m) => m[1]);
+
+  test("the source list is found at all", () => {
+    expect(toolNames.length).toBeGreaterThan(30);
+  });
+
+  test("every tool kind reads as a word, in Arabic too", () => {
+    // The theater groups tools by kind and printed the raw key, so an Arabic
+    // user saw "compliance 3" next to otherwise fully translated copy.
+    const kinds = new Set(Object.values(TOOL_META).map((meta) => meta.kind));
+    expect(kinds.size).toBeGreaterThan(5);
+    for (const kind of kinds) {
+      expect(kindLabel(kind, false).trim().length).toBeGreaterThan(0);
+      expect(kindLabel(kind, true).trim().length).toBeGreaterThan(0);
+      expect(kindLabel(kind, true)).not.toBe(kind);
+    }
+  });
+
+  test("every callable tool has a human name in both locales", () => {
+    const unnamed = toolNames.filter((name) => !TOOL_META[name]);
+    expect(unnamed).toEqual([]);
+    for (const name of toolNames) {
+      expect(toolDisplayName(name, false)).not.toBe(name);
+      expect(toolDisplayName(name, true)).not.toBe(name);
+    }
+  });
+});
 
 describe("mission tool theater parts", () => {
   test("extracts static tool-* and dynamic-tool parts", () => {
@@ -59,7 +104,14 @@ describe("mission tool theater parts", () => {
   });
 
   test("summarizes tool inputs without dumping JSON", () => {
-    expect(summarizeToolInput({ view: "agents" }, false)).toBe("Screen: agents");
+    expect(summarizeToolInput({ view: "agents" }, false)).toBe("Screen: AI Agents");
+    expect(summarizeToolInput({ view: "clause-library" }, false)).toBe(
+      "Screen: Clause Library"
+    );
+    // An unknown key is still shown rather than swallowed.
+    expect(summarizeToolInput({ view: "not-a-view" }, false)).toBe(
+      "Screen: not-a-view"
+    );
     expect(summarizeToolInput({ query: "NCA ECC" }, false)).toContain("Search:");
     expect(summarizeToolInput({ projectId: "proj_abcdefghijk" }, false)).toContain(
       "Project"
@@ -70,6 +122,20 @@ describe("mission tool theater parts", () => {
     expect(summarizeToolOutput({ ok: true, mysteryBlob: { x: 1 } }, false)).toBe(
       "Completed successfully"
     );
+  });
+
+  test("stored tool output rehydrates as prose, never as a JSON fragment", () => {
+    // A reloaded mission replays actions from the database. Slicing the stored
+    // JSON put `{"ok":true,"projects":[{"id":"cm…` on screen.
+    const stored = JSON.stringify({
+      ok: true,
+      projects: [{ id: "p1" }, { id: "p2" }],
+    });
+    expect(summarizeStoredOutput(stored, false)).toBe("2 projects");
+    expect(summarizeStoredOutput(stored, false)).not.toContain("{");
+    expect(summarizeStoredOutput("not json at all", false)).toBe("");
+    expect(summarizeStoredOutput(null, false)).toBe("");
+    expect(summarizeStoredOutput(undefined, false)).toBe("");
   });
 
   test("unwraps nested proposal/run payloads for theater", () => {

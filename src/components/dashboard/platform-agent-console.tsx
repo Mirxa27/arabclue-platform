@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
+import { viewLabel } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -23,11 +24,16 @@ import { useToast } from "@/hooks/use-toast";
 import { useCopilotProcessing } from "@/hooks/use-copilot-processing";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
 import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
-import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
+import {
+  extractTheaterTools,
+  isToolRunning,
+  summarizeStoredOutput,
+  summarizeToolOutput,
+  type MissionFeedItem,
+} from "@/lib/agents/platform/mission-tool-parts";
 import { MISSION_STARTERS, starterCommand } from "@/lib/mission-starters";
 import { LiveVoiceSession } from "./live-voice-session";
 import { MissionAttachmentTray } from "./mission-attachment-tray";
-import type { MissionFeedItem } from "./mission-execution-feed";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionExtensionBridge } from "./mission-extension-bridge";
 import { MissionPulseWidget } from "./mission-pulse-widget";
@@ -79,7 +85,6 @@ export function PlatformAgentConsole() {
   const [voiceOut, setVoiceOut] = useState(true);
   const [interim, setInterim] = useState("");
   const [followView, setFollowView] = useState<DashboardView | null>(null);
-  const [followNote, setFollowNote] = useState<string | null>(null);
   const [liveConfig, setLiveConfig] = useState<VoiceLiveConfigResponse | null>(
     null
   );
@@ -231,7 +236,7 @@ export function PlatformAgentConsole() {
               id: a.id,
               toolName: a.toolName,
               status: a.status,
-              summary: a.outputJson?.slice(0, 280),
+              summary: summarizeStoredOutput(a.outputJson, ar),
               at: a.createdAt,
             })
           )
@@ -391,14 +396,6 @@ export function PlatformAgentConsole() {
         if (out.uiAction === "navigate" && typeof out.view === "string") {
           const view = out.view as DashboardView;
           setFollowView(view === "copilot" ? null : view);
-          setFollowNote(
-            typeof out.reason === "string"
-              ? out.reason
-              : toolPart.type.replace(/^tool-/, "")
-          );
-        }
-        if (out.uiAction === "setActiveProject") {
-          setFollowNote("active project focused");
         }
         setFeedItems((prev) =>
           [
@@ -406,14 +403,14 @@ export function PlatformAgentConsole() {
               id: key,
               toolName: toolPart.type.replace(/^tool-/, ""),
               status: toolPart.state || "output-available",
-              summary: JSON.stringify(out).slice(0, 280),
+              summary: summarizeToolOutput(out, ar),
             },
             ...prev,
           ].slice(0, 40)
         );
       }
     }
-  }, [messages, setActiveProjectId]);
+  }, [ar, messages, setActiveProjectId]);
 
   useEffect(() => {
     if (!voiceOut || typeof window === "undefined" || !window.speechSynthesis) {
@@ -563,7 +560,7 @@ export function PlatformAgentConsole() {
   return (
     <MissionControlShell
       locale={locale}
-      title={ar ? "مركز قيادة الصوت" : "Voice Mission Control"}
+      title={ar ? "الوكيل" : "Agent"}
       subtitle={
         ar
           ? "تحدّث أو اكتب — الوكيل ينفّذ أدوات المنصة ويعرض كل خطوة بوضوح."
@@ -594,7 +591,7 @@ export function PlatformAgentConsole() {
               onClick={() => startTransition(() => setView(followView))}
             >
               <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
-              {ar ? "عرض:" : "View:"} {followView}
+              {ar ? "عرض:" : "View:"} {viewLabel(followView, locale)}
             </Button>
           ) : null}
           {mode !== "live" || !liveConfig?.enabled ? (
@@ -613,41 +610,10 @@ export function PlatformAgentConsole() {
               ) : null}
             </>
           ) : null}
-          <Badge variant="outline" className="rounded-full text-[10px] border-zinc-200/70 dark:border-white/10 bg-white/60 dark:bg-white/[0.04] px-2">
-            {theaterTools.length} {ar ? "خطوات" : "steps"} · {theaterTools.filter((t: { state: string; preliminary?: boolean }) => isToolRunning(t.state) || (t as { preliminary?: boolean }).preliminary).length} {ar ? "حي" : "live"}
-          </Badge>
         </div>
       }
       kit={
         <>
-          {missionError ? (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium">
-                    {ar ? "فشل تجهيز المهمة" : "Mission setup failed"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-destructive/80">
-                    {missionError}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0"
-                  onClick={() => setMissionRetryKey((key) => key + 1)}
-                  disabled={missionCreating}
-                >
-                  {missionCreating ? (
-                    <Loader2 className="size-3 me-1 animate-spin" />
-                  ) : null}
-                  {ar ? "إعادة المحاولة" : "Retry"}
-                </Button>
-              </div>
-            </div>
-          ) : null}
           <MissionAttachmentTray
             locale={locale}
             missionId={missionId}
@@ -698,9 +664,6 @@ export function PlatformAgentConsole() {
               }
               if (data.autopilot?.mode === "autopilot") {
                 setFollowView("agents");
-                setFollowNote(
-                  data.autopilot.message || "autopilot pipeline started"
-                );
               }
               setFeedItems((prev) =>
                 [
@@ -807,21 +770,42 @@ export function PlatformAgentConsole() {
               </div>
             ) : null}
             {!missionId ? (
+              // The retry control lives here, beside the message that asks for
+              // it: in the collapsible kit panel it was hidden by default.
               <div
-                className="rounded-[12px] border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200"
-                role="status"
+                className={cn(
+                  "flex items-center gap-2 rounded-[12px] border px-3 py-2 text-[12px]",
+                  missionError
+                    ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
+                    : "border-amber-500/25 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+                )}
+                role={missionError ? "alert" : "status"}
               >
-                {missionCreating
-                  ? ar
-                    ? "جاري تجهيز المهمة…"
-                    : "Preparing mission…"
-                  : missionError
+                {missionError ? (
+                  <AlertCircle className="size-4 shrink-0" />
+                ) : null}
+                <span className="min-w-0 flex-1">
+                  {missionCreating
                     ? ar
-                      ? "تعذر إنشاء المهمة — استخدم إعادة المحاولة أعلاه."
-                      : "Mission create failed — use Retry above."
-                    : ar
-                      ? "انتظر حتى تصبح المهمة جاهزة قبل الإرسال."
-                      : "Wait until the mission is ready before sending."}
+                      ? "جاري تجهيز المهمة…"
+                      : "Getting the agent ready…"
+                    : missionError
+                      ? `${ar ? "تعذر بدء الوكيل." : "The agent could not start."} ${missionError}`
+                      : ar
+                        ? "انتظر حتى يصبح الوكيل جاهزاً قبل الإرسال."
+                        : "Wait until the agent is ready before sending."}
+                </span>
+                {missionError && !missionCreating ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 rounded-full text-[11px]"
+                    onClick={() => setMissionRetryKey((key) => key + 1)}
+                  >
+                    {ar ? "إعادة المحاولة" : "Try again"}
+                  </Button>
+                ) : null}
               </div>
             ) : null}
             <div className="relative">
@@ -905,8 +889,8 @@ export function PlatformAgentConsole() {
                 assistantLabel={ar ? "الوكيل" : "Agent"}
                 emptyHint={
                   ar
-                    ? "اطلب بلغتك العادية — شريط الحالة ونشاط الأدوات يوضحان كل خطوة."
-                    : "Ask in plain language — the status bar and activity pane show every step."
+                    ? "اطلب بلغتك العادية — كل خطوة ينفّذها الوكيل تظهر في «المعاينات الحية»."
+                    : "Ask in plain language — every step the agent takes appears under Live previews."
                 }
                 starters={starters}
                 onStarter={sendStarter}

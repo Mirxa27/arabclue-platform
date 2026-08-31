@@ -1,4 +1,5 @@
 import type { Locale } from "./types";
+import { VIEW_LABEL_KEYS, type DashboardView } from "./dashboard-routes";
 
 export type TranslationPair = Readonly<{ ar: string; en: string }>;
 type Dict = Readonly<Record<string, TranslationPair>>;
@@ -2678,4 +2679,9 @@ export function tr(
   values: TranslationInterpolationValues = {},
 ): string {
   return interpolate(resolveTranslation(key, locale).value, values);
+}
+
+/** The screen's name as the sidebar spells it. Never a raw route key. */
+export function viewLabel(view: DashboardView, locale: Locale): string {
+  return tr(VIEW_LABEL_KEYS[view], locale);
 }

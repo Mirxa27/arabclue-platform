@@ -4,6 +4,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { MessageSquareText, Sparkles } from "lucide-react";
+import { toolDisplayName } from "@/lib/agents/platform/mission-tool-parts";
 
 type LoosePart = {
   type: string;
@@ -134,9 +135,9 @@ export function MissionConversation({
                       const name = part.type === "dynamic-tool" ? part.toolName || "tool" : part.type.replace(/^tool-/, "");
                       const live = part.state === "input-streaming" || part.state === "input-available";
                       return (
-                        <span key={i} className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-mono", live ? "border-teal-500/25 bg-teal-500/10 text-teal-800 dark:text-teal-200" : "border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-400")}>
+                        <span key={i} className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]", live ? "border-teal-500/25 bg-teal-500/10 text-teal-800 dark:text-teal-200" : "border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-400")}>
                           <span className={cn("size-1 rounded-full", live ? "bg-teal-500 animate-pulse" : "bg-zinc-400")} />
-                          {name}
+                          {toolDisplayName(name, ar)}
                         </span>
                       );
                     }

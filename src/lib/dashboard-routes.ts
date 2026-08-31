@@ -106,6 +106,45 @@ export const DASHBOARD_VIEWS: readonly DashboardView[] = Object.freeze(
   Object.keys(VIEW_PATHS) as DashboardView[]
 );
 
+/**
+ * Localization key naming each view, so anything that reports a destination —
+ * the copilot's "opened X" badge, a breadcrumb, a notice — can say the same word
+ * the sidebar says. Only the key lives here: resolving it needs the dictionary,
+ * which this module deliberately does not import (see `viewLabel` in i18n).
+ */
+export const VIEW_LABEL_KEYS: Readonly<Record<DashboardView, string>> =
+  Object.freeze({
+    overview: "nav_home_agent",
+    copilot: "nav_copilot",
+    projects: "nav_projects",
+    documents: "nav_documents",
+    proposals: "nav_proposals",
+    contracts: "nav_contracts",
+    compliance: "nav_compliance",
+    "clause-library": "nav_clause_library",
+    "template-editor": "nav_template_editor",
+    agents: "nav_agents",
+    history: "nav_history",
+    brand: "nav_brand",
+    account: "nav_account",
+    "business-profile": "nav_business_profile",
+    reviews: "nav_reviews",
+    "knowledge-approval": "nav_knowledge_approval",
+    billing: "nav_billing",
+    settings: "nav_settings",
+    "proposal-builder": "nav_proposal_builder",
+    marketplace: "nav_marketplace",
+    analytics: "nav_analytics",
+    setup: "nav_setup",
+    admin_overview: "nav_dashboard",
+    admin_ai: "nav_admin_ai",
+    admin_env: "nav_admin_env",
+    admin_billing: "nav_admin_billing",
+    admin_myfatoorah: "nav_admin_myfatoorah",
+    admin_security: "nav_admin_security",
+    admin_audit: "nav_admin_audit",
+  });
+
 /** Reverse map from path segment to view, for O(1) resolution. */
 export const PATH_TO_VIEW: Readonly<Record<string, DashboardView>> = Object.freeze(
   Object.entries(VIEW_PATHS).reduce<Record<string, DashboardView>>(

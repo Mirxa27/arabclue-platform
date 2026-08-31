@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { DASHBOARD_VIEWS, VIEW_LABEL_KEYS } from "@/lib/dashboard-routes";
+import { viewLabel } from "@/lib/i18n";
 
 const source = readFileSync(
   join(import.meta.dir, "..", "..", "..", "src/components/dashboard/sidebar.tsx"),
@@ -61,5 +63,24 @@ describe("sidebar information architecture", () => {
 
   test("a badge hidden inside the disclosure is surfaced on the toggle", () => {
     expect(source).toContain("hiddenBadgeCount");
+  });
+});
+
+/**
+ * The copilot announces where it just navigated. It knows the view as a route
+ * key, so without one shared label table the user reads `clause-library` on
+ * screen while the sidebar two inches away says "Clause Library".
+ */
+describe("dashboard view labels", () => {
+  test("every view reads as a name, not a route key, in both locales", () => {
+    for (const view of DASHBOARD_VIEWS) {
+      for (const locale of ["ar", "en"] as const) {
+        const label = viewLabel(view, locale);
+        expect(label.trim().length).toBeGreaterThan(0);
+        expect(label).not.toBe(view);
+        // resolveTranslation returns the key itself when nothing is registered.
+        expect(label).not.toBe(VIEW_LABEL_KEYS[view]);
+      }
+    }
   });
 });

@@ -29,15 +29,17 @@ import {
   isToolDone,
   isToolFailed,
   isToolRunning,
+  kindLabel,
   summarizeToolInput,
   summarizeToolOutput,
   toolDisplayName,
   toolKind,
   type TheaterToolEvent,
+  type ToolKind,
 } from "@/lib/agents/platform/mission-tool-parts";
 import { MissionRealtimeWorkflow } from "./mission-realtime-workflow";
 
-function KindIcon({ kind, className }: { kind: string; className?: string }) {
+function KindIcon({ kind, className }: { kind: ToolKind; className?: string }) {
   const c = cn("size-3.5", className);
   switch (kind) {
     case "navigate":
@@ -60,7 +62,7 @@ function KindIcon({ kind, className }: { kind: string; className?: string }) {
   }
 }
 
-function DocumentForge({ locale, tools, voiceLive }: { locale: "ar" | "en"; tools: TheaterToolEvent[]; voiceLive?: boolean }) {
+function DocumentPreviewPanel({ locale, tools }: { locale: "ar" | "en"; tools: TheaterToolEvent[] }) {
   const ar = locale === "ar";
   const docTools = tools.filter((t) => isDocumentishTool(t.name));
   const failed =
@@ -88,13 +90,9 @@ function DocumentForge({ locale, tools, voiceLive }: { locale: "ar" | "en"; tool
       <div className="relative overflow-hidden rounded-[16px] border border-zinc-200/70 dark:border-white/[0.08] bg-white/60 dark:bg-zinc-900/40 backdrop-blur-md px-3.5 py-4">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_80%_at_20%_0%,rgba(6,182,212,0.08),transparent)]" />
         <p className="relative text-[12px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-          {voiceLive
-            ? ar
-              ? "مصنع المستندات في وضع الاستعداد أثناء الجلسة الصوتية — يظهر التقدم عند تشغيل أداة مستند حقيقية."
-              : "Document forge on standby during voice — progress appears when a real document tool runs."
-            : ar
-              ? "مصنع المستندات ينتظر — عند توليد عرض أو تشغيل الوكلاء يظهر النص هنا حياً."
-              : "Document forge idle — proposals materialize here live as generation proceeds."}
+          {ar
+            ? "لا يوجد مستند قيد الكتابة الآن. اطلب عرضاً أو عقداً وسيظهر النص هنا أثناء كتابته."
+            : "No document is being written yet. Ask for a proposal or contract and the text appears here as it is written."}
         </p>
       </div>
     );
@@ -138,7 +136,7 @@ function DocumentForge({ locale, tools, voiceLive }: { locale: "ar" | "en"; tool
             <span className={cn("flex size-6 items-center justify-center rounded-full border border-cyan-500/20 bg-white/80 dark:bg-white/[0.06] backdrop-blur", running && "border-cyan-500/30 bg-cyan-500/10")}>
               <FileText className={cn("size-3.5 text-cyan-700 dark:text-cyan-300", running && "animate-pulse")} />
             </span>
-            <span className="text-[11px] font-semibold tracking-wide uppercase text-cyan-900 dark:text-cyan-200">{ar ? "مصنع المستندات" : "Document forge"}</span>
+            <span className="text-[11px] font-semibold tracking-wide uppercase text-cyan-900 dark:text-cyan-200">{ar ? "معاينة المستند" : "Document preview"}</span>
             {running ? <span className="size-1.5 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" /> : null}
           </div>
           <Badge variant="outline" className={cn(
@@ -225,7 +223,7 @@ function DelegationTeam({ locale, tools }: { locale: "ar" | "en"; tools: Theater
       <div className="relative">
         <div className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">
           <Workflow className="size-3.5" />
-          {ar ? "الوكيل يقود الفريق" : "Copilot commanding team"}
+          {ar ? "خطة العمل" : "Plan of work"}
         </div>
         <ol className="space-y-1.5">
           {plan.map((step) => (
@@ -243,7 +241,7 @@ function DelegationTeam({ locale, tools }: { locale: "ar" | "en"; tools: Theater
   );
 }
 
-function RegulatoryForge({ locale, tools, voiceLive }: { locale: "ar" | "en"; tools: TheaterToolEvent[]; voiceLive?: boolean }) {
+function RegulationCheckPanel({ locale, tools, voiceLive }: { locale: "ar" | "en"; tools: TheaterToolEvent[]; voiceLive?: boolean }) {
   const ar = locale === "ar";
   const regTools = tools.filter((t) => isComplianceishTool(t.name));
   const active = [...regTools].reverse().find((t) => isToolRunning(t.state) || t.preliminary) || [...regTools].reverse().find((t) => isToolDone(t.state) && t.output != null);
@@ -253,7 +251,7 @@ function RegulatoryForge({ locale, tools, voiceLive }: { locale: "ar" | "en"; to
   if (!active && !voiceLive) {
     return (
       <div className="relative overflow-hidden rounded-[16px] border border-zinc-200/70 dark:border-white/10 bg-white/60 dark:bg-zinc-900/40 backdrop-blur-md px-3.5 py-4">
-        <p className="text-[12px] leading-relaxed text-zinc-600 dark:text-zinc-400">{ar ? "مصهر الامتثال ينتظر — اسأل عن PDPL أو NCA أو NORA ليُركّب البحث التنظيمي حياً." : "Regulatory forge idle — ask about PDPL, NCA, or NORA to synthesize live."}</p>
+        <p className="text-[12px] leading-relaxed text-zinc-600 dark:text-zinc-400">{ar ? "لم يبدأ فحص الأنظمة بعد. اسأل عن PDPL أو NCA أو NORA وستظهر النتائج هنا." : "No regulation check yet. Ask about PDPL, NCA, or NORA and the findings appear here."}</p>
       </div>
     );
   }
@@ -270,7 +268,7 @@ function RegulatoryForge({ locale, tools, voiceLive }: { locale: "ar" | "en"; to
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-[11px] font-semibold tracking-wide uppercase text-emerald-900 dark:text-emerald-200">
             <span className="flex size-6 items-center justify-center rounded-full border border-emerald-500/20 bg-white/80 dark:bg-white/[0.06]"><Shield className={cn("size-3.5", running && "animate-pulse")} /></span>
-            {ar ? "مصهر الامتثال التنظيمي" : "Regulatory forge"}
+            {ar ? "فحص الأنظمة" : "Regulation check"}
           </div>
           <Badge variant="outline" className={cn("rounded-full text-[10px] border-emerald-500/20 bg-white/60 dark:bg-white/[0.05]", running && "animate-pulse")}>{running ? (ar ? "يركّب…" : "synthesizing…") : ar ? "مُركّب" : "synthesized"}</Badge>
         </div>
@@ -317,10 +315,9 @@ export function MissionToolTheater({
 }) {
   const ar = locale === "ar";
   const runningCount = tools.filter((t) => isToolRunning(t.state) || t.preliminary).length;
-  const doneCount = tools.filter((t) => isToolDone(t.state) && !t.preliminary).length;
   const active = runningCount > 0 || !!isCapturing || !!isSpeaking;
   const kindCounts = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<ToolKind, number>();
     tools.forEach((t) => {
       const k = toolKind(t.name);
       map.set(k, (map.get(k) ?? 0) + 1);
@@ -349,11 +346,8 @@ export function MissionToolTheater({
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1 sm:gap-1.5">
+          {/* The action ticker below already counts live/done steps. */}
           {voiceLive ? <Badge variant="secondary" className="rounded-full gap-1 text-[10px] px-2 py-0.5"><Radio className="size-3" />{ar ? "صوت" : "voice"}</Badge> : null}
-          <div className="flex items-center gap-1 rounded-full border border-zinc-200/70 dark:border-white/10 bg-white/70 dark:bg-white/[0.05] px-2 py-1">
-            {runningCount > 0 ? <span className="size-1.5 rounded-full bg-teal-500 animate-pulse shadow-[0_0_8px_rgba(20,184,166,0.8)]" /> : <span className="size-1.5 rounded-full bg-zinc-300 dark:bg-white/30" />}
-            <span className="font-mono text-[10px] tabular-nums text-zinc-700 dark:text-zinc-300">{runningCount > 0 ? (ar ? `${runningCount} نشط` : `${runningCount} live`) : ar ? "خامل" : "idle"} · {doneCount}</span>
-          </div>
         </div>
       </div>
 
@@ -362,7 +356,7 @@ export function MissionToolTheater({
           {kindCounts.map(([k, count]) => (
             <span key={k} className="inline-flex items-center gap-1 rounded-full border border-zinc-200/60 dark:border-white/10 bg-white/60 dark:bg-white/[0.04] px-2 py-0.5 text-[10px] text-zinc-600 dark:text-zinc-400">
               <KindIcon kind={k} className="size-3" />
-              {k} {count}
+              {kindLabel(k, ar)} {count}
             </span>
           ))}
         </div>
@@ -370,8 +364,8 @@ export function MissionToolTheater({
 
       <div className="space-y-3">
         <DelegationTeam locale={locale} tools={tools} />
-        <DocumentForge locale={locale} tools={tools} voiceLive={voiceLive} />
-        <RegulatoryForge locale={locale} tools={tools} voiceLive={voiceLive} />
+        <DocumentPreviewPanel locale={locale} tools={tools} />
+        <RegulationCheckPanel locale={locale} tools={tools} voiceLive={voiceLive} />
         <MissionRealtimeWorkflow locale={locale} tools={tools} />
       </div>
     </aside>

@@ -3,6 +3,9 @@
  * Supports static `tool-${name}` (useChat) and `dynamic-tool` (realtime voice).
  */
 
+import { isDashboardView } from "@/lib/dashboard-routes";
+import { viewLabel } from "@/lib/i18n";
+
 export type TheaterToolState =
   | "input-streaming"
   | "input-available"
@@ -27,6 +30,15 @@ export type TheaterToolEvent = {
   preliminary?: boolean;
   messageId: string;
   at?: number;
+};
+
+/** One executed step as the console lists it — live, or replayed from the DB. */
+export type MissionFeedItem = {
+  id: string;
+  toolName: string;
+  status: string;
+  summary?: string;
+  at?: string;
 };
 
 type LoosePart = {
@@ -108,25 +120,28 @@ export function extractTheaterTools(
   return out;
 }
 
+/** The family a tool belongs to — drives grouping and iconography. */
+export type ToolKind =
+  | "navigate"
+  | "project"
+  | "document"
+  | "proposal"
+  | "pipeline"
+  | "compliance"
+  | "review"
+  | "billing"
+  | "admin"
+  | "mission"
+  | "search"
+  | "general";
+
 /** Human labels for platform tools (en / ar). */
 export const TOOL_META: Record<
   string,
   {
     en: string;
     ar: string;
-    kind:
-      | "navigate"
-      | "project"
-      | "document"
-      | "proposal"
-      | "pipeline"
-      | "compliance"
-      | "review"
-      | "billing"
-      | "admin"
-      | "mission"
-      | "search"
-      | "general";
+    kind: ToolKind;
   }
 > = {
   explainPlatform: { en: "Explain platform", ar: "شرح المنصة", kind: "general" },
@@ -143,6 +158,13 @@ export const TOOL_META: Record<
   getProposal: { en: "Open proposal", ar: "فتح عرض", kind: "proposal" },
   getCompliance: { en: "Compliance matrix", ar: "مصفوفة الامتثال", kind: "compliance" },
   startAgentPipeline: { en: "Launch agent pipeline", ar: "تشغيل خط الوكلاء", kind: "pipeline" },
+  orchestrateTenderPackage: {
+    en: "Command the full team",
+    ar: "قيادة الفريق بالكامل",
+    kind: "pipeline",
+  },
+  getMyCapabilities: { en: "Check my permissions", ar: "تحقق من صلاحياتي", kind: "general" },
+  getMissionPulse: { en: "Session recap", ar: "ملخص الجلسة", kind: "mission" },
   getAgentRunStatus: { en: "Pipeline status", ar: "حالة الخط", kind: "pipeline" },
   cancelAgentRun: { en: "Cancel pipeline", ar: "إلغاء الخط", kind: "pipeline" },
   listReviews: { en: "List reviews", ar: "قائمة المراجعات", kind: "review" },
@@ -184,8 +206,33 @@ export function toolDisplayName(name: string, ar: boolean): string {
   return name.replace(/([A-Z])/g, " $1").trim();
 }
 
-export function toolKind(name: string) {
+export function toolKind(name: string): ToolKind {
   return TOOL_META[name]?.kind ?? "general";
+}
+
+/**
+ * The kind spelled as a word. Grouping chips used to print the raw key, so an
+ * Arabic reader got "compliance 3" in the middle of otherwise translated copy.
+ */
+const KIND_LABELS: Readonly<Record<ToolKind, { en: string; ar: string }>> =
+  Object.freeze({
+    navigate: { en: "Navigation", ar: "تنقل" },
+    project: { en: "Projects", ar: "مشاريع" },
+    document: { en: "Documents", ar: "مستندات" },
+    proposal: { en: "Proposals", ar: "عروض" },
+    pipeline: { en: "Agents", ar: "وكلاء" },
+    compliance: { en: "Compliance", ar: "امتثال" },
+    review: { en: "Reviews", ar: "مراجعات" },
+    billing: { en: "Billing", ar: "فوترة" },
+    admin: { en: "Admin", ar: "إدارة" },
+    mission: { en: "Files", ar: "ملفات" },
+    search: { en: "Search", ar: "بحث" },
+    general: { en: "General", ar: "عام" },
+  });
+
+export function kindLabel(kind: ToolKind, ar: boolean): string {
+  const label = KIND_LABELS[kind];
+  return ar ? label.ar : label.en;
 }
 
 /**
@@ -458,7 +505,11 @@ export function summarizeToolInput(input: unknown, ar: boolean): string {
   };
 
   const view = pickStr("view", "targetView", "screen");
-  if (view) return ar ? `الشاشة: ${view}` : `Screen: ${view}`;
+  if (view) {
+    // The agent names a route key; the user reads the sidebar's word for it.
+    const named = isDashboardView(view) ? viewLabel(view, ar ? "ar" : "en") : view;
+    return ar ? `الشاشة: ${named}` : `Screen: ${named}`;
+  }
 
   const title = pickStr("title", "titleAr", "name", "projectTitle");
   if (title) return title.slice(0, 160);
@@ -583,6 +634,23 @@ export function summarizeToolOutput(output: unknown, ar: boolean): string {
   }
   // Avoid dumping raw JSON into the UI — keep theater human-readable.
   return "";
+}
+
+/**
+ * Summary of a tool output that was persisted as JSON. A reloaded mission
+ * replays its actions from the database, and slicing that stored string put a
+ * truncated `{"ok":true,"projects":[{"id":…` on screen instead of a sentence.
+ */
+export function summarizeStoredOutput(
+  json: string | null | undefined,
+  ar: boolean
+): string {
+  if (!json) return "";
+  try {
+    return summarizeToolOutput(JSON.parse(json), ar);
+  } catch {
+    return "";
+  }
 }
 
 export function extractDocumentPreview(output: unknown): {

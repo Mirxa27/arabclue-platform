@@ -7,6 +7,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { experimental_useRealtime } from "@ai-sdk/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
+import { viewLabel } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -37,12 +38,15 @@ import {
   resolveVoice,
   voicesForProvider,
 } from "@/lib/agents/platform/voice-options";
-import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
+import {
+  extractTheaterTools,
+  isToolRunning,
+  type MissionFeedItem,
+} from "@/lib/agents/platform/mission-tool-parts";
 import { useToast } from "@/hooks/use-toast";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionStage } from "./mission-stage";
 import { MissionConversation } from "./mission-conversation";
-import type { MissionFeedItem } from "./mission-execution-feed";
 
 function micErrorMessage(err: unknown, ar: boolean): string {
   if (!window.isSecureContext) {
@@ -446,7 +450,7 @@ export function LiveVoiceSession({
         ) : null}
         {followView ? (
           <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-[11px]" onClick={() => setView(followView)}>
-            {ar ? "افتح:" : "Open:"} {followView}
+            {ar ? "افتح:" : "Open:"} {viewLabel(followView, locale)}
           </Button>
         ) : null}
       </div>

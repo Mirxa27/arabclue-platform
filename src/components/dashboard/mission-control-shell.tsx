@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronUp, Mic, Paperclip, Radio, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronUp, MessageSquare, Paperclip, Radio, Sparkles } from "lucide-react";
 import { MissionPipelineBar } from "./mission-pipeline-bar";
 import type { TheaterToolEvent } from "@/lib/agents/platform/mission-tool-parts";
 
@@ -178,8 +178,7 @@ export function MissionControlShell({
                 aria-pressed={mode === "live"}
               >
                 <Radio className="size-3 sm:size-3.5" />
-                <span className="hidden xs:inline">{ar ? "مباشر" : "Live"}</span>
-                <span className="xs:hidden">{ar ? "مباشر" : "Live"}</span>
+                {ar ? "مباشر" : "Live"}
               </Button>
               <Button
                 type="button"
@@ -194,8 +193,8 @@ export function MissionControlShell({
                 onClick={() => onModeChange("classic")}
                 aria-pressed={mode === "classic"}
               >
-                <Mic className="size-3 sm:size-3.5" />
-                {ar ? "متصفح" : "Chat"}
+                <MessageSquare className="size-3 sm:size-3.5" />
+                {ar ? "محادثة" : "Chat"}
               </Button>
             </div>
             <p className="hidden sm:block text-[10px] leading-none text-zinc-500 dark:text-zinc-500">
