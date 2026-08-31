@@ -12,6 +12,10 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { jsonApiFailure, jsonOk, withPublicRoute } from "@/lib/api-controller";
 import { createPrismaInvitationService } from "@/lib/invitation-service-prisma";
+import {
+  describeRateLimitDenial,
+  rateLimitAsync as rateLimit,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +27,26 @@ function clientAddress(req: NextRequest): string | null {
 
 export async function POST(req: NextRequest) {
   return withPublicRoute("invitations accept", async () => {
+    // Before anything reads the body or opens a transaction. The token is 32
+    // random bytes, so this is not about guessing it — acceptInvitation runs a
+    // serializable transaction, and an unauthenticated caller must not be able
+    // to open an unbounded number of them.
+    const address = clientAddress(req) ?? "unknown";
+    const rl = await rateLimit({
+      key: `invitations:accept:${address}`,
+      limit: 10,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (!rl.ok) {
+      const denial = describeRateLimitDenial(rl);
+      return jsonApiFailure(
+        denial.status === 503
+          ? "INVITATION_RATE_LIMIT_UNAVAILABLE"
+          : "INVITATION_RATE_LIMITED",
+        { status: denial.status, retryAfterSeconds: denial.retryAfterSeconds }
+      );
+    }
+
     const payload = await req.json().catch(() => null);
     const session = await getServerSession(authOptions);
     const sessionUser =

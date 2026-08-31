@@ -152,8 +152,8 @@ export const faqItems: FaqItem[] = [
   {
     qEn: "How do I get an account?",
     qAr: "كيف أحصل على حساب؟",
-    aEn: "Workspaces are provisioned by platform or tenant administrators. Sign in at /login with credentials issued for your organization.",
-    aAr: "تُنشأ مساحات العمل من مسؤولي المنصة أو المستأجر. سجّل الدخول من /login ببيانات صادرة لمؤسستك.",
+    aEn: "Create one yourself at /register — you name the workspace and become its owner. Confirm the emailed link, then sign in at /login. To join a workspace that already exists, ask one of its admins to invite you.",
+    aAr: "أنشئ حسابك من /register — تختار اسم مساحة العمل وتصبح مالكها. أكّد الرابط المُرسل إلى بريدك ثم سجّل الدخول من /login. وللانضمام إلى مساحة قائمة، اطلب دعوة من أحد مسؤوليها.",
   },
   {
     qEn: "What languages are supported?",

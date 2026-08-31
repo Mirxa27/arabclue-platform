@@ -1798,6 +1798,11 @@ export const localizationRegistry = {
   RECOVERY_RATE_LIMITED: { ar: "تم تجاوز حد محاولات استعادة الحساب", en: "Account recovery rate limit exceeded" },
   RECOVERY_PASSWORD_REJECTED: { ar: "كلمة المرور الجديدة لا تستوفي المتطلبات", en: "The new password does not meet the requirements" },
   INVITATION_ACCEPTANCE_INVALID: { ar: "بيانات قبول الدعوة غير صالحة: {{fieldPath}}", en: "Invitation acceptance data is invalid: {{fieldPath}}" },
+  INVITATION_RATE_LIMITED: { ar: "تم تجاوز حد محاولات قبول الدعوة. انتظر قليلاً ثم أعد المحاولة", en: "Too many invitation acceptance attempts. Wait a moment and try again" },
+  // Split from INVITATION_RATE_LIMITED for the same reason AI_RATE_LIMIT_UNAVAILABLE
+  // is split from AI_RATE_LIMITED: the invitee did nothing wrong, and telling
+  // them to slow down would send them looking for a mistake they did not make.
+  INVITATION_RATE_LIMIT_UNAVAILABLE: { ar: "تعذر التحقق من حد المحاولات، ولم تُقبل الدعوة. أعد المحاولة بعد قليل", en: "The attempt limit could not be checked, so the invitation was not accepted. Try again shortly" },
   ANALYTICS_EVENT_TYPE_INVALID: { ar: "نوع حدث التحليلات غير مسجل", en: "Analytics event type is not registered" },
   TEMPLATE_SUBMISSION_INVALID: { ar: "بيانات القالب غير صالحة: {{fieldPath}}", en: "Template submission is invalid: {{fieldPath}}" },
   TEMPLATE_KEY_IN_USE: { ar: "مفتاح القالب مستخدم في مساحة العمل", en: "Template key is already in use in the workspace" },
@@ -2431,6 +2436,8 @@ export const COMPLETION_ERROR_CONTRACTS = {
   INVITATION_TOKEN_INVALID: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_TOKEN_INVALID" },
   INVITATION_EMAIL_MISMATCH: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_EMAIL_MISMATCH" },
   INVITATION_ACCEPTANCE_INVALID: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_ACCEPTANCE_INVALID" },
+  INVITATION_RATE_LIMITED: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_RATE_LIMITED" },
+  INVITATION_RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_RATE_LIMIT_UNAVAILABLE" },
   ANALYTICS_DATE_RANGE_REQUIRED: { actionKey: "error_action_load_analytics", messageKey: "ANALYTICS_DATE_RANGE_REQUIRED" },
   ANALYTICS_DATE_INVALID: { actionKey: "error_action_load_analytics", messageKey: "ANALYTICS_DATE_INVALID" },
   ANALYTICS_DATE_RANGE_INVALID: { actionKey: "error_action_load_analytics", messageKey: "ANALYTICS_DATE_RANGE_INVALID" },

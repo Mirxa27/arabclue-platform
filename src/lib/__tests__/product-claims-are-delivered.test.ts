@@ -37,6 +37,7 @@ function customerFacingFiles(): string[] {
     ...walk(resolve(root, "src/components/marketing")),
     ...walk(resolve(root, "src/lib/marketing")),
     ...walk(resolve(root, "src/app/compliance")),
+    ...walk(resolve(root, "src/app/contact")),
   ].filter((f) => !f.includes("__tests"));
 }
 
@@ -184,6 +185,79 @@ describe("customer-facing copy does not promise absent capabilities", () => {
       CLAIMS.some((c) => c.patterns.some((p) => p.test(b)))
     );
     expect(wrong, `honest line flagged:\n${wrong.join("\n")}`).toEqual([]);
+  });
+});
+
+/**
+ * The mirror image of the block above, and the more expensive mistake of the
+ * two. An overclaim loses a customer at delivery; an underclaim loses them
+ * before they ever sign up, silently, and nothing in the funnel records it.
+ *
+ * Registration is public, rate-limited, and provisions a workspace with the
+ * registrant as OWNER. Two surfaces told prospects to go ask an administrator
+ * for credentials instead.
+ */
+describe("customer-facing copy does not deny capabilities that ship", () => {
+  const DENIALS: readonly RegExp[] = [
+    /provisioned by (the )?(platform|tenant)/i,
+    /platform[- ]provisioned account/i,
+    /credentials issued for your organization/i,
+    /تُنشأ مساحات العمل من مسؤولي/,
+    /حساباً? مُنشأ من المنصة/,
+    /ببيانات صادرة لمؤسستك/,
+  ];
+
+  test("no surface tells prospects they cannot open their own account", () => {
+    const hits: string[] = [];
+    for (const file of customerFacingFiles()) {
+      const relative = file.split("/src/")[1] ?? file;
+      const source = readFileSync(file, "utf8");
+      for (const pattern of DENIALS) {
+        const match = source.match(pattern);
+        if (match) hits.push(`${relative} — ${match[0].slice(0, 120)}`);
+      }
+    }
+    expect(hits, `self-serve denied:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  test("the denial scan still catches the wording that shipped", () => {
+    const shipped = [
+      "Workspaces are provisioned by platform or tenant administrators. Sign in at /login with credentials issued for your organization.",
+      "تُنشأ مساحات العمل من مسؤولي المنصة أو المستأجر. سجّل الدخول من /login ببيانات صادرة لمؤسستك.",
+      "Login requires a platform-provisioned account — contact your workspace admin for access, or email support@arabclue.com for enterprise onboarding.",
+      "يتطلب تسجيل الدخول حساباً مُنشأ من المنصة — تواصل مع مسؤول مساحة عملك للوصول، أو راسل support@arabclue.com لتأهيل المؤسسات.",
+    ];
+    const missed = shipped.filter((s) => !DENIALS.some((p) => p.test(s)));
+    expect(missed, `no longer detected:\n${missed.join("\n")}`).toEqual([]);
+  });
+
+  test("the denial scan leaves the true half of the story alone", () => {
+    // Self-serve creates a workspace and makes you its owner. Joining someone
+    // else's workspace really does need their invitation — saying so is
+    // accurate, and the scan must not make it unsayable.
+    const benign = [
+      "Create a workspace at /register — you become its owner.",
+      "Teammates join an existing workspace by invitation from an admin.",
+      "Enterprise tenants can have workspaces provisioned for them on request.",
+      "أنشئ مساحة عملك من /register وتصبح مالكها.",
+      "ينضم الزملاء إلى مساحة قائمة بدعوة من مسؤولها.",
+    ];
+    const wrong = benign.filter((b) => DENIALS.some((p) => p.test(b)));
+    expect(wrong, `true line flagged:\n${wrong.join("\n")}`).toEqual([]);
+  });
+
+  test("self-serve registration is still public and still grants ownership", () => {
+    // If registration is ever closed off, this fails and the copy above may go
+    // back to pointing people at an administrator.
+    const route = read("src/app/api/auth/register/route.ts");
+    expect(route).toContain("export async function POST");
+    expect(route).toContain("REGISTRATION_RATE_LIMITED");
+    expect(route, "register is behind a session — the FAQ answer must change").not.toContain(
+      "getServerSession"
+    );
+    expect(read("src/lib/account-service.ts")).toContain(
+      'export const REGISTRATION_MEMBERSHIP_ROLE = "OWNER" as const;'
+    );
   });
 });
 

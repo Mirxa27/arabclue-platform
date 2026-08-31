@@ -147,12 +147,12 @@ export const termsContent = {
       titleEn: "Accounts and access",
       titleAr: "الحسابات والوصول",
       bulletsEn: [
-        "Access is provisioned by platform or workspace administrators.",
+        "Accounts are opened by self-service registration, by invitation from a workspace administrator, or by platform provisioning for enterprise tenants.",
         "You must keep credentials confidential and enable MFA where available for privileged roles.",
         "We may suspend accounts that present security risk, unpaid invoices, or Acceptable Use violations.",
       ],
       bulletsAr: [
-        "يُمنح الوصول من مسؤولي المنصة أو مساحة العمل.",
+        "تُفتح الحسابات بالتسجيل الذاتي، أو بدعوة من مسؤول مساحة العمل، أو بتهيئة من المنصة لعملاء المؤسسات.",
         "يجب الحفاظ على سرية بيانات الدخول وتفعيل المصادقة الثنائية حيثما أتيحت للأدوار الحساسة.",
         "يجوز تعليق الحسابات التي تشكّل خطراً أمنياً أو عليها فواتير غير مسددة أو تخالف الاستخدام المقبول.",
       ],

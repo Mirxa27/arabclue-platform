@@ -59,11 +59,11 @@ export default function ContactPage() {
           titleAr: "أوقات الاستجابة",
           paragraphsEn: [
             "We aim to respond to support and legal emails within two business days. Security reports are prioritized.",
-            "Login requires a platform-provisioned account — contact your workspace admin for access, or email support@arabclue.com for enterprise onboarding.",
+            "You do not need to contact us to start — open a workspace yourself at /register. To join a workspace that already exists, ask one of its admins to invite you. Email support@arabclue.com for enterprise onboarding.",
           ],
           paragraphsAr: [
             "نسعى للرد على بريد الدعم والشؤون القانونية خلال يومي عمل. وتُعطى أولوية لتقارير الأمن.",
-            "يتطلب تسجيل الدخول حساباً مُنشأ من المنصة — تواصل مع مسؤول مساحة عملك للوصول، أو راسل support@arabclue.com لتأهيل المؤسسات.",
+            "لا حاجة لمراسلتنا للبدء — أنشئ مساحة عملك من /register. وللانضمام إلى مساحة قائمة، اطلب دعوة من أحد مسؤوليها. وراسل support@arabclue.com لتأهيل المؤسسات.",
           ],
         },
       ]}
