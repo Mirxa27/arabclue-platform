@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { mappedApiFailure } from "@/lib/api-failure";
+import type { CompletionErrorCode } from "@/lib/i18n";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import {
@@ -70,15 +72,24 @@ const productionDependencies: ContractDraftReadRouteDependencies = {
   deleteDraft: deletePersistedContractDraft,
 };
 
+/**
+ * Bilingual failure for a single draft.
+ *
+ * Same reason as the collection route: the message was written in English at
+ * the call site, so an Arabic reader got an English rejection. The mapper owns
+ * both languages; `code` stays exactly as it was, and typing it as
+ * `CompletionErrorCode` means an unregistered one is a build failure rather
+ * than a monolingual response nobody notices until a customer complains.
+ */
 function errorResponse(
-  error: string,
-  code: string,
+  code: CompletionErrorCode,
   status: number
 ): NextResponse {
-  return NextResponse.json(
-    { error, code },
-    { status, headers: { "Cache-Control": "no-store" } }
-  );
+  const mapped = mappedApiFailure(code, { status });
+  return NextResponse.json(mapped.body, {
+    status: mapped.status,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 export async function handleContractDraftRead(
@@ -87,12 +98,10 @@ export async function handleContractDraftRead(
 ): Promise<NextResponse> {
   const caller = await dependencies.getReader();
   if (!caller) {
-    return errorResponse("Unauthorized", "UNAUTHORIZED", 401);
+    return errorResponse("UNAUTHORIZED", 401);
   }
   if (!/^[A-Za-z0-9_-]{1,200}$/u.test(id)) {
-    return errorResponse(
-      "Contract draft id is invalid.",
-      "CONTRACT_DRAFT_ID_INVALID",
+    return errorResponse("CONTRACT_DRAFT_ID_INVALID",
       400
     );
   }
@@ -100,9 +109,7 @@ export async function handleContractDraftRead(
   try {
     const draft = await dependencies.load({ workspaceId: workspace.id, id });
     if (!draft) {
-      return errorResponse(
-        "Contract draft not found.",
-        "CONTRACT_DRAFT_NOT_FOUND",
+      return errorResponse("CONTRACT_DRAFT_NOT_FOUND",
         404
       );
     }
@@ -116,12 +123,10 @@ export async function handleContractDraftRead(
     );
   } catch (error) {
     if (error instanceof ContractDraftPersistenceError) {
-      return errorResponse(error.message, error.code, error.status);
+      return errorResponse(error.code, error.status);
     }
     console.error("[contract draft read]", error);
-    return errorResponse(
-      "Contract draft could not be loaded.",
-      "CONTRACT_DRAFT_READ_FAILED",
+    return errorResponse("CONTRACT_DRAFT_READ_FAILED",
       500
     );
   }
@@ -134,12 +139,10 @@ export async function handleContractDraftUpdate(
 ): Promise<NextResponse> {
   const caller = await dependencies.getWriter();
   if (!caller) {
-    return errorResponse("Forbidden", "FORBIDDEN", 403);
+    return errorResponse("FORBIDDEN", 403);
   }
   if (!/^[A-Za-z0-9_-]{1,200}$/u.test(id)) {
-    return errorResponse(
-      "Contract draft id is invalid.",
-      "CONTRACT_DRAFT_ID_INVALID",
+    return errorResponse("CONTRACT_DRAFT_ID_INVALID",
       400
     );
   }
@@ -148,18 +151,14 @@ export async function handleContractDraftUpdate(
   try {
     body = await request.json();
   } catch {
-    return errorResponse(
-      "Request body must be JSON.",
-      "CONTRACT_DRAFT_BODY_INVALID",
+    return errorResponse("CONTRACT_DRAFT_BODY_INVALID",
       400
     );
   }
 
   const parsed = contractDraftWriteSchema.safeParse(body);
   if (!parsed.success) {
-    return errorResponse(
-      "Contract draft payload is invalid.",
-      "CONTRACT_DRAFT_BODY_INVALID",
+    return errorResponse("CONTRACT_DRAFT_BODY_INVALID",
       400
     );
   }
@@ -191,12 +190,10 @@ export async function handleContractDraftUpdate(
     );
   } catch (error) {
     if (error instanceof ContractDraftPersistenceError) {
-      return errorResponse(error.message, error.code, error.status);
+      return errorResponse(error.code, error.status);
     }
     console.error("[contract draft PATCH]", error);
-    return errorResponse(
-      "Contract draft could not be updated.",
-      "CONTRACT_DRAFT_UPDATE_FAILED",
+    return errorResponse("CONTRACT_DRAFT_UPDATE_FAILED",
       500
     );
   }
@@ -209,12 +206,10 @@ export async function handleContractDraftDelete(
 ): Promise<NextResponse> {
   const caller = await dependencies.getWriter();
   if (!caller) {
-    return errorResponse("Forbidden", "FORBIDDEN", 403);
+    return errorResponse("FORBIDDEN", 403);
   }
   if (!/^[A-Za-z0-9_-]{1,200}$/u.test(id)) {
-    return errorResponse(
-      "Contract draft id is invalid.",
-      "CONTRACT_DRAFT_ID_INVALID",
+    return errorResponse("CONTRACT_DRAFT_ID_INVALID",
       400
     );
   }
@@ -240,12 +235,10 @@ export async function handleContractDraftDelete(
     );
   } catch (error) {
     if (error instanceof ContractDraftPersistenceError) {
-      return errorResponse(error.message, error.code, error.status);
+      return errorResponse(error.code, error.status);
     }
     console.error("[contract draft DELETE]", error);
-    return errorResponse(
-      "Contract draft could not be deleted.",
-      "CONTRACT_DRAFT_DELETE_FAILED",
+    return errorResponse("CONTRACT_DRAFT_DELETE_FAILED",
       500
     );
   }

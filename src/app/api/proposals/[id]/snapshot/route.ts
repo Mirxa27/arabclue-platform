@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
+import { mappedApiFailure } from "@/lib/api-failure";
+import type { CompletionErrorCode } from "@/lib/i18n";
 import { db } from "@/lib/db";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -220,15 +222,29 @@ const defaultDependencies: ProposalSnapshotRouteDependencies = {
   },
 };
 
+/**
+ * Bilingual failure, with this route's reconciliation payload attached.
+ *
+ * The message used to be an English string written at the call site, which put
+ * English text into an Arabic editor on every rejection. The shared mapper owns
+ * the `{ ar, en }` pair now; the `code` is unchanged, because that is what the
+ * client actually branches on. `details` still rides alongside — a snapshot
+ * rejection carries the revision that won, the canonicaliser diagnostics, or
+ * the offending Zod paths, and the editor cannot reconcile without them.
+ *
+ * Typing `code` as `CompletionErrorCode` is the part that keeps this honest:
+ * an unregistered code is a compile error, not an English-only response
+ * discovered by an Arabic-locale user.
+ */
 function errorResponse(
-  error: string,
-  code: string,
+  code: CompletionErrorCode,
   status: number,
   details?: Record<string, unknown>
 ): NextResponse {
+  const mapped = mappedApiFailure(code, { status });
   return NextResponse.json(
-    { error, code, ...(details ?? {}) },
-    { status, headers: { "Cache-Control": "no-store" } }
+    { ...mapped.body, ...(details ?? {}) },
+    { status: mapped.status, headers: { "Cache-Control": "no-store" } }
   );
 }
 
@@ -243,9 +259,7 @@ async function readJsonBody(req: Request): Promise<
   ) {
     return {
       ok: false,
-      response: errorResponse(
-        "Structured proposal snapshot exceeds the request budget.",
-        "SNAPSHOT_BODY_TOO_LARGE",
+      response: errorResponse("SNAPSHOT_BODY_TOO_LARGE",
         413
       ),
     };
@@ -257,9 +271,7 @@ async function readJsonBody(req: Request): Promise<
   } catch {
     return {
       ok: false,
-      response: errorResponse(
-        "Unable to read structured proposal snapshot.",
-        "INVALID_SNAPSHOT_JSON",
+      response: errorResponse("INVALID_SNAPSHOT_JSON",
         400
       ),
     };
@@ -267,9 +279,7 @@ async function readJsonBody(req: Request): Promise<
   if (new TextEncoder().encode(text).byteLength > MAX_PROPOSAL_SNAPSHOT_BODY_BYTES) {
     return {
       ok: false,
-      response: errorResponse(
-        "Structured proposal snapshot exceeds the request budget.",
-        "SNAPSHOT_BODY_TOO_LARGE",
+      response: errorResponse("SNAPSHOT_BODY_TOO_LARGE",
         413
       ),
     };
@@ -279,9 +289,7 @@ async function readJsonBody(req: Request): Promise<
   } catch {
     return {
       ok: false,
-      response: errorResponse(
-        "Invalid JSON body.",
-        "INVALID_SNAPSHOT_JSON",
+      response: errorResponse("INVALID_SNAPSHOT_JSON",
         400
       ),
     };
@@ -295,24 +303,20 @@ export async function handleProposalSnapshotPut(
 ): Promise<NextResponse> {
   const caller = await dependencies.getWriter();
   if (!caller) {
-    return errorResponse("Forbidden", "FORBIDDEN", 403);
+    return errorResponse("FORBIDDEN", 403);
   }
   const workspace = await dependencies.getWorkspace(caller.userId);
   const existing = await dependencies.findProposal(proposalId);
   if (!existing || existing.workspaceId !== workspace.id) {
-    return errorResponse("not found", "PROPOSAL_NOT_FOUND", 404);
+    return errorResponse("PROPOSAL_NOT_FOUND", 404);
   }
   if (existing.type === "CONTRACT") {
-    return errorResponse(
-      "Contract records do not accept Phase 4 proposal snapshots.",
-      "STRUCTURED_SNAPSHOT_TYPE_MISMATCH",
+    return errorResponse("STRUCTURED_SNAPSHOT_TYPE_MISMATCH",
       409
     );
   }
   if (isProposalEditLocked(existing.status)) {
-    return errorResponse(
-      "Proposal is locked for editing in current status.",
-      "STATUS_LOCKED",
+    return errorResponse("STATUS_LOCKED",
       409
     );
   }
@@ -321,9 +325,7 @@ export async function handleProposalSnapshotPut(
   if (!raw.ok) return raw.response;
   const body = proposalSnapshotWriteSchema.safeParse(raw.value);
   if (!body.success) {
-    return errorResponse(
-      "Structured proposal snapshot request is invalid.",
-      "INVALID_SNAPSHOT_REQUEST",
+    return errorResponse("INVALID_SNAPSHOT_REQUEST",
       400,
       {
         issues: body.error.issues.map((issue) => ({
@@ -334,9 +336,7 @@ export async function handleProposalSnapshotPut(
     );
   }
   if (body.data.expectedRevision !== existing.structuredSnapshotRevision) {
-    return errorResponse(
-      "Structured proposal snapshot changed. Reload before replacing it.",
-      "SNAPSHOT_REVISION_CONFLICT",
+    return errorResponse("SNAPSHOT_REVISION_CONFLICT",
       409,
       { currentRevision: existing.structuredSnapshotRevision }
     );
@@ -348,9 +348,7 @@ export async function handleProposalSnapshotPut(
     presetKey: body.data.presetKey,
   });
   if (!validation.ok) {
-    return errorResponse(
-      "Structured proposal snapshot failed canonical validation.",
-      validation.code,
+    return errorResponse(validation.code,
       422,
       { diagnostics: validation.diagnostics }
     );
@@ -363,9 +361,7 @@ export async function handleProposalSnapshotPut(
     existing.projectId
   );
   if (!serverIdentity) {
-    return errorResponse(
-      "Proposal project or workspace identity was not found.",
-      "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
+    return errorResponse("SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
       409
     );
   }
@@ -374,9 +370,7 @@ export async function handleProposalSnapshotPut(
     serverIdentity
   );
   if (identityDiagnostics.length > 0) {
-    return errorResponse(
-      "Structured proposal identity does not match current tenant records.",
-      "STRUCTURED_IDENTITY_MISMATCH",
+    return errorResponse("STRUCTURED_IDENTITY_MISMATCH",
       422,
       { diagnostics: identityDiagnostics }
     );
@@ -390,9 +384,7 @@ export async function handleProposalSnapshotPut(
     approvedEvidenceIds
   );
   if (evidenceDiagnostics.length > 0) {
-    return errorResponse(
-      "Structured proposal snapshot contains unapproved or unverified evidence.",
-      "STRUCTURED_EVIDENCE_NOT_APPROVED",
+    return errorResponse("STRUCTURED_EVIDENCE_NOT_APPROVED",
       422,
       { diagnostics: evidenceDiagnostics }
     );
@@ -411,9 +403,7 @@ export async function handleProposalSnapshotPut(
     snapshot: validation.value,
   });
   if (!updated) {
-    return errorResponse(
-      "Structured proposal snapshot changed. Reload before replacing it.",
-      "SNAPSHOT_REVISION_CONFLICT",
+    return errorResponse("SNAPSHOT_REVISION_CONFLICT",
       409
     );
   }
@@ -458,12 +448,12 @@ export async function handleProposalSnapshotGet(
 ): Promise<NextResponse> {
   const caller = await dependencies.getReader();
   if (!caller) {
-    return errorResponse("Unauthorized", "UNAUTHORIZED", 401);
+    return errorResponse("UNAUTHORIZED", 401);
   }
   const workspace = await dependencies.getWorkspace(caller.userId);
   const proposal = await dependencies.findProposal(proposalId);
   if (!proposal || proposal.workspaceId !== workspace.id) {
-    return errorResponse("not found", "PROPOSAL_NOT_FOUND", 404);
+    return errorResponse("PROPOSAL_NOT_FOUND", 404);
   }
   if (proposal.structuredSnapshot === null) {
     return NextResponse.json(
@@ -489,9 +479,7 @@ export async function handleProposalSnapshotGet(
     }
   );
   if (!validation.ok) {
-    return errorResponse(
-      "Persisted structured proposal snapshot is invalid.",
-      validation.code,
+    return errorResponse(validation.code,
       409,
       { diagnostics: validation.diagnostics }
     );
@@ -501,9 +489,7 @@ export async function handleProposalSnapshotGet(
     proposal.projectId
   );
   if (!serverIdentity) {
-    return errorResponse(
-      "Proposal project or workspace identity was not found.",
-      "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
+    return errorResponse("SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
       409
     );
   }
@@ -512,9 +498,7 @@ export async function handleProposalSnapshotGet(
     serverIdentity
   );
   if (identityDiagnostics.length > 0) {
-    return errorResponse(
-      "Persisted structured proposal identity no longer matches tenant records.",
-      "STRUCTURED_IDENTITY_MISMATCH",
+    return errorResponse("STRUCTURED_IDENTITY_MISMATCH",
       409,
       { diagnostics: identityDiagnostics }
     );
@@ -528,9 +512,7 @@ export async function handleProposalSnapshotGet(
     approvedEvidenceIds
   );
   if (evidenceDiagnostics.length > 0) {
-    return errorResponse(
-      "Persisted structured proposal evidence is no longer approved.",
-      "STRUCTURED_EVIDENCE_NOT_APPROVED",
+    return errorResponse("STRUCTURED_EVIDENCE_NOT_APPROVED",
       409,
       { diagnostics: evidenceDiagnostics }
     );
@@ -575,31 +557,25 @@ export async function handleProposalSnapshotPost(
 ): Promise<NextResponse> {
   const caller = await dependencies.getWriter();
   if (!caller) {
-    return errorResponse("Forbidden", "FORBIDDEN", 403);
+    return errorResponse("FORBIDDEN", 403);
   }
   const workspace = await dependencies.getWorkspace(caller.userId);
   const existing = await dependencies.findProposal(proposalId);
   if (!existing || existing.workspaceId !== workspace.id) {
-    return errorResponse("not found", "PROPOSAL_NOT_FOUND", 404);
+    return errorResponse("PROPOSAL_NOT_FOUND", 404);
   }
   if (existing.type === "CONTRACT") {
-    return errorResponse(
-      "Contract records do not accept Phase 4 proposal snapshots.",
-      "STRUCTURED_SNAPSHOT_TYPE_MISMATCH",
+    return errorResponse("STRUCTURED_SNAPSHOT_TYPE_MISMATCH",
       409
     );
   }
   if (isProposalEditLocked(existing.status)) {
-    return errorResponse(
-      "Proposal is locked for editing in current status.",
-      "STATUS_LOCKED",
+    return errorResponse("STATUS_LOCKED",
       409
     );
   }
   if (!existing.contentMd?.trim()) {
-    return errorResponse(
-      "Proposal content is empty.",
-      "EMPTY_PROPOSAL_CONTENT",
+    return errorResponse("EMPTY_PROPOSAL_CONTENT",
       422
     );
   }
@@ -608,9 +584,7 @@ export async function handleProposalSnapshotPost(
   const hydrationRequest =
     proposalSnapshotHydrationRequestSchema.safeParse(raw.value);
   if (!hydrationRequest.success) {
-    return errorResponse(
-      "Explicit counterpart-language Markdown is required.",
-      "BILINGUAL_COUNTERPART_REQUIRED",
+    return errorResponse("BILINGUAL_COUNTERPART_REQUIRED",
       400,
       {
         issues: hydrationRequest.error.issues.map((issue) => ({
@@ -625,9 +599,7 @@ export async function handleProposalSnapshotPost(
     existing.projectId
   );
   if (!serverIdentity) {
-    return errorResponse(
-      "Proposal project or workspace identity was not found.",
-      "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
+    return errorResponse("SNAPSHOT_SERVER_IDENTITY_NOT_FOUND",
       409
     );
   }
@@ -644,9 +616,7 @@ export async function handleProposalSnapshotPost(
   const languageDiagnostics =
     validateProposalDraftLanguageDirections(contentMd);
   if (languageDiagnostics.length > 0) {
-    return errorResponse(
-      "The explicit English and Arabic drafts failed language-direction validation.",
-      "BILINGUAL_LANGUAGE_DIRECTION_INVALID",
+    return errorResponse("BILINGUAL_LANGUAGE_DIRECTION_INVALID",
       422,
       { diagnostics: languageDiagnostics }
     );
@@ -665,9 +635,7 @@ export async function handleProposalSnapshotPost(
     presetKey: "bilingual-parallel",
   });
   if (!validation.ok) {
-    return errorResponse(
-      "Current proposal content could not be hydrated into the structured engine.",
-      validation.code,
+    return errorResponse(validation.code,
       422,
       { diagnostics: validation.diagnostics }
     );
@@ -677,9 +645,7 @@ export async function handleProposalSnapshotPost(
     serverIdentity
   );
   if (identityDiagnostics.length > 0) {
-    return errorResponse(
-      "Hydrated proposal identity does not match current tenant records.",
-      "STRUCTURED_IDENTITY_MISMATCH",
+    return errorResponse("STRUCTURED_IDENTITY_MISMATCH",
       422,
       { diagnostics: identityDiagnostics }
     );
@@ -689,9 +655,7 @@ export async function handleProposalSnapshotPost(
     []
   );
   if (evidenceDiagnostics.length > 0) {
-    return errorResponse(
-      "Hydrated proposal contains invalid evidence declarations.",
-      "STRUCTURED_EVIDENCE_NOT_APPROVED",
+    return errorResponse("STRUCTURED_EVIDENCE_NOT_APPROVED",
       422,
       { diagnostics: evidenceDiagnostics }
     );
@@ -709,9 +673,7 @@ export async function handleProposalSnapshotPost(
     snapshot: validation.value,
   });
   if (!updated) {
-    return errorResponse(
-      "Proposal changed during snapshot hydration. Reload and retry.",
-      "SNAPSHOT_REVISION_CONFLICT",
+    return errorResponse("SNAPSHOT_REVISION_CONFLICT",
       409
     );
   }
@@ -761,9 +723,7 @@ export async function PUT(
   } catch (error) {
     console.error("[proposal snapshot PUT]", error);
     // The thrown text can carry Prisma constraint names and column paths.
-    return errorResponse(
-      "Snapshot operation failed",
-      "SNAPSHOT_WRITE_FAILED",
+    return errorResponse("SNAPSHOT_WRITE_FAILED",
       500
     );
   }
@@ -779,9 +739,7 @@ export async function POST(
   } catch (error) {
     console.error("[proposal snapshot POST]", error);
     // The thrown text can carry Prisma constraint names and column paths.
-    return errorResponse(
-      "Snapshot operation failed",
-      "SNAPSHOT_HYDRATION_FAILED",
+    return errorResponse("SNAPSHOT_HYDRATION_FAILED",
       500
     );
   }
@@ -797,9 +755,7 @@ export async function GET(
   } catch (error) {
     console.error("[proposal snapshot GET]", error);
     // The thrown text can carry Prisma constraint names and column paths.
-    return errorResponse(
-      "Snapshot operation failed",
-      "SNAPSHOT_READ_FAILED",
+    return errorResponse("SNAPSHOT_READ_FAILED",
       500
     );
   }

@@ -1958,6 +1958,226 @@ export const localizationRegistry = {
     en: "Your subscription is not active. Renew it to continue",
   },
 
+  // Structured proposal snapshots. These rejections used to be English strings
+  // written at the call site in the snapshot route, which meant an Arabic
+  // editor showed English the moment a save failed.
+  SNAPSHOT_BODY_TOO_LARGE: {
+    ar: "تتجاوز نسخة العرض المهيكلة الحد المسموح لحجم الطلب",
+    en: "The structured proposal snapshot exceeds the request size budget",
+  },
+  INVALID_SNAPSHOT_JSON: {
+    ar: "محتوى الطلب ليس JSON صالحاً",
+    en: "The request body is not valid JSON",
+  },
+  INVALID_SNAPSHOT_REQUEST: {
+    ar: "طلب نسخة العرض المهيكلة غير صالح",
+    en: "The structured proposal snapshot request is invalid",
+  },
+  INVALID_SNAPSHOT_SHAPE: {
+    ar: "النسخة لا تطابق البنية المتوقعة",
+    en: "The snapshot does not match the expected structure",
+  },
+  INVALID_SNAPSHOT_IDENTITY: {
+    ar: "حقول هوية النسخة غير صالحة",
+    en: "The snapshot identity fields are invalid",
+  },
+  INVALID_SNAPSHOT_REVISION: {
+    ar: "رقم مراجعة النسخة غير صالح",
+    en: "The snapshot revision number is invalid",
+  },
+  INVALID_SNAPSHOT_CONTENT: {
+    ar: "فشل التحقق من محتوى النسخة",
+    en: "The snapshot content failed validation",
+  },
+  PERSISTED_SNAPSHOT_METADATA_MISMATCH: {
+    ar: "بيانات النسخة المخزنة لم تعد تطابق محتواها",
+    en: "The stored snapshot metadata no longer matches its content",
+  },
+  SNAPSHOT_REVISION_CONFLICT: {
+    ar: "تغيّر العرض. أعد تحميله قبل استبدال النسخة",
+    en: "The proposal changed. Reload it before replacing the snapshot",
+  },
+  STRUCTURED_IDENTITY_MISMATCH: {
+    ar: "هوية العرض لا تطابق سجلات المستأجر الحالية",
+    en: "The proposal identity does not match the current tenant records",
+  },
+  STRUCTURED_EVIDENCE_NOT_APPROVED: {
+    ar: "تستشهد النسخة بأدلة غير معتمدة أو غير موثّقة",
+    en: "The snapshot cites evidence that is not approved or not verified",
+  },
+  STRUCTURED_SNAPSHOT_TYPE_MISMATCH: {
+    ar: "سجلات العقود لا تقبل نسخ العروض",
+    en: "Contract records do not accept proposal snapshots",
+  },
+  SNAPSHOT_SERVER_IDENTITY_NOT_FOUND: {
+    ar: "لم يتم العثور على هوية مشروع العرض أو مساحة العمل",
+    en: "The proposal project or workspace identity was not found",
+  },
+  SNAPSHOT_WRITE_FAILED: {
+    ar: "تعذر حفظ النسخة",
+    en: "The snapshot could not be saved",
+  },
+  SNAPSHOT_READ_FAILED: {
+    ar: "تعذر تحميل النسخة",
+    en: "The snapshot could not be loaded",
+  },
+  SNAPSHOT_HYDRATION_FAILED: {
+    ar: "تعذرت إعادة بناء النسخة من السجلات المخزنة",
+    en: "The snapshot could not be rebuilt from the stored records",
+  },
+  EMPTY_PROPOSAL_CONTENT: {
+    ar: "محتوى العرض فارغ",
+    en: "The proposal content is empty",
+  },
+  STATUS_LOCKED: {
+    ar: "العرض مقفل للتحرير في حالته الحالية",
+    en: "The proposal is locked for editing in its current status",
+  },
+  BILINGUAL_LANGUAGE_DIRECTION_INVALID: {
+    ar: "فشلت المسودتان العربية والإنجليزية في التحقق من اتجاه اللغة",
+    en: "The English and Arabic drafts failed language-direction validation",
+  },
+  BILINGUAL_COUNTERPART_REQUIRED: {
+    ar: "يلزم توفير نص Markdown باللغة المقابلة",
+    en: "Markdown in the counterpart language is required",
+  },
+
+  // Generic access rejections. Both contract-draft routes and the snapshot
+  // route answer with these, so they stay wording-neutral about the resource.
+  FORBIDDEN: {
+    ar: "ليست لديك صلاحية تنفيذ هذا الإجراء",
+    en: "You do not have permission to perform this action",
+  },
+  UNAUTHORIZED: {
+    ar: "سجّل الدخول للمتابعة",
+    en: "Sign in to continue",
+  },
+  PROPOSAL_NOT_FOUND: {
+    ar: "لم يتم العثور على العرض",
+    en: "The proposal was not found",
+  },
+
+  // Contract drafts: the route surface.
+  CONTRACT_DRAFT_BODY_TOO_LARGE: {
+    ar: "يتجاوز طلب مسودة العقد الحد المسموح لحجم الطلب",
+    en: "The contract draft request exceeds the request size budget",
+  },
+  CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED: {
+    ar: "يجب أن يكون Content-Type هو application/json",
+    en: "Content-Type must be application/json",
+  },
+  CONTRACT_DRAFT_INVALID_CONTENT_LENGTH: {
+    ar: "ترويسة Content-Length غير صالحة",
+    en: "The Content-Length header is invalid",
+  },
+  CONTRACT_DRAFT_INVALID_JSON: {
+    ar: "محتوى الطلب ليس JSON صالحاً",
+    en: "The request body is not valid JSON",
+  },
+  CONTRACT_DRAFT_INVALID_REQUEST: {
+    ar: "طلب مسودة العقد غير صالح",
+    en: "The contract draft request is invalid",
+  },
+  CONTRACT_DRAFT_BODY_INVALID: {
+    ar: "حمولة مسودة العقد غير صالحة",
+    en: "The contract draft payload is invalid",
+  },
+  CONTRACT_DRAFT_ID_INVALID: {
+    ar: "معرّف مسودة العقد غير صالح",
+    en: "The contract draft id is invalid",
+  },
+  CONTRACT_DRAFT_QUERY_INVALID: {
+    ar: "استعلام مسودة العقد غير صالح",
+    en: "The contract draft query is invalid",
+  },
+  CONTRACT_DRAFT_LIST_FAILED: {
+    ar: "تعذر تحميل مسودات العقود",
+    en: "The contract drafts could not be loaded",
+  },
+  CONTRACT_DRAFT_READ_FAILED: {
+    ar: "تعذر تحميل مسودة العقد",
+    en: "The contract draft could not be loaded",
+  },
+  CONTRACT_DRAFT_UPDATE_FAILED: {
+    ar: "تعذر تحديث مسودة العقد",
+    en: "The contract draft could not be updated",
+  },
+  CONTRACT_DRAFT_DELETE_FAILED: {
+    ar: "تعذر حذف مسودة العقد",
+    en: "The contract draft could not be deleted",
+  },
+  CONTRACT_DRAFT_PERSISTENCE_FAILED: {
+    ar: "تعذر حفظ مسودة العقد",
+    en: "The contract draft could not be saved",
+  },
+  CONTRACT_DRAFT_PROJECT_NOT_FOUND: {
+    ar: "لم يتم العثور على مشروع المنافسة",
+    en: "The tender project was not found",
+  },
+  CONTRACT_DRAFT_NOT_FOUND: {
+    ar: "لم يتم العثور على مسودة العقد",
+    en: "The contract draft was not found",
+  },
+  CONTRACT_DRAFT_RATE_LIMITED: {
+    ar: "تم تجاوز حد معدل الكتابة لمسودات العقود. حاول مرة أخرى بعد قليل",
+    en: "The contract draft write rate limit was exceeded. Try again shortly",
+  },
+  CONTRACT_DRAFT_RATE_LIMIT_UNAVAILABLE: {
+    ar: "خدمة ضبط معدل مسودات العقود الموزّعة غير متاحة. حاول مرة أخرى بعد قليل",
+    en: "Distributed contract draft admission is unavailable. Try again shortly",
+  },
+
+  // Contract drafts: rejections raised by the persistence layer and re-thrown
+  // through the routes, so they need the same bilingual treatment.
+  CONTRACT_DRAFT_WORKSPACE_NOT_FOUND: {
+    ar: "لم يتم العثور على مساحة العمل",
+    en: "The workspace was not found",
+  },
+  CONTRACT_DRAFT_IDEMPOTENCY_CONFLICT: {
+    ar: "مفتاح عدم التكرار مرتبط بالفعل بمسودة عقد أخرى",
+    en: "The idempotency key is already bound to a different contract draft",
+  },
+  CONTRACT_DRAFT_INTEGRITY_FAILED: {
+    ar: "فشل العقد المحفوظ في فحص السلامة",
+    en: "The saved contract failed its integrity check",
+  },
+  CONTRACT_DRAFT_CONCURRENCY_CONFLICT: {
+    ar: "تغيّرت مسودة العقد بالتوازي. أعد المحاولة بنفس معرّف الطلب",
+    en: "The contract draft changed concurrently. Retry with the same request id",
+  },
+  CONTRACT_DRAFT_OUTPUT_TOO_LARGE: {
+    ar: "يتجاوز العقد المُنشأ الحجم المسموح",
+    en: "The generated contract exceeds the allowed size",
+  },
+  CONTRACT_DRAFT_QUOTA_EXCEEDED: {
+    ar: "استُنفدت حصة مسودات العقود لمساحة العمل",
+    en: "The workspace contract draft quota is exhausted",
+  },
+  CONTRACT_DRAFT_CURSOR_NOT_FOUND: {
+    ar: "مؤشر التصفح لم يعد صالحاً",
+    en: "The pagination cursor is no longer valid",
+  },
+  CONTRACT_TEMPLATE_NOT_FOUND: {
+    ar: "قالب العقد غير معروف",
+    en: "The contract template is unknown",
+  },
+  CONTRACT_TEMPLATE_STALE: {
+    ar: "تغيّر قالب العقد المختار. أعد تحميل الفهرس قبل الحفظ",
+    en: "The selected contract template changed. Reload the catalog before saving",
+  },
+  CONTRACT_TEMPLATE_CATALOG_DRIFT: {
+    ar: "فشل فهرس قوالب العقود في فحص البصمة المعيارية",
+    en: "The contract template catalog failed its canonical hash check",
+  },
+  CONTRACT_TEMPLATE_BLOCKED: {
+    ar: "تجميع قالب العقد محظور",
+    en: "Contract template compilation is blocked",
+  },
+  CONTRACT_TEMPLATE_PERSISTENCE_DRIFT: {
+    ar: "بيانات قالب العقد المخزنة تختلف عن الفهرس المجمّد",
+    en: "The stored contract template metadata differs from the frozen catalog",
+  },
+
   // Action prefixes used by the stable bilingual error contract builder
   error_action_register_account: { ar: "تعذر إنشاء الحساب", en: "Unable to create the account" },
   error_action_verify_email: { ar: "تعذر التحقق من البريد الإلكتروني", en: "Unable to verify the email address" },
@@ -1985,6 +2205,8 @@ export const localizationRegistry = {
   error_action_run_agent: { ar: "تعذر تنفيذ طلب المساعد الذكي", en: "Unable to complete the AI assistant request" },
   error_action_manage_mfa: { ar: "تعذر تنفيذ إجراء المصادقة الثنائية", en: "Unable to complete the MFA action" },
   error_action_change_password: { ar: "تعذر تغيير كلمة المرور", en: "Unable to change the password" },
+  error_action_save_proposal_snapshot: { ar: "تعذر حفظ نسخة العرض", en: "Unable to save the proposal snapshot" },
+  error_action_manage_contract_draft: { ar: "تعذر تنفيذ إجراء مسودة العقد", en: "Unable to complete the contract draft action" },
 } as const satisfies Dict;
 
 /** Compatibility alias for existing callers that index the dictionary with API codes. */
@@ -2550,6 +2772,58 @@ export const COMPLETION_ERROR_CONTRACTS = {
   QUOTA_STORAGE_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_STORAGE_EXCEEDED" },
   QUOTA_TOKENS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_TOKENS_EXCEEDED" },
   SUBSCRIPTION_INACTIVE: { actionKey: "error_action_complete_request", messageKey: "SUBSCRIPTION_INACTIVE" },
+  SNAPSHOT_BODY_TOO_LARGE: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_BODY_TOO_LARGE" },
+  INVALID_SNAPSHOT_JSON: { actionKey: "error_action_save_proposal_snapshot", messageKey: "INVALID_SNAPSHOT_JSON" },
+  INVALID_SNAPSHOT_REQUEST: { actionKey: "error_action_save_proposal_snapshot", messageKey: "INVALID_SNAPSHOT_REQUEST" },
+  INVALID_SNAPSHOT_SHAPE: { actionKey: "error_action_save_proposal_snapshot", messageKey: "INVALID_SNAPSHOT_SHAPE" },
+  INVALID_SNAPSHOT_IDENTITY: { actionKey: "error_action_save_proposal_snapshot", messageKey: "INVALID_SNAPSHOT_IDENTITY" },
+  INVALID_SNAPSHOT_REVISION: { actionKey: "error_action_save_proposal_snapshot", messageKey: "INVALID_SNAPSHOT_REVISION" },
+  INVALID_SNAPSHOT_CONTENT: { actionKey: "error_action_save_proposal_snapshot", messageKey: "INVALID_SNAPSHOT_CONTENT" },
+  PERSISTED_SNAPSHOT_METADATA_MISMATCH: { actionKey: "error_action_save_proposal_snapshot", messageKey: "PERSISTED_SNAPSHOT_METADATA_MISMATCH" },
+  SNAPSHOT_REVISION_CONFLICT: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_REVISION_CONFLICT" },
+  STRUCTURED_IDENTITY_MISMATCH: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STRUCTURED_IDENTITY_MISMATCH" },
+  STRUCTURED_EVIDENCE_NOT_APPROVED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STRUCTURED_EVIDENCE_NOT_APPROVED" },
+  STRUCTURED_SNAPSHOT_TYPE_MISMATCH: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STRUCTURED_SNAPSHOT_TYPE_MISMATCH" },
+  SNAPSHOT_SERVER_IDENTITY_NOT_FOUND: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND" },
+  SNAPSHOT_WRITE_FAILED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_WRITE_FAILED" },
+  SNAPSHOT_READ_FAILED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_READ_FAILED" },
+  SNAPSHOT_HYDRATION_FAILED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_HYDRATION_FAILED" },
+  EMPTY_PROPOSAL_CONTENT: { actionKey: "error_action_save_proposal_snapshot", messageKey: "EMPTY_PROPOSAL_CONTENT" },
+  STATUS_LOCKED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STATUS_LOCKED" },
+  BILINGUAL_LANGUAGE_DIRECTION_INVALID: { actionKey: "error_action_validate_document_language", messageKey: "BILINGUAL_LANGUAGE_DIRECTION_INVALID" },
+  BILINGUAL_COUNTERPART_REQUIRED: { actionKey: "error_action_validate_document_language", messageKey: "BILINGUAL_COUNTERPART_REQUIRED" },
+  FORBIDDEN: { actionKey: "error_action_access_resource", messageKey: "FORBIDDEN" },
+  UNAUTHORIZED: { actionKey: "error_action_access_resource", messageKey: "UNAUTHORIZED" },
+  PROPOSAL_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "PROPOSAL_NOT_FOUND" },
+  CONTRACT_DRAFT_BODY_TOO_LARGE: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_BODY_TOO_LARGE" },
+  CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED" },
+  CONTRACT_DRAFT_INVALID_CONTENT_LENGTH: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_INVALID_CONTENT_LENGTH" },
+  CONTRACT_DRAFT_INVALID_JSON: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_INVALID_JSON" },
+  CONTRACT_DRAFT_INVALID_REQUEST: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_INVALID_REQUEST" },
+  CONTRACT_DRAFT_BODY_INVALID: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_BODY_INVALID" },
+  CONTRACT_DRAFT_ID_INVALID: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_ID_INVALID" },
+  CONTRACT_DRAFT_QUERY_INVALID: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_QUERY_INVALID" },
+  CONTRACT_DRAFT_LIST_FAILED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_LIST_FAILED" },
+  CONTRACT_DRAFT_READ_FAILED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_READ_FAILED" },
+  CONTRACT_DRAFT_UPDATE_FAILED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_UPDATE_FAILED" },
+  CONTRACT_DRAFT_DELETE_FAILED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_DELETE_FAILED" },
+  CONTRACT_DRAFT_PERSISTENCE_FAILED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_PERSISTENCE_FAILED" },
+  CONTRACT_DRAFT_PROJECT_NOT_FOUND: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_PROJECT_NOT_FOUND" },
+  CONTRACT_DRAFT_NOT_FOUND: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_NOT_FOUND" },
+  CONTRACT_DRAFT_RATE_LIMITED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_RATE_LIMITED" },
+  CONTRACT_DRAFT_RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_RATE_LIMIT_UNAVAILABLE" },
+  CONTRACT_DRAFT_WORKSPACE_NOT_FOUND: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_WORKSPACE_NOT_FOUND" },
+  CONTRACT_DRAFT_IDEMPOTENCY_CONFLICT: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_IDEMPOTENCY_CONFLICT" },
+  CONTRACT_DRAFT_INTEGRITY_FAILED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_INTEGRITY_FAILED" },
+  CONTRACT_DRAFT_CONCURRENCY_CONFLICT: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_CONCURRENCY_CONFLICT" },
+  CONTRACT_DRAFT_OUTPUT_TOO_LARGE: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_OUTPUT_TOO_LARGE" },
+  CONTRACT_DRAFT_QUOTA_EXCEEDED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_QUOTA_EXCEEDED" },
+  CONTRACT_DRAFT_CURSOR_NOT_FOUND: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_CURSOR_NOT_FOUND" },
+  CONTRACT_TEMPLATE_NOT_FOUND: { actionKey: "error_action_manage_template", messageKey: "CONTRACT_TEMPLATE_NOT_FOUND" },
+  CONTRACT_TEMPLATE_STALE: { actionKey: "error_action_manage_template", messageKey: "CONTRACT_TEMPLATE_STALE" },
+  CONTRACT_TEMPLATE_CATALOG_DRIFT: { actionKey: "error_action_manage_template", messageKey: "CONTRACT_TEMPLATE_CATALOG_DRIFT" },
+  CONTRACT_TEMPLATE_BLOCKED: { actionKey: "error_action_manage_template", messageKey: "CONTRACT_TEMPLATE_BLOCKED" },
+  CONTRACT_TEMPLATE_PERSISTENCE_DRIFT: { actionKey: "error_action_manage_template", messageKey: "CONTRACT_TEMPLATE_PERSISTENCE_DRIFT" },
 } as const satisfies Readonly<Record<string, ErrorContractDefinition>>;
 
 export type CompletionErrorCode = keyof typeof COMPLETION_ERROR_CONTRACTS;

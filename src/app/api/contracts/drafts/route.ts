@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mappedApiFailure } from "@/lib/api-failure";
+import type { CompletionErrorCode } from "@/lib/i18n";
 import { db } from "@/lib/db";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -92,17 +94,30 @@ const productionDependencies: ContractDraftRouteDependencies = {
   list: listPersistedContractDrafts,
 };
 
+/**
+ * Bilingual failure, with this route's safety-state payload attached.
+ *
+ * The message was an English string written at the call site, so an Arabic
+ * contract studio showed English on every rejection. The shared mapper owns the
+ * `{ ar, en }` pair now; `code` is untouched, because that is the client
+ * contract. `details` still rides alongside — a refused draft has to keep
+ * saying it is not executable, whatever language it says it in.
+ *
+ * `code` is `CompletionErrorCode` so an unregistered one fails the build. That
+ * matters most for `persistenceErrorResponse` below, where the code arrives
+ * from the domain layer at runtime rather than from a literal here.
+ */
 function responseError(
-  error: string,
-  code: string,
+  code: CompletionErrorCode,
   status: number,
   details?: Record<string, unknown>,
   headers?: Record<string, string>
 ): NextResponse {
+  const mapped = mappedApiFailure(code, { status });
   return NextResponse.json(
-    { error, code, ...(details ?? {}) },
+    { ...mapped.body, ...(details ?? {}) },
     {
-      status,
+      status: mapped.status,
       headers: { "Cache-Control": "no-store", ...(headers ?? {}) },
     }
   );
@@ -111,7 +126,7 @@ function responseError(
 function persistenceErrorResponse(
   error: ContractDraftPersistenceError
 ): NextResponse {
-  return responseError(error.message, error.code, error.status, {
+  return responseError(error.code, error.status, {
     ...(error.diagnostics.length > 0
       ? { diagnostics: error.diagnostics }
       : {}),
@@ -135,9 +150,7 @@ async function readDraftBody(request: Request): Promise<
   if (contentType !== "application/json") {
     return {
       ok: false,
-      response: responseError(
-        "Content-Type must be application/json.",
-        "CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED",
+      response: responseError("CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED",
         415
       ),
     };
@@ -149,9 +162,7 @@ async function readDraftBody(request: Request): Promise<
     if (!Number.isFinite(declaredLength) || declaredLength < 0) {
       return {
         ok: false,
-        response: responseError(
-          "Invalid Content-Length header.",
-          "CONTRACT_DRAFT_INVALID_CONTENT_LENGTH",
+        response: responseError("CONTRACT_DRAFT_INVALID_CONTENT_LENGTH",
           400
         ),
       };
@@ -159,9 +170,7 @@ async function readDraftBody(request: Request): Promise<
     if (declaredLength > MAX_CONTRACT_DRAFT_BODY_BYTES) {
       return {
         ok: false,
-        response: responseError(
-          "Contract draft request exceeds the request budget.",
-          "CONTRACT_DRAFT_BODY_TOO_LARGE",
+        response: responseError("CONTRACT_DRAFT_BODY_TOO_LARGE",
           413
         ),
       };
@@ -174,9 +183,7 @@ async function readDraftBody(request: Request): Promise<
   } catch {
     return {
       ok: false,
-      response: responseError(
-        "Unable to read contract draft request.",
-        "CONTRACT_DRAFT_INVALID_JSON",
+      response: responseError("CONTRACT_DRAFT_INVALID_JSON",
         400
       ),
     };
@@ -184,9 +191,7 @@ async function readDraftBody(request: Request): Promise<
   if (new TextEncoder().encode(raw).byteLength > MAX_CONTRACT_DRAFT_BODY_BYTES) {
     return {
       ok: false,
-      response: responseError(
-        "Contract draft request exceeds the request budget.",
-        "CONTRACT_DRAFT_BODY_TOO_LARGE",
+      response: responseError("CONTRACT_DRAFT_BODY_TOO_LARGE",
         413
       ),
     };
@@ -198,9 +203,7 @@ async function readDraftBody(request: Request): Promise<
   } catch {
     return {
       ok: false,
-      response: responseError(
-        "Invalid JSON body.",
-        "CONTRACT_DRAFT_INVALID_JSON",
+      response: responseError("CONTRACT_DRAFT_INVALID_JSON",
         400
       ),
     };
@@ -209,9 +212,7 @@ async function readDraftBody(request: Request): Promise<
   if (!parsed.success) {
     return {
       ok: false,
-      response: responseError(
-        "Contract draft request is invalid.",
-        "CONTRACT_DRAFT_INVALID_REQUEST",
+      response: responseError("CONTRACT_DRAFT_INVALID_REQUEST",
         400,
         {
           issues: parsed.error.issues.map((issue) => ({
@@ -244,7 +245,7 @@ export async function handleContractDraftPost(
 ): Promise<NextResponse> {
   const caller = await dependencies.getWriter();
   if (!caller) {
-    return responseError("Forbidden", "FORBIDDEN", 403);
+    return responseError("FORBIDDEN", 403);
   }
 
   const parsed = await readDraftBody(request);
@@ -255,9 +256,7 @@ export async function handleContractDraftPost(
     projectId !== null &&
     !(await dependencies.projectExists(workspace.id, projectId))
   ) {
-    return responseError(
-      "Tender project not found.",
-      "CONTRACT_DRAFT_PROJECT_NOT_FOUND",
+    return responseError("CONTRACT_DRAFT_PROJECT_NOT_FOUND",
       404
     );
   }
@@ -267,7 +266,6 @@ export async function handleContractDraftPost(
   });
   if (!admission.ok) {
     return responseError(
-      admission.message,
       admission.code,
       admission.status,
       undefined,
@@ -304,9 +302,7 @@ export async function handleContractDraftPost(
       return persistenceErrorResponse(error);
     }
     console.error("[contract draft POST]", error);
-    return responseError(
-      "Contract draft could not be saved.",
-      "CONTRACT_DRAFT_PERSISTENCE_FAILED",
+    return responseError("CONTRACT_DRAFT_PERSISTENCE_FAILED",
       500
     );
   }
@@ -318,15 +314,13 @@ export async function handleContractDraftList(
 ): Promise<NextResponse> {
   const caller = await dependencies.getReader();
   if (!caller) {
-    return responseError("Unauthorized", "UNAUTHORIZED", 401);
+    return responseError("UNAUTHORIZED", 401);
   }
   const query = contractDraftListQuerySchema.safeParse(
     Object.fromEntries(request.nextUrl.searchParams.entries())
   );
   if (!query.success) {
-    return responseError(
-      "Contract draft query is invalid.",
-      "CONTRACT_DRAFT_QUERY_INVALID",
+    return responseError("CONTRACT_DRAFT_QUERY_INVALID",
       400
     );
   }
@@ -335,9 +329,7 @@ export async function handleContractDraftList(
     query.data.projectId &&
     !(await dependencies.projectExists(workspace.id, query.data.projectId))
   ) {
-    return responseError(
-      "Tender project not found.",
-      "CONTRACT_DRAFT_PROJECT_NOT_FOUND",
+    return responseError("CONTRACT_DRAFT_PROJECT_NOT_FOUND",
       404
     );
   }
@@ -365,9 +357,7 @@ export async function handleContractDraftList(
       return persistenceErrorResponse(error);
     }
     console.error("[contract draft GET]", error);
-    return responseError(
-      "Contract drafts could not be loaded.",
-      "CONTRACT_DRAFT_LIST_FAILED",
+    return responseError("CONTRACT_DRAFT_LIST_FAILED",
       500
     );
   }

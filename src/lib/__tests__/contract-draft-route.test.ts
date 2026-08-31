@@ -478,3 +478,83 @@ describe("contract draft read route", () => {
     expect(payload.releasedStorageBytes).toBe(prepared.storageBytes);
   });
 });
+
+/**
+ * Same defect as the proposal snapshot route, through two more local helpers:
+ * `responseError` in the collection route and `errorResponse` in the item
+ * route both built `{ error: "<english>", code }` by hand. Between them they
+ * cover the whole contract studio's write path, so an Arabic-locale user hit
+ * English on every rejection.
+ *
+ * Codes stay put. The persistence case matters most: those codes come from the
+ * domain layer at runtime rather than from a literal at the call site, so the
+ * helper has to answer bilingually for a code it is handed, not one it can see.
+ */
+describe("contract draft failures answer in both languages", () => {
+  const ARABIC = /\p{Script=Arabic}/u;
+  const LATIN = /\p{Script=Latin}/u;
+
+  test("a rejected writer is told why in Arabic and in English", async () => {
+    const { dependencies } = harness();
+    const response = await handleContractDraftPost(postRequest(), {
+      ...dependencies,
+      getWriter: async () => null,
+    });
+    const payload = (await response.json()) as {
+      code: string;
+      error: { ar: string; en: string };
+    };
+
+    expect(response.status).toBe(403);
+    expect(payload.code).toBe("FORBIDDEN");
+    expect(payload.error.ar).toMatch(ARABIC);
+    expect(payload.error.en).toMatch(LATIN);
+  });
+
+  test("an unsupported media type is refused in both languages", async () => {
+    const { dependencies } = harness();
+    const response = await handleContractDraftPost(
+      new Request("http://localhost/api/contracts/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(body()),
+      }),
+      dependencies
+    );
+    const payload = (await response.json()) as {
+      code: string;
+      error: { ar: string; en: string };
+    };
+
+    expect(response.status).toBe(415);
+    expect(payload.code).toBe("CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED");
+    expect(payload.error.ar).toMatch(ARABIC);
+    expect(payload.error.en).toMatch(LATIN);
+  });
+
+  test("an unauthenticated read of a draft answers in both languages", async () => {
+    const dependencies: ContractDraftReadRouteDependencies = {
+      getReader: async () => null,
+      getWriter: async () => null,
+      getWorkspace: async () => ({ id: "workspace-1" }),
+      load: async () => null,
+      prepare: prepareContractDraft,
+      updateDraft: async () => {
+        throw new Error("update must not run for an unauthenticated caller");
+      },
+      deleteDraft: async () => {
+        throw new Error("delete must not run for an unauthenticated caller");
+      },
+    };
+    const response = await handleContractDraftRead("draft-1", dependencies);
+    const payload = (await response.json()) as {
+      code: string;
+      error: { ar: string; en: string };
+    };
+
+    expect(response.status).toBe(401);
+    expect(payload.code).toBe("UNAUTHORIZED");
+    expect(payload.error.ar).toMatch(ARABIC);
+    expect(payload.error.en).toMatch(LATIN);
+  });
+});

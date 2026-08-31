@@ -413,3 +413,95 @@ describe("proposal structured snapshot route", () => {
     expect(state.writes).toBe(0);
   });
 });
+
+/**
+ * Every failure this route returns used to be a single English string, built
+ * inline by a local `errorResponse` helper instead of going through the shared
+ * bilingual mapper. On an Arabic-locale editor that surfaced English text in an
+ * Arabic UI — the one thing an Arabic-first product cannot do.
+ *
+ * The stable `code` is the client contract and does not move; only the message
+ * shape does. The second test is the one that constrains the fix: this route's
+ * rejections carry payload the editor reconciles against (the revision that
+ * actually won, canonicaliser diagnostics, Zod issues), and routing through the
+ * mapper must not cost that.
+ */
+describe("snapshot failures answer in both languages", () => {
+  const ARABIC = /\p{Script=Arabic}/u;
+  const LATIN = /\p{Script=Latin}/u;
+
+  test("a rejected writer is told why in Arabic and in English", async () => {
+    const { dependencies } = harness({ writer: false });
+    const response = await handleProposalSnapshotPut(
+      request(structuredProposalSnapshotFixture("proposal-1", 1)),
+      "proposal-1",
+      dependencies
+    );
+    const body = (await response.json()) as {
+      code: string;
+      error: { ar: string; en: string };
+    };
+
+    expect(response.status).toBe(403);
+    expect(body.code).toBe("FORBIDDEN");
+    expect(body.error.ar).toMatch(ARABIC);
+    expect(body.error.en).toMatch(LATIN);
+  });
+
+  test("a revision conflict keeps its payload alongside both messages", async () => {
+    const { dependencies, state } = harness({ revision: 2 });
+    const response = await handleProposalSnapshotPut(
+      request(structuredProposalSnapshotFixture("proposal-1", 1), 0),
+      "proposal-1",
+      dependencies
+    );
+    const body = (await response.json()) as {
+      code: string;
+      error: { ar: string; en: string };
+      currentRevision: number;
+    };
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("SNAPSHOT_REVISION_CONFLICT");
+    expect(body.error.ar).toMatch(ARABIC);
+    expect(body.error.en).toMatch(LATIN);
+    // The editor needs the winning revision to reconcile; a bilingual message
+    // that dropped it would trade one defect for a worse one.
+    expect(body.currentRevision).toBe(2);
+    expect(state.writes).toBe(0);
+  });
+
+  test("a language rejection keeps its diagnostics", async () => {
+    const { dependencies, state } = harness({ status: "GENERATED" });
+    const response = await handleProposalSnapshotPost(
+      new Request("http://localhost/api/proposals/proposal-1/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          counterpartMd:
+            "## Executive summary\nA second English-only proposal draft.",
+        }),
+      }),
+      "proposal-1",
+      dependencies
+    );
+    const body = (await response.json()) as {
+      code: string;
+      error: { ar: string; en: string };
+      diagnostics: Array<{ code: string; path: string }>;
+    };
+
+    expect(response.status).toBe(422);
+    expect(body.code).toBe("BILINGUAL_LANGUAGE_DIRECTION_INVALID");
+    expect(body.error.ar).toMatch(ARABIC);
+    expect(body.error.en).toMatch(LATIN);
+    // The per-field diagnostics are what tells the writer *which* draft is
+    // wrong. A bilingual headline that dropped them would be a worse editor.
+    expect(body.diagnostics).toContainEqual({
+      code: "ARABIC_STRONG_SCRIPT_MISSING",
+      path: "contentMd.ar",
+      message: expect.any(String),
+    });
+    expect(state.writes).toBe(0);
+  });
+});
