@@ -24,6 +24,7 @@ import { useCopilotProcessing } from "@/hooks/use-copilot-processing";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
 import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
 import { extractTheaterTools, isToolRunning } from "@/lib/agents/platform/mission-tool-parts";
+import { MISSION_STARTERS, starterCommand } from "@/lib/mission-starters";
 import { LiveVoiceSession } from "./live-voice-session";
 import { MissionAttachmentTray } from "./mission-attachment-tray";
 import type { MissionFeedItem } from "./mission-execution-feed";
@@ -510,6 +511,20 @@ export function PlatformAgentConsole() {
     await sendMessage({ text });
   }, [input, interim, busy, sendMessage, stopListening]);
 
+  const starters = useMemo(
+    () => MISSION_STARTERS.map((starter) => starterCommand(starter, locale)),
+    [locale]
+  );
+
+  const sendStarter = useCallback(
+    (command: string) => {
+      if (busy || !missionId) return;
+      stopListening();
+      void sendMessage({ text: command });
+    },
+    [busy, missionId, sendMessage, stopListening]
+  );
+
   const speakAndSend = useCallback(() => {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) {
@@ -890,9 +905,12 @@ export function PlatformAgentConsole() {
                 assistantLabel={ar ? "الوكيل" : "Agent"}
                 emptyHint={
                   ar
-                    ? "جرّب: «اعرض مشاريعي»، «أنشئ مناقصة»، «شغّل الوكلاء» — شريط الحالة ونشاط الأدوات يوضحان كل خطوة."
-                    : "Try: “List my projects”, “Create a tender”, “Run the agents” — the status bar and activity pane show every step."
+                    ? "اطلب بلغتك العادية — شريط الحالة ونشاط الأدوات يوضحان كل خطوة."
+                    : "Ask in plain language — the status bar and activity pane show every step."
                 }
+                starters={starters}
+                onStarter={sendStarter}
+                startersDisabled={busy || !missionId}
                 processingSlot={
                   <CopilotProcessingView
                     locale={locale}

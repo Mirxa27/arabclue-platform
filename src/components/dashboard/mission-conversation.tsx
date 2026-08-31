@@ -24,6 +24,9 @@ export function MissionConversation({
   interim,
   performing,
   emptyHint,
+  starters,
+  onStarter,
+  startersDisabled,
   assistantLabel,
   processingSlot,
   className,
@@ -33,6 +36,10 @@ export function MissionConversation({
   interim?: string;
   performing?: boolean;
   emptyHint: string;
+  /** One-tap first commands. Omitted where there is no composer to send them. */
+  starters?: readonly string[];
+  onStarter?: (command: string) => void;
+  startersDisabled?: boolean;
   assistantLabel: string;
   /** Reserved processing panel (stable layout; replaces bounce placeholder). */
   processingSlot?: ReactNode;
@@ -70,6 +77,22 @@ export function MissionConversation({
             <MessageSquareText className="size-5 text-zinc-400 dark:text-zinc-500" />
           </span>
           <p className="max-w-[32ch] text-[13px] sm:text-[13.5px] leading-[1.5] text-zinc-600 dark:text-zinc-400">{emptyHint}</p>
+          {starters?.length && onStarter ? (
+            <ul className="flex flex-wrap justify-center gap-1.5" aria-label={ar ? "أوامر للبدء" : "Starter commands"}>
+              {starters.map((command) => (
+                <li key={command}>
+                  <button
+                    type="button"
+                    onClick={() => onStarter(command)}
+                    disabled={startersDisabled}
+                    className="rounded-full border border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-white/[0.04] px-3 py-1.5 text-[12px] text-zinc-700 dark:text-zinc-200 transition-colors hover:border-teal-500/40 hover:bg-teal-500/[0.07] hover:text-teal-700 dark:hover:text-teal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {command}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-zinc-200/70 dark:border-white/10 bg-white/60 dark:bg-white/[0.04] px-2.5 py-1 text-[10px] text-zinc-500">
             <Sparkles className="size-3" />
             {ar ? "معاينات حية لكل خطوة" : "Live previews for every step"}
