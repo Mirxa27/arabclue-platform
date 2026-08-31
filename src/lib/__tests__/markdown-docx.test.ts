@@ -100,6 +100,41 @@ describe("content survives the conversion", () => {
   });
 });
 
+describe("lifecycle marking", () => {
+  // A .docx is the one deliverable the recipient can edit and forward. An
+  // unmarked draft that reads like an approved export is the expensive mistake,
+  // so the marker is opt-out (FINAL), never opt-in.
+  test("a draft says so, in the reader's language", async () => {
+    const en = await documentXml("body");
+    expect(en).toContain("Draft");
+    const ar = await markdownToDocx("body", {
+      title: "Bid",
+      locale: "ar",
+      lifecycle: "DRAFT",
+    });
+    const arXml = await (
+      await JSZip.loadAsync(ar)
+    )
+      .file("word/document.xml")!
+      .async("string");
+    expect(arXml).toContain("مسودة");
+  });
+
+  test("a final export carries no draft marker", async () => {
+    const buf = await markdownToDocx("body", {
+      title: "Bid",
+      locale: "en",
+      lifecycle: "FINAL",
+    });
+    const xml = await (await JSZip.loadAsync(buf))
+      .file("word/document.xml")!
+      .async("string");
+    expect(xml).not.toContain("Draft");
+    // Anti-vacuous: the body itself still rendered.
+    expect(xml).toContain("body");
+  });
+});
+
 describe("bilingual output", () => {
   test("Arabic documents are laid out right-to-left", async () => {
     const xml = await documentXml("# نطاق العمل\nالمحتوى", "ar");

@@ -88,6 +88,7 @@ export type ProposalDownloadFormat =
   | "xlsx-boq"
   | "slides"
   | "pptx"
+  | "docx"
   | "manifest";
 
 export function resolveProposalDownloadFormat(
@@ -110,6 +111,7 @@ export function resolveProposalDownloadFormat(
     case "xlsx-boq":
     case "slides":
     case "pptx":
+    case "docx":
     case "manifest":
       return candidate;
     default:
@@ -247,7 +249,7 @@ export async function GET(
     return NextResponse.json(
       {
         error:
-          "Unsupported format. Expected zip, pdf, html, xlsx, xlsx-matrix, xlsx-boq, slides, pptx, or manifest.",
+          "Unsupported format. Expected zip, pdf, docx, html, xlsx, xlsx-matrix, xlsx-boq, slides, pptx, or manifest.",
         code: "UNSUPPORTED_EXPORT_FORMAT",
       },
       { status: 400 }
@@ -390,8 +392,8 @@ export async function GET(
     );
   }
   if (isContract) {
-    // Contracts support bilingual legal HTML/PDF, ZIP package, and manifest
-    if (!["html", "pdf", "manifest", "zip"].includes(format)) {
+    // Contracts support bilingual legal HTML/PDF/Word, ZIP package, and manifest
+    if (!["html", "pdf", "docx", "manifest", "zip"].includes(format)) {
       format = "pdf";
     }
   }
@@ -400,8 +402,11 @@ export async function GET(
     include: { steps: { orderBy: { stepIndex: "asc" } } },
   });
   const finalArtifactRequested = isContract
-    ? ["html", "pdf", "manifest", "zip"].includes(format)
-    : format === "html" || format === "pdf" || format === "pptx";
+    ? ["html", "pdf", "docx", "manifest", "zip"].includes(format)
+    : format === "html" ||
+      format === "pdf" ||
+      format === "pptx" ||
+      format === "docx";
   const finalStatus =
     proposal.status === "APPROVED" || proposal.status === "EXPORTED";
   let contractRenderSnapshot: CanonicalContractRenderSnapshot | null =
@@ -678,7 +683,12 @@ export async function GET(
   }
 
   let exportPermit: DocumentExportPermit | null = null;
-  if (format === "pdf" || format === "zip" || format === "pptx") {
+  if (
+    format === "pdf" ||
+    format === "zip" ||
+    format === "pptx" ||
+    format === "docx"
+  ) {
     const sourceCharacters =
       contractRenderSnapshot !== null
         ? JSON.stringify(contractRenderSnapshot.snapshot).length
@@ -772,6 +782,43 @@ export async function GET(
           filename = "Technical_Proposal.pdf";
         }
         break;
+      // Word is reachable only on the markdown path: a proposal with an
+      // authoritative structured snapshot is refused earlier by
+      // selectProposalDownloadEngine rather than rendered from a stale body.
+      case "docx": {
+        const docxLocale = exportLocale === "ar" ? "ar" : "en";
+        const source = isContract
+          ? contractOptions
+          : {
+              title: proposal.title,
+              titleAr: proposal.titleAr,
+              contentMd: proposal.contentMd ?? "",
+              brand,
+              company: companyLetterhead,
+            };
+        const { markdownToDocx } = await import("@/lib/markdown-docx");
+        buffer = await markdownToDocx(source.contentMd, {
+          title:
+            (docxLocale === "ar" ? source.titleAr : source.title) ||
+            source.title,
+          locale: docxLocale,
+          brand: source.brand ?? undefined,
+          // Same resolver the PDF letterhead uses, so the two exports cannot
+          // disagree about who the bidder is.
+          companyName: letterheadCompanyName(
+            docxLocale,
+            source.brand,
+            source.company
+          ),
+          lifecycle: chromeLifecycle,
+        });
+        contentType =
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        filename = isContract
+          ? "Draft_Contract.docx"
+          : "Technical_Proposal.docx";
+        break;
+      }
       case "html":
         if (structuredSnapshot !== null) {
           const artifact = await exportProposalLayout(

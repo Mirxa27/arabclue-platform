@@ -41,6 +41,22 @@ export type DocxRenderOptions = {
   brand?: { primaryColor?: string | null; accentColor?: string | null };
   /** Shown above the body, the way the PDF letterhead does. */
   companyName?: string | null;
+  /**
+   * Whether this is an approved export. Defaults to DRAFT: this is the one
+   * deliverable the recipient can edit and forward, so an unmarked draft that
+   * reads like an approved document is the expensive mistake. Only a caller
+   * that has checked the approval chain may pass FINAL.
+   */
+  lifecycle?: "DRAFT" | "FINAL";
+};
+
+/**
+ * Inline rather than through i18n, matching how the other generated documents
+ * carry their chrome (see contract-export-bilingual.ts).
+ */
+const DRAFT_MARKER: Record<Locale, string> = {
+  en: "Draft — not an approved export",
+  ar: "مسودة — ليست نسخة معتمدة",
 };
 
 /** Word wants colours as bare RRGGBB. */
@@ -268,6 +284,25 @@ export async function markdownToDocx(
   );
 
   const body: (Paragraph | Table)[] = [];
+  if (opts.lifecycle !== "FINAL") {
+    body.push(
+      new Paragraph({
+        bidirectional: rtl,
+        alignment: rtl ? AlignmentType.RIGHT : AlignmentType.LEFT,
+        spacing: { after: 160 },
+        shading: { type: ShadingType.CLEAR, color: "auto", fill: "FEF3C7" },
+        children: [
+          new TextRun({
+            text: DRAFT_MARKER[opts.locale],
+            bold: true,
+            color: "92400E",
+            size: 18,
+            rightToLeft: rtl,
+          }),
+        ],
+      })
+    );
+  }
   if (opts.companyName?.trim()) {
     body.push(
       new Paragraph({

@@ -612,7 +612,9 @@ function ProposalStudioBase({
             ? "Arabclue_Bid_Package.zip"
             : format === "pdf"
               ? "Technical_Proposal.pdf"
-              : `export.${format}`,
+              : format === "docx"
+                ? "Technical_Proposal.docx"
+                : `export.${format}`,
       });
       if (!ok) throw new Error(locale === "ar" ? "فشل التصدير" : "Export failed");
       return format;
@@ -899,6 +901,31 @@ function ProposalStudioBase({
                   <FileDown className="size-3" />
                 )}
                 PDF
+              </Button>
+              {/* Word is the format procurement actually redlines and returns. */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] gap-1"
+                disabled={
+                  exportMutation.isPending || downloadBusy || exportBlocked
+                }
+                title={
+                  exportBlocked
+                    ? validationData?.exportBlocker?.error ??
+                      (locale === "ar"
+                        ? "أكمل التحقق أولاً"
+                        : "Complete validation first")
+                    : undefined
+                }
+                onClick={() => exportMutation.mutate("docx")}
+              >
+                {busyFormat === "docx" ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <FileText className="size-3" />
+                )}
+                Word
               </Button>
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">

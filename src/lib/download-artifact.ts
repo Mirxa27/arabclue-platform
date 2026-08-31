@@ -11,6 +11,7 @@ export const downloadFormatSchema = z.enum([
   "xlsx-boq",
   "slides",
   "pptx",
+  "docx",
 ]);
 
 export type ArtifactDownloadFormat = z.infer<typeof downloadFormatSchema>;
@@ -63,6 +64,7 @@ export function resolveArtifactDownloadFormat(
   if (a.type === "ZIP") return "zip";
   if (a.type === "PDF") return "pdf";
   if (a.type === "PPTX") return "pptx";
+  if (a.type === "DOCX") return "docx";
   if (a.filename.includes("Compliance")) return "xlsx-matrix";
   if (a.filename.includes("BoQ")) return "xlsx-boq";
   if (a.type === "HTML" || a.filename.includes("Slides")) return "slides";

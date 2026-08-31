@@ -228,6 +228,7 @@ export const ANALYTICS_EXPORT_FORMATS = [
   "xlsx-boq",
   "slides",
   "pptx",
+  "docx",
   "manifest",
 ] as const;
 

@@ -16,13 +16,17 @@ describe("artifact download formats", () => {
       "xlsx-boq",
       "slides",
       "pptx",
+      "docx",
     ] as const) {
       expect(downloadFormatSchema.parse(fmt)).toBe(fmt);
     }
   });
 
   test("rejects unknown formats", () => {
-    expect(() => downloadFormatSchema.parse("docx")).toThrow();
+    // `docm` and `doc` are the near-misses a hand-edited URL produces; neither
+    // is a format this route can render.
+    expect(() => downloadFormatSchema.parse("docm")).toThrow();
+    expect(() => downloadFormatSchema.parse("doc")).toThrow();
     expect(() => downloadFormatSchema.parse("")).toThrow();
   });
 });
@@ -45,6 +49,15 @@ describe("resolveArtifactDownloadFormat", () => {
         filename: "Presentation.pptx",
       })
     ).toBe("pptx");
+  });
+
+  test("maps DOCX type to docx", () => {
+    expect(
+      resolveArtifactDownloadFormat({
+        type: "DOCX",
+        filename: "Technical_Proposal.docx",
+      })
+    ).toBe("docx");
   });
 
   test("maps HTML slides without mistaking PPTX", () => {

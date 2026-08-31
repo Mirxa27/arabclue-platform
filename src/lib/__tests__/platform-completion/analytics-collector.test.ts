@@ -154,6 +154,7 @@ describe("closed analytics event vocabulary (criterion 4.10)", () => {
       "xlsx-boq",
       "slides",
       "pptx",
+      "docx",
       "manifest",
     ];
     expect([...ANALYTICS_EXPORT_FORMATS].sort()).toEqual(

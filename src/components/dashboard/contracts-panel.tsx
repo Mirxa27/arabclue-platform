@@ -146,7 +146,7 @@ export function ContractsPanel() {
 
   async function downloadContract(
     proposalId: string,
-    format: "html" | "pdf" | "zip",
+    format: "html" | "pdf" | "docx" | "zip",
     fallbackName: string,
     requireReady: boolean
   ) {
@@ -457,6 +457,29 @@ export function ContractsPanel() {
                       <FileDown className="size-3.5" />
                     )}
                     PDF
+                  </Button>
+                  {/* Counsel redlines in Word, so the editable copy is gated on
+                      the same approval readiness as the signable PDF. */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    disabled={busyFormat === "docx" || exportBlocked}
+                    onClick={() =>
+                      void downloadContract(
+                        active.id,
+                        "docx",
+                        "Draft_Contract.docx",
+                        true
+                      )
+                    }
+                  >
+                    {busyFormat === "docx" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="size-3.5" />
+                    )}
+                    Word
                   </Button>
                   <Button
                     size="sm"
