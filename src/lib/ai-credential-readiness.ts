@@ -6,7 +6,7 @@ export function providerNeedsApiKey(providerId: string): boolean {
 }
 
 /**
- * Judge whether this deployment can actually reach a model.
+ * Judge whether every engine holds a credential that still resolves.
  *
  * Counting active provider rows proves nothing: a row whose credential no
  * longer resolves — an `apiKeyEnvKey` outside the allowlist, a settings row
@@ -14,6 +14,13 @@ export function providerNeedsApiKey(providerId: string): boolean {
  * environment — still counts as active while every completion quietly
  * degrades to a fallback. This is the one deployment fact an AI-first product
  * cannot afford to learn from a user's empty proposal.
+ *
+ * What this does NOT establish: that a model answers. Resolution is a local
+ * decrypt-and-allowlist check — no request leaves the process. A revoked key,
+ * an exhausted quota, or a provider outage all pass it. `/api/ready` is
+ * unauthenticated, so it must not spend a paid completion per probe; proving a
+ * live completion belongs to an authenticated path, not here. Read
+ * `engines_ok:N` as "N engines hold a usable credential", never as "AI works".
  *
  * Reports the shape of the failure, never the provider or the credential.
  */
