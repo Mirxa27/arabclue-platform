@@ -12,6 +12,12 @@ import {
   requiresDistributedRateLimit,
 } from "@/lib/rate-limit";
 import { summarizeSealedSecrets } from "@/lib/secret-readiness";
+import {
+  providerNeedsApiKey,
+  summarizeAiCredential,
+} from "@/lib/ai-credential-readiness";
+import { getProviderForEngine } from "@/lib/llm";
+import { resolveProviderApiKey } from "@/lib/env-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +94,36 @@ export async function GET() {
     };
   } catch {
     checks.llmProviders = { ok: false, detail: "provider_query_failed" };
+  }
+
+  // `active:N` above counts rows. Whether the default engine can present a
+  // credential is the question that decides if this deployment produces real
+  // model output or silent fallbacks, and nothing else reports it.
+  try {
+    const provider = await getProviderForEngine("DEFAULT");
+    if (!provider) {
+      checks.aiCredential = summarizeAiCredential({
+        hasActiveProvider: false,
+        needsApiKey: false,
+        apiKeyResolved: false,
+      });
+    } else {
+      const needsApiKey = providerNeedsApiKey(provider.provider);
+      checks.aiCredential = summarizeAiCredential({
+        hasActiveProvider: true,
+        needsApiKey,
+        apiKeyResolved: needsApiKey
+          ? Boolean(
+              await resolveProviderApiKey(
+                provider.provider,
+                provider.apiKeyEnvKey
+              )
+            )
+          : false,
+      });
+    }
+  } catch {
+    checks.aiCredential = { ok: false, detail: "credential_check_failed" };
   }
 
   try {
