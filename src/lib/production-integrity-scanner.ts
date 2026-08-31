@@ -9,15 +9,19 @@
  * Production fallback data is NOT exempt.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { CAPABILITY_REACHABILITY_MANIFEST } from "./capability-reachability-manifest";
+import {
+  CAPABILITY_REACHABILITY_MANIFEST,
+  type CapabilityManifestEntry,
+} from "./capability-reachability-manifest";
 
 export type IntegrityFinding = Readonly<{
   code:
     | "ORPHAN_CAPABILITY"
     | "MISSING_TARGET"
     | "MISSING_INBOUND"
+    | "UNREACHABLE_INBOUND"
     | "STUB_RESPONSE"
     | "RUNTIME_FIXTURE"
     | "USER_LITERAL"
@@ -237,19 +241,34 @@ export function scanForOrphanedCapabilities(
         path: entry.inbound,
         detail: `Capability ${entry.id} has no inbound edge (file missing)`,
       });
+      continue;
+    }
+    // The docblock promised this half and the body never delivered it, so a
+    // capability whose inbound file simply never mentioned it read as fine.
+    if (!readFileSync(inboundPath, "utf8").includes(entry.evidence)) {
+      findings.push({
+        code: "ORPHAN_CAPABILITY",
+        path: entry.inbound,
+        detail: `Capability ${entry.id} has no inbound edge (${entry.evidence} absent)`,
+      });
     }
   }
   return findings;
 }
 
 /**
- * Validate that every manifest edge points at existing source files.
+ * Validate that every manifest edge exists and is actually taken.
+ *
+ * Both files existing proves nothing: any file in the repo could be named as
+ * the inbound edge and pass. So the inbound file must also contain the entry's
+ * `evidence` — the path, import, or component name the edge is made through.
  */
 export function validateCapabilityReachability(
-  repoRoot: string = process.cwd()
+  repoRoot: string = process.cwd(),
+  manifest: readonly CapabilityManifestEntry[] = CAPABILITY_REACHABILITY_MANIFEST
 ): IntegrityFinding[] {
   const findings: IntegrityFinding[] = [];
-  for (const entry of CAPABILITY_REACHABILITY_MANIFEST) {
+  for (const entry of manifest) {
     const targetPath = path.join(repoRoot, entry.target);
     const inboundPath = path.join(repoRoot, entry.inbound);
     if (!existsSync(targetPath)) {
@@ -264,6 +283,14 @@ export function validateCapabilityReachability(
         code: "MISSING_INBOUND",
         path: entry.inbound,
         detail: `Capability ${entry.id} inbound edge missing`,
+      });
+      continue;
+    }
+    if (!readFileSync(inboundPath, "utf8").includes(entry.evidence)) {
+      findings.push({
+        code: "UNREACHABLE_INBOUND",
+        path: entry.inbound,
+        detail: `Capability ${entry.id} claims this inbound edge but the file does not contain ${entry.evidence}`,
       });
     }
   }
