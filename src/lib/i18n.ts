@@ -108,6 +108,8 @@ export const localizationRegistry = {
   nav_group_workflow: { ar: "سير العمل", en: "Workflow" },
   nav_group_library: { ar: "المكتبة", en: "Library" },
   nav_group_account: { ar: "الحساب", en: "Account" },
+  nav_home_agent: { ar: "الوكيل", en: "Agent" },
+  nav_more: { ar: "المزيد", en: "More" },
   workspace_load_error: { ar: "تعذر تحميل مساحة العمل", en: "Could not load workspace" },
   workspace_retry: { ar: "إعادة المحاولة", en: "Retry" },
   nav_expand: { ar: "توسيع", en: "Expand" },

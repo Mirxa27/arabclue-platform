@@ -3,7 +3,7 @@
 import { apiErrorText } from "@/lib/api-failure-message";
 
 import Link from "next/link";
-import { startTransition } from "react";
+import { startTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { resolveDashboardNavigation } from "@/lib/dashboard-navigate";
@@ -37,39 +37,45 @@ import {
   BarChart3,
   ClipboardCheck,
   FileStack,
+  MoreHorizontal,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ArabclueLogo } from "@/components/brand/arabclue-logo";
 import { usePendingApprovalCount } from "./knowledge-approval-queue";
 
-const NAV_WORKFLOW: { view: DashboardView; key: string; icon: typeof LayoutDashboard; badge?: "pending-approval" }[] = [
-  { view: "overview", key: "nav_dashboard", icon: LayoutDashboard },
-  { view: "copilot", key: "nav_copilot", icon: AudioLines },
+/**
+ * The five destinations a bid actually passes through. Everything else the
+ * platform can do is reached by asking the agent on the home screen, so the
+ * remaining panels sit behind one disclosure instead of twenty always-open
+ * doors (the agent console is the home view — see `views.tsx`).
+ */
+const NAV_PRIMARY: { view: DashboardView; key: string; icon: typeof LayoutDashboard; badge?: "pending-approval" }[] = [
+  { view: "overview", key: "nav_home_agent", icon: Sparkles },
   { view: "projects", key: "nav_projects", icon: FolderKanban },
   { view: "documents", key: "nav_documents", icon: FileText },
   { view: "proposals", key: "nav_proposals", icon: FileCheck2 },
-  { view: "contracts", key: "nav_contracts", icon: Scale },
-  { view: "compliance", key: "nav_compliance", icon: ShieldCheck },
-  { view: "agents", key: "nav_agents", icon: Bot },
   { view: "reviews", key: "nav_reviews", icon: ScrollText },
 ];
 
-const NAV_LIBRARY: typeof NAV_WORKFLOW = [
+/** Reachable in one click from `More`, and by name from the agent. */
+const NAV_SECONDARY: typeof NAV_PRIMARY = [
+  { view: "copilot", key: "nav_copilot", icon: AudioLines },
+  { view: "contracts", key: "nav_contracts", icon: Scale },
+  { view: "compliance", key: "nav_compliance", icon: ShieldCheck },
+  { view: "agents", key: "nav_agents", icon: Bot },
+  { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval" },
   { view: "clause-library", key: "nav_clause_library", icon: Scale },
   { view: "template-editor", key: "nav_template_editor", icon: FileStack },
   { view: "marketplace", key: "nav_marketplace", icon: Store },
-  { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval" },
-];
-
-const NAV_ACCOUNT: typeof NAV_WORKFLOW = [
+  { view: "proposal-builder", key: "nav_proposal_builder", icon: LayoutList },
+  { view: "analytics", key: "nav_analytics", icon: BarChart3 },
   { view: "account", key: "nav_account", icon: Building2 },
   { view: "business-profile", key: "nav_business_profile", icon: Sparkles },
   { view: "history", key: "nav_history", icon: History },
   { view: "billing", key: "nav_billing", icon: CreditCard },
   { view: "settings", key: "nav_settings", icon: Lock },
-  { view: "proposal-builder", key: "nav_proposal_builder", icon: LayoutList },
-  { view: "analytics", key: "nav_analytics", icon: BarChart3 },
 ];
 
 const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] = [
@@ -82,7 +88,7 @@ const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboar
   { view: "admin_audit", key: "nav_admin_audit", icon: ScrollText },
 ];
 
-type NavItem = (typeof NAV_WORKFLOW)[number];
+type NavItem = (typeof NAV_PRIMARY)[number];
 
 function NavButton({
   item,
@@ -138,29 +144,52 @@ function NavButton({
   );
 }
 
-function NavGroupHeading({
-  labelKey,
+/** Opens the panels that are not part of the five-step bid path. */
+function MoreToggle({
+  open,
   collapsed,
   locale,
-  first,
+  badgeCount,
+  onToggle,
 }: {
-  labelKey: "nav_group_workflow" | "nav_group_library" | "nav_group_account";
+  open: boolean;
   collapsed: boolean;
   locale: "ar" | "en";
-  first?: boolean;
+  badgeCount: number;
+  onToggle: () => void;
 }) {
-  if (collapsed) {
-    return first ? null : <div className="my-3 mx-2 h-px bg-[var(--hairline)]" />;
-  }
   return (
-    <div
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      title={tr("nav_more", locale)}
       className={cn(
-        "pb-2 px-2.5 flex items-center gap-2 text-[11px] font-[650] uppercase tracking-[0.08em] text-foreground/25",
-        first ? "pt-1" : "pt-5"
+        "group relative mt-3 w-full flex items-center gap-2.5 px-2.5 h-[34px] rounded-[8px] text-[13px] font-[450] tracking-[-0.01em] outline-none transition-all duration-[140ms]",
+        "border-t border-[var(--hairline)] rounded-t-none pt-3 h-auto pb-2",
+        "text-foreground/45 hover:text-foreground/80 focus-visible:ring-2 focus-visible:ring-[oklch(0.72_0.12_195)]",
+        collapsed && "justify-center px-2"
       )}
     >
-      {tr(labelKey, locale)}
-    </div>
+      <MoreHorizontal className="size-[18px] shrink-0" aria-hidden="true" />
+      {!collapsed && <span className="truncate">{tr("nav_more", locale)}</span>}
+      {!collapsed && (
+        <ChevronDown
+          className={cn("ms-auto size-3.5 shrink-0 transition-transform duration-200", open && "rotate-180")}
+          aria-hidden="true"
+        />
+      )}
+      {badgeCount > 0 && (
+        <span
+          className={cn(
+            "min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-[10px] font-semibold text-white",
+            collapsed ? "absolute top-1 end-0.5 min-w-[14px] h-[14px] px-0.5 text-[9px]" : "ms-1"
+          )}
+        >
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -174,6 +203,7 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
   const collapsed = variant === "drawer" ? false : sidebarCollapsed;
   const isDrawer = variant === "drawer";
   const { data: pendingApprovalCount } = usePendingApprovalCount();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   function goToView(target: DashboardView) {
     const decision = resolveDashboardNavigation({
@@ -207,14 +237,17 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
   const workspaceName = locale === "ar" ? workspace?.nameAr ?? workspace?.name : workspace?.name;
   const plan = workspace?.plan;
 
-  const groups: {
-    key: "nav_group_workflow" | "nav_group_library" | "nav_group_account";
-    items: typeof NAV_WORKFLOW;
-  }[] = [
-    { key: "nav_group_workflow", items: NAV_WORKFLOW },
-    { key: "nav_group_library", items: NAV_LIBRARY },
-    { key: "nav_group_account", items: NAV_ACCOUNT },
-  ];
+  // The disclosure opens itself when the reader is standing inside it, so the
+  // current location is never hidden by its own collapsed group.
+  const activeIsSecondary = NAV_SECONDARY.some((item) => item.view === view);
+  const showSecondary = moreOpen || activeIsSecondary;
+
+  function badgeFor(item: NavItem): number {
+    return item.badge === "pending-approval" ? pendingApprovalCount ?? 0 : 0;
+  }
+  const hiddenBadgeCount = showSecondary
+    ? 0
+    : NAV_SECONDARY.reduce((total, item) => total + badgeFor(item), 0);
 
   return (
     <aside
@@ -264,27 +297,37 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
 
       {/* Nav — Linear: 6 microstates crafted */}
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-2.5 py-3 space-y-0.5">
-        {groups.map((group, groupIndex) => (
-          <div key={group.key} className="space-y-0.5">
-            <NavGroupHeading
-              labelKey={group.key}
+        {NAV_PRIMARY.map((item) => (
+          <NavButton
+            key={item.view}
+            item={item}
+            active={view === item.view}
+            collapsed={collapsed}
+            locale={locale}
+            badgeCount={badgeFor(item)}
+            onNavigate={() => goToView(item.view)}
+          />
+        ))}
+
+        <MoreToggle
+          open={showSecondary}
+          collapsed={collapsed}
+          locale={locale}
+          badgeCount={hiddenBadgeCount}
+          onToggle={() => setMoreOpen((open) => !open)}
+        />
+        {showSecondary &&
+          NAV_SECONDARY.map((item) => (
+            <NavButton
+              key={item.view}
+              item={item}
+              active={view === item.view}
               collapsed={collapsed}
               locale={locale}
-              first={groupIndex === 0}
+              badgeCount={badgeFor(item)}
+              onNavigate={() => goToView(item.view)}
             />
-            {group.items.map((item) => (
-              <NavButton
-                key={item.view}
-                item={item}
-                active={view === item.view}
-                collapsed={collapsed}
-                locale={locale}
-                badgeCount={item.badge === "pending-approval" ? (pendingApprovalCount ?? 0) : 0}
-                onNavigate={() => goToView(item.view)}
-              />
-            ))}
-          </div>
-        ))}
+          ))}
 
         {isAdmin && (
           <>

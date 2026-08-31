@@ -160,8 +160,8 @@ const SetupWizardView = dynamic(
  * Specialized panels live in their own modules — do not embed business logic here.
  */
 const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
-  overview: OverviewView,
-  copilot: CopilotView,
+  overview: AgentHomeView,
+  copilot: AgentHomeView,
   projects: ProjectsView,
   documents: DocumentsView,
   proposals: ProposalsView,
@@ -222,7 +222,7 @@ export function DashboardViews({
   // An administrator view is never mounted for a non-administrator session, so
   // no administrator data request is issued (Requirement 14.5).
   const safeView = ADMIN_VIEWS.has(view) && !isAdmin ? "overview" : view;
-  const Content = VIEW_REGISTRY[safeView] ?? OverviewView;
+  const Content = VIEW_REGISTRY[safeView] ?? AgentHomeView;
 
   return (
     <ViewNavigationProvider navigateToView={navigateToView}>
@@ -282,37 +282,19 @@ function RouteNotice({
   );
 }
 
-function OverviewView() {
-  const { locale } = useLocale();
-  const { projects, isSuccess } = useEnsureActiveProject();
-  const showWork = isSuccess && shouldShowOverviewWorkPanels(projects.length);
+/**
+ * The application home, at `/app` and `/app/copilot`.
+ *
+ * The agent console is the product: a reader states the job in one line and the
+ * agent runs the tools, so the home screen is a conversation rather than a board
+ * of twenty doors. The onboarding banner stays above it because the agent tools
+ * refuse to run until account readiness is met (`assertOnboardingReady`), and a
+ * reader who cannot see what is missing has no way to unblock the refusal.
+ */
+function AgentHomeView() {
   return (
     <PageSection>
-      <PageHeader
-        title={tr("nav_dashboard", locale)}
-        subtitle={tr("overview_subtitle", locale)}
-        locale={locale}
-      />
       <OnboardingBanner />
-      <div className="space-y-4">
-        <TenderFlowBoard />
-      </div>
-      {showWork ? (
-        <>
-          <StatCards />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <FileIngestion />
-            <AgentWorkflow />
-          </div>
-        </>
-      ) : null}
-    </PageSection>
-  );
-}
-
-function CopilotView() {
-  return (
-    <PageSection>
       <PlatformAgentConsole />
     </PageSection>
   );
@@ -320,6 +302,8 @@ function CopilotView() {
 
 function ProjectsView() {
   const { locale } = useLocale();
+  const { projects, isSuccess } = useEnsureActiveProject();
+  const showWork = isSuccess && shouldShowOverviewWorkPanels(projects.length);
   return (
     <PageSection>
       <PageHeader
@@ -329,6 +313,8 @@ function ProjectsView() {
         }
         locale={locale}
       />
+      <TenderFlowBoard />
+      {showWork ? <StatCards /> : null}
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
         <div className="xl:col-span-3">
           <ProjectsList />
