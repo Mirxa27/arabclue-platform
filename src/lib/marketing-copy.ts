@@ -125,10 +125,9 @@ export const pricingPlans = [
     highlight: false,
     cta: { ar: "ابدأ بالمبتدئ", en: "Start with Starter" },
     features: {
-      ar: ["10 عطاءات شهرياً", "50 مستند", "مساحة عمل واحدة", "خط وكلاء أساسي", "تصدير PDF", "دعم بالبريد"],
-      en: ["10 proposals / month", "50 documents", "1 workspace", "Core agent pipeline", "PDF export", "Email support"],
+      ar: ["10 عطاءات شهرياً", "50 مستند", "5 غيغابايت تخزين", "خط وكلاء أساسي", "تصدير PDF", "دعم بالبريد"],
+      en: ["10 proposals / month", "50 documents", "5 GB storage", "Core agent pipeline", "PDF export", "Email support"],
     },
-    limits: { projects: "10/mo", docs: "50", workspaces: "1", support: "Email" },
   },
   {
     code: "PRO",
@@ -140,10 +139,9 @@ export const pricingPlans = [
     badge: { ar: "الأكثر اختياراً", en: "Most chosen" },
     cta: { ar: "اختر الاحترافي", en: "Choose Professional" },
     features: {
-      ar: ["50 عطاءاً شهرياً", "250 مستنداً · 3 مساحات", "وكلاء كاملون + هوية", "قاعدة معرفة + RAG", "تصدير PPTX/PDF/XLSX", "دعم ذو أولوية"],
-      en: ["50 proposals / month", "250 docs · 3 workspaces", "Full agents + brand kit", "Knowledge base + RAG", "PPTX/PDF/XLSX export", "Priority support"],
+      ar: ["50 عطاءاً شهرياً", "250 مستنداً · 25 غيغابايت", "وكلاء كاملون + هوية", "قاعدة معرفة + RAG", "تصدير PPTX/PDF/XLSX", "دعم ذو أولوية"],
+      en: ["50 proposals / month", "250 docs · 25 GB storage", "Full agents + brand kit", "Knowledge base + RAG", "PPTX/PDF/XLSX export", "Priority support"],
     },
-    limits: { projects: "50/mo", docs: "250", workspaces: "3", support: "Priority" },
   },
   {
     code: "ENTERPRISE",
@@ -155,25 +153,22 @@ export const pricingPlans = [
     highlight: false,
     cta: { ar: "ابدأ بالمؤسسات", en: "Start Enterprise" },
     features: {
-      ar: ["عطاءات ومستندات بلا حد", "20 مساحة عمل", "سجل تدقيق وصلاحيات أدوار", "توجيه مخصص لمزودي الذكاء", "ضوابط RBAC وتدقيق مؤسسي", "دعم مخصص"],
-      en: ["Unlimited proposals & docs", "20 workspaces", "Audit trail & RBAC", "Custom AI provider routing", "Enterprise RBAC & audit controls", "Dedicated support"],
+      ar: ["عطاءات ومستندات بلا حد", "200 غيغابايت تخزين", "20 مليون رمز شهرياً", "سلسلة اعتماد وأدوار مراجعين", "جميع صيغ التصدير", "دعم مخصص", "عند الطلب: الدخول الموحد · وكلاء مخصصون"],
+      en: ["Unlimited proposals & docs", "200 GB storage", "20M tokens / month", "Approval chain & reviewer roles", "All export formats", "Dedicated support", "On request: SSO · custom agents"],
     },
-    limits: { projects: "Unlimited", docs: "Unlimited", workspaces: "20", support: "Dedicated" },
   },
 ] as const;
 
 export const pricingComparison = [
   { feature: { ar: "عطاءات / شهر", en: "Proposals / month" }, starter: "10", pro: "50", ent: "∞" },
   { feature: { ar: "رفع المستندات", en: "Document uploads" }, starter: "50", pro: "250", ent: "∞" },
-  { feature: { ar: "مساحات العمل", en: "Workspaces" }, starter: "1", pro: "3", ent: "20" },
   { feature: { ar: "تخزين", en: "Storage" }, starter: "5 GB", pro: "25 GB", ent: "200 GB" },
-  { feature: { ar: "تشغيل أولوية للوكلاء", en: "Priority agent runs" }, starter: false, pro: true, ent: true },
+  { feature: { ar: "رموز الذكاء / شهر", en: "AI tokens / month" }, starter: "500K", pro: "3M", ent: "20M" },
   { feature: { ar: "Version history & rewrite", en: "Version history & rewrite" }, starter: false, pro: true, ent: true },
   { feature: { ar: "أدوار فريق", en: "Team roles" }, starter: false, pro: true, ent: true },
   { feature: { ar: "RAG قاعدة المعرفة", en: "Knowledge base RAG" }, starter: "Limited", pro: true, ent: true },
   { feature: { ar: "تصدير بعلامة", en: "Branded exports" }, starter: true, pro: true, ent: true },
   { feature: { ar: "مصفوفة امتثال", en: "Compliance matrix" }, starter: true, pro: true, ent: true },
-  { feature: { ar: "سجل تدقيق", en: "Audit trail" }, starter: true, pro: true, ent: true },
-  { feature: { ar: "صلاحيات أدوار وتدقيق", en: "RBAC & audit" }, starter: true, pro: true, ent: true },
+  { feature: { ar: "سلسلة اعتماد ومراجعة", en: "Approval & review chain" }, starter: false, pro: true, ent: true },
   { feature: { ar: "دعم مخصص", en: "Dedicated support" }, starter: false, pro: false, ent: true },
 ];
