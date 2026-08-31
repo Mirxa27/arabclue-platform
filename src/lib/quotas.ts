@@ -11,7 +11,8 @@ export class QuotaExceededError extends Error {
   }
 }
 
-const QUOTA_FAILURE_CODES = {
+/** Exported so the status-contract guard can drive off the real map. */
+export const QUOTA_FAILURE_CODES = {
   DOCUMENTS: "QUOTA_DOCUMENTS_EXCEEDED",
   PROPOSALS: "QUOTA_PROPOSALS_EXCEEDED",
   STORAGE: "QUOTA_STORAGE_EXCEEDED",

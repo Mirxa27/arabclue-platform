@@ -187,6 +187,7 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // authorized, but the allowance is spent and the fix is a payment.
   QUOTA_DOCUMENTS_EXCEEDED: 402,
   QUOTA_PROPOSALS_EXCEEDED: 402,
+  QUOTA_STORAGE_EXCEEDED: 402,
   QUOTA_TOKENS_EXCEEDED: 402,
   SUBSCRIPTION_INACTIVE: 402,
 };
