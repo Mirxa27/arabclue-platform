@@ -335,9 +335,13 @@ export async function runAgentPipeline(opts: {
     });
     metrics.completeAgent("INGESTION", {
       evidenceCount: entities.evidence.length,
-      enriched: (entities.evidence as string[]).some((e) => e.includes("AI skill applied")),
-      fallback: (entities.evidence as string[]).some((e) => e.includes("unavailable")),
-      provider: entities.evidence.find((e) => e.includes("via"))?.split("via ").pop()?.trim(),
+      // Straight from the AI call. Reading it back out of the evidence prose
+      // missed the case that matters: enrichJson returns data:null on failure,
+      // the prose is only written when data exists, so a hard failure recorded
+      // a clean run.
+      enriched: !ingestionAi.fallback && !!ingestionAi.data,
+      fallback: ingestionAi.fallback,
+      provider: ingestionAi.provider,
     });
 
     // Persist tender requirements matrix (structure + account linking)
@@ -468,7 +472,13 @@ export async function runAgentPipeline(opts: {
       },
       findings: [...cFindings, ...logger.getEntries().filter(e=>e.agentId==="COMPLIANCE_REGULATORY").slice(-3).map(e=>`${e.ruleId}: ${e.message}`)],
     });
-    metrics.completeAgent("COMPLIANCE_REGULATORY", { complianceScore: score, evidenceCount: rows.length, enriched: cFindings.some(f=>f.includes("AI skill applied")), fallback: cFindings.some(f=>f.includes("unavailable")) });
+    metrics.completeAgent("COMPLIANCE_REGULATORY", {
+      complianceScore: score,
+      evidenceCount: rows.length,
+      enriched: !complianceAi.fallback && !!complianceAi.data,
+      fallback: complianceAi.fallback,
+      provider: complianceAi.provider,
+    });
 
     // ─── Agent 3: TECHNICAL_ARCHITECT ─────────────────────────────────────
     metrics.startAgent("TECHNICAL_ARCHITECT");
@@ -718,9 +728,9 @@ export async function runAgentPipeline(opts: {
     });
     metrics.completeAgent("TECHNICAL_ARCHITECT", {
       evidenceCount: technical.matchedProjects.length,
-      enriched: technical.findings.some(f=>f.includes("AI skill applied")),
-      fallback: technical.findings.some(f=>f.includes("unavailable")),
-      provider: technical.findings.find(f=>f.includes("via"))?.split("via ").pop(),
+      enriched: !technicalAi.fallback && !!technicalAi.data,
+      fallback: technicalAi.fallback,
+      provider: technicalAi.provider,
     });
     decision(logger, {
       agentId: "TECHNICAL_ARCHITECT",
@@ -815,8 +825,9 @@ export async function runAgentPipeline(opts: {
     });
     metrics.completeAgent("FINANCIAL_QUALIFICATION", {
       evidenceCount: financial.boqItems.length,
-      enriched: financial.findings.some(f=>f.includes("AI skill applied")),
-      fallback: financial.findings.some(f=>f.includes("unavailable")),
+      enriched: !financialAi.fallback && !!financialAi.data,
+      fallback: financialAi.fallback,
+      provider: financialAi.provider,
     });
 
     // ─── Coverage plan (requirement → evidence matrix) ────────────────────
