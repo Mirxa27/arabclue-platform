@@ -2,6 +2,7 @@
 
 import {
   MDXEditor,
+  type MDXEditorMethods,
   headingsPlugin,
   listsPlugin,
   quotePlugin,
@@ -21,7 +22,13 @@ import {
   Separator,
 } from "@mdxeditor/editor";
 import "@mdxeditor/editor/style.css";
-import { useMemo, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+} from "react";
 import { cn } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import {
@@ -72,6 +79,27 @@ export function MarkdownStudioEditorInner({
   const resolvedDir = dir ?? (ar ? "rtl" : "ltr");
   const primary = brand?.primaryColor ?? "#1E3A8A";
   const accent = brand?.accentColor ?? "#0EA5E9";
+
+  const editorRef = useRef<MDXEditorMethods>(null);
+  // The last text the editor itself produced. MDXEditor reads `markdown` only
+  // at mount, so a prop that differs from this is an edit from outside — the
+  // co-pilot accepting a suggestion, a skill applying, a version revert — and
+  // has to be pushed in explicitly or the writer keeps typing into stale text.
+  const lastEmittedRef = useRef(markdown);
+
+  useEffect(() => {
+    if (markdown === lastEmittedRef.current) return;
+    lastEmittedRef.current = markdown;
+    editorRef.current?.setMarkdown(markdown);
+  }, [markdown]);
+
+  const handleChange = useCallback(
+    (next: string) => {
+      lastEmittedRef.current = next;
+      onChange(next);
+    },
+    [onChange]
+  );
 
   const plugins = useMemo(
     () => [
@@ -141,8 +169,9 @@ export function MarkdownStudioEditorInner({
         )}
       >
         <MDXEditor
+          ref={editorRef}
           markdown={markdown}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
           contentEditableClassName={cn(
             "prose prose-sm max-w-none px-3 py-2 dark:prose-invert min-h-[380px]",
