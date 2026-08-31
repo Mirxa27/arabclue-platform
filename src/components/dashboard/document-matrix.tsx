@@ -288,7 +288,7 @@ export function DocumentMatrix() {
                             title={locale === "ar" ? "مصفوفة المتطلبات" : "Requirements matrix"}
                             onClick={() => {
                               if (d.projectId) setActiveProjectId(d.projectId);
-                              startTransition(() => setView("compliance"));
+                              startTransition(() => setView("documents"));
                             }}
                           >
                             <Eye className="size-3" />

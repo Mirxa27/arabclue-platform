@@ -395,7 +395,9 @@ export function PlatformAgentConsole() {
         }
         if (out.uiAction === "navigate" && typeof out.view === "string") {
           const view = out.view as DashboardView;
-          setFollowView(view === "copilot" ? null : view);
+          // The console is the overview screen, so a tool pointing back at it
+          // is telling the reader to stay put, not to navigate.
+          setFollowView(view === "overview" ? null : view);
         }
         setFeedItems((prev) =>
           [

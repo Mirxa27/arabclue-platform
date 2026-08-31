@@ -823,7 +823,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           certaintyNote:
             "REGISTRY_BACKED / TENDER_EXPLICIT / REQUIRES_COUNSEL — never 100% legal certainty.",
           uiAction: "navigate" as const,
-          view: "compliance" as const,
+          view: "documents" as const,
         };
       },
     }),
@@ -1594,7 +1594,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
               note ||
               "Optional. Use Optional install in Mission Control (Download ZIP → Load unpacked arabclue-agent). Set API base to https://arabclue.com (no /app), stay signed in, and refresh the ArabClue tab after install.",
             uiAction: "navigate" as const,
-            view: "copilot" as const,
+            view: "overview" as const,
           };
         }
         if (!text?.trim()) {

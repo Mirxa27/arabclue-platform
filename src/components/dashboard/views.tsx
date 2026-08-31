@@ -161,17 +161,13 @@ const SetupWizardView = dynamic(
  */
 const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   overview: AgentHomeView,
-  copilot: AgentHomeView,
   projects: ProjectsView,
   documents: DocumentsView,
   proposals: ProposalsView,
   contracts: ContractsView,
-  compliance: ComplianceView,
   "clause-library": ClauseLibraryRouteView,
   "template-editor": TemplateEditorRouteView,
   agents: AgentsView,
-  history: HistoryView,
-  brand: AccountView,
   account: AccountView,
   "business-profile": BusinessProfileView,
   reviews: ReviewsView,
@@ -283,7 +279,7 @@ function RouteNotice({
 }
 
 /**
- * The application home, at `/app` and `/app/copilot`.
+ * The application home, at `/app`.
  *
  * The agent console is the product: a reader states the job in one line and the
  * agent runs the tools, so the home screen is a conversation rather than a board
@@ -423,27 +419,6 @@ function TemplateEditorRouteView() {
   );
 }
 
-function ComplianceView() {
-  const { locale } = useLocale();
-  return (
-    <PageSection>
-      <PageHeader
-        title={tr("nav_compliance", locale)}
-        subtitle={
-          locale === "ar"
-            ? "مراقبة NCA وPDPL والبنية المؤسسية"
-            : "NCA, PDPL & EA compliance monitoring"
-        }
-        locale={locale}
-      />
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <RequirementsMatrix />
-        <ComplianceMonitor />
-      </div>
-    </PageSection>
-  );
-}
-
 function AgentsView() {
   const { locale } = useLocale();
   const { setView } = useUI();
@@ -466,10 +441,10 @@ function AgentsView() {
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => startTransition(() => setView("compliance"))}
+          onClick={() => startTransition(() => setView("documents"))}
         >
           <ShieldCheck className="size-3.5" />
-          {ar ? "الامتثال" : "Compliance"}
+          {ar ? "المستندات والامتثال" : "Documents & compliance"}
         </Button>
         <Button
           type="button"
@@ -481,27 +456,6 @@ function AgentsView() {
           <FileText className="size-3.5" />
           {ar ? "العطاءات" : "Proposals"}
         </Button>
-      </div>
-    </PageSection>
-  );
-}
-
-function HistoryView() {
-  const { locale } = useLocale();
-  return (
-    <PageSection>
-      <PageHeader
-        title={tr("nav_history", locale)}
-        subtitle={
-          locale === "ar"
-            ? "سجل إصدارات المستندات والعطاءات"
-            : "Document & proposal version history"
-        }
-        locale={locale}
-      />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <VersionHistory />
-        <DocumentMatrix />
       </div>
     </PageSection>
   );

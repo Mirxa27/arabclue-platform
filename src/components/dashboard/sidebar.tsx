@@ -16,10 +16,7 @@ import {
   FolderKanban,
   FileText,
   FileCheck2,
-  ShieldCheck,
   Bot,
-  AudioLines,
-  History,
   Building2,
   ChevronLeft,
   Cpu,
@@ -61,9 +58,7 @@ const NAV_PRIMARY: { view: DashboardView; key: string; icon: typeof LayoutDashbo
 
 /** Reachable in one click from `More`, and by name from the agent. */
 const NAV_SECONDARY: typeof NAV_PRIMARY = [
-  { view: "copilot", key: "nav_copilot", icon: AudioLines },
   { view: "contracts", key: "nav_contracts", icon: Scale },
-  { view: "compliance", key: "nav_compliance", icon: ShieldCheck },
   { view: "agents", key: "nav_agents", icon: Bot },
   { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval" },
   { view: "clause-library", key: "nav_clause_library", icon: Scale },
@@ -73,7 +68,6 @@ const NAV_SECONDARY: typeof NAV_PRIMARY = [
   { view: "analytics", key: "nav_analytics", icon: BarChart3 },
   { view: "account", key: "nav_account", icon: Building2 },
   { view: "business-profile", key: "nav_business_profile", icon: Sparkles },
-  { view: "history", key: "nav_history", icon: History },
   { view: "billing", key: "nav_billing", icon: CreditCard },
   { view: "settings", key: "nav_settings", icon: Lock },
 ];

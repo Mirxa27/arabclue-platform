@@ -27,19 +27,15 @@ export type DashboardView =
   | "documents"
   | "proposals"
   | "contracts"
-  | "compliance"
   | "clause-library"
   | "template-editor"
-  | "brand"
   | "account"
   | "business-profile"
   | "agents"
-  | "history"
   | "billing"
   | "reviews"
   | "knowledge-approval"
   | "settings"
-  | "copilot"
   | "proposal-builder"
   | "marketplace"
   | "analytics"
@@ -71,17 +67,13 @@ const ADMIN_PREFIX = "admin";
  */
 export const VIEW_PATHS: Readonly<Record<DashboardView, string>> = Object.freeze({
   overview: "",
-  copilot: "copilot",
   projects: "projects",
   documents: "documents",
   proposals: "proposals",
   contracts: "contracts",
-  compliance: "compliance",
   "clause-library": "clause-library",
   "template-editor": "template-editor",
   agents: "agents",
-  history: "history",
-  brand: "brand",
   account: "account",
   "business-profile": "business-profile",
   reviews: "reviews",
@@ -115,17 +107,13 @@ export const DASHBOARD_VIEWS: readonly DashboardView[] = Object.freeze(
 export const VIEW_LABEL_KEYS: Readonly<Record<DashboardView, string>> =
   Object.freeze({
     overview: "nav_home_agent",
-    copilot: "nav_copilot",
     projects: "nav_projects",
     documents: "nav_documents",
     proposals: "nav_proposals",
     contracts: "nav_contracts",
-    compliance: "nav_compliance",
     "clause-library": "nav_clause_library",
     "template-editor": "nav_template_editor",
     agents: "nav_agents",
-    history: "nav_history",
-    brand: "nav_brand",
     account: "nav_account",
     "business-profile": "nav_business_profile",
     reviews: "nav_reviews",
@@ -143,6 +131,24 @@ export const VIEW_LABEL_KEYS: Readonly<Record<DashboardView, string>> =
     admin_myfatoorah: "nav_admin_myfatoorah",
     admin_security: "nav_admin_security",
     admin_audit: "nav_admin_audit",
+  });
+
+/**
+ * Segments that used to name a view, and the view that absorbed each one.
+ *
+ * `copilot` and `brand` rendered the very same component as `overview` and
+ * `account`; `compliance` and `history` each rendered a strict subset of the
+ * panels `documents` already stacks on one screen. Deleting the segments outright
+ * would send every existing bookmark to the home agent under a "route not found"
+ * notice, so the address survives its view: the reader lands on the screen that
+ * absorbed it and is told the panel moved.
+ */
+export const RETIRED_VIEWS: Readonly<Record<string, DashboardView>> =
+  Object.freeze({
+    brand: "account",
+    compliance: "documents",
+    copilot: "overview",
+    history: "documents",
   });
 
 /** Reverse map from path segment to view, for O(1) resolution. */
@@ -174,13 +180,7 @@ export const ADMIN_VIEWS: ReadonlySet<DashboardView> = Object.freeze(
  * path carries the project identifier while a project is selected.
  */
 export const PROJECT_SCOPED_VIEWS: ReadonlySet<DashboardView> = Object.freeze(
-  new Set<DashboardView>([
-    "documents",
-    "proposals",
-    "contracts",
-    "compliance",
-    "agents",
-  ])
+  new Set<DashboardView>(["documents", "proposals", "contracts", "agents"])
 );
 
 /**
@@ -200,12 +200,14 @@ export const GLOBAL_VIEWS: readonly DashboardView[] = Object.freeze(
 export type RouteNoticeCode =
   | "ROUTE_VIEW_NOT_FOUND"
   | "ROUTE_VIEW_FORBIDDEN"
+  | "ROUTE_VIEW_MOVED"
   | "ROUTE_PROJECT_UNAVAILABLE"
   | "ROUTE_PROJECT_REQUIRED";
 
 export const ROUTE_NOTICE_CODES: readonly RouteNoticeCode[] = Object.freeze([
   "ROUTE_VIEW_NOT_FOUND",
   "ROUTE_VIEW_FORBIDDEN",
+  "ROUTE_VIEW_MOVED",
   "ROUTE_PROJECT_UNAVAILABLE",
   "ROUTE_PROJECT_REQUIRED",
 ]);
@@ -381,6 +383,7 @@ export function canonicalFallbackFor(
       return FORBIDDEN_VIEW_FALLBACK;
     case "ROUTE_PROJECT_REQUIRED":
       return PROJECT_REQUIRED_FALLBACK;
+    case "ROUTE_VIEW_MOVED":
     case "ROUTE_PROJECT_UNAVAILABLE":
       return Object.freeze({
         view,
@@ -499,6 +502,9 @@ export function resolveAppRoute(
   const parts = decodeSegments(received);
   if (parts === null) return UNMATCHED;
 
+  const moved = retirementResolution(parts);
+  if (moved !== null) return moved;
+
   const candidate = matchCandidate(parts);
   if (candidate === null) return UNMATCHED;
 
@@ -518,6 +524,43 @@ export function resolveAppRoute(
   }
 
   return matchedResolution(candidate.view, candidate.projectId);
+}
+
+/**
+ * The redirect for a path whose last segment names a retired view, or null when
+ * it names none.
+ *
+ * A retired segment reached under `/app/projects/:id/` keeps the identifier as
+ * long as the absorbing view is itself project-scoped — dropping it would move
+ * the reader to another project's records, or to none at all.
+ */
+function retirementResolution(
+  parts: readonly string[]
+): AppRouteResolution | null {
+  const isProjectScoped =
+    parts.length === 3 && parts[0] === PROJECT_PREFIX;
+  if (parts.length !== 1 && !isProjectScoped) return null;
+
+  const replacement = RETIRED_VIEWS[parts[parts.length - 1]!];
+  if (replacement === undefined) return null;
+
+  const projectId = isProjectScoped ? decodeProjectId(parts[1]!) : null;
+  if (isProjectScoped && projectId === null) return null;
+
+  const carried = isProjectScopedView(replacement) ? projectId : null;
+  return {
+    matched: false,
+    view: null,
+    projectId: null,
+    canonicalPath: null,
+    fallback: Object.freeze({
+      view: replacement,
+      projectId: carried,
+      path: getPathForView(replacement, carried),
+      notice: "ROUTE_VIEW_MOVED" as RouteNoticeCode,
+      action: "replace" as const,
+    }),
+  };
 }
 
 function matchCandidate(

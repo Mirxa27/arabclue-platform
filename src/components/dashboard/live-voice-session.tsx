@@ -199,7 +199,7 @@ export function LiveVoiceSession({
         }
         if (result.uiAction === "navigate" && typeof result.view === "string") {
           const view = result.view as DashboardView;
-          setFollowViewRef.current(view === "copilot" ? null : view);
+          setFollowViewRef.current(view === "overview" ? null : view);
         }
       }
       return data.result;
@@ -236,7 +236,7 @@ export function LiveVoiceSession({
         }
         if (out.uiAction === "navigate" && typeof out.view === "string") {
           const view = out.view as DashboardView;
-          setFollowViewRef.current(view === "copilot" ? null : view);
+          setFollowViewRef.current(view === "overview" ? null : view);
         }
       }
     }

@@ -40,15 +40,25 @@ describe("platform agent instructions", () => {
 });
 
 describe("platform agent views", () => {
-  test("includes copilot and core product views", () => {
-    expect(DASHBOARD_VIEWS).toContain("copilot");
+  test("includes the core product views", () => {
+    expect(DASHBOARD_VIEWS).toContain("overview");
     expect(DASHBOARD_VIEWS).toContain("projects");
+    expect(DASHBOARD_VIEWS).toContain("documents");
     expect(DASHBOARD_VIEWS).toContain("contracts");
     expect(DASHBOARD_VIEWS).toContain("agents");
     expect(DASHBOARD_VIEWS).toContain("proposal-builder");
     expect(DASHBOARD_VIEWS).toContain("marketplace");
     expect(DASHBOARD_VIEWS).toContain("analytics");
-    expect(DASHBOARD_VIEWS).toContain("brand");
+    expect(DASHBOARD_VIEWS).toContain("account");
+  });
+
+  test("offers no address that opens a screen the agent can already open", () => {
+    // `copilot` was `overview`, `brand` was `account`, and `compliance` and
+    // `history` were subsets of `documents`. Offering them back would give the
+    // agent two names for one screen — see dashboard-view-retirement.test.ts.
+    for (const retired of ["copilot", "brand", "compliance", "history"]) {
+      expect(DASHBOARD_VIEWS).not.toContain(retired);
+    }
   });
 
   test("the agent can navigate to every screen the app has", () => {

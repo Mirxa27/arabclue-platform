@@ -92,7 +92,7 @@ export function StatCards() {
       color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10",
       bar: "bg-emerald-500",
-      view: "compliance",
+      view: "documents",
     },
     {
       key: "stat_documents_processed",
