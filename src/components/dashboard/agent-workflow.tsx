@@ -27,15 +27,13 @@ import {
   FolderKanban,
   AlertCircle,
   XCircle,
-  History,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { RadialGauge } from "./radial-gauge";
-import { EmptyState, QueryState, ErrorState } from "@/components/patterns";
-import { ListSkeleton } from "./loading-skeletons";
+import { ErrorState } from "@/components/patterns";
 import { cn } from "@/lib/utils";
 import { AGENTS } from "@/lib/constants";
 import {
@@ -43,10 +41,11 @@ import {
   engineNote,
   runHeadlineBadge,
 } from "@/lib/agents/run-presentation";
+import { AgentRunHistory } from "./agent-run-history";
+import type { AgentRunHistoryItem } from "./agent-run-history";
 import type { AgentState, AgentId } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
 import { NO_DOCUMENTS_PREFLIGHT } from "@/lib/agents/run-preflight";
-import { VendorMatchAction } from "@/components/dashboard/ai-assist-actions";
 
 const AGENT_META: Record<
   AgentId,
@@ -109,60 +108,6 @@ function normalizeStatus(s: string | undefined): AgentState["status"] {
   if (v === "done") return "completed";
   if (v === "error") return "failed";
   return "pending";
-}
-
-type AgentRunHistoryItem = {
-  id: string;
-  projectId: string;
-  projectTitle: string;
-  projectTitleAr: string | null;
-  status: string;
-  progress: number;
-  currentAgent: string | null;
-  errorMessage: string | null;
-  createdAt: string;
-  completedAt: string | null;
-};
-
-function statusLabel(status: string, locale: "ar" | "en") {
-  const labels: Record<string, { ar: string; en: string }> = {
-    QUEUED: { ar: "في الانتظار", en: "Queued" },
-    RUNNING: { ar: "يعمل", en: "Running" },
-    COMPLETED: { ar: "مكتمل", en: "Completed" },
-    FAILED: { ar: "فشل", en: "Failed" },
-    CANCELLED: { ar: "ملغي", en: "Cancelled" },
-  };
-  return labels[status]?.[locale] ?? status;
-}
-
-function statusBadgeClass(status: string) {
-  if (status === "COMPLETED") return "bg-emerald-600 hover:bg-emerald-600";
-  if (status === "RUNNING" || status === "QUEUED") {
-    return "bg-violet-600 hover:bg-violet-600";
-  }
-  if (status === "FAILED") return "";
-  return "bg-muted text-foreground hover:bg-muted";
-}
-
-function formatRunDate(value: string, locale: "ar" | "en") {
-  return new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function isAgentId(value: string): value is AgentId {
-  return AGENTS.some((agent) => agent.id === value);
-}
-
-function currentAgentLabel(value: string, locale: "ar" | "en") {
-  return isAgentId(value) ? tr(`agent_${value}_name`, locale) : value;
-}
-
-function runProjectTitle(run: AgentRunHistoryItem, locale: "ar" | "en") {
-  return locale === "ar" ? run.projectTitleAr ?? run.projectTitle : run.projectTitle;
 }
 
 export function AgentWorkflow() {
@@ -279,8 +224,7 @@ export function AgentWorkflow() {
       coveragePercent?: number | null;
       exportReady?: boolean | null;
       errorMessage?: string | null;
-    },
-    opts?: { hydrateOnly?: boolean }
+    }
   ) {
     if (data.runId) setRunId(data.runId);
     if (Array.isArray(data.agentStates) && data.agentStates.length) {
@@ -328,8 +272,9 @@ export function AgentWorkflow() {
     if (status === "COMPLETED" || status === "FAILED" || status === "CANCELLED") {
       setCompleted(true);
     } else if (status === "RUNNING" || status === "QUEUED") {
-      if (!opts?.hydrateOnly) setCompleted(false);
-      else setCompleted(false);
+      // Resuming a live run and hydrating one on mount both mean "not done",
+      // so this does not depend on how we got here.
+      setCompleted(false);
     }
   }
 
@@ -378,7 +323,7 @@ export function AgentWorkflow() {
         if (!res.ok || cancelled) return;
         const data = await res.json();
         if (!data.runId || cancelled) return;
-        applyStatusPayload(data, { hydrateOnly: true });
+        applyStatusPayload(data);
       } catch {
         /* ignore */
       }
@@ -474,8 +419,8 @@ export function AgentWorkflow() {
         title: locale === "ar" ? "بدأ سير عمل الوكلاء" : "Agent workflow started",
         description:
           locale === "ar"
-            ? "6 وكلاء يعملون بالتتابع — راقب التقدم أدناه"
-            : "6 agents running in sequence — watch live progress below",
+            ? `${AGENTS.length} وكلاء يعملون بالتتابع — راقب التقدم أدناه`
+            : `${AGENTS.length} agents running in sequence — watch live progress below`,
       });
       qc.invalidateQueries({ queryKey: ["stats"] });
       qc.invalidateQueries({ queryKey: ["agent-runs"] });
@@ -604,7 +549,11 @@ export function AgentWorkflow() {
      
   }, [runId, completed, locale, toast, qc]);
 
-  const running = !!runId && !completed && (runStatus === "RUNNING" || runStatus === "QUEUED" || (!runStatus && !!runId && !completed));
+  // A run just started has no status yet; treat that as live rather than idle.
+  const running =
+    !!runId &&
+    !completed &&
+    (!runStatus || runStatus === "RUNNING" || runStatus === "QUEUED");
   const doneCount = agentStates.filter((a) => a.status === "completed").length;
   const activeAgent = agentStates.find((a) => a.status === "running");
   const runHistory = runHistoryData?.runs ?? [];
@@ -695,11 +644,11 @@ export function AgentWorkflow() {
             <p className="text-[11px] text-foreground/70 mt-0.5">
               {running && activeAgent
                 ? locale === "ar"
-                  ? `يعمل الآن: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/6`
-                  : `Now running: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/6`
+                  ? `يعمل الآن: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`
+                  : `Now running: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`
                 : locale === "ar"
-                  ? "خط أنابيب من 6 وكلاء — استيعاب → امتثال → فني → مالي → صياغة → عقد"
-                  : "6-agent pipeline — ingest → compliance → technical → finance → draft → contract"}
+                  ? `خط أنابيب من ${AGENTS.length} وكلاء — استيعاب → امتثال → فني → مالي → صياغة → عقد`
+                  : `${AGENTS.length}-agent pipeline — ingest → compliance → technical → finance → draft → contract`}
             </p>
           </div>
         </div>
@@ -792,28 +741,12 @@ export function AgentWorkflow() {
             {Math.round(overall)}%
           </span>
         )}
-        {activeProjectId && projectTitle ? (
-          <div className="ms-auto w-full sm:w-auto">
-            <VendorMatchAction
-              locale={locale}
-              tenderRequirements={[
-                projectTitle,
-                projectMeta?.project?.etimadRef
-                  ? `Etimad ${projectMeta.project.etimadRef}`
-                  : "",
-                ...(docsData?.documents ?? [])
-                  .slice(0, 8)
-                  .map((d) => d.originalName || d.docCategory || d.id),
-              ].filter(Boolean)}
-              vendors={[
-                {
-                  vendorId: "workspace-self",
-                  vendorName: projectTitle,
-                  vendorNameAr: projectTitle,
-                },
-              ]}
-            />
-          </div>
+        {documentCount > 0 ? (
+          <span className="text-muted-foreground">
+            {locale === "ar"
+              ? `${documentCount} مستند`
+              : `${documentCount} document${documentCount === 1 ? "" : "s"}`}
+          </span>
         ) : null}
       </div>
 
@@ -856,121 +789,6 @@ export function AgentWorkflow() {
         </div>
       ) : null}
 
-      {/* Workspace run history */}
-      <div className="px-5 py-3 border-b border-border/50 bg-background/80">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <History className="size-4 text-muted-foreground shrink-0" />
-            <div className="min-w-0">
-              <h4 className="text-xs font-semibold">
-                {locale === "ar" ? "سجل التشغيل" : "Run history"}
-              </h4>
-              <p className="text-[10px] text-muted-foreground">
-                {locale === "ar"
-                  ? "كل تشغيلات الوكلاء في مساحة العمل"
-                  : "All agent runs in this workspace"}
-              </p>
-            </div>
-          </div>
-          <Badge variant="outline" className="text-[10px]">
-            {runHistory.length}
-          </Badge>
-        </div>
-
-        <div className="mt-3">
-          <QueryState
-            isLoading={runHistoryLoading}
-            isError={runHistoryIsError}
-            errorMessage={
-              runHistoryError instanceof Error
-                ? runHistoryError.message
-                : locale === "ar"
-                  ? "تعذر تحميل سجل التشغيل"
-                  : "Failed to load run history"
-            }
-            isEmpty={runHistory.length === 0}
-            onRetry={() => refetchRunHistory()}
-            locale={locale}
-            loading={<ListSkeleton rows={2} />}
-            empty={
-              <EmptyState
-                icon={History}
-                title={tr("agent_run_history_empty_title", locale)}
-                description={tr("agent_run_history_empty_description", locale)}
-                className="py-5"
-                action={
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" onClick={handleRunClick}>
-                      {tr("agent_run_start_action", locale)}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => startTransition(() => setView("documents"))}
-                    >
-                      {tr("agent_run_upload_docs_action", locale)}
-                    </Button>
-                  </div>
-                }
-              />
-            }
-          >
-            <div className="max-h-52 overflow-y-auto space-y-2 pe-1">
-              {runHistory.map((run) => {
-                const selected = run.id === runId;
-                const failed = run.status === "FAILED";
-                return (
-                  <button
-                    key={run.id}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => selectHistoryRun(run)}
-                    className={cn(
-                      "w-full rounded-lg border p-3 text-start transition-colors hover:bg-muted/50",
-                      selected
-                        ? "border-violet-500/50 bg-violet-500/8"
-                        : "border-border/70 bg-card"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="truncate text-xs font-semibold">
-                            {runProjectTitle(run, locale)}
-                          </span>
-                          <Badge
-                            variant={failed ? "destructive" : "default"}
-                            className={cn("text-[9px]", statusBadgeClass(run.status))}
-                          >
-                            {statusLabel(run.status, locale)}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-[10px] text-muted-foreground">
-                          {formatRunDate(run.createdAt, locale)}
-                          {run.currentAgent
-                            ? ` · ${
-                                locale === "ar" ? "الوكيل الحالي" : "Current"
-                              }: ${currentAgentLabel(run.currentAgent, locale)}`
-                            : ""}
-                        </p>
-                      </div>
-                      <span className="font-mono text-xs font-bold tabular-nums text-violet-700 dark:text-violet-300">
-                        {Math.round(run.progress)}%
-                      </span>
-                    </div>
-                    {failed && run.errorMessage ? (
-                      <p className="mt-2 rounded-md border border-destructive/25 bg-destructive/5 px-2 py-1.5 text-[10px] text-destructive">
-                        {run.errorMessage}
-                      </p>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </QueryState>
-        </div>
-      </div>
-
       {/* Overall progress — always show when we have a run */}
       {(running || (completed && overall > 0)) && (
         <div className="px-5 py-3 border-b border-border/50 space-y-2">
@@ -980,7 +798,7 @@ export function AgentWorkflow() {
               {locale === "ar" ? "التقدم الإجمالي" : "Overall progress"}
             </span>
             <span className="text-muted-foreground">
-              {doneCount}/6 {locale === "ar" ? "وكلاء" : "agents"}
+              {doneCount}/{AGENTS.length} {locale === "ar" ? "وكلاء" : "agents"}
             </span>
           </div>
           <Progress value={overall} className="h-2.5 bg-slate-200 dark:bg-slate-700" />
@@ -1013,6 +831,82 @@ export function AgentWorkflow() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {errorMessage && runStatus === "FAILED" && (
+        <div className="mx-3 mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+          {errorMessage}
+        </div>
+      )}
+
+      {completed && runStatus === "COMPLETED" && (
+        <div className="mx-3 mt-3 rounded-xl bg-gradient-to-br from-emerald-500/12 to-teal-500/10 border border-emerald-500/25 p-3.5 flex flex-wrap items-center gap-3">
+          <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+              {locale === "ar"
+                ? "تم إنشاء العطاء ومسودة العقد"
+                : "Proposal & contract draft ready"}
+            </div>
+            <div className="text-[11px] text-foreground/65 mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
+              {coveragePercent != null && (
+                <span>
+                  {locale === "ar" ? "تغطية" : "Coverage"}: {coveragePercent}%
+                </span>
+              )}
+              {exportReady != null && (
+                <span>
+                  {exportReady
+                    ? locale === "ar"
+                      ? "جاهز للتصدير"
+                      : "Export-ready"
+                    : locale === "ar"
+                      ? "يحتاج مراجعة التحقق"
+                      : "Needs validation review"}
+                </span>
+              )}
+              {contractId && (
+                <span>
+                  {locale === "ar" ? "عقد ثنائي اللغة" : "Bilingual contract"}
+                </span>
+              )}
+              {llmProvider && (
+                // The provider id and failure kind stay in the title attribute:
+                // useful when reporting a problem, noise in the summary line.
+                <span title={`${llmProvider}${llmFailureKind ? ` · ${llmFailureKind}` : ""}`}>
+                  {engineNote(llmFallback, locale)}
+                  {!llmFallback && llmTruncated
+                    ? locale === "ar"
+                      ? " (مقتطع)"
+                      : " (truncated)"
+                    : ""}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="h-8 text-[11px]"
+              onClick={() => startTransition(() => setView("proposals"))}
+              // A completed run does not guarantee a proposal row — a run that
+              // failed at drafting still reaches COMPLETED with no artifact.
+              disabled={!proposalId}
+            >
+              {locale === "ar" ? "فتح العطاء" : "Open proposal"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-[11px] gap-1"
+              onClick={() => startTransition(() => setView("contracts"))}
+              disabled={!contractId}
+            >
+              <Scale className="size-3" />
+              {locale === "ar" ? "العقد" : "Contract"}
+            </Button>
           </div>
         </div>
       )}
@@ -1165,78 +1059,24 @@ export function AgentWorkflow() {
         })}
       </div>
 
-      {errorMessage && runStatus === "FAILED" && (
-        <div className="mx-3 mb-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-          {errorMessage}
-        </div>
-      )}
-
-      {completed && runStatus === "COMPLETED" && (
-        <div className="mx-3 mb-3 rounded-xl bg-gradient-to-br from-emerald-500/12 to-teal-500/10 border border-emerald-500/25 p-3.5 flex flex-wrap items-center gap-3">
-          <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-              {locale === "ar"
-                ? "تم إنشاء العطاء ومسودة العقد"
-                : "Proposal & contract draft ready"}
-            </div>
-            <div className="text-[11px] text-foreground/65 mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
-              {coveragePercent != null && (
-                <span>
-                  {locale === "ar" ? "تغطية" : "Coverage"}: {coveragePercent}%
-                </span>
-              )}
-              {exportReady != null && (
-                <span>
-                  {exportReady
-                    ? locale === "ar"
-                      ? "جاهز للتصدير"
-                      : "Export-ready"
-                    : locale === "ar"
-                      ? "يحتاج مراجعة التحقق"
-                      : "Needs validation review"}
-                </span>
-              )}
-              {contractId && (
-                <span>
-                  {locale === "ar" ? "عقد ثنائي اللغة" : "Bilingual contract"}
-                </span>
-              )}
-              {llmProvider && (
-                // The provider id and failure kind stay in the title attribute:
-                // useful when reporting a problem, noise in the summary line.
-                <span title={`${llmProvider}${llmFailureKind ? ` · ${llmFailureKind}` : ""}`}>
-                  {engineNote(llmFallback, locale)}
-                  {!llmFallback && llmTruncated
-                    ? locale === "ar"
-                      ? " (مقتطع)"
-                      : " (truncated)"
-                    : ""}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              className="h-8 text-[11px]"
-              onClick={() => startTransition(() => setView("proposals"))}
-              disabled={!proposalId && !completed}
-            >
-              {locale === "ar" ? "فتح العطاء" : "Open proposal"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-[11px] gap-1"
-              onClick={() => startTransition(() => setView("contracts"))}
-            >
-              <Scale className="size-3" />
-              {locale === "ar" ? "العقد" : "Contract"}
-            </Button>
-          </div>
-        </div>
-      )}
+      <AgentRunHistory
+        runs={runHistory}
+        activeRunId={runId}
+        locale={locale}
+        isLoading={runHistoryLoading}
+        isError={runHistoryIsError}
+        errorMessage={
+          runHistoryError instanceof Error
+            ? runHistoryError.message
+            : locale === "ar"
+              ? "تعذر تحميل سجل التشغيل"
+              : "Failed to load run history"
+        }
+        onRetry={() => refetchRunHistory()}
+        onSelect={selectHistoryRun}
+        onStartRun={handleRunClick}
+        onUploadDocuments={() => startTransition(() => setView("documents"))}
+      />
     </Card>
   );
 }
