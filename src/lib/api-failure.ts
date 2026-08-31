@@ -180,6 +180,9 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // A refused request is well-formed and understood, so it is 422 rather than
   // the 400 the default suffix rules would give it.
   PRICING_REFUSED: 422,
+  // Same reason, and 422 is what `POST /api/agents/run` already answers for an
+  // empty project (route.ts:113-118) — the two entry points must not disagree.
+  NO_DOCUMENTS: 422,
   LIVE_VOICE_START_FAILED: 500,
   AGENT_TOOL_FAILED: 500,
   EXTENSION_PACK_FAILED: 500,

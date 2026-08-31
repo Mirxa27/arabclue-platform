@@ -1886,6 +1886,12 @@ export const localizationRegistry = {
     ar: "تم تجاوز حد الطلبات على المساعد الذكي. انتظر قليلاً ثم أعد المحاولة",
     en: "Too many AI assistant requests. Wait a moment and try again",
   },
+  // The agents read the uploaded tender documents; with none there is nothing
+  // to read, so the text names the upload rather than blaming the request.
+  NO_DOCUMENTS: {
+    ar: "لا توجد مستندات مرفوعة لهذا المشروع. ارفع كراسة الشروط أولاً ثم شغّل الوكلاء",
+    en: "No documents are uploaded for this project. Upload the tender documents first, then run the agents",
+  },
   // Distinct from AI_RATE_LIMITED on purpose: the caller did nothing wrong and
   // slowing down will not help, so the text must not read as a quota message.
   AI_RATE_LIMIT_UNAVAILABLE: {
@@ -2516,6 +2522,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   MISSION_NOT_FOUND: { actionKey: "error_action_run_agent", messageKey: "MISSION_NOT_FOUND" },
   ONBOARDING_INCOMPLETE: { actionKey: "error_action_run_agent", messageKey: "ONBOARDING_INCOMPLETE" },
   AI_RATE_LIMITED: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMITED" },
+  NO_DOCUMENTS: { actionKey: "error_action_run_agent", messageKey: "NO_DOCUMENTS" },
   AI_RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMIT_UNAVAILABLE" },
   AI_PROVIDER_UNAVAILABLE: { actionKey: "error_action_run_agent", messageKey: "AI_PROVIDER_UNAVAILABLE" },
   PRICING_REFUSED: { actionKey: "error_action_run_agent", messageKey: "PRICING_REFUSED" },

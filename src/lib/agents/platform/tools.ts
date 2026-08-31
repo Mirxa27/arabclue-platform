@@ -9,6 +9,7 @@ import { runAgentPipeline } from "@/lib/agents/orchestrator";
 import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
+import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
 import { ApiError } from "@/lib/api-controller";
 import {
   decideProposalReview,
@@ -63,8 +64,9 @@ async function requireProject(
 /**
  * Shared pipeline launcher — commands the full 6-agent team for a project.
  * Used by both `startAgentPipeline` and `orchestrateTenderPackage`.
- * Enforces onboarding, quota, and single-run concurrency; returns a structured
- * result (never throws for the expected onboarding/quota/conflict cases).
+ * Enforces onboarding, quota, uploaded documents, and single-run concurrency;
+ * returns a structured result (never throws for the expected
+ * onboarding/quota/preflight/conflict cases).
  */
 async function launchProjectPipeline(
   ctx: PlatformAgentContext,
@@ -90,6 +92,14 @@ async function launchProjectPipeline(
 
   let project = await requireProject(ctx, projectId);
   if (!project) return { ok: false as const, error: "project not found" };
+
+  // Same order as `POST /api/agents/run` (route.ts:104-118): a project with no
+  // documents is refused before the concurrency check, so the copilot cannot
+  // queue a run that the REST route would have rejected.
+  const documentPreflight = assertProjectHasDocuments(
+    await db.uploadedDocument.count({ where: { projectId: project.id } })
+  );
+  if (!documentPreflight.ok) return documentPreflight;
 
   const active = await db.agentRun.findFirst({
     where: {

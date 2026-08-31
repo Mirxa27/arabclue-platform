@@ -16,6 +16,7 @@ import { runAgentPipeline } from "@/lib/agents/orchestrator";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { assertWithinQuota, QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
+import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
 import type { AgentState } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -162,6 +163,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       where: { documentId: { in: documentIds } },
       data: { projectId },
     });
+  }
+
+  // Counted after the link above, so freshly attached documents count. A
+  // mission whose attachments carry no document still reaches here, and the
+  // agents have nothing to read — `POST /api/agents/run` refuses that same
+  // case with the same code and status (route.ts:109-118).
+  const documentPreflight = assertProjectHasDocuments(
+    await db.uploadedDocument.count({ where: { projectId } })
+  );
+  if (!documentPreflight.ok) {
+    return jsonApiFailure(documentPreflight.code);
   }
 
   const active = await db.agentRun.findFirst({
