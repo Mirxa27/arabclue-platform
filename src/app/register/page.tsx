@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { selectApiFailureMessage } from "@/lib/api-failure-message";
+import { readRegistrationOutcome } from "@/lib/registration-outcome";
+
 function RegisterFormInner() {
   const router = useRouter();
   const { locale, toggle } = useLocale();
@@ -53,20 +55,28 @@ function RegisterFormInner() {
         setLoading(false);
         return;
       }
-      // When verification is temporarily skipped, send the user straight to sign-in.
-      const verificationRequired =
-        (data as { verificationRequired?: boolean }).verificationRequired !== false &&
-        (data as { account?: { emailVerified?: boolean } }).account?.emailVerified !== true;
+      const outcome = readRegistrationOutcome(data);
+      if (outcome === "undeliverable") {
+        // The account is committed but no verification message was sent, so
+        // the inbox screen would be a dead end. The server's own text names
+        // the reason and who can fix it.
+        setError(
+          selectApiFailureMessage(data, locale) ??
+            tr("VERIFICATION_EMAIL_UNCONFIGURED", locale)
+        );
+        setLoading(false);
+        return;
+      }
       setSuccess(
         selectApiFailureMessage(data, locale) ??
-          (verificationRequired
+          (outcome === "verify_email"
             ? tr("auth_register_check_email", locale)
             : tr("account_registration_success", locale))
       );
       setTimeout(
         () =>
           router.replace(
-            verificationRequired
+            outcome === "verify_email"
               ? "/verify-email?email=" + encodeURIComponent(email.trim())
               : "/login"
           ),
