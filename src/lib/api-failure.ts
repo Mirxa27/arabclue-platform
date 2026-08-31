@@ -165,6 +165,8 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // No provider answered, so the surface has nothing to show. 503 says
   // "retryable once a provider is connected", which is exactly the fix.
   AI_PROVIDER_UNAVAILABLE: 503,
+  // The row is intact and nothing was written; the key is what has to change.
+  SECRET_DECRYPTION_FAILED: 503,
   RECURRING_UNAVAILABLE: 503,
   PRESENCE_UNAVAILABLE: 503,
   RECURRING_PROVIDER_ERROR: 502,
@@ -453,6 +455,9 @@ export function mapErrorToApiFailure(error: unknown): MappedFailure {
   // routes that never touch it.
   if (shape.name === "ProviderUnavailableError") {
     return mappedApiFailure("AI_PROVIDER_UNAVAILABLE");
+  }
+  if (shape.name === "SecretDecryptionError") {
+    return mappedApiFailure("SECRET_DECRYPTION_FAILED");
   }
 
   return internalFailure();

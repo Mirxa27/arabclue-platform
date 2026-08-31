@@ -1887,6 +1887,10 @@ export const localizationRegistry = {
     ar: "لا يوجد مزوّد ذكاء اصطناعي متاح الآن، ولم يتم إنشاء أي محتوى. اطلب من المشرف ربط مزوّد",
     en: "No AI provider is available right now, so nothing was generated. Ask your administrator to connect a provider",
   },
+  SECRET_DECRYPTION_FAILED: {
+    ar: "تعذر فتح القيمة المخزَّنة بمفتاح التشفير الحالي، ولم يتم تغيير أي شيء. تحقّق من مفتاح التشفير قبل إعادة المحاولة",
+    en: "The stored value could not be opened with the current encryption key, so nothing was changed. Verify the encryption key before retrying",
+  },
   EXTENSION_PACK_FAILED: {
     ar: "تعذر تجهيز حزمة الإضافة",
     en: "Could not pack the browser extension",
@@ -2489,6 +2493,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   PRICING_REFUSED: { actionKey: "error_action_run_agent", messageKey: "PRICING_REFUSED" },
   LIVE_VOICE_START_FAILED: { actionKey: "error_action_run_agent", messageKey: "LIVE_VOICE_START_FAILED" },
   AGENT_TOOL_FAILED: { actionKey: "error_action_run_agent", messageKey: "AGENT_TOOL_FAILED" },
+  SECRET_DECRYPTION_FAILED: { actionKey: "error_action_complete_request", messageKey: "SECRET_DECRYPTION_FAILED" },
   EXTENSION_PACK_FAILED: { actionKey: "error_action_complete_request", messageKey: "EXTENSION_PACK_FAILED" },
   QUOTA_DOCUMENTS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_DOCUMENTS_EXCEEDED" },
   QUOTA_PROPOSALS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_PROPOSALS_EXCEEDED" },

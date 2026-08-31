@@ -29,10 +29,18 @@ export function encryptValue(plaintext: string): string {
   return [iv.toString("base64"), authTag.toString("base64"), enc.toString("base64")].join(":");
 }
 
-export function decryptValue(ciphertext: string): string {
+/** A stored ciphertext could not be opened with the current master key. */
+export class SecretDecryptionError extends Error {
+  constructor() {
+    super("Stored secret could not be decrypted with the current master key");
+    this.name = "SecretDecryptionError";
+  }
+}
+
+function openSealed(ciphertext: string): string {
+  const [ivB64, authTagB64, dataB64] = ciphertext.split(":");
+  if (!ivB64 || !authTagB64 || !dataB64) throw new SecretDecryptionError();
   try {
-    const [ivB64, authTagB64, dataB64] = ciphertext.split(":");
-    if (!ivB64 || !authTagB64 || !dataB64) return "";
     const iv = Buffer.from(ivB64, "base64");
     const authTag = Buffer.from(authTagB64, "base64");
     const data = Buffer.from(dataB64, "base64");
@@ -41,6 +49,24 @@ export function decryptValue(ciphertext: string): string {
     const dec = Buffer.concat([decipher.update(data), decipher.final()]);
     return dec.toString("utf8");
   } catch {
+    // Node reports a failed authentication tag as a generic state error. The
+    // only actionable reading is that this key cannot open this row.
+    throw new SecretDecryptionError();
+  }
+}
+
+export function decryptValue(ciphertext: string): string {
+  try {
+    return openSealed(ciphertext);
+  } catch {
+    // Callers read "" as "not configured" and degrade, so a wrong master key
+    // looks exactly like a blank settings table — every provider key, payment
+    // credential, and MFA secret at once. Say it here or nobody ever learns.
+    if (ciphertext) {
+      console.warn(
+        "[crypto] a stored secret could not be decrypted — verify ARABCLUE_ENC_KEY matches the key that sealed it"
+      );
+    }
     return "";
   }
 }
@@ -50,8 +76,14 @@ export function maskSecret(value: string): string {
   return `${value.slice(0, 2)}${"•".repeat(Math.max(8, value.length - 4))}${value.slice(-2)}`;
 }
 
+/**
+ * Re-seal a stored value under a fresh IV.
+ *
+ * Reads strictly: re-encrypting a failed read would persist the encryption of
+ * an empty string over the real credential, which is unrecoverable.
+ */
 export function rotateEncryption(ciphertext: string): string {
-  return encryptValue(decryptValue(ciphertext));
+  return encryptValue(openSealed(ciphertext));
 }
 
 /** Fail fast at boot when required secrets missing in production */
