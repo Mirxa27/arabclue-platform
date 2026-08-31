@@ -39,6 +39,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -123,11 +124,20 @@ export function OnboardingWizard() {
   const [draftTenderTitleAr, setDraftTenderTitleAr] = useState("");
   const [draftEtimadRef, setDraftEtimadRef] = useState("");
 
-  const { data: wsData } = useQuery({
+  // These three prefill the form below, and the save handlers PATCH the drafts
+  // straight back with the optional fields as `|| null`. A read that fails
+  // quietly therefore renders blank inputs and writes null over stored values
+  // the moment the user presses Continue — so none of them may return a
+  // default, and the guard above the form is what keeps the form off screen.
+  const workspaceQuery = useQuery({
     queryKey: ["workspace"],
     queryFn: async () => {
       const r = await fetch("/api/workspaces");
-      if (!r.ok) throw new Error("workspaces");
+      if (!r.ok) {
+        throw new Error(
+          apiErrorText(await r.json().catch(() => null), locale, ar ? "تعذر تحميل بيانات المنشأة" : "Could not load your organization")
+        );
+      }
       return r.json() as Promise<{
         workspace: { id: string; name: string; nameAr?: string | null; crNumber?: string | null; vatNumber?: string | null };
         members?: Array<{ user: { id: string; name: string; email: string } }>;
@@ -135,23 +145,38 @@ export function OnboardingWizard() {
     },
   });
 
-  const { data: brandData } = useQuery({
+  const brandQuery = useQuery({
     queryKey: ["brand"],
     queryFn: async () => {
       const r = await fetch("/api/brand");
-      if (!r.ok) return { brand: null };
+      if (!r.ok) {
+        throw new Error(
+          apiErrorText(await r.json().catch(() => null), locale, ar ? "تعذر تحميل الهوية البصرية" : "Could not load your brand")
+        );
+      }
       return r.json() as Promise<{ brand: { tagline?: string | null; taglineAr?: string | null; primaryColor?: string | null } | null }>;
     },
   });
 
-  const { data: onboardingStatus } = useQuery({
+  const onboardingQuery = useQuery({
     queryKey: ["onboarding"],
     queryFn: async () => {
       const r = await fetch("/api/onboarding");
-      if (!r.ok) return { readyForProposals: false, missing: [] as string[] };
+      if (!r.ok) {
+        throw new Error(
+          apiErrorText(await r.json().catch(() => null), locale, ar ? "تعذر تحميل حالة الإعداد" : "Could not load your setup status")
+        );
+      }
       return r.json() as Promise<{ readyForProposals: boolean; missing: string[] }>;
     },
   });
+
+  const wsData = workspaceQuery.data;
+  const brandData = brandQuery.data;
+  const onboardingStatus = onboardingQuery.data;
+  const loadError = workspaceQuery.error ?? brandQuery.error ?? onboardingQuery.error;
+  const loadPending =
+    workspaceQuery.isPending || brandQuery.isPending || onboardingQuery.isPending;
 
   // Prefill once
   useEffect(() => {
@@ -382,6 +407,51 @@ export function OnboardingWizard() {
 
   function handleSkip() {
     startTransition(() => setView("overview" as never));
+  }
+
+  // Before the form, not beside it: an error banner over a live form would
+  // still let Continue submit the blanks it was warning about.
+  if (loadPending || loadError) {
+    return (
+      <div className="mx-auto max-w-[1120px] w-full p-4 md:p-6" dir={ar ? "rtl" : "ltr"}>
+        <div className="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-[20px] border bg-card p-10 text-center">
+          {loadError ? (
+            <div role="alert" className="flex flex-col items-center gap-4">
+              <span className="rounded-full bg-destructive/10 p-3">
+                <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden />
+              </span>
+              <div className="space-y-1.5">
+                <h2 className="text-[18px] font-semibold tracking-tight">
+                  {ar ? "تعذر تحميل بيانات الإعداد" : "We couldn't load your setup"}
+                </h2>
+                <p className="mx-auto max-w-[46ch] text-[13px] leading-5 text-muted-foreground">
+                  {ar
+                    ? "لم نعرض النموذج حتى لا تُستبدل بياناتك المحفوظة بحقول فارغة."
+                    : "We're keeping the form hidden — filling it in now would overwrite your saved details with blanks."}
+                </p>
+                <p className="text-[12px] text-muted-foreground/80">{loadError.message}</p>
+              </div>
+              <Button
+                onClick={() => {
+                  void workspaceQuery.refetch();
+                  void brandQuery.refetch();
+                  void onboardingQuery.refetch();
+                }}
+              >
+                {ar ? "إعادة المحاولة" : "Try again"}
+              </Button>
+            </div>
+          ) : (
+            <div role="status" className="flex flex-col items-center gap-3">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden />
+              <p className="text-[13px] text-muted-foreground">
+                {ar ? "جارٍ تحميل بيانات منشأتك…" : "Loading your organization…"}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (

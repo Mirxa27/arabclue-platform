@@ -20,13 +20,13 @@ import type { OnboardingStepKey } from "@/lib/types";
 
 /** Required onboarding step -> the wizard call that completes it. */
 const WIZARD_SATISFIES: Partial<Record<OnboardingStepKey, string>> = {
-  // onboarding-wizard.tsx:241 — PATCH /api/brand with tagline + primaryColor.
+  // onboarding-wizard.tsx:266 — PATCH /api/brand with tagline + primaryColor.
   brand: "PATCH /api/brand",
-  // onboarding-wizard.tsx:270 — PATCH /api/workspaces with crNumber.
+  // onboarding-wizard.tsx:295 — PATCH /api/workspaces with crNumber.
   legal: "PATCH /api/workspaces",
-  // onboarding-wizard.tsx:325 — saveApprovalChain -> PUT /api/approval-policy.
+  // onboarding-wizard.tsx:350 — saveApprovalChain -> PUT /api/approval-policy.
   approvalChain: "PUT /api/approval-policy",
-  // onboarding-wizard.tsx:295 — PATCH /api/onboarding { restrictionsReviewed }.
+  // onboarding-wizard.tsx:320 — PATCH /api/onboarding { restrictionsReviewed }.
   restrictions: "PATCH /api/onboarding",
 };
 
