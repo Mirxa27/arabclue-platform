@@ -70,6 +70,47 @@ describe("markdownToHtml escaping", () => {
   });
 });
 
+describe("brand colours cannot escape the style attribute", () => {
+  /**
+   * The renderer escapes everything in text position but interpolates its two
+   * colour options straight into `style="..."`. A value that closes the quote
+   * therefore adds an attribute to every heading and blockquote in the preview
+   * pane — and unlike the body markdown, the reader never typed it.
+   *
+   * `/api/brand` currently rejects anything that is not a six-digit hex, so
+   * this is a latent hole rather than a live one. It is closed here because the
+   * renderer is the choke point: it emits the markup, so it is the only place
+   * that stays correct when a second writer of those columns appears.
+   */
+  const BREAKOUT = `#fff" onmouseover="alert(1)`;
+
+  test("a heading colour that closes the quote cannot add an attribute", () => {
+    const html = markdownToHtml("# Title", { headingColor: BREAKOUT });
+    expect(html).not.toContain("onmouseover");
+  });
+
+  test("an accent colour that closes the quote cannot add an attribute", () => {
+    const html = markdownToHtml("> quoted", { accentColor: BREAKOUT });
+    expect(html).not.toContain("onmouseover");
+  });
+
+  test("a colour option cannot inject a tag either", () => {
+    const html = markdownToHtml("## Sub", {
+      headingColor: `#fff"><script>alert(1)</script><h2 x="`,
+    });
+    expect(html).not.toMatch(/<\s*script/i);
+  });
+
+  test("legitimate brand colours still reach the markup", () => {
+    const html = markdownToHtml("# Title\n\n> quoted", {
+      headingColor: "#a1b2c3",
+      accentColor: "#112233",
+    });
+    expect(html).toContain("#A1B2C3");
+    expect(html).toContain("#112233");
+  });
+});
+
 describe("no component hand-rolls a markdown renderer", () => {
   const COMPONENT_FILES = [
     "src/components/dashboard/proposal-builder-preview.tsx",

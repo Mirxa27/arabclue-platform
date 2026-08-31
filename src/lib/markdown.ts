@@ -3,6 +3,11 @@
  * Supports GFM-ish headings, lists, tables, bold/italic, HR, blockquotes, code.
  */
 
+import {
+  DEFAULT_DOCUMENT_BRAND_COLORS,
+  normalizeDocumentBrandColor,
+} from "./brand-policy";
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -12,8 +17,19 @@ export function escapeHtml(s: string): string {
 }
 
 export function markdownToHtml(md: string, opts?: { headingColor?: string; accentColor?: string }): string {
-  const primary = opts?.headingColor ?? "#1E3A8A";
-  const accent = opts?.accentColor ?? "#0EA5E9";
+  // Normalized here, not at the call sites: these two are the only values that
+  // land in attribute position, and everything else this function emits is
+  // escaped. A caller that forwards a persisted brand colour untouched — the
+  // live editor preview does — would otherwise let a value containing `"` close
+  // the style attribute and hang an event handler off every heading.
+  const primary = normalizeDocumentBrandColor(
+    opts?.headingColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.primaryColor
+  );
+  const accent = normalizeDocumentBrandColor(
+    opts?.accentColor,
+    DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
+  );
   const lines = (md || "").replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let inUl = false;
