@@ -31,13 +31,14 @@ import { apiErrorText } from "@/lib/api-failure-message";
 import {
   applySuggestion,
   applySuggestions,
+  changedChars,
   type CopilotRisk,
   type CopilotSuggestion,
 } from "@/lib/ai/copilot-anchors";
 
 /** Long enough that it fires between thoughts, not between words. */
 const IDLE_MS = 4000;
-/** Below this, the buffer has not changed enough to be worth another pass. */
+/** Below this much changed text, another pass is not worth a model call. */
 const MIN_DELTA_CHARS = 40;
 
 type RailState =
@@ -133,9 +134,7 @@ export function CopilotRail({
 
   useEffect(() => {
     if (paused) return;
-    if (Math.abs(markdown.length - reviewedRef.current.length) < MIN_DELTA_CHARS) {
-      return;
-    }
+    if (changedChars(markdown, reviewedRef.current) < MIN_DELTA_CHARS) return;
     const timer = setTimeout(() => {
       void review();
     }, IDLE_MS);
@@ -148,6 +147,9 @@ export function CopilotRail({
   const accept = (s: CopilotSuggestion) => {
     const next = applySuggestion(markdown, s);
     if (next === null) return;
+    // The co-pilot wrote this text; it does not need to read it back. Without
+    // this, every Accept queues a pass that can propose reverting the edit.
+    reviewedRef.current = next;
     onApply(next);
     setDismissed((prev) => new Set(prev).add(s.id));
   };
@@ -155,6 +157,7 @@ export function CopilotRail({
   const acceptAll = () => {
     const result = applySuggestions(markdown, live);
     if (result.applied.length === 0) return;
+    reviewedRef.current = result.content;
     onApply(result.content);
     setDismissed((prev) => {
       const next = new Set(prev);
@@ -342,9 +345,15 @@ export function CopilotRail({
       </div>
 
       {state.kind === "ready" && state.model && (
-        <p className="shrink-0 text-[9px] text-muted-foreground truncate">
-          {state.provider} · {state.model} —{" "}
-          {t(locale, "تحقّق قبل التقديم.", "Verify before submitting.")}
+        <p
+          className="shrink-0 text-[9px] text-muted-foreground truncate"
+          title={`${state.provider} · ${state.model}`}
+        >
+          {t(
+            locale,
+            "اقتراحات مُولّدة بالذكاء الاصطناعي — تحقّق قبل التقديم.",
+            "AI-generated suggestions — verify before submitting."
+          )}
         </p>
       )}
     </aside>

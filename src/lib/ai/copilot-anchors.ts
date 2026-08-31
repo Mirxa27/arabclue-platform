@@ -32,6 +32,34 @@ export type CopilotBulkResult = {
   skipped: string[];
 };
 
+/**
+ * How much of the document actually differs — the length of the region left
+ * after the shared head and tail are trimmed off both sides.
+ *
+ * The rail throttles on this rather than on a length difference, because the
+ * edits most worth reviewing (a rewritten sentence, a swapped figure, a
+ * placeholder filled in) barely change the character count.
+ *
+ * ponytail: prefix/suffix trim, not a real diff. It over-counts when the same
+ * text moves within the document; that errs toward reviewing, which is the
+ * safe direction. Reach for a diff library only if a caller needs the edits
+ * themselves rather than their size.
+ */
+export function changedChars(before: string, after: string): number {
+  if (before === after) return 0;
+  const shorter = Math.min(before.length, after.length);
+  let head = 0;
+  while (head < shorter && before[head] === after[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < shorter - head &&
+    before[before.length - 1 - tail] === after[after.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+  return Math.max(before.length, after.length) - head - tail;
+}
+
 export function occurrences(haystack: string, needle: string): number {
   let count = 0;
   let from = 0;
