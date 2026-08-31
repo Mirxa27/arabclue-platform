@@ -78,3 +78,9 @@ test-results/
 
 # Isolated git worktrees
 .worktrees/
+
+# iCloud sync conflict copies. This checkout lives under ~/Documents, so iCloud
+# duplicates a file it thinks diverged as `name 2.ts`. They read like real
+# modules — 31 of them reached main before anyone noticed — so keep them out of
+# `git add` entirely rather than relying on catching them in review.
+* [0-9].*
