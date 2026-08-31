@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   SecretDecryptionError,
+  canOpenSealed,
   decryptValue,
   encryptValue,
   rotateEncryption,
@@ -61,6 +62,46 @@ describe("rotating a secret never destroys it", () => {
 
     expect(decryptValue("")).toBe("");
     expect(decryptValue("not-a-sealed-value")).toBe("");
+  });
+});
+
+describe("a value sealed as the empty string still opens", () => {
+  test("an unset row is not a key mismatch", () => {
+    process.env.ARABCLUE_ENC_KEY = "stable-key";
+
+    // AES-GCM of "" is zero bytes, so the sealed form ends in an empty payload
+    // segment. Rejecting that as malformed made every never-set row look like a
+    // row sealed by a superseded master key — and bootstrap seeds the entire
+    // catalog as `encryptValue("")`, so `/api/ready` reported a key-rotation
+    // problem (`sealed:22 readable:12`) that did not exist.
+    expect(canOpenSealed(encryptValue(""))).toBe(true);
+  });
+
+  test("rotating an unset row does not fail hard", () => {
+    // The admin rotate button ran straight into SecretDecryptionError on any
+    // key nobody had filled in yet.
+    process.env.ARABCLUE_ENC_KEY = "stable-key";
+    const rotated = rotateEncryption(encryptValue(""));
+
+    expect(decryptValue(rotated)).toBe("");
+  });
+
+  test("an empty payload sealed by another key is still a mismatch", () => {
+    // The authentication tag is what distinguishes the two, so accepting an
+    // empty payload must not mean skipping the check.
+    const sealed = sealedUnderKey("", "key-one");
+    process.env.ARABCLUE_ENC_KEY = "key-two";
+
+    expect(canOpenSealed(sealed)).toBe(false);
+  });
+
+  test("a malformed value is still rejected", () => {
+    process.env.ARABCLUE_ENC_KEY = "stable-key";
+
+    expect(canOpenSealed("")).toBe(false);
+    expect(canOpenSealed("not-a-sealed-value")).toBe(false);
+    expect(canOpenSealed("only:two")).toBe(false);
+    expect(canOpenSealed("iv:tag:payload:extra")).toBe(false);
   });
 });
 

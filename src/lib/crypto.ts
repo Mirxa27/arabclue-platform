@@ -38,8 +38,14 @@ export class SecretDecryptionError extends Error {
 }
 
 function openSealed(ciphertext: string): string {
-  const [ivB64, authTagB64, dataB64] = ciphertext.split(":");
-  if (!ivB64 || !authTagB64 || !dataB64) throw new SecretDecryptionError();
+  const parts = ciphertext.split(":");
+  // AES-GCM of "" is zero bytes, so a legitimately sealed empty value ends in
+  // an empty payload segment. Requiring one made every never-set row — the
+  // whole seeded catalog — look like a row sealed by a superseded master key.
+  // The authentication tag below is what actually separates the two.
+  if (parts.length !== 3) throw new SecretDecryptionError();
+  const [ivB64, authTagB64, dataB64] = parts;
+  if (!ivB64 || !authTagB64) throw new SecretDecryptionError();
   try {
     const iv = Buffer.from(ivB64, "base64");
     const authTag = Buffer.from(authTagB64, "base64");

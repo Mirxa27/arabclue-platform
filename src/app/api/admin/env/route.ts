@@ -5,7 +5,8 @@ import { parseJsonBody, parseSearchParams, withAdmin } from "@/lib/api-controlle
 import { adminEnvUpsertSchema } from "@/lib/validation";
 import { z } from "zod";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { encryptValue, decryptValue, maskSecret } from "@/lib/crypto";
+import { encryptValue, maskSecret } from "@/lib/crypto";
+import { viewEnvSettingValue } from "@/lib/env-setting-view";
 import { ENV_CATALOG, isSecretEnvKey } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -33,11 +34,15 @@ export async function GET(req: NextRequest) {
   });
 
   const result = settings.map((s) => {
-    const plain = decryptValue(s.valueEncrypted);
     // Effective secrecy is the stored flag OR the allowlist verdict, so a row
     // whose isSecret was flipped to false still masks. Secrecy can be raised by
     // data but never lowered by it.
     const secret = s.isSecret || isSecretEnvKey(s.key);
+    const view = viewEnvSettingValue({
+      valueEncrypted: s.valueEncrypted,
+      secret,
+      reveal,
+    });
     return {
       id: s.id,
       key: s.key,
@@ -45,8 +50,9 @@ export async function GET(req: NextRequest) {
       description: s.description,
       isSecret: secret,
       isRequired: s.isRequired,
-      value: secret && !reveal ? maskSecret(plain) : plain,
-      isMasked: secret && !reveal,
+      value: view.value,
+      isMasked: view.isMasked,
+      isReadable: view.isReadable,
       lastRotatedAt: s.lastRotatedAt,
       lastEditedBy: s.lastEditedBy,
       updatedAt: s.updatedAt,

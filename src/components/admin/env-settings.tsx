@@ -7,6 +7,7 @@ import { isSecretEnvKey } from "@/lib/constants";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
+  AlertTriangle,
   ChevronDown,
   Eye,
   EyeOff,
@@ -50,6 +51,8 @@ interface EnvSetting {
   description: string | null;
   isSecret: boolean;
   isMasked: boolean;
+  /** False when the stored ciphertext does not open with the current master key. */
+  isReadable: boolean;
   lastRotatedAt: string | null;
   updatedAt: string;
 }
@@ -441,6 +444,18 @@ function EnvRow({
       ? revealedValue
       : setting.value;
 
+  // A row sealed by a superseded master key reads as "" everywhere it is used,
+  // so the integration behind it is already dead. Say so here: the value is
+  // unrecoverable and the only fix is to paste it again.
+  const unreadable = setting.isReadable === false;
+  const emptyLabel = unreadable
+    ? locale === "ar"
+      ? "غير قابل للفك — أعد إدخال القيمة"
+      : "cannot be decrypted — re-enter the value"
+    : locale === "ar"
+      ? "غير مضبوط"
+      : "not set";
+
   return (
     <div className="px-3 py-2.5 hover:bg-muted/20 transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -464,6 +479,15 @@ function EnvRow({
                   {tr("admin_masked", locale)}
                 </Badge>
               )}
+              {unreadable && (
+                <Badge
+                  variant="outline"
+                  className="text-[8px] h-3.5 px-1 bg-destructive/10 text-destructive border-destructive/20 gap-0.5"
+                >
+                  <AlertTriangle className="size-2" />
+                  {locale === "ar" ? "مفتاح غير مطابق" : "key mismatch"}
+                </Badge>
+              )}
             </div>
             {setting.description && (
               <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">
@@ -471,14 +495,23 @@ function EnvRow({
               </p>
             )}
             <div className="flex items-center gap-1.5 mt-1 min-w-0">
-              <code className="text-[10px] font-mono text-foreground/80 bg-muted/50 px-1.5 py-0.5 rounded truncate max-w-full">
+              <code
+                className={cn(
+                  "text-[10px] font-mono px-1.5 py-0.5 rounded truncate max-w-full",
+                  unreadable
+                    ? "text-destructive bg-destructive/10"
+                    : "text-foreground/80 bg-muted/50"
+                )}
+              >
                 {revealing
                   ? locale === "ar"
                     ? "جاري الكشف..."
                     : "revealing..."
-                  : displayValue || (locale === "ar" ? "غير مضبوط" : "not set")}
+                  : displayValue || emptyLabel}
               </code>
-              {setting.isSecret && (
+              {/* Nothing to reveal on an unopenable row, and asking would write a
+                  WARN reveal audit for a value that cannot be returned. */}
+              {setting.isSecret && !unreadable && (
                 <Button
                   size="icon"
                   variant="ghost"
