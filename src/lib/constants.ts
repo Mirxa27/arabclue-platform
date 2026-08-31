@@ -401,12 +401,17 @@ export const ENV_CATALOG = [
   { key: "REDIS_URL", category: "DATABASE", description: "Redis URL required in production for distributed authentication and export rate limiting", isRequired: true },
   { key: "VECTOR_DB_URL", category: "DATABASE", description: "Vector database (Milvus/Pinecone) endpoint", isRequired: false },
   { key: "WEBHOOK_URL", category: "INTEGRATION", description: "Outbound HTTPS webhook for audit/event notifications", isRequired: false },
-  { key: "RESEND_API_KEY", category: "INTEGRATION", description: "Resend API key for transactional expiry/billing emails", isRequired: false },
-  { key: "EMAIL_FROM", category: "INTEGRATION", description: "From address for Resend (e.g. ArabClue <noreply@arabclue.com>)", isRequired: false },
+  { key: "RESEND_API_KEY", category: "INTEGRATION", description: "Resend API key — preferred email transport. Read from the deployment environment only", isRequired: false },
+  { key: "EMAIL_FROM", category: "INTEGRATION", description: "From address for outgoing mail (e.g. ArabClue <noreply@arabclue.com>). SMTP relays reject an address they do not own", isRequired: false },
   { key: "CRON_SECRET", category: "SECURITY", description: "Production bearer secret for /api/cron/* routes (minimum 16 characters)", isRequired: true },
   { key: "BLOB_READ_WRITE_TOKEN", category: "STORAGE", description: "Vercel Blob token required on Vercel for durable uploads", isRequired: true },
-  { key: "SMTP_HOST", category: "INTEGRATION", description: "Email relay host (legacy; prefer Resend)", isRequired: false },
-  { key: "SMTP_PORT", category: "INTEGRATION", description: "Email relay port", isRequired: false },
+  // SMTP is a live fallback transport, not legacy: it is what sends when no
+  // Resend key exists. All four SMTP variables are read from the deployment
+  // environment only — a value saved here is not seen by the mailer, so
+  // SMTP_USER and SMTP_PASSWORD are deliberately absent from this catalog
+  // rather than offered as fields that would silently do nothing.
+  { key: "SMTP_HOST", category: "INTEGRATION", description: "SMTP relay host, used when RESEND_API_KEY is unset. Set in the deployment environment together with SMTP_PORT, SMTP_USER and SMTP_PASSWORD", isRequired: false },
+  { key: "SMTP_PORT", category: "INTEGRATION", description: "SMTP relay port — 465 for implicit TLS (default), 587 for STARTTLS", isRequired: false },
   { key: "ARABCLUE_ENC_KEY", category: "SECURITY", description: "Master encryption key for env secrets", isRequired: true },
   { key: "JWT_SECRET", category: "SECURITY", description: "JWT signing secret", isRequired: true },
   { key: "NEXTAUTH_SECRET", category: "SECURITY", description: "NextAuth session secret", isRequired: true },

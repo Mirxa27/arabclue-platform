@@ -24,6 +24,7 @@ import {
 } from "@/lib/llm/model-catalog";
 import { resolveProviderApiKey } from "@/lib/env-settings";
 import { getAutonomyFlagsFromProcessEnv } from "@/lib/autonomy-flags";
+import { selectEmailTransport } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -213,11 +214,16 @@ export async function GET() {
     );
   }
 
+  // Resolved through the same pure selector the sender uses, so this can never
+  // report a transport that `sendEmail` would not actually pick. Never gates
+  // readiness: a site that cannot send mail still serves every signed-in page.
+  const emailTransport = selectEmailTransport(process.env);
   checks.email = {
     ok: true,
-    detail: process.env.RESEND_API_KEY?.trim()
-      ? "resend"
-      : "degraded_no_resend",
+    detail:
+      emailTransport.kind === "none"
+        ? `degraded_${emailTransport.reason}`
+        : emailTransport.kind,
   };
 
   const ready = Object.values(checks).every((c) => c.ok);

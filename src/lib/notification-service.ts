@@ -653,7 +653,9 @@ export async function dispatchPendingNotificationEmails(options?: {
   };
 
   if (!isEmailConfigured()) {
-    // Mark due PENDING rows SKIPPED without a network call when Resend is unset.
+    // Mark due PENDING rows SKIPPED without a network call when no transport
+    // is configured. An operator reads errorMessage directly, so it names both
+    // transports rather than only the one that used to exist.
     const unconfigured = await db.notificationDelivery.updateMany({
       where: {
         channel: "email",
@@ -663,7 +665,8 @@ export async function dispatchPendingNotificationEmails(options?: {
       data: {
         status: "SKIPPED",
         errorCode: "EMAIL_UNCONFIGURED",
-        errorMessage: "RESEND_API_KEY not configured",
+        errorMessage:
+          "No email transport configured (set RESEND_API_KEY, or SMTP_HOST + SMTP_USER + SMTP_PASSWORD)",
         lastAttemptAt: now,
         failedAt: now,
       },

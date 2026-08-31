@@ -16,6 +16,13 @@ export const PROVIDER_CREDENTIAL_ENV_KEYS = [
   "RESEND_API_KEY",
   "RESEND_FROM",
   "EMAIL_FROM",
+  // The SMTP transport dials a real relay over TLS, which the fetch-based
+  // network guard below cannot intercept. Clearing these is what keeps a test
+  // run from authenticating against the live mailbox.
+  "SMTP_HOST",
+  "SMTP_PORT",
+  "SMTP_USER",
+  "SMTP_PASSWORD",
   "MYFATOORAH_API_KEY",
   "MYFATOORAH_API_URL",
   "MYFATOORAH_MODE",
