@@ -22,6 +22,7 @@ import {
   withRetries,
   type LLMFailureKind,
 } from "./resilience";
+import { GATEWAY_MODEL_ID, callGateway, gatewayAvailable } from "./gateway";
 
 export type { LLMFailureKind } from "./resilience";
 
@@ -126,24 +127,37 @@ export async function generateCompletion(
   }
 
   const pid = provider.provider.toLowerCase();
+  // The tenant row still supplies policy (temperature, ceilings, guardrails)
+  // even when it cannot supply transport: an unusable key falls through to the
+  // gateway rather than giving up, which is what `resolvePlatformAgentModel`
+  // already does for the voice agent (`agents/platform/model.ts`).
+  let useGateway = false;
   if (pid !== "ollama") {
     const key = await resolveProviderApiKey(
       provider.provider,
       provider.apiKeyEnvKey
     );
     if (!key) {
-      return {
-        content: "",
-        provider: provider.provider,
-        model: provider.modelId,
-        tokensUsed: 0,
-        confidence: 0,
-        fallback: true,
-        engine,
-        failureKind: "missing_key",
-      };
+      if (!gatewayAvailable()) {
+        return {
+          content: "",
+          provider: provider.provider,
+          model: provider.modelId,
+          tokensUsed: 0,
+          confidence: 0,
+          fallback: true,
+          engine,
+          failureKind: "missing_key",
+        };
+      }
+      useGateway = true;
     }
   }
+
+  // What actually answered, for the audit trail and the provider label the UI
+  // shows — naming the tenant row here would misreport a gateway completion.
+  const effectiveProvider = useGateway ? "ai-gateway" : provider.provider;
+  const effectiveModel = useGateway ? GATEWAY_MODEL_ID : provider.modelId;
 
   const temperature = opts?.temperature ?? provider.temperature;
   const maxTokens = Math.min(
@@ -192,8 +206,8 @@ export async function generateCompletion(
       const fallback = buildDeterministicFallback(filteredMessages, provider);
       return {
         content: fallback,
-        provider: provider.provider,
-        model: provider.modelId,
+        provider: effectiveProvider,
+        model: effectiveModel,
         tokensUsed: estimateTokens(fallback),
         confidence: Math.min(
           provider.confidenceThreshold * 0.95,
@@ -207,8 +221,8 @@ export async function generateCompletion(
     }
     return {
       content: guarded.content,
-      provider: provider.provider,
-      model: provider.modelId,
+      provider: effectiveProvider,
+      model: effectiveModel,
       tokensUsed,
       confidence: guarded.confidence,
       fallback: false,
@@ -237,6 +251,13 @@ export async function generateCompletion(
         { truncated: result.truncated, attempts }
       );
     };
+
+    if (useGateway) {
+      return await runTransport(
+        () => callGateway(filteredMessages, temperature, maxTokens),
+        0.93
+      );
+    }
 
     if (pid === "zai") {
       // Prefer OpenAI-compatible path when apiBase is configured (live models)
@@ -320,8 +341,8 @@ export async function generateCompletion(
     const fallback = buildDeterministicFallback(filteredMessages, provider);
     return {
       content: fallback,
-      provider: provider.provider,
-      model: provider.modelId,
+      provider: effectiveProvider,
+      model: effectiveModel,
       tokensUsed: estimateTokens(fallback),
       confidence: provider.confidenceThreshold * 0.9,
       fallback: true,

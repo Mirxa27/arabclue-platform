@@ -14,24 +14,14 @@ import {
   normalizeOpenAiBase,
   requireConfiguredModelId,
 } from "@/lib/llm/model-catalog";
-
-/** Live gateway sonnet id (fetched 2026-07-22 from ai-gateway.vercel.sh/v1/models). */
-const GATEWAY_DEFAULT_MODEL = "anthropic/claude-sonnet-5";
-
-function gatewayAvailable(): boolean {
-  return Boolean(
-    process.env.AI_GATEWAY_API_KEY?.trim() ||
-      process.env.VERCEL_OIDC_TOKEN?.trim() ||
-      process.env.AI_GATEWAY_OIDC?.trim()
-  );
-}
+import { GATEWAY_MODEL_ID, gatewayAvailable } from "@/lib/llm/gateway";
 
 export async function resolvePlatformAgentModel() {
   if (gatewayAvailable()) {
     return {
-      model: gateway(GATEWAY_DEFAULT_MODEL),
+      model: gateway(GATEWAY_MODEL_ID),
       providerLabel: "ai-gateway",
-      modelId: GATEWAY_DEFAULT_MODEL,
+      modelId: GATEWAY_MODEL_ID,
     };
   }
 
