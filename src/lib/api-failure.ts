@@ -169,6 +169,10 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   SECRET_DECRYPTION_FAILED: 503,
   RECURRING_UNAVAILABLE: 503,
   PRESENCE_UNAVAILABLE: 503,
+  // Explicit because the `_RATE_LIMITED` suffix rule below would otherwise
+  // never see this code: the limiter backend is down, the caller is inside
+  // their budget, and 429 would tell them to slow down for no reason.
+  AI_RATE_LIMIT_UNAVAILABLE: 503,
   RECURRING_PROVIDER_ERROR: 502,
   XLSX_EXPORT_FAILED: 500,
   NOTIFICATION_DELIVERY_FAILED: 500,

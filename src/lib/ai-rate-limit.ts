@@ -7,7 +7,7 @@
  * catches automated abuse quickly.
  */
 import type { NextResponse } from "next/server";
-import { rateLimitAsync } from "@/lib/rate-limit";
+import { describeRateLimitDenial, rateLimitAsync } from "@/lib/rate-limit";
 import { jsonApiFailure } from "@/lib/api-controller";
 
 export type AiRateLimitScope = "workspace" | "user";
@@ -35,6 +35,13 @@ export async function checkAiRateLimit(
     windowMs: opts.windowMs,
   });
   if (rl.ok) return null;
-  const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000));
-  return jsonApiFailure("AI_RATE_LIMITED", { retryAfterSeconds });
+  // `describeRateLimitDenial` owns the 429-vs-503 split for the whole codebase;
+  // re-deriving it here is how the two answers drift apart.
+  const denial = describeRateLimitDenial(rl);
+  return jsonApiFailure(
+    denial.error === "rate_limit_service_unavailable"
+      ? "AI_RATE_LIMIT_UNAVAILABLE"
+      : "AI_RATE_LIMITED",
+    { retryAfterSeconds: denial.retryAfterSeconds }
+  );
 }

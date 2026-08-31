@@ -1886,6 +1886,12 @@ export const localizationRegistry = {
     ar: "تم تجاوز حد الطلبات على المساعد الذكي. انتظر قليلاً ثم أعد المحاولة",
     en: "Too many AI assistant requests. Wait a moment and try again",
   },
+  // Distinct from AI_RATE_LIMITED on purpose: the caller did nothing wrong and
+  // slowing down will not help, so the text must not read as a quota message.
+  AI_RATE_LIMIT_UNAVAILABLE: {
+    ar: "تعذر التحقق من حد الطلبات، ولم يتم تشغيل المساعد الذكي. أعد المحاولة بعد قليل",
+    en: "The request limit could not be checked, so the AI assistant did not run. Try again shortly",
+  },
   PRICING_REFUSED: {
     ar: "لا تقترح أرابكلو أسعار العطاءات أو الخصومات أو الهوامش أو الاستراتيجية التجارية. أدخل المبالغ في النماذج المالية",
     en: "ArabClue does not suggest bid prices, discounts, margins, or commercial strategy. Enter amounts in the financial forms",
@@ -2510,6 +2516,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   MISSION_NOT_FOUND: { actionKey: "error_action_run_agent", messageKey: "MISSION_NOT_FOUND" },
   ONBOARDING_INCOMPLETE: { actionKey: "error_action_run_agent", messageKey: "ONBOARDING_INCOMPLETE" },
   AI_RATE_LIMITED: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMITED" },
+  AI_RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMIT_UNAVAILABLE" },
   AI_PROVIDER_UNAVAILABLE: { actionKey: "error_action_run_agent", messageKey: "AI_PROVIDER_UNAVAILABLE" },
   PRICING_REFUSED: { actionKey: "error_action_run_agent", messageKey: "PRICING_REFUSED" },
   LIVE_VOICE_START_FAILED: { actionKey: "error_action_run_agent", messageKey: "LIVE_VOICE_START_FAILED" },
