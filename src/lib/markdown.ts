@@ -1,6 +1,12 @@
 /**
- * Production Markdown → HTML for proposal PDFs and editor preview.
+ * Production Markdown for proposal documents.
  * Supports GFM-ish headings, lists, tables, bold/italic, HR, blockquotes, code.
+ *
+ * The scan is separate from rendering because there is more than one output
+ * format. `markdownToHtml` feeds the editor preview and the PDF; `markdownToDocx`
+ * feeds the Word deliverable. If each scanned for itself, teaching one of them a
+ * new construct would silently leave the other rendering it as a paragraph — and
+ * the two files are supposed to be the same document.
  */
 
 import {
@@ -14,6 +20,126 @@ export function escapeHtml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+export type MarkdownBlock =
+  | { kind: "heading"; level: 1 | 2 | 3 | 4; text: string }
+  | { kind: "paragraph"; text: string }
+  | { kind: "list"; ordered: boolean; items: string[] }
+  | { kind: "table"; header: string[]; rows: string[][] }
+  | { kind: "quote"; text: string }
+  | { kind: "code"; text: string }
+  | { kind: "rule" };
+
+/**
+ * Split a document into blocks. Inline markers (`**`, `*`, backticks) are left
+ * in the text: HTML escapes them, DOCX turns them into runs, and picking one
+ * representation here would impose it on the other renderer.
+ */
+export function markdownBlocks(md: string): MarkdownBlock[] {
+  const lines = (md || "").replace(/\r\n/g, "\n").split("\n");
+  const blocks: MarkdownBlock[] = [];
+
+  // The open block, if the previous line started one that this line may extend.
+  let list: { ordered: boolean; items: string[] } | null = null;
+  let table: { header: string[]; rows: string[][] } | null = null;
+  let code: string[] | null = null;
+
+  const closeList = () => {
+    if (list) blocks.push({ kind: "list", ...list });
+    list = null;
+  };
+  const closeTable = () => {
+    if (table) blocks.push({ kind: "table", ...table });
+    table = null;
+  };
+  const closeBoth = () => {
+    closeList();
+    closeTable();
+  };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+
+    if (line.startsWith("```")) {
+      if (code) {
+        blocks.push({ kind: "code", text: code.join("\n") });
+        code = null;
+      } else {
+        closeBoth();
+        code = [];
+      }
+      continue;
+    }
+    if (code) {
+      // Verbatim: leading whitespace is part of the code.
+      code.push(raw);
+      continue;
+    }
+
+    if (!line.trim()) {
+      closeBoth();
+      continue;
+    }
+
+    if (/^---+$/.test(line.trim()) || /^\*\*\*+$/.test(line.trim())) {
+      closeBoth();
+      blocks.push({ kind: "rule" });
+      continue;
+    }
+
+    const h = line.match(/^(#{1,4})\s+(.+)$/);
+    if (h) {
+      closeBoth();
+      blocks.push({
+        kind: "heading",
+        level: h[1].length as 1 | 2 | 3 | 4,
+        text: h[2],
+      });
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      closeBoth();
+      blocks.push({ kind: "quote", text: line.replace(/^>\s?/, "") });
+      continue;
+    }
+
+    if (/^\|.+\|$/.test(line.trim())) {
+      closeList();
+      const cells = line
+        .trim()
+        .slice(1, -1)
+        .split("|")
+        .map((c) => c.trim());
+      // An alignment row carries no content, but it does confirm a table.
+      if (cells.every((c) => /^:?-+:?$/.test(c))) continue;
+      if (table) table.rows.push(cells);
+      else table = { header: cells, rows: [] };
+      continue;
+    }
+
+    const ul = line.match(/^[-*+]\s+(.+)$/);
+    const ol = ul ? null : line.match(/^\d+\.\s+(.+)$/);
+    if (ul || ol) {
+      closeTable();
+      const ordered = !ul;
+      // Switching marker type is a new list, not a continuation.
+      if (list && list.ordered !== ordered) closeList();
+      const text = (ul ?? ol)![1];
+      if (list) list.items.push(text);
+      else list = { ordered, items: [text] };
+      continue;
+    }
+
+    closeBoth();
+    blocks.push({ kind: "paragraph", text: line });
+  }
+
+  closeBoth();
+  // An unterminated fence is still content the author wrote.
+  if (code) blocks.push({ kind: "code", text: code.join("\n") });
+  return blocks;
 }
 
 export function markdownToHtml(md: string, opts?: { headingColor?: string; accentColor?: string }): string {
@@ -30,30 +156,6 @@ export function markdownToHtml(md: string, opts?: { headingColor?: string; accen
     opts?.accentColor,
     DEFAULT_DOCUMENT_BRAND_COLORS.accentColor
   );
-  const lines = (md || "").replace(/\r\n/g, "\n").split("\n");
-  const out: string[] = [];
-  let inUl = false;
-  let inOl = false;
-  let inTable = false;
-  let inCode = false;
-  let codeBuf: string[] = [];
-
-  const closeLists = () => {
-    if (inUl) {
-      out.push("</ul>");
-      inUl = false;
-    }
-    if (inOl) {
-      out.push("</ol>");
-      inOl = false;
-    }
-  };
-  const closeTable = () => {
-    if (inTable) {
-      out.push("</tbody></table>");
-      inTable = false;
-    }
-  };
 
   const inline = (text: string) =>
     escapeHtml(text)
@@ -62,83 +164,53 @@ export function markdownToHtml(md: string, opts?: { headingColor?: string; accen
       .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
       .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.92em">$1</code>');
 
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-    const line = raw.trimEnd();
+  const headingStyles: Record<number, string> = {
+    1: `font-size:22px;margin:28px 0 12px;color:${primary}`,
+    2: `font-size:17px;margin:24px 0 10px;color:${primary};border-bottom:2px solid ${accent};padding-bottom:4px`,
+    3: `font-size:14px;margin:18px 0 8px;color:${primary}`,
+    4: `font-size:13px;margin:14px 0 6px;color:${primary}`,
+  };
 
-    if (line.startsWith("```")) {
-      if (inCode) {
+  const out: string[] = [];
+  for (const b of markdownBlocks(md)) {
+    switch (b.kind) {
+      case "heading":
         out.push(
-          `<pre style="background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow:auto;font-size:11px;line-height:1.5"><code>${escapeHtml(codeBuf.join("\n"))}</code></pre>`
+          `<h${b.level} style="${headingStyles[b.level]}">${inline(b.text)}</h${b.level}>`
         );
-        codeBuf = [];
-        inCode = false;
-      } else {
-        closeLists();
-        closeTable();
-        inCode = true;
+        break;
+      case "paragraph":
+        out.push(`<p style="margin:8px 0;line-height:1.7">${inline(b.text)}</p>`);
+        break;
+      case "quote":
+        out.push(
+          `<blockquote style="border-inline-start:3px solid ${accent};margin:12px 0;padding:8px 14px;background:#f8fafc;color:#334155">${inline(b.text)}</blockquote>`
+        );
+        break;
+      case "rule":
+        out.push('<hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0" />');
+        break;
+      case "code":
+        out.push(
+          `<pre style="background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow:auto;font-size:11px;line-height:1.5"><code>${escapeHtml(b.text)}</code></pre>`
+        );
+        break;
+      case "list": {
+        const tag = b.ordered ? "ol" : "ul";
+        out.push(`<${tag} style="padding-inline-start:22px;margin:8px 0">`);
+        for (const item of b.items) {
+          out.push(`<li style="margin:4px 0">${inline(item)}</li>`);
+        }
+        out.push(`</${tag}>`);
+        break;
       }
-      continue;
-    }
-    if (inCode) {
-      codeBuf.push(raw);
-      continue;
-    }
-
-    if (!line.trim()) {
-      closeLists();
-      closeTable();
-      continue;
-    }
-
-    if (/^---+$/.test(line.trim()) || /^\*\*\*+$/.test(line.trim())) {
-      closeLists();
-      closeTable();
-      out.push('<hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0" />');
-      continue;
-    }
-
-    const h = line.match(/^(#{1,4})\s+(.+)$/);
-    if (h) {
-      closeLists();
-      closeTable();
-      const level = h[1].length;
-      const styles: Record<number, string> = {
-        1: `font-size:22px;margin:28px 0 12px;color:${primary}`,
-        2: `font-size:17px;margin:24px 0 10px;color:${primary};border-bottom:2px solid ${accent};padding-bottom:4px`,
-        3: `font-size:14px;margin:18px 0 8px;color:${primary}`,
-        4: `font-size:13px;margin:14px 0 6px;color:${primary}`,
-      };
-      out.push(`<h${level} style="${styles[level]}">${inline(h[2])}</h${level}>`);
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
-      closeLists();
-      closeTable();
-      out.push(
-        `<blockquote style="border-inline-start:3px solid ${accent};margin:12px 0;padding:8px 14px;background:#f8fafc;color:#334155">${inline(line.replace(/^>\s?/, ""))}</blockquote>`
-      );
-      continue;
-    }
-
-    if (/^\|.+\|$/.test(line.trim())) {
-      closeLists();
-      const cells = line
-        .trim()
-        .slice(1, -1)
-        .split("|")
-        .map((c) => c.trim());
-      // skip separator row
-      if (cells.every((c) => /^:?-+:?$/.test(c))) continue;
-      if (!inTable) {
+      case "table": {
         out.push(
           '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-size:11px"><tbody>'
         );
-        inTable = true;
         out.push(
           "<tr>" +
-            cells
+            b.header
               .map(
                 (c) =>
                   `<th style="border:1px solid #e2e8f0;padding:7px 10px;background:#f1f5f9;text-align:start;font-weight:700">${inline(c)}</th>`
@@ -146,62 +218,22 @@ export function markdownToHtml(md: string, opts?: { headingColor?: string; accen
               .join("") +
             "</tr>"
         );
-      } else {
-        out.push(
-          "<tr>" +
-            cells
-              .map(
-                (c) =>
-                  `<td style="border:1px solid #e2e8f0;padding:6px 10px;text-align:start">${inline(c)}</td>`
-              )
-              .join("") +
-            "</tr>"
-        );
+        for (const row of b.rows) {
+          out.push(
+            "<tr>" +
+              row
+                .map(
+                  (c) =>
+                    `<td style="border:1px solid #e2e8f0;padding:6px 10px;text-align:start">${inline(c)}</td>`
+                )
+                .join("") +
+              "</tr>"
+          );
+        }
+        out.push("</tbody></table>");
+        break;
       }
-      continue;
     }
-
-    const ul = line.match(/^[-*+]\s+(.+)$/);
-    if (ul) {
-      closeTable();
-      if (inOl) {
-        out.push("</ol>");
-        inOl = false;
-      }
-      if (!inUl) {
-        out.push('<ul style="padding-inline-start:22px;margin:8px 0">');
-        inUl = true;
-      }
-      out.push(`<li style="margin:4px 0">${inline(ul[1])}</li>`);
-      continue;
-    }
-
-    const ol = line.match(/^\d+\.\s+(.+)$/);
-    if (ol) {
-      closeTable();
-      if (inUl) {
-        out.push("</ul>");
-        inUl = false;
-      }
-      if (!inOl) {
-        out.push('<ol style="padding-inline-start:22px;margin:8px 0">');
-        inOl = true;
-      }
-      out.push(`<li style="margin:4px 0">${inline(ol[1])}</li>`);
-      continue;
-    }
-
-    closeLists();
-    closeTable();
-    out.push(`<p style="margin:8px 0;line-height:1.7">${inline(line)}</p>`);
-  }
-
-  closeLists();
-  closeTable();
-  if (inCode) {
-    out.push(
-      `<pre style="background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px"><code>${escapeHtml(codeBuf.join("\n"))}</code></pre>`
-    );
   }
   return out.join("\n");
 }
