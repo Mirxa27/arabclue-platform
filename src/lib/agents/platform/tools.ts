@@ -1369,9 +1369,9 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         if (!attachment.documentId) {
           return { ok: false as const, error: "Attachment has no document" };
         }
-        const { classifyAttachment } = await import("./classify-attachment");
+        const { classifyAttachmentWithAi } = await import("./classify-attachment");
         const { maybeAutopilotAfterIngest } = await import("./autopilot");
-        const decision = classifyAttachment({
+        const decision = await classifyAttachmentWithAi({
           originalName: attachment.originalName,
           mimeType: attachment.mimeType,
           textPreview: attachment.textPreview,

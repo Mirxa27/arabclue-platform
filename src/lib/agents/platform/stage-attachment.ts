@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import {
   classifyAttachment,
+  classifyAttachmentWithAi,
   type AttachmentSource,
   type ClassificationDecision,
 } from "./classify-attachment";
@@ -57,7 +58,9 @@ export async function stageMissionAttachment(opts: {
     via: "mission-control",
   });
 
-  const decision: ClassificationDecision = classifyAttachment({
+  // The decision the platform acts on — now that the text is extracted, a model
+  // reads it. `preliminary` above only picked a storage category for ingestion.
+  const decision: ClassificationDecision = await classifyAttachmentWithAi({
     originalName: opts.originalName,
     mimeType: opts.mimeType,
     textPreview: opts.textPreview || ingested.textPreview,
