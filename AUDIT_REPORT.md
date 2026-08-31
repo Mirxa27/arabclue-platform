@@ -1,5 +1,18 @@
 # Arabclue Platform - Comprehensive Audit Report
-**Date**: 2026-07-25 | **Status**: 20 of 20 migrations applied (schema up to date, re-verified 2026-08-02)
+**Date**: 2026-07-25 | **Status**: 25 of 25 migrations applied (re-verified 2026-08-31)
+
+> **Read the scores below as of 2026-07-25, not as current state.** Re-verified
+> 2026-08-31 on branch `cursor/bid-pack-org-design-ab64`: 25 migrations in
+> `prisma/migrations`, test suite 4509 pass / 13 skip / 0 fail plus 160 isolated,
+> `tsc` 0, `eslint` 0, `next build` 0. Findings that have since changed:
+>
+> - `/api/billing/callback` did not exist when the Billing row below was scored
+>   100%; it was added in `01c0ef5`.
+> - Password hashing is scrypt, not bcrypt (corrected in §1.1 and Low Priority §1).
+> - Production has **no AI provider credential set**, and `AUTONOMY_REAL_AI_ONLY`
+>   is enabled, so every AI-backed feature scored below returns
+>   `AI_PROVIDER_UNAVAILABLE` in production regardless of its code-level score.
+> - `REDIS_URL` is unset, so rate limiting is per-instance memory on Vercel.
 
 ---
 
@@ -30,7 +43,7 @@
 - **Status**: Fully implemented
 - **Features**:
   - Email validation (RFC 5321 compliant)
-  - Password hashing (bcrypt via `hashPassword()`)
+  - Password hashing (scrypt via `hashPassword()`, `src/lib/password.ts:107`)
   - Workspace auto-creation with OWNER role
   - BrandProfile initialization (colors, fonts)
   - Starter plan subscription assignment
@@ -499,8 +512,14 @@
 ### Low Priority (~6 items)
 
 1. **Password Hashing Algorithm**
-   - Currently bcrypt; consider Argon2 for higher security
-   - Not urgent; bcrypt is industry standard
+   - Currently scrypt from `node:crypto` at N=16384, r=8, p=1, keylen=64
+     (`src/lib/password.ts:11-14`). There is no bcrypt dependency in
+     `package.json`; an earlier revision of this report said bcrypt and was wrong.
+   - Parameters are encoded per-hash and re-parsed on verify
+     (`password.ts:67-72`), so the cost can be raised without invalidating
+     existing hashes. Argon2id would need a new dependency and a rehash-on-login
+     path; scrypt at these parameters is an OWASP-accepted choice, so this stays
+     low priority.
 
 2. **XLSX Template Library**
    - Marketplace templates are limited; could expand

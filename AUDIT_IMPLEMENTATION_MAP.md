@@ -296,9 +296,19 @@
 
 ---
 
-## Production Readiness: ✅ GREEN
+## Production Readiness: code-level GREEN, deployment BLOCKED
 
-**Overall**: 100% of code-level items complete; test suite 3937 pass / 0 fail; lint 0/0; tsc clean; production build green; schema 20/20 migrations applied.
+**Overall (re-verified 2026-08-31)**: test suite 4509 pass / 13 skip / 0 fail plus
+160 isolated; lint 0/0; tsc clean; production build green; 25 migrations in
+`prisma/migrations`, 25 applied per `/api/ready`.
+
+**Blocked, not code-level**: the production environment has no AI provider
+credential of any kind — no `AI_GATEWAY_API_KEY`, `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or Google key — while `AUTONOMY_REAL_AI_ONLY` is enabled. Every
+AI-backed item marked complete above therefore returns `AI_PROVIDER_UNAVAILABLE`
+in production. `REDIS_URL` is also unset, so the AI rate limiters fall back to
+per-instance memory and the effective ceiling on Vercel is `limit × instances`.
+Neither is fixable in code; both need a credential set on the deployment.
 
 **Must-Have Before Deploy**: ✅ all complete (migrations applied; webhook signature verification implemented with test coverage)
 
