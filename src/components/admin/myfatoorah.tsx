@@ -105,7 +105,11 @@ export function AdminMyFatoorah() {
       });
     },
     onError: (e: Error) =>
-      toast({ title: "Error", description: e.message, variant: "destructive" }),
+      toast({
+        title: locale === "ar" ? "خطأ" : "Error",
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const testConn = useMutation({
@@ -126,7 +130,11 @@ export function AdminMyFatoorah() {
       });
     },
     onError: (e: Error) =>
-      toast({ title: "Error", description: e.message, variant: "destructive" }),
+      toast({
+        title: locale === "ar" ? "خطأ" : "Error",
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const testSig = useMutation({
@@ -149,7 +157,11 @@ export function AdminMyFatoorah() {
             : "Webhook V2 canonical string generated",
       }),
     onError: (e: Error) =>
-      toast({ title: "Error", description: e.message, variant: "destructive" }),
+      toast({
+        title: locale === "ar" ? "خطأ" : "Error",
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const copy = async (text: string) => {

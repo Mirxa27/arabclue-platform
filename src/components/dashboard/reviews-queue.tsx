@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useLocale } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { EmptyState, Panel, QueryState } from "@/components/patterns";
@@ -68,7 +70,9 @@ export function ReviewsQueue() {
           comment: comments[opts.id] ?? null,
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reviews"] });

@@ -319,9 +319,7 @@ export function BilingualContractStudio({
       const res = await fetch(`/api/proposals/${proposalId}/obligations`);
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(
-          (json as { error?: string }).error || "Failed to load obligations"
-        );
+        throw new Error(apiErrorText(json, locale));
       }
       return (await res.json()) as {
         items: Array<{

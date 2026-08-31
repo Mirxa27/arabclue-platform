@@ -105,9 +105,7 @@ export function ContractsPanel() {
       const res = await fetch(`/api/proposals/${openId}/validate`);
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(
-          (json as { error?: string }).error || "Validation failed"
-        );
+        throw new Error(apiErrorText(json, locale));
       }
       return (await res.json()) as ValidationResponse;
     },

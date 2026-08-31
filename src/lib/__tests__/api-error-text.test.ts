@@ -90,6 +90,11 @@ const RAW_BODY_THROW = /new Error\(\s*[a-zA-Z_$][\w$]*\??\.(error|message)\b/g;
 const RAW_BODY_FALLBACK = [
   /\b(body|json|payload|data|err|response)\??\.error\s*(\?\?|\|\|)/g,
   /\b(body|json|payload|response)\??\.message\s*(\?\?|\|\|)/g,
+  // Reading the field straight off the parse or an inline cast — the shape that
+  // hid the bug in the onboarding wizard, where the receiver has no name for
+  // the patterns above to match. `as Error).message` is a caught Error, whose
+  // message is already a string.
+  /(?<!as Error)\)\s*\.(error|message)\b/g,
 ];
 
 describe("no client treats a parsed failure body as a string", () => {

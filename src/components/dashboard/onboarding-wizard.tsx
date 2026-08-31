@@ -1,5 +1,7 @@
 "use client";
 
+import { apiErrorText } from "@/lib/api-failure-message";
+
 import { useEffect, useMemo, useState, startTransition } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useUI } from "@/lib/store";
@@ -204,7 +206,7 @@ export function OnboardingWizard() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: parsed.data.name }),
         });
-        if (!r.ok) throw new Error((await r.json().catch(() => ({} as { error?: string })) as { error?: string }).error ?? "profile");
+        if (!r.ok) throw new Error(apiErrorText(await r.json().catch(() => null), locale, ar ? "تعذر حفظ الملف الشخصي" : "Could not save your profile"));
         await updateSession?.({ name: parsed.data.name } as never);
       }
       const wr = await fetch("/api/workspaces", {
@@ -212,7 +214,7 @@ export function OnboardingWizard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: parsed.data.workspaceName, nameAr: parsed.data.workspaceNameAr || null }),
       });
-      if (!wr.ok) throw new Error((await wr.json().catch(() => ({} as { error?: string })) as { error?: string }).error ?? "workspace");
+      if (!wr.ok) throw new Error(apiErrorText(await wr.json().catch(() => null), locale, ar ? "تعذر حفظ بيانات المنشأة" : "Could not save your organization"));
       setProfile(parsed.data);
       qc.invalidateQueries({ queryKey: ["workspace"] });
       return true;
@@ -245,7 +247,7 @@ export function OnboardingWizard() {
           primaryColor: parsed.data.primaryColor,
         }),
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({} as { error?: string })) as { error?: string }).error ?? "brand");
+      if (!r.ok) throw new Error(apiErrorText(await r.json().catch(() => null), locale, ar ? "تعذر حفظ الهوية البصرية" : "Could not save your brand"));
       setBrand(parsed.data);
       qc.invalidateQueries({ queryKey: ["brand"] });
       return true;
@@ -270,7 +272,7 @@ export function OnboardingWizard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ crNumber: parsed.data.crNumber, vatNumber: parsed.data.vatNumber || null }),
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({} as { error?: string })) as { error?: string }).error ?? "legal");
+      if (!r.ok) throw new Error(apiErrorText(await r.json().catch(() => null), locale, ar ? "تعذر حفظ البيانات القانونية" : "Could not save your legal details"));
       setLegal(parsed.data);
       qc.invalidateQueries({ queryKey: ["workspace"] });
       return true;
@@ -307,8 +309,13 @@ export function OnboardingWizard() {
           }),
         });
         if (!pr.ok) {
-          const j = (await pr.json().catch(() => ({} as { error?: string })) as { error?: string }).error;
-          throw new Error(j ?? "project");
+          throw new Error(
+            apiErrorText(
+              await pr.json().catch(() => null),
+              locale,
+              ar ? "تعذر إنشاء المشروع" : "Could not create the project"
+            )
+          );
         }
       }
       // Approval chain -> if reviewer selected, create policy
