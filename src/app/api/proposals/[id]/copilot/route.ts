@@ -5,7 +5,7 @@ import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context"
 import { parseJsonBody, copilotSuggestSchema } from "@/lib/validation";
 import { jsonApiFailure } from "@/lib/api-controller";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
-import { generateCopilotSuggestions } from "@/lib/ai/copilot-suggestions";
+import { openCopilotSuggestionStream } from "@/lib/ai/copilot-suggestions";
 import type { Locale } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -14,10 +14,14 @@ export const maxDuration = 60;
 /**
  * POST /api/proposals/[id]/copilot
  *
- * One co-pilot review pass over the editor buffer. Returns anchored edit
- * proposals only — nothing is written to the proposal here. The client
- * previews each one and applies it locally; saving stays on the existing
- * PATCH path, so the co-pilot can never mutate a document on its own.
+ * One co-pilot review pass over the editor buffer, streamed as newline
+ * delimited frames (see `copilot-stream.ts`) so each edit reaches the rail as
+ * the model finishes it rather than after the whole pass.
+ *
+ * Returns anchored edit proposals only — nothing is written to the proposal
+ * here. The client previews each one and applies it locally; saving stays on
+ * the existing PATCH path, so the co-pilot can never mutate a document on its
+ * own.
  */
 export async function POST(
   req: NextRequest,
@@ -53,7 +57,7 @@ export async function POST(
     parsed.data.locale ?? (proposal.locale === "en" ? "en" : "ar");
 
   try {
-    const result = await generateCopilotSuggestions({
+    const stream = await openCopilotSuggestionStream({
       contentMd: parsed.data.contentMd,
       selection: parsed.data.selection,
       instruction: parsed.data.instruction,
@@ -63,11 +67,17 @@ export async function POST(
       // caller ask for contract review of a bid.
       docKind: proposal.type === "CONTRACT" ? "contract" : "proposal",
     });
-    return NextResponse.json(result);
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
   } catch (error) {
     console.error("[proposals/copilot] Error:", error);
-    // No deterministic fallback by design: a fabricated edit pointing at real
-    // text in a real bid is worse than an empty rail.
+    // Reaching a provider is settled before the stream opens, so this is still
+    // an honest status code. No deterministic fallback by design: a fabricated
+    // edit pointing at real text in a real bid is worse than an empty rail.
     return jsonApiFailure("AI_PROVIDER_UNAVAILABLE");
   }
 }

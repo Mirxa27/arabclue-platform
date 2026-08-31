@@ -13,6 +13,10 @@
  * mid-sentence is noise, and each pass is a model call. The writer can also
  * pause the rail entirely or trigger a pass on demand.
  *
+ * A pass streams. Each card appears the moment the model finishes that edit
+ * and it clears the server's anchor and pricing checks, rather than the rail
+ * sitting empty for the length of a whole review of a whole document.
+ *
  * The writer can ask for something too ("tighten the delivery clause"), and
  * highlighting a passage first scopes the request to it. An answer comes back
  * as the same anchored cards behind the same Accept gate — asking does not open
@@ -41,6 +45,7 @@ import {
   type CopilotRisk,
   type CopilotSuggestion,
 } from "@/lib/ai/copilot-anchors";
+import { decodeFrames } from "@/lib/ai/copilot-stream";
 
 /** Long enough that it fires between thoughts, not between words. */
 const IDLE_MS = 4000;
@@ -110,6 +115,7 @@ export function CopilotRail({
   // trivial edit does not spend another model call.
   const reviewedRef = useRef("");
   const inFlightRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const review = useCallback(async (asked?: Asked) => {
     if (inFlightRef.current || !markdown.trim()) return;
@@ -117,10 +123,13 @@ export function CopilotRail({
     reviewedRef.current = markdown;
     setAnswering(asked?.instruction ?? null);
     setState({ kind: "running" });
+    const abort = new AbortController();
+    abortRef.current = abort;
     try {
       const res = await fetch(`/api/proposals/${proposalId}/copilot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abort.signal,
         body: JSON.stringify({
           contentMd: markdown,
           locale,
@@ -128,20 +137,59 @@ export function CopilotRail({
           ...(asked?.selection ? { selection: asked.selection } : {}),
         }),
       });
-      const json = await res.json();
-      if (!res.ok) {
-        // The route returns bilingual failure bodies; `apiErrorText` reads the
-        // right side of the pair instead of stringifying the object.
+      if (!res.ok || !res.body) {
+        // Everything that can fail before the stream opens — auth, rate limit,
+        // no provider — is still a status code with a bilingual body, and
+        // `apiErrorText` reads the right side of the pair.
+        const json = await res.json().catch(() => ({}));
         setState({ kind: "error", message: apiErrorText(json, locale) });
         return;
       }
-      setSuggestions(json.suggestions ?? []);
-      setState({
-        kind: "ready",
-        provider: json.provider ?? "",
-        model: json.model ?? "",
-      });
-    } catch {
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let rest = "";
+      let meta = { provider: "", model: "" };
+      let failed = false;
+      // The previous pass's cards stay up until this one has something to put
+      // in their place, so re-reviewing does not blank the rail.
+      let replaced = false;
+
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const decoded = decodeFrames(rest + decoder.decode(value, { stream: true }));
+        rest = decoded.rest;
+        for (const frame of decoded.frames) {
+          if (frame.type === "meta") {
+            meta = { provider: frame.provider, model: frame.model };
+          } else if (frame.type === "suggestion") {
+            const next = frame.suggestion;
+            setSuggestions((prev) => (replaced ? [...prev, next] : [next]));
+            replaced = true;
+          } else {
+            console.error("[copilot] stream error:", frame.code);
+            failed = true;
+          }
+        }
+      }
+      if (!replaced) setSuggestions([]);
+      setState(
+        failed
+          ? {
+              kind: "error",
+              message: t(
+                locale,
+                "توقفت المراجعة قبل أن تكتمل.",
+                "The review stopped before it finished."
+              ),
+            }
+          : { kind: "ready", ...meta }
+      );
+    } catch (error) {
+      // Leaving the editor mid-pass aborts the fetch; that is not a failure to
+      // report to someone who is no longer looking at the rail.
+      if ((error as Error)?.name === "AbortError") return;
       setState({
         kind: "error",
         message: t(locale, "تعذّر الاتصال.", "Could not reach the co-pilot."),
@@ -150,6 +198,10 @@ export function CopilotRail({
       inFlightRef.current = false;
     }
   }, [markdown, locale, proposalId]);
+
+  // A pass outlives the editor otherwise: the reader keeps the connection open
+  // and keeps decoding into state nothing renders.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     if (paused) return;

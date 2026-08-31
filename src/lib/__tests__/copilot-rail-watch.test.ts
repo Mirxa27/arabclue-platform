@@ -94,6 +94,29 @@ describe("the rail watches content, not length", () => {
   });
 });
 
+describe("the rail consumes the pass as a stream", () => {
+  test("the body is read frame by frame, not awaited whole", () => {
+    // Reverting to `res.json()` on the success path would compile, pass every
+    // codec test in copilot-stream.test.ts, and put the blank rail back.
+    expect(RAIL).toMatch(/res\.body\.getReader\(\)/);
+    expect(RAIL).toMatch(/decodeFrames\(rest \+ decoder\.decode\(/);
+  });
+
+  test("a pre-stream failure is still read as a JSON body", () => {
+    // Anti-vacuous: auth, rate limit and no-provider stay status codes with a
+    // bilingual body, so the error path must keep parsing one.
+    expect(RAIL).toMatch(/if \(!res\.ok \|\| !res\.body\)/);
+    expect(RAIL).toMatch(/apiErrorText\(json, locale\)/);
+  });
+
+  test("leaving the editor cancels the pass", () => {
+    // Otherwise the reader holds the connection open and keeps decoding into
+    // state nothing renders.
+    expect(RAIL).toMatch(/abortRef\.current\?\.abort\(\)/);
+    expect(RAIL).toMatch(/signal: abort\.signal/);
+  });
+});
+
 describe("the rail's footer speaks to a bid writer", () => {
   test("raw provider and model ids are not rendered", () => {
     expect(RAIL).not.toMatch(/\{state\.provider\} · \{state\.model\}/);

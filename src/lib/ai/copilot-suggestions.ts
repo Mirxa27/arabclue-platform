@@ -19,7 +19,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { generateObject } from "ai";
+import { streamObject } from "ai";
 import { z } from "zod";
 import { detectPricingSuggestion } from "../guardrails";
 import { NO_PRICING_RULE, REGULATORY_PRECISION_RULE } from "../agents/prompts";
@@ -27,6 +27,7 @@ import { resolvePlatformAgentModel } from "../agents/platform/model";
 import type { Locale } from "../types";
 import { occurrences } from "./copilot-anchors";
 import type { CopilotSuggestion, RawCopilotSuggestion } from "./copilot-anchors";
+import { encodeFrame, type CopilotFrame } from "./copilot-stream";
 
 /**
  * Stable across passes so the rail can remember what the user dismissed.
@@ -41,11 +42,33 @@ function suggestionId(anchor: string, replacement: string): string {
 }
 
 /**
- * Keep only the suggestions that can be applied unambiguously and safely.
- * Everything dropped here is a suggestion the UI must never show, because
- * showing it would offer the user a button that either does nothing or edits
- * the wrong paragraph.
+ * One suggestion, vetted, or `null` when it must never reach the UI — showing
+ * it would offer the user a button that either does nothing or edits the wrong
+ * paragraph.
+ *
+ * `seen` is the caller's, because the streaming path has no batch to dedupe
+ * inside: edits arrive one at a time and the set is what stops the same card
+ * appearing twice in a pass.
  */
+export function reconcileSuggestion(
+  contentMd: string,
+  suggestion: RawCopilotSuggestion,
+  seen: Set<string>
+): CopilotSuggestion | null {
+  const anchor = suggestion.anchor.trim();
+  const replacement = suggestion.replacement.trim();
+  if (!anchor || !replacement) return null;
+  if (anchor === replacement) return null;
+  if (occurrences(contentMd, anchor) !== 1) return null;
+  if (detectPricingSuggestion(replacement)) return null;
+
+  const id = suggestionId(anchor, replacement);
+  if (seen.has(id)) return null;
+  seen.add(id);
+  return { ...suggestion, id, anchor, replacement };
+}
+
+/** The same rules over a whole batch. */
 export function reconcileSuggestions(
   contentMd: string,
   raw: readonly RawCopilotSuggestion[]
@@ -53,17 +76,8 @@ export function reconcileSuggestions(
   const seen = new Set<string>();
   const out: CopilotSuggestion[] = [];
   for (const s of raw) {
-    const anchor = s.anchor.trim();
-    const replacement = s.replacement.trim();
-    if (!anchor || !replacement) continue;
-    if (anchor === replacement) continue;
-    if (occurrences(contentMd, anchor) !== 1) continue;
-    if (detectPricingSuggestion(replacement)) continue;
-
-    const id = suggestionId(anchor, replacement);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push({ ...s, id, anchor, replacement });
+    const kept = reconcileSuggestion(contentMd, s, seen);
+    if (kept) out.push(kept);
   }
   return out;
 }
@@ -73,28 +87,29 @@ export function reconcileSuggestions(
 // ---------------------------------------------------------------------------
 
 const suggestionSchema = z.object({
-  suggestions: z
-    .array(
-      z.object({
-        anchor: z
-          .string()
-          .describe(
-            "Text copied verbatim from the document, long enough to be unique. Never paraphrase it."
-          ),
-        replacement: z.string().describe("The exact text to put in its place."),
-        rationale: z
-          .string()
-          .describe("One plain-language sentence on why this is better."),
-        risk: z
-          .enum(["LOW", "MEDIUM", "HIGH"])
-          .describe(
-            "How much reviewer judgement this needs: LOW is wording, HIGH changes a commitment or a compliance claim."
-          ),
-        kind: z.enum(["compliance", "clarity", "evidence", "structure"]),
-      })
-    )
-    .max(8),
+  anchor: z
+    .string()
+    .describe(
+      "Text copied verbatim from the document, long enough to be unique. Never paraphrase it."
+    ),
+  replacement: z.string().describe("The exact text to put in its place."),
+  rationale: z
+    .string()
+    .describe("One plain-language sentence on why this is better."),
+  risk: z
+    .enum(["LOW", "MEDIUM", "HIGH"])
+    .describe(
+      "How much reviewer judgement this needs: LOW is wording, HIGH changes a commitment or a compliance claim."
+    ),
+  kind: z.enum(["compliance", "clarity", "evidence", "structure"]),
 });
+
+/**
+ * Enforced here rather than in the schema, because the array is streamed: the
+ * prompt asks for at most this many and this is what happens if it does not
+ * listen.
+ */
+const MAX_SUGGESTIONS = 8;
 
 /**
  * Which reading the model should give the buffer. The contract studio edits a
@@ -111,12 +126,6 @@ export type CopilotGenerationInput = {
   selection?: string;
   /** What the writer asked for, in their own words. Defaults to a plain review. */
   instruction?: string;
-};
-
-export type CopilotGenerationResult = {
-  suggestions: CopilotSuggestion[];
-  provider: string;
-  model: string;
 };
 
 /**
@@ -182,26 +191,56 @@ export function buildCopilotPrompt(input: CopilotPromptInput): string {
 }
 
 /**
- * One review pass over the document. Throws when no provider is configured —
- * see the module header on why there is no fallback.
+ * One review pass over the document, as a body the route can send straight
+ * back. Throws when no provider is configured — see the module header on why
+ * there is no fallback — and does so *before* returning, so that failure is
+ * still an HTTP status rather than a frame nobody reads.
+ *
+ * Each edit is vetted the moment the model finishes it and sent on its own, so
+ * the rail fills in as the pass runs instead of after it. `elementStream`
+ * yields only complete array entries, which matters: a half-streamed anchor
+ * would fail its own uniqueness check and be dropped as if the model had got
+ * it wrong.
  */
-export async function generateCopilotSuggestions(
+export async function openCopilotSuggestionStream(
   input: CopilotGenerationInput
-): Promise<CopilotGenerationResult> {
+): Promise<ReadableStream<Uint8Array>> {
   const { model, providerLabel, modelId } = await resolvePlatformAgentModel();
 
-  const result = await generateObject({
+  const result = streamObject({
     model,
+    output: "array",
     schema: suggestionSchema,
-    schemaName: "copilot_suggestions",
+    schemaName: "copilot_suggestion",
     system: copilotSystemPrompt(input.locale, input.docKind),
     temperature: 0.2,
     prompt: buildCopilotPrompt(input),
   });
 
-  return {
-    suggestions: reconcileSuggestions(input.contentMd, result.object.suggestions),
-    provider: providerLabel,
-    model: modelId,
-  };
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (frame: CopilotFrame) =>
+        controller.enqueue(encoder.encode(encodeFrame(frame)));
+      send({ type: "meta", provider: providerLabel, model: modelId });
+      try {
+        const seen = new Set<string>();
+        let kept = 0;
+        for await (const element of result.elementStream) {
+          const suggestion = reconcileSuggestion(input.contentMd, element, seen);
+          if (!suggestion) continue;
+          send({ type: "suggestion", suggestion });
+          kept += 1;
+          if (kept >= MAX_SUGGESTIONS) break;
+        }
+      } catch (error) {
+        // The status line went out with the first frame, so a failure here can
+        // only be reported in-band. Closing quietly would leave the rail
+        // spinning on a pass that is already over.
+        console.error("[copilot] stream failed:", error);
+        send({ type: "error", code: "COPILOT_STREAM_FAILED" });
+      }
+      controller.close();
+    },
+  });
 }
