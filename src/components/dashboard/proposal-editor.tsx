@@ -2,12 +2,13 @@
 
 import { apiErrorText } from "@/lib/api-failure-message";
 
-import { useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
+import { useEditorDraft } from "@/hooks/use-editor-draft";
 import {
   ArrowLeft,
   Loader2,
@@ -391,6 +392,44 @@ function ProposalStudioBase({
           draftLocale !== (data?.proposal?.locale === "en" ? "en" : "ar"))
       : false;
   useUnsavedChangesWarning(isDirty);
+  const restoreDraft = useCallback(
+    (contentMd: string, l: "ar" | "en") => {
+      setDraftMd(contentMd);
+      setDraftLocale(l);
+      // Silent restoration is indistinguishable from the server having sent
+      // this text, which would make the unsaved state invisible again.
+      toast({
+        title:
+          locale === "ar"
+            ? "تم استعادة تعديلات غير محفوظة"
+            : "Unsaved changes restored",
+        description:
+          locale === "ar"
+            ? "احفظ لتثبيتها على العطاء."
+            : "Save to commit them to the proposal.",
+      });
+    },
+    [toast, locale]
+  );
+  const {
+    staleDraft,
+    applyStaleDraft,
+    discardStaleDraft,
+    clearStoredDraft,
+  } = useEditorDraft({
+    // Null while closed, so reopening re-offers a draft the close discarded.
+    proposalId: open ? proposalId : null,
+    serverVersion:
+      typeof data?.proposal?.version === "number"
+        ? data.proposal.version
+        : null,
+    serverContentMd: persistedMd,
+    serverLocale: data?.proposal?.locale === "en" ? "en" : "ar",
+    draftMd,
+    draftLocale,
+    isDirty,
+    onRestore: restoreDraft,
+  });
   const versions: {
     id: string;
     version: number;
@@ -438,6 +477,10 @@ function ProposalStudioBase({
       return res.json();
     },
     onSuccess: () => {
+      // Before the state reset: the draft on disk names the version we just
+      // superseded, so keeping it would make the next open report a phantom
+      // diverged draft on every single save.
+      clearStoredDraft();
       setDraftMd(null);
       setDraftLocale(null);
       qc.invalidateQueries({ queryKey: ["proposals"] });
@@ -1035,6 +1078,45 @@ function ProposalStudioBase({
                 {locale === "ar" ? "نسخة فرعية" : "Fork new"}
               </Button>
             </div>
+
+            {staleDraft ? (
+              <div
+                role="status"
+                className="shrink-0 flex flex-wrap items-center gap-2 rounded-lg border border-chart-4/30 bg-chart-4/10 px-3 py-2"
+              >
+                <History className="size-4 shrink-0 text-chart-4" />
+                <p className="flex-1 min-w-0 text-[11px] leading-snug">
+                  <span className="font-semibold">
+                    {locale === "ar"
+                      ? "لديك تعديلات غير محفوظة على هذا الجهاز"
+                      : "You have unsaved changes on this device"}
+                  </span>{" "}
+                  <span className="text-muted-foreground">
+                    {locale === "ar"
+                      ? `كُتبت على الإصدار ${staleDraft.version}، والعطاء الآن على الإصدار ${data?.proposal?.version ?? "?"}. الاستعادة تستبدل كل ما تغيّر بعدها.`
+                      : `Written against v${staleDraft.version}; the proposal is now v${data?.proposal?.version ?? "?"}. Restoring replaces everything changed since.`}
+                  </span>
+                </p>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[11px]"
+                    onClick={applyStaleDraft}
+                  >
+                    {locale === "ar" ? "استعادة" : "Restore"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-[11px]"
+                    onClick={discardStaleDraft}
+                  >
+                    {locale === "ar" ? "تجاهل" : "Discard"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
 
             {mode === "bilingual" ? (
               <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
