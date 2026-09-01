@@ -2010,6 +2010,48 @@ export const localizationRegistry = {
     ar: "سجلات العقود لا تقبل نسخ العروض",
     en: "Contract records do not accept proposal snapshots",
   },
+  STRUCTURED_SNAPSHOT_REQUIRED_FOR_XLSX: {
+    ar: "يتطلب تصدير XLSX المنظم نسخة ثابتة. استخدم xlsx-matrix أو xlsx-boq للعروض القديمة",
+    en: "Structured XLSX export requires an immutable snapshot. Use xlsx-matrix or xlsx-boq for legacy proposals",
+  },
+  STRUCTURED_EXPORT_BLOCKED: {
+    ar: "أوقفت فحوص الجودة تصدير هذا العرض. راجع التشخيصات المرفقة",
+    en: "Quality checks blocked this proposal export. Review the attached diagnostics",
+  },
+  EXPORT_STATE_CHANGED: {
+    ar: "تغيّر العرض أثناء تجهيز الملف المعتمد. أعد المحاولة من أحدث حالة",
+    en: "The proposal changed while the authoritative file was being prepared. Retry from the latest state",
+  },
+  PDF_UNAVAILABLE: {
+    ar: "مولّد ملفات PDF غير متاح على الخادم حاليًا. جرّب صيغة HTML أو أبلغ المشرف",
+    en: "The PDF generator is not available on the server right now. Try the HTML format or tell your administrator",
+  },
+  // The contract render snapshot is captured at review submission and frozen;
+  // a final contract export is refused unless it is present and still matches.
+  CONTRACT_RENDER_SNAPSHOT_REQUIRED: {
+    ar: "يتطلب التصدير النهائي للعقد نسخة العرض الثابتة المُلتقطة عند تقديم المراجعة",
+    en: "Final contract export requires the immutable render snapshot captured at review submission",
+  },
+  CONTRACT_RENDER_SNAPSHOT_INVALID: {
+    ar: "نسخة عرض العقد المخزّنة تالفة ولا يمكن التصدير منها",
+    en: "The stored contract render snapshot is corrupt and cannot be exported",
+  },
+  CONTRACT_RENDER_SNAPSHOT_IDENTITY_MISMATCH: {
+    ar: "نسخة عرض العقد تخص سجلًا آخر",
+    en: "The contract render snapshot belongs to a different record",
+  },
+  CONTRACT_RENDER_SNAPSHOT_REVISION_MISMATCH: {
+    ar: "تغيّر العقد بعد التقاط نسخة العرض. أعد تقديمه للمراجعة",
+    en: "The contract changed after its render snapshot was captured. Resubmit it for review",
+  },
+  CONTRACT_RENDER_SNAPSHOT_HASH_MISMATCH: {
+    ar: "لا يطابق محتوى نسخة عرض العقد بصمتها المسجّلة",
+    en: "The contract render snapshot content does not match its recorded hash",
+  },
+  CONTRACT_RENDER_SNAPSHOT_TOO_LARGE: {
+    ar: "نسخة عرض العقد تتجاوز الحجم المسموح به",
+    en: "The contract render snapshot exceeds the permitted size",
+  },
   SNAPSHOT_SERVER_IDENTITY_NOT_FOUND: {
     ar: "لم يتم العثور على هوية مشروع العرض أو مساحة العمل",
     en: "The proposal project or workspace identity was not found",
@@ -2033,6 +2075,25 @@ export const localizationRegistry = {
   STATUS_LOCKED: {
     ar: "العرض مقفل للتحرير في حالته الحالية",
     en: "The proposal is locked for editing in its current status",
+  },
+  // Optimistic-concurrency rejection shared by the edit, rewrite and revert
+  // routes. `SNAPSHOT_REVISION_CONFLICT` is the narrower sibling: it is about
+  // replacing a stored snapshot, not about a stale editor buffer.
+  PROPOSAL_VERSION_CONFLICT: {
+    ar: "تغيّر العرض منذ فتحه. أعد تحميله قبل الحفظ",
+    en: "The proposal changed since it was opened. Reload it before saving",
+  },
+  UNSUPPORTED_EXPORT_FORMAT: {
+    ar: "صيغة التصدير المطلوبة غير مدعومة",
+    en: "The requested export format is not supported",
+  },
+  STRUCTURED_EXPORT_FORMAT_UNSUPPORTED: {
+    ar: "لهذا العرض نسخة منظمة معتمدة. استخدم html أو pdf أو pptx؛ الصيغ القديمة معطّلة لتفادي مخرجات قديمة",
+    en: "This proposal has an authoritative structured snapshot. Use html, pdf, or pptx; legacy-only formats are disabled to prevent stale output",
+  },
+  FINAL_REVIEW_BINDING_INVALID: {
+    ar: "يتطلب التصدير النهائي سلسلة الاعتماد الحالية كاملة، بكل خطوة معتمدة ومرتبطة بحالة المستند الحالية",
+    en: "Final export requires the exact current approval-policy chain, with every assigned step approved and bound to the current document state",
   },
   BILINGUAL_LANGUAGE_DIRECTION_INVALID: {
     ar: "فشلت المسودتان العربية والإنجليزية في التحقق من اتجاه اللغة",
@@ -2222,6 +2283,7 @@ export const localizationRegistry = {
   error_action_change_password: { ar: "تعذر تغيير كلمة المرور", en: "Unable to change the password" },
   error_action_save_proposal_snapshot: { ar: "تعذر حفظ نسخة العرض", en: "Unable to save the proposal snapshot" },
   error_action_manage_contract_draft: { ar: "تعذر تنفيذ إجراء مسودة العقد", en: "Unable to complete the contract draft action" },
+  error_action_download_proposal: { ar: "تعذر تنزيل ملف العطاء", en: "Unable to download the bid document" },
 } as const satisfies Dict;
 
 /** Compatibility alias for existing callers that index the dictionary with API codes. */
@@ -2800,12 +2862,26 @@ export const COMPLETION_ERROR_CONTRACTS = {
   STRUCTURED_IDENTITY_MISMATCH: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STRUCTURED_IDENTITY_MISMATCH" },
   STRUCTURED_EVIDENCE_NOT_APPROVED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STRUCTURED_EVIDENCE_NOT_APPROVED" },
   STRUCTURED_SNAPSHOT_TYPE_MISMATCH: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STRUCTURED_SNAPSHOT_TYPE_MISMATCH" },
+  STRUCTURED_SNAPSHOT_REQUIRED_FOR_XLSX: { actionKey: "error_action_export_xlsx", messageKey: "STRUCTURED_SNAPSHOT_REQUIRED_FOR_XLSX" },
+  STRUCTURED_EXPORT_BLOCKED: { actionKey: "error_action_download_proposal", messageKey: "STRUCTURED_EXPORT_BLOCKED" },
+  EXPORT_STATE_CHANGED: { actionKey: "error_action_download_proposal", messageKey: "EXPORT_STATE_CHANGED" },
+  PDF_UNAVAILABLE: { actionKey: "error_action_download_proposal", messageKey: "PDF_UNAVAILABLE" },
+  CONTRACT_RENDER_SNAPSHOT_REQUIRED: { actionKey: "error_action_download_proposal", messageKey: "CONTRACT_RENDER_SNAPSHOT_REQUIRED" },
+  CONTRACT_RENDER_SNAPSHOT_INVALID: { actionKey: "error_action_download_proposal", messageKey: "CONTRACT_RENDER_SNAPSHOT_INVALID" },
+  CONTRACT_RENDER_SNAPSHOT_IDENTITY_MISMATCH: { actionKey: "error_action_download_proposal", messageKey: "CONTRACT_RENDER_SNAPSHOT_IDENTITY_MISMATCH" },
+  CONTRACT_RENDER_SNAPSHOT_REVISION_MISMATCH: { actionKey: "error_action_download_proposal", messageKey: "CONTRACT_RENDER_SNAPSHOT_REVISION_MISMATCH" },
+  CONTRACT_RENDER_SNAPSHOT_HASH_MISMATCH: { actionKey: "error_action_download_proposal", messageKey: "CONTRACT_RENDER_SNAPSHOT_HASH_MISMATCH" },
+  CONTRACT_RENDER_SNAPSHOT_TOO_LARGE: { actionKey: "error_action_download_proposal", messageKey: "CONTRACT_RENDER_SNAPSHOT_TOO_LARGE" },
   SNAPSHOT_SERVER_IDENTITY_NOT_FOUND: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_SERVER_IDENTITY_NOT_FOUND" },
   SNAPSHOT_WRITE_FAILED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_WRITE_FAILED" },
   SNAPSHOT_READ_FAILED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_READ_FAILED" },
   SNAPSHOT_HYDRATION_FAILED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_HYDRATION_FAILED" },
   EMPTY_PROPOSAL_CONTENT: { actionKey: "error_action_save_proposal_snapshot", messageKey: "EMPTY_PROPOSAL_CONTENT" },
   STATUS_LOCKED: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STATUS_LOCKED" },
+  PROPOSAL_VERSION_CONFLICT: { actionKey: "error_action_save_proposal_snapshot", messageKey: "PROPOSAL_VERSION_CONFLICT" },
+  UNSUPPORTED_EXPORT_FORMAT: { actionKey: "error_action_download_proposal", messageKey: "UNSUPPORTED_EXPORT_FORMAT" },
+  STRUCTURED_EXPORT_FORMAT_UNSUPPORTED: { actionKey: "error_action_download_proposal", messageKey: "STRUCTURED_EXPORT_FORMAT_UNSUPPORTED" },
+  FINAL_REVIEW_BINDING_INVALID: { actionKey: "error_action_download_proposal", messageKey: "FINAL_REVIEW_BINDING_INVALID" },
   BILINGUAL_LANGUAGE_DIRECTION_INVALID: { actionKey: "error_action_validate_document_language", messageKey: "BILINGUAL_LANGUAGE_DIRECTION_INVALID" },
   BILINGUAL_COUNTERPART_REQUIRED: { actionKey: "error_action_validate_document_language", messageKey: "BILINGUAL_COUNTERPART_REQUIRED" },
   FORBIDDEN: { actionKey: "error_action_access_resource", messageKey: "FORBIDDEN" },

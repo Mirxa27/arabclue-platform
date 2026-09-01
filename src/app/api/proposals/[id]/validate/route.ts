@@ -10,6 +10,7 @@ import {
 } from "@/lib/proposal-studio";
 import { getContractExportReadiness } from "@/lib/contract-review";
 import { offerableProposalDownloadFormats } from "@/lib/proposal-snapshot-persistence";
+import { jsonApiFailure } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -20,14 +21,14 @@ export async function GET(
 ) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("UNAUTHORIZED");
   }
   const { workspace } = await getTenantContext(session.user.id);
   const { id } = await params;
 
   const proposal = await db.generatedProposal.findUnique({ where: { id } });
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return jsonApiFailure("PROPOSAL_NOT_FOUND");
   }
 
   const [restrictions, checks, policy, entities] = await Promise.all([

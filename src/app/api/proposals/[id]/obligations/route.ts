@@ -76,7 +76,7 @@ export async function PATCH(
       throw new ApiError(
         "Contract obligations are locked during and after review",
         409,
-        "status_locked"
+        "STATUS_LOCKED"
       );
     }
 
@@ -104,7 +104,7 @@ export async function PATCH(
         throw new ApiError(
           "Contract changed concurrently; reload before updating obligations",
           409,
-          "proposal_concurrent_update"
+          "PROPOSAL_VERSION_CONFLICT"
         );
       }
       const updatedState = await tx.contractObligationState.upsert({
@@ -154,7 +154,7 @@ export async function POST(
       throw new ApiError(
         "Contract obligations are locked during and after review",
         409,
-        "status_locked"
+        "STATUS_LOCKED"
       );
     }
 
@@ -187,7 +187,7 @@ export async function POST(
         throw new ApiError(
           "Contract changed concurrently; reload before migrating obligations",
           409,
-          "proposal_concurrent_update"
+          "PROPOSAL_VERSION_CONFLICT"
         );
       }
       for (const obligationId of unique) {

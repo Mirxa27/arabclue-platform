@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { toErrorResponse } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
+import { apiFailure } from "@/lib/api-failure";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+import {
+  getTenantContext,
+  assertWorkspaceMatch,
+} from "@/lib/workspace-context";
 import { parseJsonBody, proposalPatchSchema } from "@/lib/validation";
 import { isProposalEditLocked } from "@/lib/proposal-status";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persistence";
@@ -19,12 +23,12 @@ export const dynamic = "force-dynamic";
 // GET /api/proposals/[id]
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = await requireSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return jsonApiFailure("UNAUTHORIZED");
     }
     const { workspace } = await getTenantContext(session.user.id);
     const { id } = await params;
@@ -44,8 +48,11 @@ export async function GET(
         versions: { orderBy: { version: "desc" }, take: 3 },
       },
     });
-    if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (
+      !proposal ||
+      !assertWorkspaceMatch(proposal.workspaceId, workspace.id)
+    ) {
+      return jsonApiFailure("PROPOSAL_NOT_FOUND");
     }
     return NextResponse.json({
       proposal: {
@@ -63,12 +70,12 @@ export async function GET(
 // PATCH /api/proposals/[id] — edit markdown content (bumps version, snapshots history)
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = await requireWriter();
     if (!session) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return jsonApiFailure("FORBIDDEN");
     }
     const parsed = await parseJsonBody(req, proposalPatchSchema);
     if (!parsed.ok) return parsed.response;
@@ -86,17 +93,14 @@ export async function PATCH(
     const changeLog = parsed.data.changeLog ?? "Manual edit";
 
     const existing = await db.generatedProposal.findUnique({ where: { id } });
-    if (!existing || !assertWorkspaceMatch(existing.workspaceId, workspace.id)) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (
+      !existing ||
+      !assertWorkspaceMatch(existing.workspaceId, workspace.id)
+    ) {
+      return jsonApiFailure("PROPOSAL_NOT_FOUND");
     }
     if (isProposalEditLocked(existing.status)) {
-      return NextResponse.json(
-        {
-          error: "Proposal is locked for editing in current status",
-          code: "status_locked",
-        },
-        { status: 409 }
-      );
+      return jsonApiFailure("STATUS_LOCKED");
     }
     if (
       !matchesProposalEditPrecondition(existing, {
@@ -104,15 +108,15 @@ export async function PATCH(
         updatedAt: expectedUpdatedAt,
       })
     ) {
+      // The extra fields are the reload target, so the editor can jump straight
+      // to the current revision instead of re-fetching to find out what it is.
       return NextResponse.json(
         {
-          error:
-            "Proposal changed since this editor loaded it. Reload before saving.",
-          code: "proposal_revision_conflict",
+          ...apiFailure("PROPOSAL_VERSION_CONFLICT"),
           currentVersion: existing.version,
           currentUpdatedAt: existing.updatedAt.toISOString(),
         },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
@@ -136,9 +140,7 @@ export async function PATCH(
           updatedAt: existing.updatedAt,
         },
         data: {
-          ...(contentMd != null
-            ? { contentMd, version: nextVersion }
-            : {}),
+          ...(contentMd != null ? { contentMd, version: nextVersion } : {}),
           ...(locale ? { locale } : {}),
           ...(title ? { title } : {}),
           ...(titleAr !== undefined ? { titleAr } : {}),
@@ -175,13 +177,7 @@ export async function PATCH(
       });
     });
     if (!updated) {
-      return NextResponse.json(
-        {
-          error: "Proposal changed concurrently; reload before editing",
-          code: "proposal_concurrent_update",
-        },
-        { status: 409 }
-      );
+      return jsonApiFailure("PROPOSAL_VERSION_CONFLICT");
     }
 
     await audit({

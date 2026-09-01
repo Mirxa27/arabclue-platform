@@ -193,6 +193,15 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   QUOTA_STORAGE_EXCEEDED: 402,
   QUOTA_TOKENS_EXCEEDED: 402,
   SUBSCRIPTION_INACTIVE: 402,
+  // The suffix rules below key off `_FORBIDDEN`/`_REQUIRED`, which the bare
+  // forms do not match — they fell through to 400, so "sign in to continue"
+  // arrived under a status meaning the request was malformed. These are the
+  // two most-used codes in the tree; the default has to be right unasked.
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  // The proposal cannot be written in its current status. Well-formed request,
+  // authorized caller, wrong state — 409, and every call site already said so.
+  STATUS_LOCKED: 409,
 };
 
 /**

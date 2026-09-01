@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { toErrorResponse } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import {
@@ -27,7 +27,7 @@ export async function GET(
   try {
     const session = await requireSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return jsonApiFailure("UNAUTHORIZED");
     }
     const { workspace } = await getTenantContext(session.user.id);
     const { id } = await params;
@@ -38,7 +38,7 @@ export async function GET(
       select: { id: true, workspaceId: true, version: true },
     });
     if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+      return jsonApiFailure("PROPOSAL_NOT_FOUND");
     }
 
     // Parse pagination params
@@ -59,13 +59,7 @@ export async function GET(
         id
       );
       if (cursorVersion === null) {
-        return NextResponse.json(
-          {
-            error: "Version history cursor is invalid",
-            code: "VERSION_CURSOR_INVALID",
-          },
-          { status: 400 }
-        );
+        return jsonApiFailure("VERSION_CURSOR_INVALID");
       }
     }
 

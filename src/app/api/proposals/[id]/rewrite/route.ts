@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireWriter } from "@/lib/auth";
+import { jsonApiFailure } from "@/lib/api-controller";
+import { apiFailure } from "@/lib/api-failure";
 import { generateCompletion } from "@/lib/llm";
 import {
   ProviderUnavailableError,
@@ -9,7 +11,10 @@ import {
 import { systemRewrite } from "@/lib/agents/prompts";
 import type { Locale } from "@/lib/types";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+import {
+  getTenantContext,
+  assertWorkspaceMatch,
+} from "@/lib/workspace-context";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { parseJsonBody, proposalRewriteSchema } from "@/lib/validation";
 import {
@@ -36,11 +41,11 @@ export const maxDuration = 300;
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await requireWriter();
   if (!session) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return jsonApiFailure("FORBIDDEN");
   }
   const { workspace } = await getTenantContext(session.user.id);
   // Lower than the copilot's 30/min next door: that one returns short
@@ -59,16 +64,10 @@ export async function POST(
 
   const proposal = await db.generatedProposal.findUnique({ where: { id } });
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return jsonApiFailure("PROPOSAL_NOT_FOUND");
   }
   if (isProposalEditLocked(proposal.status)) {
-    return NextResponse.json(
-      {
-        error: "Proposal is locked for editing in current status",
-        code: "status_locked",
-      },
-      { status: 409 }
-    );
+    return jsonApiFailure("STATUS_LOCKED");
   }
 
   const body = parsed.data;
@@ -81,7 +80,7 @@ export async function POST(
   const selection =
     typeof body.selection === "string" && body.selection.trim()
       ? body.selection.trim()
-      : proposal.contentMd ?? "";
+      : (proposal.contentMd ?? "");
   const skill = body.skill ?? "rewrite";
   const instruction = skillInstruction(skill, locale, body.instruction);
   const apply = body.apply === true;
@@ -103,7 +102,7 @@ Return Markdown only.`,
         content: `Instruction: ${instruction}\n\n---\n\n${selection.slice(0, 14000)}`,
       },
     ],
-    { maxTokens: 5000, temperature: 0.35, engine: "REWRITE" }
+    { maxTokens: 5000, temperature: 0.35, engine: "REWRITE" },
   );
 
   let rewritten = result.content?.trim() ?? "";
@@ -118,35 +117,37 @@ Return Markdown only.`,
       guardOrThrow(result, "api:proposals-rewrite");
     } catch (err) {
       if (err instanceof ProviderUnavailableError) {
+        // `content` is the untouched selection, so the editor can carry on
+        // with the text the writer already had rather than losing it.
         return NextResponse.json(
           {
-            error: "AI rewrite unavailable",
+            ...apiFailure("AI_PROVIDER_UNAVAILABLE"),
             fallback: true,
             failureKind: err.failureKind,
             llmFailureKind: err.llmFailureKind ?? null,
             provider: result.provider,
             content: selection,
           },
-          { status: 503 }
+          { status: 503 },
         );
       }
       throw err;
     }
     return NextResponse.json(
       {
-        error: "AI rewrite unavailable",
+        ...apiFailure("AI_PROVIDER_UNAVAILABLE"),
         fallback: true,
         provider: result.provider,
         content: selection,
       },
-      { status: 503 }
+      { status: 503 },
     );
   }
 
   const contentMd = applySectionRewrite(
     proposal.contentMd ?? "",
     selection,
-    rewritten
+    rewritten,
   );
   const previewDiff = unifiedDiff(selection, rewritten);
 
@@ -206,13 +207,7 @@ Return Markdown only.`,
       return tx.generatedProposal.findUniqueOrThrow({ where: { id } });
     });
     if (!mutation) {
-      return NextResponse.json(
-        {
-          error: "Proposal changed concurrently; reload before applying rewrite",
-          code: "proposal_concurrent_update",
-        },
-        { status: 409 }
-      );
+      return jsonApiFailure("PROPOSAL_VERSION_CONFLICT");
     }
     proposalOut = mutation;
 

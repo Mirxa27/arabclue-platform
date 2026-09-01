@@ -16,11 +16,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { selectProposalDownloadEngine } from "../proposal-snapshot-persistence";
-import { resolveProposalDownloadFormat } from "../../app/api/proposals/[id]/download/route";
+import {
+  PROPOSAL_DOWNLOAD_FORMATS,
+  resolveProposalDownloadFormat,
+} from "../../app/api/proposals/[id]/download/route";
 
 const ROUTE = readFileSync(
   "src/app/api/proposals/[id]/download/route.ts",
-  "utf8"
+  "utf8",
 );
 
 describe("docx format resolution", () => {
@@ -34,11 +37,23 @@ describe("docx format resolution", () => {
     expect(resolveProposalDownloadFormat("DOCX")).toBeNull();
   });
 
-  test("the unsupported-format message lists docx", () => {
-    // The message is the only thing a caller with a bad URL sees.
-    const message = /Unsupported format\. Expected ([^"]+)/.exec(ROUTE)?.[1];
-    expect(message, "unsupported-format message not found").toBeTruthy();
-    expect(message).toContain("docx");
+  test("the 400 body names every accepted format, docx included", () => {
+    // The accepted list is all a caller with a bad URL has to go on, and it
+    // cannot live in the translated sentence: a new format would then have to
+    // be re-translated into both locales or silently go unadvertised. It ships
+    // as a field off the same constant the resolver reads.
+    expect(PROPOSAL_DOWNLOAD_FORMATS).toContain("docx");
+    expect(ROUTE).toContain("accepted: PROPOSAL_DOWNLOAD_FORMATS");
+  });
+
+  test("every advertised format actually resolves", () => {
+    // Anti-vacuous, and the drift the shared constant exists to stop:
+    // advertising a format the resolver rejects would 400 a caller who did
+    // exactly what the refusal told them to do.
+    expect(PROPOSAL_DOWNLOAD_FORMATS.length).toBeGreaterThan(5);
+    for (const format of PROPOSAL_DOWNLOAD_FORMATS) {
+      expect(resolveProposalDownloadFormat(format), format).toBe(format);
+    }
   });
 });
 
@@ -73,7 +88,7 @@ describe("docx is refused where markdown would be stale", () => {
 describe("docx is gated like the PDF, not like a preview", () => {
   test("it passes through the document export concurrency gate", () => {
     const branch = /let exportPermit[\s\S]{0,400}?const sourceCharacters/.exec(
-      ROUTE
+      ROUTE,
     )?.[0];
     expect(branch, "export-gate branch not found").toBeTruthy();
     expect(branch).toContain('format === "docx"');
@@ -82,9 +97,10 @@ describe("docx is gated like the PDF, not like a preview", () => {
   });
 
   test("it counts as a final artifact for lifecycle purposes", () => {
-    const line = /const finalArtifactRequested = isContract\n[\s\S]{0,400}?;\n/.exec(
-      ROUTE
-    )?.[0];
+    const line =
+      /const finalArtifactRequested = isContract\n[\s\S]{0,400}?;\n/.exec(
+        ROUTE,
+      )?.[0];
     expect(line, "finalArtifactRequested not found").toBeTruthy();
     expect(line).toContain('"docx"');
   });
@@ -101,7 +117,7 @@ describe("docx is gated like the PDF, not like a preview", () => {
 
   test("the response carries the OOXML word media type and a .docx name", () => {
     expect(ROUTE).toContain(
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     );
     // Both bodies the markdown path can carry get a Word name.
     expect(ROUTE).toContain('"Technical_Proposal.docx"');

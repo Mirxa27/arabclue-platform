@@ -38,6 +38,7 @@ import { join, relative, sep } from "node:path";
 const REMAINING: readonly string[] = [
   "src/app/api/admin/ai-providers/[id]/route.ts",
   "src/app/api/admin/ai-providers/models/route.ts",
+  "src/app/api/admin/ai-providers/route.ts",
   "src/app/api/admin/billing/reconcile/route.ts",
   "src/app/api/admin/env/[key]/route.ts",
   "src/app/api/admin/env/route.ts",
@@ -64,14 +65,6 @@ const REMAINING: readonly string[] = [
   "src/app/api/documents/route.ts",
   "src/app/api/files/route.ts",
   "src/app/api/projects/[id]/route.ts",
-  "src/app/api/proposals/[id]/download/route.ts",
-  "src/app/api/proposals/[id]/rewrite/route.ts",
-  "src/app/api/proposals/[id]/route.ts",
-  "src/app/api/proposals/[id]/validate/route.ts",
-  "src/app/api/proposals/[id]/versions/[version]/revert/route.ts",
-  "src/app/api/proposals/[id]/versions/[version]/route.ts",
-  "src/app/api/proposals/[id]/versions/compare/route.ts",
-  "src/app/api/proposals/[id]/versions/route.ts",
 ];
 
 const ROOT = process.cwd();
@@ -90,9 +83,23 @@ function repoPath(absolute: string): string {
   return relative(ROOT, absolute).split(sep).join("/");
 }
 
-/** The same literal shape `agent-run-bilingual-failure.test.ts` asserts against. */
+/**
+ * The same literal shape `agent-run-bilingual-failure.test.ts` asserts against.
+ *
+ * `\s*` rather than a single space: Prettier wraps a long literal onto its own
+ * line, so `error:\n  "..."` is the *most* likely form for exactly the sentences
+ * worth translating. Matching only `error: "` made the longest messages in the
+ * tree invisible to the ratchet.
+ *
+ * The `{`/`,`/line-start prefix keeps it to object properties. Without it,
+ * `console.error("[x] notification error:", err)` matches — the `error:` ends a
+ * string, and the capture then runs from the comma to whatever quote comes
+ * next, reporting a violation in a route that has none.
+ */
 function bareErrorLiterals(source: string): string[] {
-  return [...source.matchAll(/\berror: "([^"]+)"/g)].map((match) => match[1]!);
+  return [...source.matchAll(/(?:^\s*|[{,]\s*)error:\s*"([^"]+)"/gm)].map(
+    (match) => match[1]!,
+  );
 }
 
 const violations = new Map<string, string[]>();
@@ -116,7 +123,7 @@ describe("api routes fail bilingually", () => {
       regressions,
       `these routes must use mappedApiFailure/jsonApiFailure instead of a bare English string:\n${regressions
         .map((f) => `  ${f}: ${violations.get(f)!.join(", ")}`)
-        .join("\n")}`
+        .join("\n")}`,
     ).toEqual([]);
   });
 
@@ -126,7 +133,7 @@ describe("api routes fail bilingually", () => {
       stale,
       `converted — delete these lines from REMAINING:\n${stale
         .map((f) => `  ${f}`)
-        .join("\n")}`
+        .join("\n")}`,
     ).toEqual([]);
   });
 

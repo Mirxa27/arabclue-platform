@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { toErrorResponse } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 
@@ -17,14 +17,14 @@ export async function GET(
   try {
     const session = await requireSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return jsonApiFailure("UNAUTHORIZED");
     }
 
     const { workspace } = await getTenantContext(session.user.id);
     const { id, version: versionRaw } = await params;
     const versionNum = Number.parseInt(versionRaw, 10);
     if (!Number.isFinite(versionNum) || versionNum < 1) {
-      return NextResponse.json({ error: "Invalid version" }, { status: 400 });
+      return jsonApiFailure("INVALID_VERSION");
     }
 
     const proposal = await db.generatedProposal.findUnique({
@@ -39,7 +39,7 @@ export async function GET(
       },
     });
     if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+      return jsonApiFailure("PROPOSAL_NOT_FOUND");
     }
 
     const row = await db.proposalVersion.findUnique({
@@ -51,7 +51,7 @@ export async function GET(
       },
     });
     if (!row) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
+      return jsonApiFailure("VERSION_NOT_FOUND");
     }
 
     const author = row.createdBy

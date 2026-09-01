@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { unifiedDiff } from "@/lib/proposal-studio";
+import { jsonApiFailure } from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -13,23 +14,20 @@ export async function GET(
 ) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("UNAUTHORIZED");
   }
   const { workspace } = await getTenantContext(session.user.id);
   const { id } = await params;
 
   const proposal = await db.generatedProposal.findUnique({ where: { id } });
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return jsonApiFailure("PROPOSAL_NOT_FOUND");
   }
 
   const a = Number(req.nextUrl.searchParams.get("a"));
   const b = Number(req.nextUrl.searchParams.get("b"));
   if (!a || !b) {
-    return NextResponse.json(
-      { error: "a and b version numbers required" },
-      { status: 400 }
-    );
+    return jsonApiFailure("INVALID_VERSION");
   }
 
   const versions = await db.proposalVersion.findMany({
@@ -38,7 +36,7 @@ export async function GET(
   const va = versions.find((v) => v.version === a);
   const vb = versions.find((v) => v.version === b);
   if (!va || !vb) {
-    return NextResponse.json({ error: "version not found" }, { status: 404 });
+    return jsonApiFailure("VERSION_NOT_FOUND");
   }
 
   return NextResponse.json({

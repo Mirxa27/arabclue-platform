@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireWriter } from "@/lib/auth";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { isProposalEditLocked } from "@/lib/proposal-status";
@@ -20,38 +21,29 @@ export async function POST(
 ) {
   const session = await requireWriter();
   if (!session) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return jsonApiFailure("FORBIDDEN");
   }
   const { workspace } = await getTenantContext(session.user.id);
   const userId = session.user.id;
   const { id, version: versionStr } = await params;
   const versionNum = Number(versionStr);
   if (!versionNum) {
-    return NextResponse.json({ error: "invalid version" }, { status: 400 });
+    return jsonApiFailure("INVALID_VERSION");
   }
 
   const proposal = await db.generatedProposal.findUnique({ where: { id } });
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return jsonApiFailure("PROPOSAL_NOT_FOUND");
   }
   if (isProposalEditLocked(proposal.status)) {
-    return NextResponse.json(
-      {
-        error: "Cannot revert while proposal is locked for editing",
-        code: "status_locked",
-      },
-      { status: 409 }
-    );
+    return jsonApiFailure("STATUS_LOCKED");
   }
 
   const target = await db.proposalVersion.findUnique({
     where: { proposalId_version: { proposalId: id, version: versionNum } },
   });
   if (!target) {
-    return NextResponse.json(
-      { error: "Version not found", code: "VERSION_NOT_FOUND" },
-      { status: 404 }
-    );
+    return jsonApiFailure("VERSION_NOT_FOUND");
   }
 
   const nextVersion = proposal.version + 1;
@@ -91,13 +83,7 @@ export async function POST(
     return tx.generatedProposal.findUniqueOrThrow({ where: { id } });
   });
   if (!updated) {
-    return NextResponse.json(
-      {
-        error: "Proposal changed concurrently; reload before reverting",
-        code: "proposal_concurrent_update",
-      },
-      { status: 409 }
-    );
+    return jsonApiFailure("PROPOSAL_VERSION_CONFLICT");
   }
 
   await audit({

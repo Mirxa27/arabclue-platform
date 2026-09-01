@@ -1,4 +1,5 @@
-import { redactSensitiveText } from "@/lib/api-failure";
+import { apiFailure, redactSensitiveText } from "@/lib/api-failure";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -15,11 +16,11 @@ import {
 } from "@/lib/generators";
 import { canWriteRole, requireSession } from "@/lib/auth";
 import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
+import { rateLimitAsync, describeRateLimitDenial } from "@/lib/rate-limit";
 import {
-  rateLimitAsync,
-  describeRateLimitDenial,
-} from "@/lib/rate-limit";
-import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
+  getTenantContext,
+  assertWorkspaceMatch,
+} from "@/lib/workspace-context";
 import {
   assertExportAllowed,
   validateProposalOutput,
@@ -79,20 +80,28 @@ import type { ContractObligationSnapshot } from "@/lib/contract-export";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-export type ProposalDownloadFormat =
-  | "zip"
-  | "pdf"
-  | "html"
-  | "xlsx"
-  | "xlsx-matrix"
-  | "xlsx-boq"
-  | "slides"
-  | "pptx"
-  | "docx"
-  | "manifest";
+/**
+ * Every `?format=` value this route serves, in one place: the type, the
+ * resolver and the list the 400 advertises all read it, so a new format cannot
+ * be accepted without being announced or announced without being accepted.
+ */
+export const PROPOSAL_DOWNLOAD_FORMATS = [
+  "zip",
+  "pdf",
+  "html",
+  "xlsx",
+  "xlsx-matrix",
+  "xlsx-boq",
+  "slides",
+  "pptx",
+  "docx",
+  "manifest",
+] as const;
+
+export type ProposalDownloadFormat = (typeof PROPOSAL_DOWNLOAD_FORMATS)[number];
 
 export function resolveProposalDownloadFormat(
-  value: string | null
+  value: string | null,
 ): ProposalDownloadFormat | null {
   const candidate =
     value === null
@@ -102,21 +111,9 @@ export function resolveProposalDownloadFormat(
         : value === "boq"
           ? "xlsx-boq"
           : value;
-  switch (candidate) {
-    case "zip":
-    case "pdf":
-    case "html":
-    case "xlsx":
-    case "xlsx-matrix":
-    case "xlsx-boq":
-    case "slides":
-    case "pptx":
-    case "docx":
-    case "manifest":
-      return candidate;
-    default:
-      return null;
-  }
+  return (PROPOSAL_DOWNLOAD_FORMATS as readonly string[]).includes(candidate)
+    ? (candidate as ProposalDownloadFormat)
+    : null;
 }
 
 export function resolveProposalExportLifecycle(input: {
@@ -125,14 +122,10 @@ export function resolveProposalExportLifecycle(input: {
   readonly hasValidatedRenderSnapshot: boolean;
 }): {
   readonly authoritative: boolean;
-  readonly lifecycle:
-    | "APPROVED"
-    | "EXPORTED"
-    | "NON_AUTHORITATIVE_PREVIEW";
+  readonly lifecycle: "APPROVED" | "EXPORTED" | "NON_AUTHORITATIVE_PREVIEW";
 } {
   const finalStatus =
-    input.proposalStatus === "APPROVED" ||
-    input.proposalStatus === "EXPORTED";
+    input.proposalStatus === "APPROVED" || input.proposalStatus === "EXPORTED";
   if (
     finalStatus &&
     input.finalArtifactRequested &&
@@ -140,10 +133,7 @@ export function resolveProposalExportLifecycle(input: {
   ) {
     return {
       authoritative: true,
-      lifecycle:
-        input.proposalStatus === "EXPORTED"
-          ? "EXPORTED"
-          : "APPROVED",
+      lifecycle: input.proposalStatus === "EXPORTED" ? "EXPORTED" : "APPROVED",
     };
   }
   return {
@@ -190,7 +180,7 @@ export function shouldMarkProposalExported(input: {
  */
 function exportMutationAllowed(
   req: NextRequest,
-  role: Parameters<typeof canWriteRole>[0]
+  role: Parameters<typeof canWriteRole>[0],
 ): boolean {
   if (!canWriteRole(role)) return false;
 
@@ -210,17 +200,17 @@ function exportMutationAllowed(
 // GET /api/proposals/[id]/download?format=zip|pdf|html|xlsx|xlsx-matrix|ea-matrix|xlsx-boq|boq|slides|pptx
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("UNAUTHORIZED");
   }
   if (!resolveEmailVerifiedClaim(session.user.emailVerified)) {
-    return NextResponse.json(
-      { error: "EMAIL_VERIFICATION_REQUIRED" },
-      { status: 403, headers: { "Cache-Control": "no-store" } }
-    );
+    return NextResponse.json(apiFailure("EMAIL_VERIFICATION_REQUIRED"), {
+      status: 403,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
   const { id } = await params;
   const rl = await rateLimitAsync({
@@ -238,28 +228,27 @@ export async function GET(
           "Retry-After": String(denial.retryAfterSeconds),
           "Cache-Control": "no-store",
         },
-      }
+      },
     );
   }
   const { workspace } = await getTenantContext(session.user.id);
   let format = resolveProposalDownloadFormat(
-    req.nextUrl.searchParams.get("format")
+    req.nextUrl.searchParams.get("format"),
   );
   if (format === null) {
+    // The translated sentence says the format is unsupported; the list of what
+    // is supported rides alongside it so it never needs re-translating.
     return NextResponse.json(
       {
-        error:
-          "Unsupported format. Expected zip, pdf, docx, html, xlsx, xlsx-matrix, xlsx-boq, slides, pptx, or manifest.",
-        code: "UNSUPPORTED_EXPORT_FORMAT",
+        ...apiFailure("UNSUPPORTED_EXPORT_FORMAT"),
+        accepted: PROPOSAL_DOWNLOAD_FORMATS,
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
   const localeParam = req.nextUrl.searchParams.get("locale");
   const pdfLocale =
-    localeParam === "ar" || localeParam === "en"
-      ? localeParam
-      : undefined;
+    localeParam === "ar" || localeParam === "en" ? localeParam : undefined;
 
   const proposal = await db.generatedProposal.findUnique({
     where: { id },
@@ -275,7 +264,7 @@ export async function GET(
     },
   });
   if (!proposal || !assertWorkspaceMatch(proposal.workspaceId, workspace.id)) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return jsonApiFailure("PROPOSAL_NOT_FOUND");
   }
   if (
     proposal.structuredSnapshot === null &&
@@ -284,28 +273,20 @@ export async function GET(
       proposalStatus: proposal.status,
     })
   ) {
-    return NextResponse.json(
-      {
-        error:
-          "Approved and exported proposals require an immutable validated structured snapshot. Legacy mutable generators are preview-only.",
-        code: "STRUCTURED_SNAPSHOT_REQUIRED",
-      },
-      { status: 409, headers: { "Cache-Control": "no-store" } }
-    );
+    return NextResponse.json(apiFailure("STRUCTURED_SNAPSHOT_REQUIRED"), {
+      status: 409,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 
   const exportEngine = selectProposalDownloadEngine(
     proposal.structuredSnapshot !== null,
-    format
+    format,
   );
   if (exportEngine.kind === "STRUCTURED_FORMAT_UNSUPPORTED") {
     return NextResponse.json(
-      {
-        error:
-          "This proposal has an authoritative structured snapshot. Use html, pdf, or pptx; legacy-only formats are disabled to prevent stale output.",
-        code: "STRUCTURED_EXPORT_FORMAT_UNSUPPORTED",
-      },
-      { status: 409, headers: { "Cache-Control": "no-store" } }
+      apiFailure("STRUCTURED_EXPORT_FORMAT_UNSUPPORTED"),
+      { status: 409, headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -322,16 +303,15 @@ export async function GET(
         hash: proposal.structuredSnapshotHash,
         revision: proposal.structuredSnapshotRevision,
         presetKey: proposal.structuredSnapshotPreset,
-      }
+      },
     );
     if (!validation.ok) {
       return NextResponse.json(
         {
-          error: "Persisted structured proposal snapshot is invalid.",
-          code: validation.code,
+          ...apiFailure(validation.code),
           diagnostics: validation.diagnostics,
         },
-        { status: 409, headers: { "Cache-Control": "no-store" } }
+        { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
     structuredSnapshot = validation.value;
@@ -342,54 +322,46 @@ export async function GET(
     });
     const identityDiagnostics = validateProposalSnapshotServerIdentity(
       structuredSnapshot.snapshot,
-      serverIdentity
+      serverIdentity,
     );
     if (identityDiagnostics.length > 0) {
       return NextResponse.json(
         {
-          error:
-            "Persisted structured proposal identity no longer matches tenant records.",
-          code: "STRUCTURED_IDENTITY_MISMATCH",
+          ...apiFailure("STRUCTURED_IDENTITY_MISMATCH"),
           diagnostics: identityDiagnostics,
         },
-        { status: 409, headers: { "Cache-Control": "no-store" } }
+        { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
     const structuredApprovedEvidence =
       await loadApprovedStructuredEvidenceBindings(
         workspace.id,
-        claimedStructuredKnowledgeIds(structuredSnapshot.snapshot)
+        claimedStructuredKnowledgeIds(structuredSnapshot.snapshot),
       );
     const evidenceDiagnostics = validateStructuredSnapshotEvidence(
       structuredSnapshot.snapshot,
-      structuredApprovedEvidence
+      structuredApprovedEvidence,
     );
     if (evidenceDiagnostics.length > 0) {
       return NextResponse.json(
         {
-          error:
-            "Persisted structured proposal evidence is no longer approved.",
-          code: "STRUCTURED_EVIDENCE_NOT_APPROVED",
+          ...apiFailure("STRUCTURED_EVIDENCE_NOT_APPROVED"),
           diagnostics: evidenceDiagnostics,
         },
-        { status: 409, headers: { "Cache-Control": "no-store" } }
+        { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
     structuredApprovedEvidenceIds = structuredApprovedEvidence.map(
-      (binding) => binding.id
+      (binding) => binding.id,
     );
   }
 
   const isContract = proposal.type === "CONTRACT";
   if (isContract && structuredSnapshot !== null) {
-    return NextResponse.json(
-      {
-        error:
-          "A contract record cannot be exported through the Phase 4 proposal snapshot engine.",
-        code: "STRUCTURED_SNAPSHOT_TYPE_MISMATCH",
-      },
-      { status: 409, headers: { "Cache-Control": "no-store" } }
-    );
+    return NextResponse.json(apiFailure("STRUCTURED_SNAPSHOT_TYPE_MISMATCH"), {
+      status: 409,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
   if (isContract) {
     // Contracts support bilingual legal HTML/PDF/Word, ZIP package, and manifest
@@ -409,8 +381,7 @@ export async function GET(
       format === "docx";
   const finalStatus =
     proposal.status === "APPROVED" || proposal.status === "EXPORTED";
-  let contractRenderSnapshot: CanonicalContractRenderSnapshot | null =
-    null;
+  let contractRenderSnapshot: CanonicalContractRenderSnapshot | null = null;
   let finalReviewChainValidated = false;
   if (isContract && finalStatus && finalArtifactRequested) {
     const validation = validatePersistedContractRenderSnapshot(
@@ -419,43 +390,31 @@ export async function GET(
         proposalId: proposal.id,
         hash: proposal.contractRenderSnapshotHash,
         revision: proposal.contractRenderSnapshotRevision,
-      }
+      },
     );
     if (!validation.ok) {
       return NextResponse.json(
         {
-          error:
-            "Final contract export requires the immutable render snapshot captured at review submission.",
-          code: validation.code,
+          ...apiFailure(validation.code),
           diagnostics: validation.diagnostics,
         },
-        { status: 409, headers: { "Cache-Control": "no-store" } }
+        { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
     contractRenderSnapshot = validation.value;
   }
-  if (
-    finalStatus && finalArtifactRequested
-  ) {
+  if (finalStatus && finalArtifactRequested) {
     const reviews = await db.proposalReview.findMany({
       where: { proposalId: proposal.id },
       orderBy: { stepIndex: "asc" },
     });
     if (
-      !hasCompleteBoundProposalApproval(
-        proposal,
-        reviews,
-        policy?.steps ?? []
-      )
+      !hasCompleteBoundProposalApproval(proposal, reviews, policy?.steps ?? [])
     ) {
-      return NextResponse.json(
-        {
-          error:
-            "Final export requires the exact current approval-policy chain, with every assigned step approved and bound to the current document state.",
-          code: "FINAL_REVIEW_BINDING_INVALID",
-        },
-        { status: 409, headers: { "Cache-Control": "no-store" } }
-      );
+      return NextResponse.json(apiFailure("FINAL_REVIEW_BINDING_INVALID"), {
+        status: 409,
+        headers: { "Cache-Control": "no-store" },
+      });
     }
     finalReviewChainValidated = true;
   }
@@ -463,8 +422,7 @@ export async function GET(
     proposalStatus: proposal.status,
     finalArtifactRequested,
     hasValidatedRenderSnapshot:
-      structuredSnapshot !== null ||
-      contractRenderSnapshot !== null,
+      structuredSnapshot !== null || contractRenderSnapshot !== null,
   });
 
   // Deterministic validation gate — blocks final export on pricing/placeholder/NORA/etc.
@@ -498,33 +456,26 @@ export async function GET(
   let gateReport;
   if (structuredSnapshot !== null) {
     const entities = await loadProjectIngestionEntities(proposal.projectId);
-    gateReport = validateStructuredProposalOutput(
-      structuredSnapshot.snapshot,
-      {
-        entities,
-        complianceRows: checksForGate.map((c) => ({
-          frameworkId: c.framework,
-          controlId: c.controlId,
-          title: c.title,
-          status: (c.status === "GAP" ? "PARTIAL" : c.status) as
-            | "COMPLIANT"
-            | "PARTIAL"
-            | "NON_COMPLIANT"
-            | "PENDING",
-          evidence: c.evidence ?? "",
-          remediation: c.remediation,
-        })),
-        restrictions: restrictions.map((restriction) => restriction.text),
-        approvedEvidenceIds: structuredApprovedEvidenceIds,
-      }
-    );
+    gateReport = validateStructuredProposalOutput(structuredSnapshot.snapshot, {
+      entities,
+      complianceRows: checksForGate.map((c) => ({
+        frameworkId: c.framework,
+        controlId: c.controlId,
+        title: c.title,
+        status: (c.status === "GAP" ? "PARTIAL" : c.status) as
+          "COMPLIANT" | "PARTIAL" | "NON_COMPLIANT" | "PENDING",
+        evidence: c.evidence ?? "",
+        remediation: c.remediation,
+      })),
+      restrictions: restrictions.map((restriction) => restriction.text),
+      approvedEvidenceIds: structuredApprovedEvidenceIds,
+    });
   } else if (isContract) {
     gateReport = getContractValidationReport({
       contentMd:
         contractRenderSnapshot?.snapshot.proposal.contentMd ??
         proposal.contentMd,
-      checkedAt:
-        contractRenderSnapshot?.snapshot.capturedAt,
+      checkedAt: contractRenderSnapshot?.snapshot.capturedAt,
     });
   } else {
     const gateFinancial: FinancialExtract | null =
@@ -539,10 +490,7 @@ export async function GET(
         controlId: c.controlId,
         title: c.title,
         status: (c.status === "GAP" ? "PARTIAL" : c.status) as
-          | "COMPLIANT"
-          | "PARTIAL"
-          | "NON_COMPLIANT"
-          | "PENDING",
+          "COMPLIANT" | "PARTIAL" | "NON_COMPLIANT" | "PENDING",
         evidence: c.evidence ?? "",
         remediation: c.remediation,
       })),
@@ -563,11 +511,13 @@ export async function GET(
       } catch (err) {
         return NextResponse.json(
           {
-            error: redactSensitiveText(err instanceof Error ? err.message : "validation_failed"),
+            error: redactSensitiveText(
+              err instanceof Error ? err.message : "validation_failed",
+            ),
             code: policyResult.code,
             validation: gateReport,
           },
-          { status: 422 }
+          { status: 422 },
         );
       }
     }
@@ -578,7 +528,7 @@ export async function GET(
         validation: gateReport,
         status: proposal.status,
       },
-      { status: policyResult.status }
+      { status: policyResult.status },
     );
   }
 
@@ -600,14 +550,18 @@ export async function GET(
           brand,
           company: companyLetterhead,
         }
-      : contractExportOptionsFromSnapshot(
-          contractRenderSnapshot.snapshot
-        );
+      : contractExportOptionsFromSnapshot(contractRenderSnapshot.snapshot);
   const checks = checksForGate;
 
   // Prefer human-entered financial forms; fall back to structure-only agent BoQ
   let boqItems:
-    | { item: string; unit: string; qty: number; unitPrice: number | null; total: number | null }[]
+    | {
+        item: string;
+        unit: string;
+        qty: number;
+        unitPrice: number | null;
+        total: number | null;
+      }[]
     | undefined;
   let slidesMetrics: SlidesMetrics | undefined;
 
@@ -660,7 +614,7 @@ export async function GET(
         bidderNameAr: letterheadCompanyName("ar", brand, companyLetterhead),
         brand: brand ?? {},
       }),
-      brand ?? {}
+      brand ?? {},
     );
   }
 
@@ -670,7 +624,7 @@ export async function GET(
     if (hadJunk) {
       const cleaned = sanitizeMilestonesForBoq(
         boqItems.map((b) => ({ name: b.item, weeks: 4 })),
-        exportLocale === "ar" ? "ar" : "en"
+        exportLocale === "ar" ? "ar" : "en",
       );
       boqItems = cleaned.map((m) => ({
         item: m.name,
@@ -693,14 +647,14 @@ export async function GET(
       contractRenderSnapshot !== null
         ? JSON.stringify(contractRenderSnapshot.snapshot).length
         : structuredSnapshot === null
-        ? JSON.stringify({
-            contentMd: proposal.contentMd,
-            artifactsJson: proposal.artifactsJson,
-            financialFormsJson: proposal.financialFormsJson,
-            checks: checksForGate,
-            boqItems,
-          }).length
-        : structuredSnapshot.canonicalJson.length;
+          ? JSON.stringify({
+              contentMd: proposal.contentMd,
+              artifactsJson: proposal.artifactsJson,
+              financialFormsJson: proposal.financialFormsJson,
+              checks: checksForGate,
+              boqItems,
+            }).length
+          : structuredSnapshot.canonicalJson.length;
     const admission = await documentExportGate.acquire({
       userId: session.user.id,
       workspaceId: workspace.id,
@@ -721,7 +675,7 @@ export async function GET(
             admission.retryAfterSeconds === null
               ? undefined
               : { "Retry-After": String(admission.retryAfterSeconds) },
-        }
+        },
       );
     }
     exportPermit = admission.permit;
@@ -735,8 +689,9 @@ export async function GET(
     // Only a fully validated authoritative export (approved status, bound
     // approval chain, persisted snapshot) earns FINAL chrome; everything else
     // stays honestly marked as draft.
-    const chromeLifecycle: "DRAFT" | "FINAL" =
-      exportLifecycle.authoritative ? "FINAL" : "DRAFT";
+    const chromeLifecycle: "DRAFT" | "FINAL" = exportLifecycle.authoritative
+      ? "FINAL"
+      : "DRAFT";
 
     switch (format) {
       case "pdf":
@@ -747,18 +702,15 @@ export async function GET(
               channel: "PDF",
               presetKey: structuredSnapshot.presetKey,
               lifecycle: chromeLifecycle,
-            }
+            },
           );
           buffer = artifact.buffer;
           contentType = artifact.mediaType;
           filename = "Structured_Proposal_Bilingual.pdf";
         } else if (isContract) {
-          const { generateBilingualContractPDF } = await import(
-            "@/lib/contract-export"
-          );
-          buffer = await generateBilingualContractPDF(
-            contractOptions
-          );
+          const { generateBilingualContractPDF } =
+            await import("@/lib/contract-export");
+          buffer = await generateBilingualContractPDF(contractOptions);
           contentType = "application/pdf";
           filename = "Draft_Contract_Bilingual.pdf";
         } else if (designedDraft !== null) {
@@ -776,7 +728,7 @@ export async function GET(
             proposal.project,
             brand,
             pdfLocale,
-            companyLetterhead
+            companyLetterhead,
           );
           contentType = "application/pdf";
           filename = "Technical_Proposal.pdf";
@@ -808,7 +760,7 @@ export async function GET(
           companyName: letterheadCompanyName(
             docxLocale,
             source.brand,
-            source.company
+            source.company,
           ),
           lifecycle: chromeLifecycle,
         });
@@ -831,15 +783,14 @@ export async function GET(
                 target: "screen",
                 includeDocumentShell: true,
               },
-            }
+            },
           );
           buffer = artifact.buffer;
           contentType = artifact.mediaType;
           filename = "Structured_Proposal_Bilingual.html";
         } else if (isContract) {
-          const { generateBilingualContractHTML } = await import(
-            "@/lib/contract-export"
-          );
+          const { generateBilingualContractHTML } =
+            await import("@/lib/contract-export");
           buffer = generateBilingualContractHTML(contractOptions);
           contentType = "text/html; charset=utf-8";
           filename = "Draft_Contract_Bilingual.html";
@@ -859,7 +810,7 @@ export async function GET(
             proposal.project,
             brand,
             pdfLocale,
-            companyLetterhead
+            companyLetterhead,
           );
           contentType = "text/html; charset=utf-8";
           filename = "Technical_Proposal.html";
@@ -868,12 +819,8 @@ export async function GET(
       case "xlsx":
         if (structuredSnapshot === null) {
           return NextResponse.json(
-            {
-              error:
-                "Structured XLSX export requires an immutable structured snapshot. Use xlsx-matrix or xlsx-boq for legacy proposals.",
-              code: "STRUCTURED_SNAPSHOT_REQUIRED_FOR_XLSX",
-            },
-            { status: 409, headers: { "Cache-Control": "no-store" } }
+            apiFailure("STRUCTURED_SNAPSHOT_REQUIRED_FOR_XLSX"),
+            { status: 409, headers: { "Cache-Control": "no-store" } },
           );
         }
         {
@@ -885,7 +832,7 @@ export async function GET(
               presetKey: structuredSnapshot.presetKey,
               lifecycle: chromeLifecycle,
               locale: xlsxLocale,
-            }
+            },
           );
           buffer = artifact.buffer;
           contentType = artifact.mediaType;
@@ -899,7 +846,7 @@ export async function GET(
           brand,
           checks,
           companyLetterhead,
-          exportLocale
+          exportLocale,
         );
         contentType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -911,7 +858,7 @@ export async function GET(
           brand,
           boqItems,
           companyLetterhead,
-          exportLocale
+          exportLocale,
         );
         contentType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -925,9 +872,9 @@ export async function GET(
             brand,
             slidesMetrics,
             companyLetterhead,
-            exportLocale
+            exportLocale,
           ),
-          "utf8"
+          "utf8",
         );
         contentType = "text/html; charset=utf-8";
         filename = "Technical_Proposal_Slides.html";
@@ -940,7 +887,7 @@ export async function GET(
               channel: "PPTX",
               presetKey: structuredSnapshot.presetKey,
               lifecycle: chromeLifecycle,
-            }
+            },
           );
           buffer = artifact.buffer;
           contentType = artifact.mediaType;
@@ -961,7 +908,7 @@ export async function GET(
             brand,
             slidesMetrics,
             companyLetterhead,
-            exportLocale
+            exportLocale,
           );
           contentType =
             "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -969,11 +916,8 @@ export async function GET(
         }
         break;
       case "manifest": {
-        const {
-          buildExportManifest,
-          CONTRACT_EXPORT_SAFETY,
-          manifestToJson,
-        } = await import("@/lib/export-manifest");
+        const { buildExportManifest, CONTRACT_EXPORT_SAFETY, manifestToJson } =
+          await import("@/lib/export-manifest");
         buffer = manifestToJson(
           buildExportManifest({
             project:
@@ -986,12 +930,11 @@ export async function GET(
                   }
                 : {
                     id: contractRenderSnapshot.snapshot.project.id,
-                    title:
-                      contractRenderSnapshot.snapshot.project.title,
+                    title: contractRenderSnapshot.snapshot.project.title,
                     etimadRef:
                       contractRenderSnapshot.snapshot.project.etimadRef,
                     updatedAt: new Date(
-                      contractRenderSnapshot.snapshot.project.updatedAt
+                      contractRenderSnapshot.snapshot.project.updatedAt,
                     ),
                   },
             proposal:
@@ -1006,23 +949,18 @@ export async function GET(
                   }
                 : {
                     id: contractRenderSnapshot.snapshot.proposal.id,
-                    version:
-                      contractRenderSnapshot.snapshot.proposal.version,
+                    version: contractRenderSnapshot.snapshot.proposal.version,
                     status: "APPROVED",
-                    locale:
-                      contractRenderSnapshot.snapshot.proposal.locale,
+                    locale: contractRenderSnapshot.snapshot.proposal.locale,
                     contentMd:
                       contractRenderSnapshot.snapshot.proposal.contentMd,
                     approvedAt: null,
                   },
             validation: gateReport,
-            ...(isContract
-              ? { contractSafety: CONTRACT_EXPORT_SAFETY }
-              : {}),
+            ...(isContract ? { contractSafety: CONTRACT_EXPORT_SAFETY } : {}),
             artifacts: [],
-            generatedAt:
-              contractRenderSnapshot?.snapshot.capturedAt,
-          })
+            generatedAt: contractRenderSnapshot?.snapshot.capturedAt,
+          }),
         );
         contentType = "application/json; charset=utf-8";
         filename = "Export_Manifest.json";
@@ -1030,69 +968,49 @@ export async function GET(
       }
       case "zip":
         if (isContract) {
-          const { generateContractPackageZIP } = await import(
-            "@/lib/contract-export"
-          );
+          const { generateContractPackageZIP } =
+            await import("@/lib/contract-export");
           let obligations: ContractObligationSnapshot[];
           if (contractRenderSnapshot !== null) {
-            obligations = [
-              ...contractRenderSnapshot.snapshot.obligations,
-            ];
+            obligations = [...contractRenderSnapshot.snapshot.obligations];
           } else {
-            const { extractObligations } = await import(
-              "@/lib/contract-obligations"
-            );
-            const { parseContractArticles } = await import(
-              "@/lib/contract-format"
-            );
-            const { parseContractArtifacts } = await import(
-              "@/lib/contract-artifacts"
-            );
-            const artifacts = parseContractArtifacts(
-              proposal.artifactsJson
-            );
-            const articles =
-              artifacts.articles?.length
-                ? artifacts.articles
-                : parseContractArticles(proposal.contentMd ?? "");
-            const derived = extractObligations(
-              articles,
-              artifacts.milestones
-            );
-            const states =
-              await db.contractObligationState.findMany({
-                where: { proposalId: proposal.id },
-              });
+            const { extractObligations } =
+              await import("@/lib/contract-obligations");
+            const { parseContractArticles } =
+              await import("@/lib/contract-format");
+            const { parseContractArtifacts } =
+              await import("@/lib/contract-artifacts");
+            const artifacts = parseContractArtifacts(proposal.artifactsJson);
+            const articles = artifacts.articles?.length
+              ? artifacts.articles
+              : parseContractArticles(proposal.contentMd ?? "");
+            const derived = extractObligations(articles, artifacts.milestones);
+            const states = await db.contractObligationState.findMany({
+              where: { proposalId: proposal.id },
+            });
             const statusById = new Map(
               states.map((state) => [
                 state.obligationId,
                 state.status as "open" | "done",
-              ])
+              ]),
             );
             obligations = derived.map((row) => ({
               ...row,
               status: statusById.get(row.id) ?? row.status,
             }));
           }
-          const frozenContract =
-            contractRenderSnapshot?.snapshot ?? null;
+          const frozenContract = contractRenderSnapshot?.snapshot ?? null;
           buffer = await generateContractPackageZIP({
             ...contractOptions,
-            proposalId:
-              frozenContract?.proposal.id ?? proposal.id,
+            proposalId: frozenContract?.proposal.id ?? proposal.id,
             proposalVersion:
               frozenContract?.proposal.version ?? proposal.version,
             proposalStatus:
-              frozenContract === null
-                ? proposal.status
-                : "APPROVED",
-            proposalLocale:
-              frozenContract?.proposal.locale ?? proposal.locale,
-            projectId:
-              frozenContract?.project.id ?? proposal.project.id,
+              frozenContract === null ? proposal.status : "APPROVED",
+            proposalLocale: frozenContract?.proposal.locale ?? proposal.locale,
+            projectId: frozenContract?.project.id ?? proposal.project.id,
             projectUpdatedAt:
-              frozenContract?.project.updatedAt ??
-              proposal.project.updatedAt,
+              frozenContract?.project.updatedAt ?? proposal.project.updatedAt,
             generatedAt: frozenContract?.capturedAt,
             validation: gateReport,
             obligations,
@@ -1102,7 +1020,7 @@ export async function GET(
             const companyName = letterheadCompanyName(
               exportLocale,
               contractOptions.brand,
-              contractOptions.company
+              contractOptions.company,
             );
             const companySlug =
               sanitizeFilename(companyName)
@@ -1111,9 +1029,8 @@ export async function GET(
             filename = `${companySlug}_Contract_Package.zip`;
           }
         } else if (structuredSnapshot !== null) {
-          const { generateStructuredBidPackageZIP } = await import(
-            "@/lib/structured-bid-package"
-          );
+          const { generateStructuredBidPackageZIP } =
+            await import("@/lib/structured-bid-package");
           buffer = await generateStructuredBidPackageZIP({
             snapshot: structuredSnapshot.snapshot,
             presetKey: structuredSnapshot.presetKey,
@@ -1135,7 +1052,7 @@ export async function GET(
             const companyName = letterheadCompanyName(
               exportLocale,
               brand,
-              companyLetterhead
+              companyLetterhead,
             );
             const companySlug =
               sanitizeFilename(companyName)
@@ -1144,9 +1061,8 @@ export async function GET(
             filename = `${companySlug}_Structured_Bid_Package.zip`;
           }
         } else if (designedDraft !== null) {
-          const { generateStructuredBidPackageZIP } = await import(
-            "@/lib/structured-bid-package"
-          );
+          const { generateStructuredBidPackageZIP } =
+            await import("@/lib/structured-bid-package");
           buffer = await generateStructuredBidPackageZIP({
             snapshot: designedDraft,
             presetKey: "government-formal",
@@ -1168,7 +1084,7 @@ export async function GET(
             const companyName = letterheadCompanyName(
               exportLocale,
               brand,
-              companyLetterhead
+              companyLetterhead,
             );
             const companySlug =
               sanitizeFilename(companyName)
@@ -1188,14 +1104,14 @@ export async function GET(
               validation: gateReport,
               company: companyLetterhead,
               locale: exportLocale,
-            }
+            },
           );
           contentType = "application/zip";
           {
             const companyName = letterheadCompanyName(
               exportLocale,
               brand,
-              companyLetterhead
+              companyLetterhead,
             );
             const companySlug =
               sanitizeFilename(companyName)
@@ -1232,23 +1148,17 @@ export async function GET(
                   contractRenderSnapshot?.revision ?? -1,
               }
             : {
-                structuredSnapshotHash:
-                  structuredSnapshot?.hash ?? null,
-                structuredSnapshotRevision:
-                  structuredSnapshot?.revision ?? -1,
+                structuredSnapshotHash: structuredSnapshot?.hash ?? null,
+                structuredSnapshotRevision: structuredSnapshot?.revision ?? -1,
               }),
         },
         data: { status: "EXPORTED" },
       });
       if (transition.count !== 1) {
-        return NextResponse.json(
-          {
-            error:
-              "Proposal changed while the authoritative artifact was being prepared. Retry from the latest state.",
-            code: "EXPORT_STATE_CHANGED",
-          },
-          { status: 409, headers: { "Cache-Control": "no-store" } }
-        );
+        return NextResponse.json(apiFailure("EXPORT_STATE_CHANGED"), {
+          status: 409,
+          headers: { "Cache-Control": "no-store" },
+        });
       }
       exportLifecycle = {
         authoritative: true,
@@ -1275,10 +1185,8 @@ export async function GET(
           ? contractRenderSnapshot === null
             ? {}
             : {
-                contractRenderSnapshotHash:
-                  contractRenderSnapshot.hash,
-                contractRenderSnapshotRevision:
-                  contractRenderSnapshot.revision,
+                contractRenderSnapshotHash: contractRenderSnapshot.hash,
+                contractRenderSnapshotRevision: contractRenderSnapshot.revision,
               }
           : {
               snapshotHash: structuredSnapshot.hash,
@@ -1330,12 +1238,10 @@ export async function GET(
               : designedDraft !== null
                 ? "designed-draft-v1"
                 : "legacy-markdown",
-        "X-Proposal-Structured":
-          structuredSnapshot === null ? "false" : "true",
-        "X-Proposal-Authoritative":
-          exportLifecycle.authoritative
-            ? "true"
-            : "false",
+        "X-Proposal-Structured": structuredSnapshot === null ? "false" : "true",
+        "X-Proposal-Authoritative": exportLifecycle.authoritative
+          ? "true"
+          : "false",
         ...(isContract
           ? {
               "X-Contract-Legal-Review-Status": "UNREVIEWED",
@@ -1346,22 +1252,19 @@ export async function GET(
         ...(structuredSnapshot === null
           ? contractRenderSnapshot === null
             ? {
-                "X-Proposal-Lifecycle":
-                  "NON_AUTHORITATIVE_PREVIEW",
+                "X-Proposal-Lifecycle": "NON_AUTHORITATIVE_PREVIEW",
               }
             : {
-                "X-Contract-Render-Snapshot-Hash":
-                  contractRenderSnapshot.hash,
+                "X-Contract-Render-Snapshot-Hash": contractRenderSnapshot.hash,
                 "X-Contract-Render-Snapshot-Revision": String(
-                  contractRenderSnapshot.revision
+                  contractRenderSnapshot.revision,
                 ),
-                "X-Proposal-Lifecycle":
-                  exportLifecycle.lifecycle,
+                "X-Proposal-Lifecycle": exportLifecycle.lifecycle,
               }
           : {
               "X-Proposal-Snapshot-Hash": structuredSnapshot.hash,
               "X-Proposal-Snapshot-Revision": String(
-                structuredSnapshot.revision
+                structuredSnapshot.revision,
               ),
               "X-Proposal-Layout-Preset": structuredSnapshot.presetKey,
               "X-Proposal-Lifecycle": exportLifecycle.lifecycle,
@@ -1376,28 +1279,24 @@ export async function GET(
     if (err instanceof ProposalLayoutExportError) {
       return NextResponse.json(
         {
-          error: err.message,
-          code: "STRUCTURED_EXPORT_BLOCKED",
+          ...apiFailure("STRUCTURED_EXPORT_BLOCKED"),
           channel: err.channel,
           diagnostics: err.diagnostics,
         },
-        { status: 422, headers: { "Cache-Control": "no-store" } }
+        { status: 422, headers: { "Cache-Control": "no-store" } },
       );
     }
     const { PdfGenerationError } = await import("@/lib/pdf/html-to-pdf");
     if (err instanceof PdfGenerationError) {
-      return NextResponse.json(
-        {
-          error: err.message,
-          code: err.code,
-          hint: "Install Playwright Chromium on the server (bunx playwright install chromium).",
-        },
-        { status: 503 }
-      );
+      return NextResponse.json(apiFailure(err.code), { status: 503 });
     }
     return NextResponse.json(
-      { error: redactSensitiveText(err instanceof Error ? err.message : "download failed") },
-      { status: 500 }
+      {
+        error: redactSensitiveText(
+          err instanceof Error ? err.message : "download failed",
+        ),
+      },
+      { status: 500 },
     );
   } finally {
     await exportPermit?.release();

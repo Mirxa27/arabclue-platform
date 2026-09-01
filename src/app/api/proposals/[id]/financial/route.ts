@@ -50,7 +50,7 @@ export async function PATCH(
       throw new ApiError(
         "Proposal is locked for editing in current status",
         409,
-        "status_locked"
+        "STATUS_LOCKED"
       );
     }
     const parsed = await parseJsonBody(req, financialFormsSchema);
@@ -106,7 +106,7 @@ export async function PATCH(
       throw new ApiError(
         "Proposal changed concurrently; reload before editing",
         409,
-        "proposal_concurrent_update"
+        "PROPOSAL_VERSION_CONFLICT"
       );
     }
 
