@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronUp, MessageSquare, Paperclip, Radio, Sparkles } from "lucide-react";
 import { MissionPipelineBar } from "./mission-pipeline-bar";
 import type { TheaterToolEvent } from "@/lib/agents/platform/mission-tool-parts";
+import { agentStatusLabel, type AgentStatus } from "@/lib/agents/platform/agent-status";
 
 type Mode = "live" | "classic";
 
@@ -20,13 +21,35 @@ type Props = {
   liveEnabled: boolean;
   liveHint?: string | null;
   liveModelLabel?: string | null;
-  performing?: boolean;
+  /** Raw model id, shown on hover only — it is provenance, not a headline. */
+  liveModelDetail?: string | null;
+  /** The one status on this screen. Nothing below the header may restate it. */
+  status: AgentStatus;
   pipelineTools?: TheaterToolEvent[];
   statusBadges?: ReactNode;
   kit: ReactNode;
   kitMeta?: { files?: number; linked?: boolean };
   children: ReactNode;
   composer?: ReactNode;
+};
+
+const STATUS_TONE: Record<AgentStatus, { pill: string; dot: string }> = {
+  working: {
+    pill: "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 shadow-[0_0_12px_-4px_rgba(16,185,129,0.6)]",
+    dot: "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse",
+  },
+  connecting: {
+    pill: "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100",
+    dot: "bg-amber-500 animate-pulse",
+  },
+  ready: {
+    pill: "border-black/10 bg-white/70 text-zinc-600 dark:border-white/10 dark:bg-white/[0.06] dark:text-zinc-400",
+    dot: "bg-teal-500",
+  },
+  offline: {
+    pill: "border-black/10 bg-white/70 text-zinc-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-500",
+    dot: "bg-zinc-400",
+  },
 };
 
 export function MissionControlShell({
@@ -38,7 +61,8 @@ export function MissionControlShell({
   liveEnabled,
   liveHint,
   liveModelLabel,
-  performing,
+  liveModelDetail,
+  status,
   statusBadges,
   kit,
   kitMeta,
@@ -48,6 +72,8 @@ export function MissionControlShell({
 }: Props) {
   const ar = locale === "ar";
   const [kitOpen, setKitOpen] = useState(false);
+  const performing = status === "working";
+  const tone = STATUS_TONE[status];
 
   return (
     <div
@@ -120,18 +146,13 @@ export function MissionControlShell({
               <span
                 className={cn(
                   "inline-flex items-center gap-[6px] rounded-full border px-[9px] py-[3px] text-[10px] sm:text-[11px] font-medium leading-none tracking-wide transition-colors duration-300",
-                  performing
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 shadow-[0_0_12px_-4px_rgba(16,185,129,0.6)]"
-                    : "border-black/10 bg-white/70 text-zinc-600 dark:border-white/10 dark:bg-white/[0.06] dark:text-zinc-400"
+                  tone.pill
                 )}
+                role="status"
+                aria-live="polite"
               >
-                <span
-                  className={cn(
-                    "size-[6px] rounded-full",
-                    performing ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" : "bg-zinc-400"
-                  )}
-                />
-                {performing ? (ar ? "ينفّذ" : "Live") : ar ? "جاهز" : "Ready"}
+                <span className={cn("size-[6px] rounded-full", tone.dot)} />
+                {agentStatusLabel(status, locale)}
               </span>
             </div>
             <p className="mt-1.5 max-w-[54ch] text-[12px] sm:text-[13px] leading-[1.45] text-zinc-600 dark:text-zinc-400 line-clamp-2 sm:line-clamp-none">
@@ -141,7 +162,10 @@ export function MissionControlShell({
             {liveModelLabel || statusBadges ? (
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5 sm:gap-2">
                 {liveModelLabel ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white/60 dark:border-white/10 dark:bg-white/[0.04] px-2.5 py-1 font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white/60 dark:border-white/10 dark:bg-white/[0.04] px-2.5 py-1 text-[10px] text-zinc-500 dark:text-zinc-400"
+                    title={liveModelDetail ?? undefined}
+                  >
                     {liveModelLabel}
                   </span>
                 ) : null}

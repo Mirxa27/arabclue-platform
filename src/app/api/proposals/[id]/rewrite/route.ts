@@ -24,7 +24,10 @@ import { STRUCTURED_SNAPSHOT_INVALIDATION } from "@/lib/proposal-snapshot-persis
 import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "@/lib/contract-render-snapshot";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// Reaches the same reasoning model as /api/platform-agent/chat, so it gets the
+// same budget. This route rewrites whole sections, which is strictly more work
+// than the co-pilot pass that was already overrunning 60s in production.
+export const maxDuration = 300;
 
 /**
  * POST /api/proposals/[id]/rewrite

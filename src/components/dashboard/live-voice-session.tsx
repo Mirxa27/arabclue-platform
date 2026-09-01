@@ -42,7 +42,9 @@ import {
   extractTheaterTools,
   isToolRunning,
   type MissionFeedItem,
+  type TheaterToolEvent,
 } from "@/lib/agents/platform/mission-tool-parts";
+import type { LiveTransport } from "@/lib/agents/platform/agent-status";
 import { useToast } from "@/hooks/use-toast";
 import { MissionPerformanceStage } from "./mission-performance-fx";
 import { MissionStage } from "./mission-stage";
@@ -82,7 +84,8 @@ function micErrorMessage(err: unknown, ar: boolean): string {
       : "Could not access the microphone.";
 }
 
-type LiveTransport = {
+/** The socket handle itself, as opposed to `LiveTransport`, its state. */
+type LiveTransportHandle = {
   connect: () => Promise<void>;
   disconnect: () => void;
   stopPlayback: () => void;
@@ -95,11 +98,23 @@ export function LiveVoiceSession({
   missionId,
   activeProjectId,
   externalFeed = [],
+  onStateChange,
 }: {
   config: VoiceLiveConfig;
   missionId?: string | null;
   activeProjectId?: string | null;
   externalFeed?: MissionFeedItem[];
+  /**
+   * The session owns the only truthful view of the transport and of what the
+   * agent is running, and both are rendered above it — the header status pill
+   * and the pipeline strip. Neither can see this component's state, so it
+   * reports rather than restating them locally.
+   */
+  onStateChange?: (state: {
+    transport: LiveTransport;
+    tools: TheaterToolEvent[];
+    performing: boolean;
+  }) => void;
 }) {
   const { locale } = useLocale();
   const { setView, setActiveProjectId } = useUI();
@@ -121,7 +136,7 @@ export function LiveVoiceSession({
   const streamRef = useRef<MediaStream | null>(null);
   const captureRef = useRef<RealtimeAudioWorkletCapture | null>(null);
   const appliedToolKeys = useRef<Set<string>>(new Set());
-  const transportRef = useRef<LiveTransport | null>(null);
+  const transportRef = useRef<LiveTransportHandle | null>(null);
   const setActiveProjectIdRef = useRef(setActiveProjectId);
   const setFollowViewRef = useRef(setFollowView);
   const missionIdRef = useRef(missionId ?? null);
@@ -404,48 +419,29 @@ export function LiveVoiceSession({
       ) ||
       connecting);
 
-  const statusLabel =
-    starting && realtime.status === "disconnected"
-      ? ar
-        ? "يجهّز…"
-        : "Starting…"
-      : connected
-        ? ar
-          ? "متصل"
-          : "Connected"
-        : connecting
-          ? ar
-            ? "يتصل…"
-            : "Connecting…"
-          : ar
-            ? "غير متصل"
-            : "Disconnected";
+  const transport: LiveTransport = connected
+    ? "connected"
+    : connecting
+      ? "connecting"
+      : "disconnected";
+
+  useEffect(() => {
+    onStateChange?.({ transport, tools: theaterTools, performing });
+  }, [onStateChange, transport, theaterTools, performing]);
 
   return (
     <div className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col gap-3" dir={ar ? "rtl" : "ltr"}>
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur",
-            connected
-              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 shadow-[0_0_12px_-6px_rgba(16,185,129,0.5)]"
-              : connecting || starting
-                ? "border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-100"
-                : "border-zinc-200/70 dark:border-white/10 bg-white/60 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-400"
-          )}
-        >
-          <span className={cn("size-1.5 rounded-full", connected ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" : connecting || starting ? "bg-amber-500 animate-pulse" : "bg-zinc-400")} />
-          {statusLabel}
-        </span>
+      {/*
+        No connection badge and no "Speaking…" badge here. The header pill owns
+        the status and the ticker directly below owns the phase; this row used
+        to disagree with both. The live-mic chip stays regardless of phase —
+        a hot microphone is not something to hide behind a busier label.
+      */}
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2 empty:hidden">
         {isCapturing ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-700 dark:text-rose-300">
             <Mic className="size-3" />
-            {ar ? "الميكروفون" : "Mic live"}
-          </span>
-        ) : null}
-        {realtime.isPlaying ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/20 bg-teal-500/10 px-2.5 py-1 text-[11px] font-medium text-teal-800 dark:text-teal-200">
-            {ar ? "يتحدث…" : "Speaking…"}
+            {ar ? "الميكروفون مفتوح" : "Mic live"}
           </span>
         ) : null}
         {followView ? (
@@ -468,6 +464,7 @@ export function LiveVoiceSession({
           listening={isCapturing}
           speaking={realtime.isPlaying}
           thinking={connecting}
+          offline={transport === "disconnected"}
           conversation={
             <MissionConversation
               locale={locale}
@@ -633,9 +630,7 @@ export function LiveVoiceSession({
             </Button>
           ) : null}
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          {config.connectionName} · {config.providerLabel}
-        </p>
+        {/* Connection/provider provenance lives on the header chip's tooltip. */}
       </div>
     </div>
   );

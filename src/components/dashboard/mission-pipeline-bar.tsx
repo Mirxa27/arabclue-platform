@@ -1,91 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Brain, CheckCircle2, FileText, Loader2, Search, Shield, Workflow } from "lucide-react";
+import type { TheaterToolEvent } from "@/lib/agents/platform/mission-tool-parts";
 import {
-  isToolDone,
-  isToolRunning,
-  toolKind,
-  type TheaterToolEvent,
-} from "@/lib/agents/platform/mission-tool-parts";
+  PIPELINE_STEPS,
+  computeCompleted,
+  inferActiveStep,
+  type PipelineStep,
+} from "@/lib/agents/platform/mission-pipeline-steps";
 
-type PipelineStep = {
-  key: string;
-  labelEn: string;
-  labelAr: string;
-  icon: typeof Brain;
-  kinds: string[];
-  toolNames: string[];
+const STEP_ICONS: Record<PipelineStep["key"], typeof Brain> = {
+  analyze: Brain,
+  delegate: Workflow,
+  research: Search,
+  draft: FileText,
+  review: Shield,
 };
-
-const STEPS: PipelineStep[] = [
-  {
-    key: "analyze",
-    labelEn: "Analyzing",
-    labelAr: "تحليل",
-    icon: Brain,
-    kinds: ["general", "mission", "search"],
-    toolNames: ["getWorkspaceOverview", "listProjects", "listDocuments", "searchDocumentChunks", "getMissionPulse"],
-  },
-  {
-    key: "delegate",
-    labelEn: "Planning",
-    labelAr: "تخطيط",
-    icon: Workflow,
-    kinds: [],
-    toolNames: ["explainPlatform", "getMyCapabilities", "orchestrateTenderPackage", "classifyAndRouteAttachment", "stageMissionAttachment"],
-  },
-  {
-    key: "research",
-    labelEn: "Research",
-    labelAr: "بحث",
-    icon: Search,
-    kinds: ["compliance", "search"],
-    toolNames: ["researchSaudiLaw", "listRegulatoryRegistry", "getCompliance", "listMissionAttachments"],
-  },
-  {
-    key: "draft",
-    labelEn: "Drafting",
-    labelAr: "صياغة",
-    icon: FileText,
-    kinds: ["document", "proposal", "pipeline", "project"],
-    toolNames: ["getProposal", "listProposals", "startAgentPipeline", "getAgentRunStatus", "createProject", "getProject"],
-  },
-  {
-    key: "review",
-    labelEn: "Review",
-    labelAr: "مراجعة",
-    icon: Shield,
-    kinds: ["review", "billing", "admin", "navigate"],
-    toolNames: ["navigateToView", "setActiveProject", "listReviews", "decideReview", "getBillingStatus"],
-  },
-];
-
-function inferActiveStep(tools: TheaterToolEvent[]): number {
-  const running = tools.filter((t) => isToolRunning(t.state) || t.preliminary);
-  const last = running.length ? running[running.length - 1] : [...tools].reverse().find((t) => isToolRunning(t.state) || t.preliminary) || [...tools].reverse()[0];
-  if (!last) return -1;
-  const kind = toolKind(last.name);
-  for (let i = STEPS.length - 1; i >= 0; i--) {
-    const s = STEPS[i];
-    if (s.toolNames.includes(last.name) || s.kinds.includes(kind)) return i;
-  }
-  if (kind === "document" || kind === "proposal" || kind === "pipeline") return 3;
-  if (kind === "compliance") return 2;
-  return 0;
-}
-
-function computeCompleted(tools: TheaterToolEvent[]): Set<number> {
-  const doneTools = tools.filter((t) => isToolDone(t.state));
-  const completed = new Set<number>();
-  STEPS.forEach((step, idx) => {
-    const hasDone = doneTools.some((t) => step.toolNames.includes(t.name) || step.kinds.includes(toolKind(t.name)));
-    if (hasDone) completed.add(idx);
-  });
-  return completed;
-}
 
 export function MissionPipelineBar({
   locale,
@@ -120,9 +53,9 @@ export function MissionPipelineBar({
   if (!shouldRender) return null;
 
   const progressPct =
-    !hasTelemetry || STEPS.length === 0
+    !hasTelemetry || PIPELINE_STEPS.length === 0
       ? 0
-      : Math.round(((completedSteps.size + (activeStep >= 0 && !completedSteps.has(activeStep) ? 0.55 : 0)) / STEPS.length) * 100);
+      : Math.round(((completedSteps.size + (activeStep >= 0 && !completedSteps.has(activeStep) ? 0.55 : 0)) / PIPELINE_STEPS.length) * 100);
 
   return (
     <div className="relative z-[1] shrink-0 overflow-hidden border-y border-black/[0.06] dark:border-white/[0.06] bg-white/[0.55] dark:bg-black/20 backdrop-blur-[14px]">
@@ -138,8 +71,8 @@ export function MissionPipelineBar({
 
       <div className="relative flex flex-col gap-2 px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="hidden items-center gap-1 sm:flex">
-          {STEPS.map((step, i) => {
-            const Icon = step.icon;
+          {PIPELINE_STEPS.map((step, i) => {
+            const Icon = STEP_ICONS[step.key];
             const isActive = i === activeStep;
             const isDone = completedSteps.has(i);
             return (
@@ -162,7 +95,7 @@ export function MissionPipelineBar({
                   <span className="hidden md:inline tracking-tight">{ar ? step.labelAr : step.labelEn}</span>
                   <span className="md:hidden tracking-tight">{ar ? step.labelAr.slice(0, 4) : step.labelEn.slice(0, 4)}</span>
                 </motion.div>
-                {i < STEPS.length - 1 ? (
+                {i < PIPELINE_STEPS.length - 1 ? (
                   <div className="flex flex-1 items-center">
                     <div className={cn("h-px flex-1 transition-colors duration-500", isDone ? "bg-emerald-500/40" : "bg-black/10 dark:bg-white/10")} />
                     <div
@@ -201,7 +134,7 @@ export function MissionPipelineBar({
           </div>
           <AnimatePresence mode="popLayout">
             <motion.span
-              key={activeStep >= 0 ? STEPS[activeStep].key : "indeterminate"}
+              key={activeStep >= 0 ? PIPELINE_STEPS[activeStep].key : "indeterminate"}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
@@ -210,8 +143,8 @@ export function MissionPipelineBar({
               {/* The bar already carries the fraction. Say what is happening. */}
               {activeStep >= 0
                 ? ar
-                  ? STEPS[activeStep].labelAr
-                  : STEPS[activeStep].labelEn
+                  ? PIPELINE_STEPS[activeStep].labelAr
+                  : PIPELINE_STEPS[activeStep].labelEn
                 : ar
                   ? "جارٍ العمل"
                   : "Working"}

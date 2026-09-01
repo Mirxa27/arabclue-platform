@@ -30,7 +30,13 @@ import {
   summarizeStoredOutput,
   summarizeToolOutput,
   type MissionFeedItem,
+  type TheaterToolEvent,
 } from "@/lib/agents/platform/mission-tool-parts";
+import {
+  resolveAgentStatus,
+  type LiveTransport,
+} from "@/lib/agents/platform/agent-status";
+import { providerDisplayName } from "@/lib/ai/provider-label";
 import { MISSION_STARTERS, starterCommand } from "@/lib/mission-starters";
 import { LiveVoiceSession } from "./live-voice-session";
 import { MissionAttachmentTray } from "./mission-attachment-tray";
@@ -350,6 +356,25 @@ export function PlatformAgentConsole() {
       (t) => isToolRunning(t.state) || Boolean("preliminary" in t && t.preliminary)
     );
 
+  /**
+   * In live mode the work happens on a socket this component never sees, so it
+   * has no truthful view of the transport or of what the agent is running.
+   * `LiveVoiceSession` reports both up rather than restating them next to
+   * indicators that disagree with it.
+   */
+  const [liveState, setLiveState] = useState<{
+    transport: LiveTransport;
+    tools: TheaterToolEvent[];
+    performing: boolean;
+  }>({ transport: "disconnected", tools: [], performing: false });
+
+  const liveMode = mode === "live" && Boolean(liveConfig?.enabled);
+  const agentStatus = resolveAgentStatus({
+    live: liveMode,
+    liveTransport: liveState.transport,
+    performing: liveMode ? liveState.performing : performing,
+  });
+
   const processing = useCopilotProcessing({
     chatStatus: status,
     error,
@@ -575,12 +600,11 @@ export function PlatformAgentConsole() {
         liveConfig && !liveConfig.enabled ? liveConfig.reason : null
       }
       liveModelLabel={
-        liveConfig?.enabled
-          ? `${liveConfig.provider} · ${liveConfig.modelId}`
-          : null
+        liveConfig?.enabled ? providerDisplayName(liveConfig.provider) : null
       }
-      performing={performing}
-      pipelineTools={theaterTools}
+      liveModelDetail={liveConfig?.enabled ? liveConfig.modelId : null}
+      status={agentStatus}
+      pipelineTools={liveMode ? liveState.tools : theaterTools}
       kitMeta={{ files: attachments.length }}
       statusBadges={
         <div className="flex flex-wrap items-center gap-1.5">
@@ -596,21 +620,16 @@ export function PlatformAgentConsole() {
               {ar ? "عرض:" : "View:"} {viewLabel(followView, locale)}
             </Button>
           ) : null}
-          {mode !== "live" || !liveConfig?.enabled ? (
-            <>
-              {busy ? (
-                <Badge className="rounded-full gap-1 border-teal-500/20 bg-teal-500/10 text-teal-800 dark:text-teal-200 animate-pulse text-[10px]">
-                  <Loader2 className="size-3 animate-spin" />
-                  {ar ? "ينفّذ مباشر" : "Live exec"}
-                </Badge>
-              ) : null}
-              {listening ? (
-                <Badge variant="destructive" className="rounded-full gap-1 animate-pulse text-[10px]">
-                  <Mic className="size-3" />
-                  {ar ? "يستمع" : "Listening"}
-                </Badge>
-              ) : null}
-            </>
+          {/*
+            No "Live exec" badge: the header pill already says Working. The mic
+            chip stays — a hot microphone should not be inferable only from a
+            busier word somewhere else on the screen.
+          */}
+          {!liveMode && listening ? (
+            <Badge variant="destructive" className="rounded-full gap-1 animate-pulse text-[10px]">
+              <Mic className="size-3" />
+              {ar ? "الميكروفون مفتوح" : "Mic live"}
+            </Badge>
           ) : null}
         </div>
       }
@@ -868,6 +887,7 @@ export function PlatformAgentConsole() {
           missionId={missionId}
           activeProjectId={activeProjectId}
           externalFeed={feedItems}
+          onStateChange={setLiveState}
         />
       ) : (
         <MissionPerformanceStage

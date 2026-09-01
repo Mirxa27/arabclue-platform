@@ -342,6 +342,12 @@ export function currentAgentAction(opts: {
   listening?: boolean;
   speaking?: boolean;
   thinking?: boolean;
+  /**
+   * The live voice transport is down. Only changes the idle sentence: telling
+   * someone to speak when there is no socket to speak into is worse than
+   * saying nothing. Work already in flight still wins over it.
+   */
+  offline?: boolean;
 }): AgentAction {
   const ar = opts.locale === "ar";
   const running = opts.tools.filter(
@@ -388,7 +394,13 @@ export function currentAgentAction(opts: {
   }
   return {
     phase: "idle",
-    label: ar ? "جاهز — تحدّث أو اكتب" : "Ready — speak or type",
+    label: opts.offline
+      ? ar
+        ? "غير متصل — اضغط اتصال مباشر للبدء"
+        : "Not connected — tap Connect live to start"
+      : ar
+        ? "جاهز — تحدّث أو اكتب"
+        : "Ready — speak or type",
     toolName: null,
     kind: "general",
     runningCount: 0,

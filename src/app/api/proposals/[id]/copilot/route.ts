@@ -9,7 +9,13 @@ import { openCopilotSuggestionStream } from "@/lib/ai/copilot-suggestions";
 import type { Locale } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Same budget as /api/platform-agent/chat: this reaches the same reasoning
+// model, and `output: "array"` emits nothing until an element's JSON is
+// complete. Measured against production, the first suggestion on a single
+// sentence arrived at +29s; at 60s a real document produced the meta frame and
+// then silence, because the function was killed mid-stream. That kill is
+// invisible to the client — headers already went out — so the rail just stops.
+export const maxDuration = 300;
 
 /**
  * POST /api/proposals/[id]/copilot

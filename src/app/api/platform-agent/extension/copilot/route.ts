@@ -8,7 +8,10 @@ import { detectPricingRequest } from "@/lib/guardrails";
 import { syncMissionTranscript } from "@/lib/agents/platform/mission-transcript";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// Runs the same agent as /api/platform-agent/chat via `createPlatformAgent`,
+// so it needs the same budget. 120 was enough for a short answer and silently
+// truncated anything the model had to think about.
+export const maxDuration = 300;
 
 /**
  * POST /api/platform-agent/extension/copilot

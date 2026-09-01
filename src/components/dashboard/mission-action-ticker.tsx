@@ -39,6 +39,7 @@ export function MissionActionTicker({
   listening,
   speaking,
   thinking,
+  offline,
   className,
 }: {
   locale: "ar" | "en";
@@ -46,10 +47,11 @@ export function MissionActionTicker({
   listening?: boolean;
   speaking?: boolean;
   thinking?: boolean;
+  offline?: boolean;
   className?: string;
 }) {
   const ar = locale === "ar";
-  const action = currentAgentAction({ tools, locale, listening, speaking, thinking });
+  const action = currentAgentAction({ tools, locale, listening, speaking, thinking, offline });
   const active = action.phase !== "idle";
   const doneCount = tools.filter((t) => isToolDone(t.state) && !t.preliminary).length;
   const runningCount = action.runningCount;
@@ -67,6 +69,12 @@ export function MissionActionTicker({
     prevDone.current = doneCount;
   }, [doneCount]);
 
+  /**
+   * Null at idle on purpose. The idle sentence right below already reads
+   * "Ready — speak or type", so an uppercase READY above it was the same word
+   * twice, and it kept claiming readiness while the header said the live
+   * session was not connected. A phase chip is for a phase.
+   */
   const phaseLabel =
     action.phase === "listening"
       ? ar
@@ -84,9 +92,7 @@ export function MissionActionTicker({
             ? ar
               ? "يفكر"
               : "Thinking"
-            : ar
-              ? "جاهز"
-              : "Ready";
+            : null;
 
   return (
     <motion.div
@@ -127,13 +133,15 @@ export function MissionActionTicker({
         </span>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              {phaseLabel}
-              {runningCount > 1 ? <span className="ms-1.5 font-mono normal-case tracking-normal text-[10px]">· {runningCount} {ar ? "أدوات" : "tools"}</span> : null}
-            </p>
-            {active ? <span className="size-1 rounded-full bg-teal-500 animate-pulse shadow-[0_0_6px_rgba(20,184,166,0.8)]" /> : null}
-          </div>
+          {phaseLabel ? (
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                {phaseLabel}
+                {runningCount > 1 ? <span className="ms-1.5 font-mono normal-case tracking-normal text-[10px]">· {runningCount} {ar ? "أدوات" : "tools"}</span> : null}
+              </p>
+              {active ? <span className="size-1 rounded-full bg-teal-500 animate-pulse shadow-[0_0_6px_rgba(20,184,166,0.8)]" /> : null}
+            </div>
+          ) : null}
 
           <AnimatePresence mode="wait">
             <motion.p

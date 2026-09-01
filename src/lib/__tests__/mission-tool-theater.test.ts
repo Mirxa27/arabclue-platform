@@ -227,4 +227,35 @@ describe("mission tool theater parts", () => {
     expect(currentAgentAction({ tools: [], locale: "en" }).phase).toBe("idle");
     expect(currentAgentAction({ tools: [], locale: "ar" }).label).toContain("جاهز");
   });
+
+  /**
+   * Captured on production `/app` on 2026-09-01: the live session badge read
+   * "Disconnected" while this ticker read "Ready — speak or type". Speaking at
+   * that moment does nothing, because there is no socket to speak into. Idle
+   * and reachable are not the same state.
+   */
+  test("an idle agent with no transport does not invite the user to speak", () => {
+    const offline = currentAgentAction({ tools: [], locale: "en", offline: true });
+    expect(offline.phase).toBe("idle");
+    expect(offline.label).not.toContain("Ready");
+    expect(offline.label.toLowerCase()).toContain("connect");
+
+    expect(currentAgentAction({ tools: [], locale: "ar", offline: true }).label).not.toContain(
+      "جاهز"
+    );
+  });
+
+  test("offline never outranks work that is actually happening", () => {
+    // The flag describes the voice transport, not the agent. A tool running
+    // over the classic HTTP path is still a running tool.
+    const running: TheaterToolEvent[] = [
+      { id: "t1", name: "listProjects", state: "input-available", messageId: "m" },
+    ];
+    expect(currentAgentAction({ tools: running, locale: "en", offline: true }).phase).toBe(
+      "acting"
+    );
+    expect(
+      currentAgentAction({ tools: [], locale: "en", offline: true, listening: true }).phase
+    ).toBe("listening");
+  });
 });
