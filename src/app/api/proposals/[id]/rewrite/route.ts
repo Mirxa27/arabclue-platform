@@ -128,7 +128,7 @@ Return Markdown only.`,
             provider: result.provider,
             content: selection,
           },
-          { status: 503 },
+          { status: 503, headers: { "Cache-Control": "no-store" } },
         );
       }
       throw err;
@@ -140,7 +140,7 @@ Return Markdown only.`,
         provider: result.provider,
         content: selection,
       },
-      { status: 503 },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
 

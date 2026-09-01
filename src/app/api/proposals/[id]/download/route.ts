@@ -239,7 +239,7 @@ export async function GET(
         ...apiFailure("UNSUPPORTED_EXPORT_FORMAT"),
         accepted: PROPOSAL_DOWNLOAD_FORMATS,
       },
-      { status: 400 },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
   const localeParam = req.nextUrl.searchParams.get("locale");
@@ -1284,7 +1284,10 @@ export async function GET(
     }
     const { PdfGenerationError } = await import("@/lib/pdf/html-to-pdf");
     if (err instanceof PdfGenerationError) {
-      return NextResponse.json(apiFailure(err.code), { status: 503 });
+      return NextResponse.json(apiFailure(err.code), {
+        status: 503,
+        headers: { "Cache-Control": "no-store" },
+      });
     }
     return NextResponse.json(
       {

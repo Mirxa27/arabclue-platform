@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
             missing: onboarding?.missing ?? undefined,
             readyForProposals: onboarding?.readyForProposals ?? false,
           },
-          { status: e.status }
+          { status: e.status, headers: { "Cache-Control": "no-store" } }
         );
       }
       throw e;
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
             status: active.status,
             stale: false,
           },
-          { status: 409 }
+          { status: 409, headers: { "Cache-Control": "no-store" } }
         );
       }
     }
@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
           runId: run.run.id,
           status: run.run.status,
         },
-        { status: 409 }
+        { status: 409, headers: { "Cache-Control": "no-store" } }
       );
     }
 

@@ -63,9 +63,17 @@ export function jsonFailure(mapped: MappedFailure): NextResponse {
   const retryAfter = mapped.body.retryAfterSeconds;
   return NextResponse.json(mapped.body, {
     status: mapped.status,
-    ...(typeof retryAfter === "number"
-      ? { headers: { "Retry-After": String(retryAfter) } }
-      : {}),
+    headers: {
+      // A failure answers one caller: their conflicting version, their own
+      // missing onboarding steps, a countdown that belongs to their bucket.
+      // Next's dynamic-route default is `public, max-age=0, must-revalidate`,
+      // which is the wrong shape for all of it, so this is set once here rather
+      // than at each call site that happens to remember.
+      "Cache-Control": "no-store",
+      ...(typeof retryAfter === "number"
+        ? { "Retry-After": String(retryAfter) }
+        : {}),
+    },
   });
 }
 
@@ -92,14 +100,10 @@ export function jsonRateLimitFailure(
   },
   limitedCode: CompletionErrorCode
 ): NextResponse {
-  const response = jsonApiFailure(
+  return jsonApiFailure(
     denial.status === 503 ? "RATE_LIMIT_UNAVAILABLE" : limitedCode,
     { status: denial.status, retryAfterSeconds: denial.retryAfterSeconds }
   );
-  // A denial is about one caller and expires with its own Retry-After, so a
-  // shared cache replaying it would lock out someone who never hit the limit.
-  response.headers.set("Cache-Control", "no-store");
-  return response;
 }
 
 /**

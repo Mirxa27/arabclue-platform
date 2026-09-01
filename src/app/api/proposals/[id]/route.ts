@@ -116,7 +116,7 @@ export async function PATCH(
           currentVersion: existing.version,
           currentUpdatedAt: existing.updatedAt.toISOString(),
         },
-        { status: 409 },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
 
