@@ -112,6 +112,42 @@ const RAW_BODY_FALLBACK = [
   /(?<!as Error)\)\s*\.(error|message)\b/g,
 ];
 
+/**
+ * The guard form: `typeof payload.error === "string" ? payload.error : fallback`.
+ *
+ * Nothing above matches it — there is no `new Error(body.error)` and no `??`.
+ * And it does not produce "[object Object]" either, which is why it survived the
+ * sweep that found the other fifty-five: the bilingual object simply fails the
+ * `typeof` test, the ternary takes the other branch, and the reader gets the
+ * fallback. The server sent a translated sentence and the client threw it away.
+ *
+ * `ai-assist-actions.tsx` did this on all four AI actions, and the branch was
+ * reachable: `checkAiRateLimit` answers with `jsonApiFailure` (ai-rate-limit.ts:41),
+ * so a workspace over its LLM budget read the literal text "HTTP 429".
+ *
+ * Every pattern here scans raw file text, comments included, so a docblock that
+ * quotes one of these shapes to explain a fix trips the ratchet it documents.
+ * Describe the old form, do not spell it.
+ */
+const GUARDED_BODY_STRING =
+  /typeof\s+[a-zA-Z_$][\w$]*\??\.(error|message)\s*===\s*"string"/g;
+
+/**
+ * The other half of the same bug, one layer up.
+ *
+ * Localizing what `postAiJson` throws achieves nothing if the component then
+ * renders a constant instead. All four AI actions did exactly that —
+ * `error={mutation.isError ? tr("ai_assist_failed", locale) : null}` — so the
+ * reader got "AI assist failed" whether they were over quota, unauthenticated,
+ * or had sent a document too long for the model. Three different fixes, one
+ * message, and no way to tell which applied.
+ *
+ * Only the truthiness of the failure is read here, never its content, which is
+ * why no test above catches it: the fetch layer can be perfectly correct and
+ * the screen still says nothing.
+ */
+const CONSTANT_ERROR_RENDER = /error=\{[^}]*\bisError\b[^}]*\btr\(/g;
+
 describe("no client treats a parsed failure body as a string", () => {
   const files = [
     ...sourceFiles(join(REPO_ROOT, "src", "components")),
@@ -130,6 +166,30 @@ describe("no client treats a parsed failure body as a string", () => {
 
   test("no call site uses a failure body as a string fallback", () => {
     expect(scan(RAW_BODY_FALLBACK)).toEqual([]);
+  });
+
+  test("no call site discards a bilingual body behind a typeof guard", () => {
+    expect(scan([GUARDED_BODY_STRING])).toEqual([]);
+  });
+
+  test("the constant-render pattern matches the shape it was written for", () => {
+    // Anti-vacuous. A pattern that matches nothing passes the scan below
+    // forever, and reads exactly like the surface being clean.
+    expect(
+      'error={mutation.isError ? tr("ai_assist_failed", locale) : null}'.match(
+        CONSTANT_ERROR_RENDER
+      )
+    ).not.toBeNull();
+    // And it must not fire on the fix that replaced it.
+    expect(
+      "error={mutation.error ? mutation.error.message : null}".match(
+        CONSTANT_ERROR_RENDER
+      )
+    ).toBeNull();
+  });
+
+  test("no component renders a constant in place of the failure message", () => {
+    expect(scan([CONSTANT_ERROR_RENDER])).toEqual([]);
   });
 });
 

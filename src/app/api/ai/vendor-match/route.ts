@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth";
-import { getTenantContext } from "@/lib/workspace-context";
+import { parseJsonBody, withTenant } from "@/lib/api-controller";
 import { matchVendorsWithPrediction } from "@/lib/ai/vendor-matching-engine";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import type { IngestionEntities } from "@/lib/types";
@@ -36,54 +35,34 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  try {
-    const session = await requireSession();
-    if (!session) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+  return withTenant(
+    "session",
+    async ({ workspace }) => {
+      const blocked = await checkAiRateLimit({
+        route: "ai.vendor-match",
+        identifier: workspace.id,
+        limit: 20,
+        windowMs: 60_000,
+      });
+      if (blocked) return blocked;
 
-    const { workspace } = await getTenantContext(session.user.id);
+      const data = await parseJsonBody(request, requestSchema);
 
-    const blocked = await checkAiRateLimit({
-      route: "ai.vendor-match",
-      identifier: workspace.id,
-      limit: 20,
-      windowMs: 60_000,
-    });
-    if (blocked) return blocked;
+      const result = await matchVendorsWithPrediction({
+        tenderRequirements: data.tenderRequirements,
+        entities: (data.entities as unknown as IngestionEntities | null) ?? null,
+        vendors: data.vendors.map((v) => ({
+          ...v,
+          workspace: v.workspace ?? {},
+          certificates: v.certificates ?? [],
+          pastProjectTags: v.pastProjectTags ?? [],
+        })),
+        locale: data.locale,
+        workspaceId: workspace.id,
+      });
 
-    const body = await request.json();
-    const parsed = requestSchema.safeParse(body);
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-
-    const result = await matchVendorsWithPrediction({
-      tenderRequirements: parsed.data.tenderRequirements,
-      entities: (parsed.data.entities as unknown as IngestionEntities | null) ?? null,
-      vendors: parsed.data.vendors.map((v) => ({
-        ...v,
-        workspace: v.workspace ?? {},
-        certificates: v.certificates ?? [],
-        pastProjectTags: v.pastProjectTags ?? [],
-      })),
-      locale: parsed.data.locale,
-      workspaceId: workspace.id,
-    });
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("[ai/vendor-match] Error:", error);
-    return NextResponse.json(
-      { error: "Vendor matching failed" },
-      { status: 500 }
-    );
-  }
+      return NextResponse.json(result);
+    },
+    "ai/vendor-match"
+  );
 }

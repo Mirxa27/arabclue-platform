@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth";
-import { getTenantContext } from "@/lib/workspace-context";
+import { parseJsonBody, withTenant } from "@/lib/api-controller";
 import { optimizeProposal } from "@/lib/ai/proposal-optimizer";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import type { IngestionEntities, ComplianceMatrixRow } from "@/lib/types";
@@ -18,52 +17,32 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  try {
-    const session = await requireSession();
-    if (!session) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+  return withTenant(
+    "session",
+    async ({ workspace }) => {
+      const blocked = await checkAiRateLimit({
+        route: "ai.proposal-optimize",
+        identifier: workspace.id,
+        limit: 10,
+        windowMs: 60_000,
+      });
+      if (blocked) return blocked;
 
-    const { workspace } = await getTenantContext(session.user.id);
+      const data = await parseJsonBody(request, requestSchema);
 
-    const blocked = await checkAiRateLimit({
-      route: "ai.proposal-optimize",
-      identifier: workspace.id,
-      limit: 10,
-      windowMs: 60_000,
-    });
-    if (blocked) return blocked;
+      const result = await optimizeProposal({
+        contentMd: data.contentMd,
+        entities: (data.entities as unknown as IngestionEntities | null) ?? null,
+        complianceRows:
+          (data.complianceRows as unknown as ComplianceMatrixRow[]) ?? [],
+        coverage: null,
+        locale: data.locale,
+        workspaceId: workspace.id,
+        historicalWinRate: data.historicalWinRate ?? null,
+      });
 
-    const body = await request.json();
-    const parsed = requestSchema.safeParse(body);
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-
-    const result = await optimizeProposal({
-      contentMd: parsed.data.contentMd,
-      entities: (parsed.data.entities as unknown as IngestionEntities | null) ?? null,
-      complianceRows:
-        (parsed.data.complianceRows as unknown as ComplianceMatrixRow[]) ?? [],
-      coverage: null,
-      locale: parsed.data.locale,
-      workspaceId: workspace.id,
-      historicalWinRate: parsed.data.historicalWinRate ?? null,
-    });
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("[ai/proposal-optimize] Error:", error);
-    return NextResponse.json(
-      { error: "Proposal optimization failed" },
-      { status: 500 }
-    );
-  }
+      return NextResponse.json(result);
+    },
+    "ai/proposal-optimize"
+  );
 }

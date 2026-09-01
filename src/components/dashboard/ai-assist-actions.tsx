@@ -5,29 +5,40 @@ import { useMutation } from "@tanstack/react-query";
 import { Loader2, Sparkles, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { tr } from "@/lib/i18n";
+import { apiErrorText } from "@/lib/api-failure-message";
 import { cn } from "@/lib/utils";
 
 type Locale = "ar" | "en";
 
+/**
+ * Throws a message that is already fit to show a reader.
+ *
+ * These four routes answer through the bilingual contract, where `error` is an
+ * `{ ar, en }` object. The guard this replaced tested that field for a string
+ * and fell through to `HTTP ${res.status}` when it was not one — so a workspace
+ * over its LLM budget was told "HTTP 429" while the server had sent it a
+ * translated sentence naming the retry window.
+ */
 async function postAiJson<T>(
   path: string,
   body: unknown,
+  locale: Locale,
 ): Promise<T> {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const payload = (await res.json().catch(() => ({}))) as {
-    error?: string;
-    details?: unknown;
-  };
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // A dropped connection never reaches the contract, and `Failed to fetch`
+    // is untranslated and meaningless to a reader.
+    throw new Error(tr("ai_assist_failed", locale));
+  }
+  const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const message =
-      typeof payload.error === "string" && payload.error.trim()
-        ? payload.error
-        : `HTTP ${res.status}`;
-    throw new Error(message);
+    throw new Error(apiErrorText(payload, locale, tr("ai_assist_failed", locale)));
   }
   return payload as T;
 }
@@ -81,11 +92,11 @@ export function ProposalOptimizeAction({
         score?: { overall?: number };
         suggestions?: Array<{ suggestionEn?: string; suggestionAr?: string }>;
         winProbability?: { probability?: number };
-      }>("/api/ai/proposal-optimize", {
-        contentMd,
-        complianceRows: complianceRows ?? [],
+      }>(
+        "/api/ai/proposal-optimize",
+        { contentMd, complianceRows: complianceRows ?? [], locale },
         locale,
-      }),
+      ),
     onSuccess: (data) => {
       const overall = data.score?.overall;
       const win = data.winProbability?.probability;
@@ -127,7 +138,7 @@ export function ProposalOptimizeAction({
       </Button>
       <AiResultShell
         locale={locale}
-        error={mutation.isError ? tr("ai_assist_failed", locale) : null}
+        error={mutation.error ? mutation.error.message : null}
       >
         {summary ? <p className="text-foreground/90">{summary}</p> : null}
       </AiResultShell>
@@ -152,11 +163,11 @@ export function ComplianceAnalyzeAction({
         overallScore?: number;
         findings?: unknown[];
         gaps?: unknown[];
-      }>("/api/ai/compliance-analyze", {
-        documentText,
-        documentType,
+      }>(
+        "/api/ai/compliance-analyze",
+        { documentText, documentType, locale },
         locale,
-      }),
+      ),
     onSuccess: (data) => {
       const score = data.overallScore;
       const findings = Array.isArray(data.findings) ? data.findings.length : 0;
@@ -192,7 +203,7 @@ export function ComplianceAnalyzeAction({
       </Button>
       <AiResultShell
         locale={locale}
-        error={mutation.isError ? tr("ai_assist_failed", locale) : null}
+        error={mutation.error ? mutation.error.message : null}
       >
         {summary ? <p className="text-foreground/90">{summary}</p> : null}
       </AiResultShell>
@@ -216,11 +227,11 @@ export function ContractAiDraftAction({
       postAiJson<{
         clauses?: unknown[];
         validation?: { ok?: boolean; issues?: unknown[] };
-      }>("/api/ai/contract-draft", {
-        templateKey,
-        projectTitle,
+      }>(
+        "/api/ai/contract-draft",
+        { templateKey, projectTitle, locale },
         locale,
-      }),
+      ),
     onSuccess: (data) => {
       const clauses = Array.isArray(data.clauses) ? data.clauses.length : 0;
       const issues = Array.isArray(data.validation?.issues)
@@ -256,7 +267,7 @@ export function ContractAiDraftAction({
       </Button>
       <AiResultShell
         locale={locale}
-        error={mutation.isError ? tr("ai_assist_failed", locale) : null}
+        error={mutation.error ? mutation.error.message : null}
       >
         {summary ? <p className="text-foreground/90">{summary}</p> : null}
       </AiResultShell>
@@ -283,11 +294,11 @@ export function VendorMatchAction({
     mutationFn: () =>
       postAiJson<{
         matchScores?: Array<{ vendorName?: string; matchScore?: number }>;
-      }>("/api/ai/vendor-match", {
-        tenderRequirements,
-        vendors,
+      }>(
+        "/api/ai/vendor-match",
+        { tenderRequirements, vendors, locale },
         locale,
-      }),
+      ),
     onSuccess: (data) => {
       const top = data.matchScores?.[0];
       setSummary(
@@ -327,7 +338,7 @@ export function VendorMatchAction({
       </Button>
       <AiResultShell
         locale={locale}
-        error={mutation.isError ? tr("ai_assist_failed", locale) : null}
+        error={mutation.error ? mutation.error.message : null}
       >
         {summary ? <p className="text-foreground/90">{summary}</p> : null}
       </AiResultShell>

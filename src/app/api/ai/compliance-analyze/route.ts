@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth";
-import { getTenantContext } from "@/lib/workspace-context";
+import { parseJsonBody, withTenant } from "@/lib/api-controller";
 import { generateComplianceScorecard } from "@/lib/ai/compliance-analyzer";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import type { IngestionEntities } from "@/lib/types";
@@ -20,52 +19,32 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  try {
-    const session = await requireSession();
-    if (!session) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+  return withTenant(
+    "session",
+    async ({ workspace }) => {
+      const blocked = await checkAiRateLimit({
+        route: "ai.compliance-analyze",
+        identifier: workspace.id,
+        limit: 20,
+        windowMs: 60_000,
+      });
+      if (blocked) return blocked;
 
-    const { workspace } = await getTenantContext(session.user.id);
+      const data = await parseJsonBody(request, requestSchema);
 
-    const blocked = await checkAiRateLimit({
-      route: "ai.compliance-analyze",
-      identifier: workspace.id,
-      limit: 20,
-      windowMs: 60_000,
-    });
-    if (blocked) return blocked;
+      const result = await generateComplianceScorecard({
+        documentText: data.documentText,
+        documentType: data.documentType,
+        entities: (data.entities as unknown as IngestionEntities | null) ?? null,
+        tenderCategory: data.tenderCategory ?? null,
+        saudizationTarget: data.saudizationTarget ?? null,
+        localContentTarget: data.localContentTarget ?? null,
+        locale: data.locale,
+        workspaceId: workspace.id,
+      });
 
-    const body = await request.json();
-    const parsed = requestSchema.safeParse(body);
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-
-    const result = await generateComplianceScorecard({
-      documentText: parsed.data.documentText,
-      documentType: parsed.data.documentType,
-      entities: (parsed.data.entities as unknown as IngestionEntities | null) ?? null,
-      tenderCategory: parsed.data.tenderCategory ?? null,
-      saudizationTarget: parsed.data.saudizationTarget ?? null,
-      localContentTarget: parsed.data.localContentTarget ?? null,
-      locale: parsed.data.locale,
-      workspaceId: workspace.id,
-    });
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("[ai/compliance-analyze] Error:", error);
-    return NextResponse.json(
-      { error: "Compliance analysis failed" },
-      { status: 500 }
-    );
-  }
+      return NextResponse.json(result);
+    },
+    "ai/compliance-analyze"
+  );
 }
