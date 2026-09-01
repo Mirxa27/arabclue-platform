@@ -52,7 +52,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { getOrCreateMission } = await import(
+    const { getOrCreateMission, resolveOwnedMissionId } = await import(
       "@/lib/agents/platform/mission"
     );
     const { getTenantContext } = await import("@/lib/workspace-context");
@@ -75,7 +75,14 @@ export async function POST(req: Request) {
       locale,
       activeProjectId: body.activeProjectId,
     });
-    const missionId = body.missionId || mission.id;
+    // Client-named mission, resolved against ownership: the transcript sync
+    // below deletes by this id.
+    const missionId = await resolveOwnedMissionId({
+      requested: body.missionId,
+      workspaceId: tenant.workspace.id,
+      userId: session.user.id,
+      fallbackId: mission.id,
+    });
     const { agent } = await createPlatformAgent(session, {
       missionId,
       activeProjectId: body.activeProjectId ?? mission.activeProjectId ?? null,

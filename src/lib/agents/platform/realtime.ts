@@ -85,7 +85,9 @@ async function resolveVoiceMissionContext(
   session: Session,
   opts?: { missionId?: string | null; activeProjectId?: string | null }
 ) {
-  const { getOrCreateMission } = await import("./mission");
+  const { getOrCreateMission, resolveOwnedMissionId } = await import(
+    "./mission"
+  );
   const { resolveOwnedProjectId } = await import("@/lib/workspace-context");
   const base = await buildPlatformAgentContext(session);
   const requestedProjectId = await resolveOwnedProjectId(
@@ -98,8 +100,16 @@ async function resolveVoiceMissionContext(
     locale: base.locale,
     activeProjectId: requestedProjectId ?? undefined,
   });
+  // Same rule as the project id above it: a foreign or unknown mission id
+  // degrades to the caller's own mission rather than being trusted.
+  const missionId = await resolveOwnedMissionId({
+    requested: opts?.missionId,
+    workspaceId: base.workspace.id,
+    userId: base.userId,
+    fallbackId: mission.id,
+  });
   const ctx = await buildPlatformAgentContext(session, {
-    missionId: opts?.missionId || mission.id,
+    missionId,
     activeProjectId: requestedProjectId ?? mission.activeProjectId ?? null,
   });
   return { mission, ctx };

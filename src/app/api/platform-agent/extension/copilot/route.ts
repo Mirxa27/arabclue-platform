@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   try {
-    const { getOrCreateMission } = await import(
+    const { getOrCreateMission, resolveOwnedMissionId } = await import(
       "@/lib/agents/platform/mission"
     );
     const { getTenantContext } = await import("@/lib/workspace-context");
@@ -70,7 +70,13 @@ export async function POST(req: Request) {
       locale,
       activeProjectId: body.activeProjectId,
     });
-    const missionId = body.missionId || mission.id;
+    // Same resolver as the chat route: the id reaches the transcript sync.
+    const missionId = await resolveOwnedMissionId({
+      requested: body.missionId,
+      workspaceId: tenant.workspace.id,
+      userId: session.user.id,
+      fallbackId: mission.id,
+    });
 
     const userMessage = {
       id: `ext-user-${Date.now()}`,

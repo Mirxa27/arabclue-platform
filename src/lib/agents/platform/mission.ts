@@ -42,6 +42,32 @@ export async function getOrCreateMission(opts: {
   });
 }
 
+/**
+ * A mission id from the client is a claim, not a fact.
+ *
+ * `syncMissionTranscript` starts with `deleteMany({ where: { missionId } })`
+ * and no workspace predicate, so whoever picks the id picks whose transcript
+ * gets replaced. The requested id is honoured only when it names a mission this
+ * user owns in this workspace; anything else becomes the caller's own active
+ * mission. Silently on purpose: refusing with 404 would tell a caller which
+ * other-tenant ids exist.
+ */
+export async function resolveOwnedMissionId(opts: {
+  requested: unknown;
+  workspaceId: string;
+  userId: string;
+  fallbackId: string;
+}): Promise<string> {
+  const requested = opts.requested;
+  if (typeof requested !== "string" || !requested) return opts.fallbackId;
+  if (requested === opts.fallbackId) return opts.fallbackId;
+  const owned = await db.copilotMission.findFirst({
+    where: { id: requested, workspaceId: opts.workspaceId, userId: opts.userId },
+    select: { id: true },
+  });
+  return owned?.id ?? opts.fallbackId;
+}
+
 export async function touchMission(missionId: string) {
   return db.copilotMission.update({
     where: { id: missionId },
