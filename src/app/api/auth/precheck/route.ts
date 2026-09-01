@@ -3,7 +3,11 @@ import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { getBootstrapContext } from "@/lib/bootstrap";
 import { parseJsonBody, authPrecheckSchema } from "@/lib/validation";
-import { withPublicRoute } from "@/lib/api-controller";
+import {
+  jsonApiFailure,
+  jsonRateLimitFailure,
+  withPublicRoute,
+} from "@/lib/api-controller";
 import {
   describeRateLimitDenial,
   rateLimitAsync as rateLimit,
@@ -55,21 +59,16 @@ export async function POST(req: NextRequest) {
       windowMs: 15 * 60 * 1000,
     });
     if (!rl.ok) {
-      const denial = describeRateLimitDenial(rl);
-      return NextResponse.json(
-        { error: denial.error },
-        {
-          status: denial.status,
-          headers: { "Retry-After": String(denial.retryAfterSeconds) },
-        }
+      return jsonRateLimitFailure(
+        describeRateLimitDenial(rl),
+        "LOGIN_RATE_LIMITED"
       );
     }
 
-    const invalid = () =>
-      NextResponse.json(
-        { ok: false, error: "invalid_credentials" },
-        { status: 401 }
-      );
+    // One body for all three refusal paths, so a caller cannot tell a missing
+    // account from a wrong password — and it is a sentence in both locales
+    // rather than the lowercase token this used to return.
+    const invalid = () => jsonApiFailure("INVALID_CREDENTIALS");
 
     // Mirrors the credentials provider: reserved development identities are
     // refused outright in production. Without this, the gate could be probed

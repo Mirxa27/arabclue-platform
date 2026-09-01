@@ -8,7 +8,10 @@ import {
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
 import { parseJsonBody, passwordChangeSchema } from "@/lib/validation";
-import { jsonApiFailure } from "@/lib/api-controller";
+import {
+  jsonApiFailure,
+  jsonRateLimitFailure,
+} from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -26,13 +29,9 @@ export async function POST(req: NextRequest) {
       windowMs: 15 * 60 * 1000,
     });
     if (!rl.ok) {
-      const denial = describeRateLimitDenial(rl);
-      return NextResponse.json(
-        { error: denial.error, code: "PASSWORD_CHANGE_RATE_LIMITED" },
-        {
-          status: denial.status,
-          headers: { "Retry-After": String(denial.retryAfterSeconds) },
-        }
+      return jsonRateLimitFailure(
+        describeRateLimitDenial(rl),
+        "PASSWORD_CHANGE_RATE_LIMITED",
       );
     }
 

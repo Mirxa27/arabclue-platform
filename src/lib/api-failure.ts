@@ -169,10 +169,9 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   SECRET_DECRYPTION_FAILED: 503,
   RECURRING_UNAVAILABLE: 503,
   PRESENCE_UNAVAILABLE: 503,
-  // Explicit because the `_RATE_LIMITED` suffix rule below would otherwise
-  // never see this code: the limiter backend is down, the caller is inside
-  // their budget, and 429 would tell them to slow down for no reason.
-  AI_RATE_LIMIT_UNAVAILABLE: 503,
+  // Chromium is not installed. Nothing about the request was wrong, and the
+  // fix is on the server, so the caller is told to retry rather than to edit.
+  PDF_UNAVAILABLE: 503,
   RECURRING_PROVIDER_ERROR: 502,
   XLSX_EXPORT_FAILED: 500,
   NOTIFICATION_DELIVERY_FAILED: 500,
@@ -199,6 +198,7 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // two most-used codes in the tree; the default has to be right unasked.
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  INVALID_CREDENTIALS: 401,
   // The proposal cannot be written in its current status. Well-formed request,
   // authorized caller, wrong state — 409, and every call site already said so.
   STATUS_LOCKED: 409,
@@ -212,6 +212,11 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
 export function resolveFailureStatus(code: string): number {
   const explicit = EXPLICIT_FAILURE_STATUS[code];
   if (explicit) return explicit;
+  // Before `_RATE_LIMITED`, and its own family rather than a blanket
+  // `_UNAVAILABLE` rule: the limiter backend is down, the caller is inside
+  // their budget, and nothing was written. 429 would tell them to slow down for
+  // no reason and 400 tells them they sent garbage, so neither gets retried.
+  if (code.endsWith("RATE_LIMIT_UNAVAILABLE")) return 503;
   if (code.endsWith("_RATE_LIMITED")) return 429;
   if (code.endsWith("_UNCONFIGURED")) return 503;
   if (code.startsWith("READINESS_")) return 503;

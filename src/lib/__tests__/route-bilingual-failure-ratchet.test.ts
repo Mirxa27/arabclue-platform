@@ -22,12 +22,17 @@
  * expected to reach `[]`; until it does, its length is the exact size of the
  * gap between this codebase and a bilingual failure contract.
  *
- * Not every literal here is prose. Some are machine codes the client compares
- * against — `invalid_credentials` (auth/precheck, read at login/page.tsx:98),
- * `EMAIL_VERIFICATION_REQUIRED`, `payment_cancelled_or_failed`. Those cannot be
- * translated in place: the fix is to move the token to `code` and let the
- * bilingual pair own `error`, which means changing the client in the same diff.
- * They stay on the list because they are still unread by an Arabic user.
+ * Not every literal here is prose. Some are machine codes a client compares
+ * against — `EMAIL_VERIFICATION_REQUIRED`, `payment_cancelled_or_failed`. Those
+ * cannot be translated in place: the fix is to move the token to `code` and let
+ * the bilingual pair own `error`, which means changing the client in the same
+ * diff. They stay on the list because they are still unread by an Arabic user.
+ *
+ * `auth/precheck`'s `invalid_credentials` looked like one of those and was not.
+ * Nothing read it — the login page branched on `rate_limit_service_unavailable`,
+ * a different token — so it was untranslated prose wearing a machine code's
+ * clothes, and `INVALID_CREDENTIALS` replaced it with no client contract to
+ * keep. Check for an actual reader before assuming a token has one.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -47,7 +52,6 @@ const REMAINING: readonly string[] = [
   "src/app/api/ai/contract-draft/route.ts",
   "src/app/api/ai/proposal-optimize/route.ts",
   "src/app/api/ai/vendor-match/route.ts",
-  "src/app/api/auth/precheck/route.ts",
   "src/app/api/billing/callback/route.ts",
   "src/app/api/brand/logo/route.ts",
   "src/app/api/brand/route.ts",

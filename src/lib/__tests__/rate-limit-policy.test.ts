@@ -66,7 +66,6 @@ describe("distributed rate-limit policy", () => {
       })
     ).toEqual({
       status: 429,
-      error: "rate_limited",
       retryAfterSeconds: 2,
     });
     expect(
@@ -76,7 +75,6 @@ describe("distributed rate-limit policy", () => {
       })
     ).toEqual({
       status: 503,
-      error: "rate_limit_service_unavailable",
       retryAfterSeconds: 5,
     });
   });

@@ -408,15 +408,13 @@ export function describeRateLimitDenial(result: {
   readonly retryAfterMs: number;
 }): {
   readonly status: 429 | 503;
-  readonly error: "rate_limited" | "rate_limit_service_unavailable";
   readonly retryAfterSeconds: number;
 } {
+  // No machine token: 503 already says the limiter is down and 429 already
+  // says the caller is over budget, and a lowercase string beside them was
+  // only ever echoed into a response body no one could read.
   return {
     status: result.backend === "unavailable" ? 503 : 429,
-    error:
-      result.backend === "unavailable"
-        ? "rate_limit_service_unavailable"
-        : "rate_limited",
     retryAfterSeconds: Math.max(
       1,
       Math.ceil(result.retryAfterMs / 1_000)

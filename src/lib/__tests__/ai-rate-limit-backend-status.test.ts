@@ -7,8 +7,8 @@ import { describe, expect, test } from "bun:test";
  * `rateLimitAsync` reports which backend answered. When `REDIS_URL` is set the
  * limiter is required to be distributed, so an unreachable Redis fails closed
  * with `backend: "unavailable"` rather than silently falling back to
- * per-instance memory. Nine call sites already split that case out with
- * `describeRateLimitDenial` — 503 `rate_limit_service_unavailable`, not 429.
+ * per-instance memory. Every other call site already splits that case out with
+ * `describeRateLimitDenial`, which answers 503 rather than 429.
  *
  * `checkAiRateLimit` is the one helper that discarded `backend`, and it now
  * fronts every AI route that can spend provider credit. Answering 429 there

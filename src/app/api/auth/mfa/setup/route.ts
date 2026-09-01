@@ -7,7 +7,10 @@ import {
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
-import { jsonApiFailure } from "@/lib/api-controller";
+import {
+  jsonApiFailure,
+  jsonRateLimitFailure,
+} from "@/lib/api-controller";
 import { parseJsonBody, mfaSetupSchema } from "@/lib/validation";
 import { verifyPassword } from "@/lib/password";
 import { sealMfaSecret, unsealMfaSecret } from "@/lib/mfa-secret";
@@ -26,13 +29,9 @@ export async function POST(req: NextRequest) {
 
   const rl = await rateLimit({ key: `mfa:setup:${session.user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
   if (!rl.ok) {
-    const denial = describeRateLimitDenial(rl);
-    return NextResponse.json(
-      { error: denial.error, code: "MFA_SETUP_RATE_LIMITED" },
-      {
-        status: denial.status,
-        headers: { "Retry-After": String(denial.retryAfterSeconds) },
-      }
+    return jsonRateLimitFailure(
+      describeRateLimitDenial(rl),
+      "MFA_SETUP_RATE_LIMITED",
     );
   }
 

@@ -9,7 +9,10 @@ import {
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
 import { validateAndNormalizeLogoImage } from "@/lib/brand-logo";
-import { jsonApiFailure } from "@/lib/api-controller";
+import {
+  jsonApiFailure,
+  jsonRateLimitFailure,
+} from "@/lib/api-controller";
 
 export const dynamic = "force-dynamic";
 
@@ -34,13 +37,9 @@ export async function POST(req: NextRequest) {
       windowMs: 15 * 60 * 1000,
     });
     if (!rl.ok) {
-      const denial = describeRateLimitDenial(rl);
-      return NextResponse.json(
-        { error: denial.error, code: "AVATAR_UPLOAD_RATE_LIMITED" },
-        {
-          status: denial.status,
-          headers: { "Retry-After": String(denial.retryAfterSeconds) },
-        }
+      return jsonRateLimitFailure(
+        describeRateLimitDenial(rl),
+        "AVATAR_UPLOAD_RATE_LIMITED",
       );
     }
 

@@ -39,9 +39,7 @@ export async function checkAiRateLimit(
   // re-deriving it here is how the two answers drift apart.
   const denial = describeRateLimitDenial(rl);
   return jsonApiFailure(
-    denial.error === "rate_limit_service_unavailable"
-      ? "AI_RATE_LIMIT_UNAVAILABLE"
-      : "AI_RATE_LIMITED",
+    denial.status === 503 ? "AI_RATE_LIMIT_UNAVAILABLE" : "AI_RATE_LIMITED",
     { retryAfterSeconds: denial.retryAfterSeconds }
   );
 }

@@ -1803,6 +1803,18 @@ export const localizationRegistry = {
   // is split from AI_RATE_LIMITED: the invitee did nothing wrong, and telling
   // them to slow down would send them looking for a mistake they did not make.
   INVITATION_RATE_LIMIT_UNAVAILABLE: { ar: "تعذر التحقق من حد المحاولات، ولم تُقبل الدعوة. أعد المحاولة بعد قليل", en: "The attempt limit could not be checked, so the invitation was not accepted. Try again shortly" },
+  // One sentence for every limiter outage. From the caller's side it is the
+  // same event wherever it happens: nothing was written, and waiting fixes it.
+  RATE_LIMIT_UNAVAILABLE: { ar: "تعذر التحقق من حد المحاولات، ولم يُنفَّذ أي تغيير. أعد المحاولة بعد قليل", en: "The attempt limit could not be checked, so nothing was changed. Try again shortly" },
+  INVALID_CREDENTIALS: { ar: "البريد الإلكتروني أو كلمة المرور غير صحيحة", en: "Invalid email or password" },
+  LOGIN_RATE_LIMITED: { ar: "محاولات تسجيل دخول كثيرة. انتظر قليلاً ثم أعد المحاولة", en: "Too many sign-in attempts. Wait a moment and try again" },
+  PASSWORD_CHANGE_RATE_LIMITED: { ar: "محاولات تغيير كلمة المرور كثيرة. انتظر قليلاً ثم أعد المحاولة", en: "Too many password change attempts. Wait a moment and try again" },
+  MFA_SETUP_RATE_LIMITED: { ar: "محاولات إعداد المصادقة الثنائية كثيرة. انتظر قليلاً ثم أعد المحاولة", en: "Too many MFA setup attempts. Wait a moment and try again" },
+  MFA_VERIFY_RATE_LIMITED: { ar: "محاولات تأكيد رمز المصادقة كثيرة. انتظر قليلاً ثم أعد المحاولة", en: "Too many MFA verification attempts. Wait a moment and try again" },
+  MFA_DISABLE_RATE_LIMITED: { ar: "محاولات تعطيل المصادقة الثنائية كثيرة. انتظر قليلاً ثم أعد المحاولة", en: "Too many MFA disable attempts. Wait a moment and try again" },
+  PROFILE_UPDATE_RATE_LIMITED: { ar: "محاولات تحديث الملف الشخصي كثيرة. انتظر قليلاً ثم أعد المحاولة", en: "Too many profile update attempts. Wait a moment and try again" },
+  AVATAR_UPLOAD_RATE_LIMITED: { ar: "محاولات رفع الصورة الشخصية كثيرة. انتظر قليلاً ثم أعد المحاولة", en: "Too many avatar upload attempts. Wait a moment and try again" },
+  PROPOSAL_DOWNLOAD_RATE_LIMITED: { ar: "طلبات تنزيل كثيرة. انتظر قليلاً ثم أعد المحاولة", en: "Too many download requests. Wait a moment and try again" },
   ANALYTICS_EVENT_TYPE_INVALID: { ar: "نوع حدث التحليلات غير مسجل", en: "Analytics event type is not registered" },
   TEMPLATE_SUBMISSION_INVALID: { ar: "بيانات القالب غير صالحة: {{fieldPath}}", en: "Template submission is invalid: {{fieldPath}}" },
   TEMPLATE_KEY_IN_USE: { ar: "مفتاح القالب مستخدم في مساحة العمل", en: "Template key is already in use in the workspace" },
@@ -2284,6 +2296,8 @@ export const localizationRegistry = {
   error_action_save_proposal_snapshot: { ar: "تعذر حفظ نسخة العرض", en: "Unable to save the proposal snapshot" },
   error_action_manage_contract_draft: { ar: "تعذر تنفيذ إجراء مسودة العقد", en: "Unable to complete the contract draft action" },
   error_action_download_proposal: { ar: "تعذر تنزيل ملف العطاء", en: "Unable to download the bid document" },
+  error_action_sign_in: { ar: "تعذر تسجيل الدخول", en: "Unable to sign in" },
+  error_action_update_profile: { ar: "تعذر تحديث الملف الشخصي", en: "Unable to update the profile" },
 } as const satisfies Dict;
 
 /** Compatibility alias for existing callers that index the dictionary with API codes. */
@@ -2744,6 +2758,16 @@ export const COMPLETION_ERROR_CONTRACTS = {
   INVITATION_ACCEPTANCE_INVALID: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_ACCEPTANCE_INVALID" },
   INVITATION_RATE_LIMITED: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_RATE_LIMITED" },
   INVITATION_RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_RATE_LIMIT_UNAVAILABLE" },
+  RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_complete_request", messageKey: "RATE_LIMIT_UNAVAILABLE" },
+  INVALID_CREDENTIALS: { actionKey: "error_action_sign_in", messageKey: "INVALID_CREDENTIALS" },
+  LOGIN_RATE_LIMITED: { actionKey: "error_action_sign_in", messageKey: "LOGIN_RATE_LIMITED" },
+  PASSWORD_CHANGE_RATE_LIMITED: { actionKey: "error_action_change_password", messageKey: "PASSWORD_CHANGE_RATE_LIMITED" },
+  MFA_SETUP_RATE_LIMITED: { actionKey: "error_action_manage_mfa", messageKey: "MFA_SETUP_RATE_LIMITED" },
+  MFA_VERIFY_RATE_LIMITED: { actionKey: "error_action_manage_mfa", messageKey: "MFA_VERIFY_RATE_LIMITED" },
+  MFA_DISABLE_RATE_LIMITED: { actionKey: "error_action_manage_mfa", messageKey: "MFA_DISABLE_RATE_LIMITED" },
+  PROFILE_UPDATE_RATE_LIMITED: { actionKey: "error_action_update_profile", messageKey: "PROFILE_UPDATE_RATE_LIMITED" },
+  AVATAR_UPLOAD_RATE_LIMITED: { actionKey: "error_action_update_profile", messageKey: "AVATAR_UPLOAD_RATE_LIMITED" },
+  PROPOSAL_DOWNLOAD_RATE_LIMITED: { actionKey: "error_action_download_proposal", messageKey: "PROPOSAL_DOWNLOAD_RATE_LIMITED" },
   ANALYTICS_DATE_RANGE_REQUIRED: { actionKey: "error_action_load_analytics", messageKey: "ANALYTICS_DATE_RANGE_REQUIRED" },
   ANALYTICS_DATE_INVALID: { actionKey: "error_action_load_analytics", messageKey: "ANALYTICS_DATE_INVALID" },
   ANALYTICS_DATE_RANGE_INVALID: { actionKey: "error_action_load_analytics", messageKey: "ANALYTICS_DATE_RANGE_INVALID" },

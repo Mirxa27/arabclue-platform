@@ -73,37 +73,29 @@ function LoginForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
-        const preData = await pre.json().catch(
-          () =>
-            ({}) as {
-              ok?: boolean;
-              code?: string;
-              error?: string | { ar: string; en: string };
-              message?: { ar: string; en: string };
-            }
-        );
+        // Cast the awaited value, not the catch fallback: `pre.json()` is `any`,
+        // so the old form left `preData` untyped and `mfaRequired` unchecked.
+        const preData = (await pre.json().catch(() => ({}))) as {
+          ok?: boolean;
+          mfaRequired?: boolean;
+          message?: { ar: string; en: string };
+        };
         if (!pre.ok || !preData.ok) {
-          if (pre.status === 429) {
-            setError(ar ? "محاولات كثيرة — حاول لاحقاً" : "Too many attempts — try again later");
-          } else if (preData.code === "SCHEMA_MIGRATION_PENDING") {
-            // A pending migration is an operator condition, not a credential or
-            // security-service problem, so the mapper's own bilingual reason is
-            // shown instead of a generic unavailable message.
-            setError(
-              preData.message?.[locale] ??
-                (ar
-                  ? "ترحيل قاعدة البيانات قيد الانتظار — تواصل مع الإدارة"
-                  : "Database migration pending — contact an administrator")
-            );
-          } else if (pre.status === 503 || preData.error === "rate_limit_service_unavailable") {
-            setError(
-              ar
-                ? "خدمة الحماية غير متاحة مؤقتاً — حاول بعد لحظات"
-                : "Security service temporarily unavailable — try again shortly"
-            );
-          } else {
-            setError(ar ? "بيانات الدخول غير صحيحة" : "Invalid email or password");
-          }
+          // Every refusal this route can produce is already a bilingual sentence
+          // from the shared mapper — throttled, limiter unreachable, migration
+          // pending, bad credentials. Restating each one here only let the
+          // client's copy drift from the server's. The fallbacks are for a
+          // gateway error that never reached the route, so has no JSON body.
+          setError(
+            preData.message?.[locale] ??
+              (pre.status >= 500
+                ? ar
+                  ? "الخدمة غير متاحة مؤقتاً — حاول بعد لحظات"
+                  : "Service temporarily unavailable — try again shortly"
+                : ar
+                  ? "بيانات الدخول غير صحيحة"
+                  : "Invalid email or password")
+          );
           setLoading(false);
           return;
         }

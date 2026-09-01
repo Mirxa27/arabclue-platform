@@ -7,7 +7,10 @@ import {
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
 import { parseJsonBody, mfaDisableSchema } from "@/lib/validation";
-import { jsonApiFailure } from "@/lib/api-controller";
+import {
+  jsonApiFailure,
+  jsonRateLimitFailure,
+} from "@/lib/api-controller";
 import { verifyPassword } from "@/lib/password";
 import { consumeMfaChallenge } from "@/lib/mfa-challenge";
 
@@ -27,13 +30,9 @@ export async function POST(req: NextRequest) {
       windowMs: 15 * 60 * 1000,
     });
     if (!rl.ok) {
-      const denial = describeRateLimitDenial(rl);
-      return NextResponse.json(
-        { error: denial.error, code: "MFA_DISABLE_RATE_LIMITED" },
-        {
-          status: denial.status,
-          headers: { "Retry-After": String(denial.retryAfterSeconds) },
-        }
+      return jsonRateLimitFailure(
+        describeRateLimitDenial(rl),
+        "MFA_DISABLE_RATE_LIMITED",
       );
     }
 

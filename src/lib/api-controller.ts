@@ -78,6 +78,31 @@ export function jsonApiFailure(
 }
 
 /**
+ * Bilingual response for a rate-limit denial.
+ *
+ * 429 names the action the caller overdid; 503 means the limiter backend is
+ * unreachable, so nothing was written and the caller did nothing wrong. Routes
+ * used to pick their own `_RATE_LIMITED` code for both, which told a caller
+ * hitting an outage to slow down.
+ */
+export function jsonRateLimitFailure(
+  denial: {
+    readonly status: 429 | 503;
+    readonly retryAfterSeconds: number;
+  },
+  limitedCode: CompletionErrorCode
+): NextResponse {
+  const response = jsonApiFailure(
+    denial.status === 503 ? "RATE_LIMIT_UNAVAILABLE" : limitedCode,
+    { status: denial.status, retryAfterSeconds: denial.retryAfterSeconds }
+  );
+  // A denial is about one caller and expires with its own Retry-After, so a
+  // shared cache replaying it would lock out someone who never hit the limit.
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
+/**
  * Bilingual API error response.
  *
  * Retained for existing call sites: the `message` argument is no longer echoed

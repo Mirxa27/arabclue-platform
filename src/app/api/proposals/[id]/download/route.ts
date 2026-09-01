@@ -1,5 +1,8 @@
 import { apiFailure, redactSensitiveText } from "@/lib/api-failure";
-import { jsonApiFailure } from "@/lib/api-controller";
+import {
+  jsonApiFailure,
+  jsonRateLimitFailure,
+} from "@/lib/api-controller";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -219,16 +222,9 @@ export async function GET(
     windowMs: 60 * 1000,
   });
   if (!rl.ok) {
-    const denial = describeRateLimitDenial(rl);
-    return NextResponse.json(
-      { error: denial.error },
-      {
-        status: denial.status,
-        headers: {
-          "Retry-After": String(denial.retryAfterSeconds),
-          "Cache-Control": "no-store",
-        },
-      },
+    return jsonRateLimitFailure(
+      describeRateLimitDenial(rl),
+      "PROPOSAL_DOWNLOAD_RATE_LIMITED",
     );
   }
   const { workspace } = await getTenantContext(session.user.id);
