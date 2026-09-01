@@ -19,6 +19,8 @@ import {
   AlertCircle,
   LayoutGrid,
   FileText,
+  Sparkles,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,8 +45,10 @@ import { ProposalBuilderPreview } from "./proposal-builder-preview";
 import { ProposalBuilderToolbar } from "./proposal-builder-toolbar";
 import { CollaborationComments } from "./collaboration-comments";
 import { CollaborationPresenceBar } from "./collaboration-presence";
+import { CopilotRail } from "./copilot-rail";
 
 type BuilderMode = "edit" | "preview" | "split";
+type RightPane = "copilot" | "comments";
 
 export function ProposalBuilder() {
   const { locale } = useLocale();
@@ -68,6 +72,12 @@ export function ProposalBuilder() {
   useUnsavedChangesWarning(isDirty);
   const [validationSummary, setValidationSummary] = useState<ValidationSummary | null>(null);
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null);
+  // Which of a section's two language buffers is on screen. It lives here, not
+  // in `SectionEditor`, because the co-pilot rail beside the editor has to read
+  // the same buffer the writer is typing into — and it survives switching
+  // sections, which the editor-local version did not.
+  const [activeLocale, setActiveLocale] = useState<"ar" | "en">(locale as "ar" | "en");
+  const [rightPane, setRightPane] = useState<RightPane>("copilot");
   const [draftBanner, setDraftBanner] = useState<string | null>(null);
   const [hydratedFromHandoff, setHydratedFromHandoff] = useState(false);
 
@@ -427,6 +437,8 @@ export function ProposalBuilder() {
             <SectionEditor
               locale={locale}
               section={selectedSection}
+              activeLocale={activeLocale}
+              onLocaleChange={setActiveLocale}
               onUpdate={(updates) => handleUpdateSection(selectedSection.sectionKey, updates)}
             />
           ) : mode === "preview" ? (
@@ -443,6 +455,8 @@ export function ProposalBuilder() {
                   <SectionEditor
                     locale={locale}
                     section={selectedSection}
+                    activeLocale={activeLocale}
+                    onLocaleChange={setActiveLocale}
                     onUpdate={(updates) => handleUpdateSection(selectedSection.sectionKey, updates)}
                   />
                 ) : (
@@ -462,14 +476,62 @@ export function ProposalBuilder() {
           )}
         </div>
 
-        {/* Collaboration (saved proposals only) */}
+        {/* Right rail — co-pilot review or comments (saved proposals only) */}
         {metadata.proposalId && mode !== "preview" ? (
           <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/60 backdrop-blur-xl">
-            <CollaborationComments
-              proposalId={metadata.proposalId}
-              sectionKey={selectedSectionKey ?? undefined}
-              locale={locale}
-            />
+            <div className="flex gap-1 border-b border-border/50 p-2">
+              <Button
+                type="button"
+                variant={rightPane === "copilot" ? "default" : "ghost"}
+                size="sm"
+                aria-pressed={rightPane === "copilot"}
+                className="h-7 flex-1 gap-1.5 px-2 text-xs"
+                onClick={() => setRightPane("copilot")}
+              >
+                <Sparkles className="size-3.5" />
+                {ar ? "المساعد" : "Co-pilot"}
+              </Button>
+              <Button
+                type="button"
+                variant={rightPane === "comments" ? "default" : "ghost"}
+                size="sm"
+                aria-pressed={rightPane === "comments"}
+                className="h-7 flex-1 gap-1.5 px-2 text-xs"
+                onClick={() => setRightPane("comments")}
+              >
+                <MessageSquare className="size-3.5" />
+                {ar ? "التعليقات" : "Comments"}
+              </Button>
+            </div>
+
+            {rightPane === "comments" ? (
+              <CollaborationComments
+                proposalId={metadata.proposalId}
+                sectionKey={selectedSectionKey ?? undefined}
+                locale={locale}
+              />
+            ) : selectedSection ? (
+              <CopilotRail
+                // A different section — or the other language of the same one —
+                // is a different document to the rail. Its open cards are
+                // anchored to the text it last read, so without a remount they
+                // would be offered against a buffer they cannot resolve in.
+                key={`${selectedSection.sectionKey}:${activeLocale}`}
+                proposalId={metadata.proposalId}
+                markdown={selectedSection.content[activeLocale]}
+                locale={activeLocale}
+                onApply={(next) =>
+                  handleUpdateSection(selectedSection.sectionKey, {
+                    content: { ...selectedSection.content, [activeLocale]: next },
+                  })
+                }
+                className="w-full min-h-0 flex-1 border-s-0 p-2"
+              />
+            ) : (
+              <div className="flex flex-1 items-center justify-center p-4 text-center text-sm text-muted-foreground">
+                {ar ? "اختر قسماً ليقرأه المساعد" : "Select a section for the co-pilot to read"}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
@@ -484,14 +546,17 @@ export function ProposalBuilder() {
 function SectionEditor({
   locale,
   section,
+  activeLocale,
+  onLocaleChange,
   onUpdate,
 }: {
   locale: string;
   section: ProposalSection;
+  activeLocale: "ar" | "en";
+  onLocaleChange: (next: "ar" | "en") => void;
   onUpdate: (updates: Partial<ProposalSection>) => void;
 }) {
   const ar = locale === "ar";
-  const [activeLocale, setActiveLocale] = useState<"ar" | "en">(locale as "ar" | "en");
 
   return (
     <div className="flex h-full flex-col">
@@ -514,7 +579,7 @@ function SectionEditor({
             variant={activeLocale === "ar" ? "default" : "ghost"}
             size="sm"
             className="h-7 px-2 text-xs"
-            onClick={() => setActiveLocale("ar")}
+            onClick={() => onLocaleChange("ar")}
           >
             عربي
           </Button>
@@ -523,7 +588,7 @@ function SectionEditor({
             variant={activeLocale === "en" ? "default" : "ghost"}
             size="sm"
             className="h-7 px-2 text-xs"
-            onClick={() => setActiveLocale("en")}
+            onClick={() => onLocaleChange("en")}
           >
             EN
           </Button>
