@@ -127,6 +127,60 @@ describe("the rail consumes the pass as a stream", () => {
   });
 });
 
+describe("the rail remembers what was turned down", () => {
+  /** The body of one handler, so a match cannot come from a neighbour. */
+  function handler(from: string, to: string): string {
+    const start = RAIL.indexOf(from);
+    // Searched from `start`, not from zero: `return (` opens the JSX at the end
+    // of the file but also appears well before any of these handlers.
+    const end = RAIL.indexOf(to, start);
+    // Anti-vacuous: a renamed handler must fail loudly, not scan an empty slice.
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return RAIL.slice(start, end);
+  }
+
+  test("the stored rejections are loaded for the open proposal", () => {
+    expect(RAIL).toContain("readDismissals(storage, proposalId)");
+  });
+
+  test("exactly two places set the dismissed state", () => {
+    // The loader, and the one function that also writes to storage. A third
+    // would be a rejection the rail honours now and forgets on reload — and
+    // that is the whole defect this exists to close, reintroduced silently.
+    expect(RAIL.match(/setDismissed\(/g)).toHaveLength(2);
+    expect(RAIL).toContain("writeDismissals(storage, proposalId");
+  });
+
+  test("every gesture that hides a card goes through it", () => {
+    expect(handler("const accept = (", "const acceptAll = (")).toContain(
+      "remember("
+    );
+    expect(handler("const acceptAll = (", "const dismissAll = (")).toContain(
+      "remember("
+    );
+    expect(handler("const dismissAll = (", "const submitAsk = (")).toContain(
+      "remember("
+    );
+    // The per-card Dismiss button, which is how a writer rejects one card and
+    // therefore the gesture most worth remembering. It lives in the JSX rather
+    // than in a named handler, which is how it got missed the first time.
+    const dismissButton = RAIL.lastIndexOf('t(locale, "تجاهل", "Dismiss")');
+    expect(dismissButton).toBeGreaterThan(-1);
+    expect(RAIL.slice(dismissButton - 400, dismissButton)).toContain(
+      "remember(new Set(dismissed)"
+    );
+  });
+
+  test("asking a fresh question clears the stored set too", () => {
+    // `submitAsk` resets the rail so an answer is not hidden by an older
+    // rejection. Resetting only the state would put it back on the next load.
+    expect(handler("const submitAsk = (", "return (")).toContain(
+      "remember(new Set())"
+    );
+  });
+});
+
 describe("the rail's footer speaks to a bid writer", () => {
   test("raw provider and model ids are not rendered", () => {
     expect(RAIL).not.toMatch(/\{state\.provider\} · \{state\.model\}/);

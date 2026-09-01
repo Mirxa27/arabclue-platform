@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { browserStorage, type WebStorage } from "@/lib/browser-storage";
 import {
   advanceTerminalPhase,
   buildProcessingSnapshot,
@@ -80,14 +81,8 @@ function lastUserText(messages: MessageLike[]): string {
 
 function getStorage(
   override?: UseCopilotProcessingArgs["storage"]
-): Pick<Storage, "getItem" | "setItem" | "removeItem"> | null {
-  if (override !== undefined) return override;
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
+): WebStorage | null {
+  return override ?? browserStorage();
 }
 
 export function useCopilotProcessing(

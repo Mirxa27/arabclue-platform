@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { browserStorage } from "@/lib/browser-storage";
 import {
   clearDraft,
   readDraft,
@@ -17,16 +18,6 @@ import {
  * sentence.
  */
 const DRAFT_WRITE_DEBOUNCE_MS = 800;
-
-function browserStorage(): DraftStorage | null {
-  if (typeof window === "undefined") return null;
-  try {
-    // Throws in Safari private mode and when the origin is denied storage.
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
 
 export type UseEditorDraftArgs = Readonly<{
   proposalId: string | null;

@@ -38,6 +38,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { apiErrorText } from "@/lib/api-failure-message";
+import { browserStorage } from "@/lib/browser-storage";
+import {
+  readDismissals,
+  writeDismissals,
+} from "@/lib/ai/copilot-dismissals";
 import {
   anchorResolves,
   applySuggestion,
@@ -213,6 +218,25 @@ export function CopilotRail({
     return () => clearTimeout(timer);
   }, [markdown, paused, review]);
 
+  // A rejection outlives the tab. `suggestionId` is content-addressed so that a
+  // pass over unchanged text re-proposes the same card; without this the rail
+  // hands back everything the writer already turned down, and the idle pass
+  // fires on its own after a reload, so it will.
+  useEffect(() => {
+    const storage = browserStorage();
+    setDismissed(new Set(storage ? readDismissals(storage, proposalId) : []));
+  }, [proposalId]);
+
+  /** Hide these cards, and keep them hidden past this tab. */
+  const remember = useCallback(
+    (next: Set<string>) => {
+      setDismissed(next);
+      const storage = browserStorage();
+      if (storage) writeDismissals(storage, proposalId, [...next]);
+    },
+    [proposalId]
+  );
+
   const visible = suggestions.filter((s) => !dismissed.has(s.id));
   // The same rule `applySuggestion` enforces, so Accept is only ever offered
   // for a card that will actually land. Existence alone is not enough: text the
@@ -227,7 +251,7 @@ export function CopilotRail({
     // this, every Accept queues a pass that can propose reverting the edit.
     reviewedRef.current = next;
     onApply(next);
-    setDismissed((prev) => new Set(prev).add(s.id));
+    remember(new Set(dismissed).add(s.id));
   };
 
   const acceptAll = () => {
@@ -235,19 +259,15 @@ export function CopilotRail({
     if (result.applied.length === 0) return;
     reviewedRef.current = result.content;
     onApply(result.content);
-    setDismissed((prev) => {
-      const next = new Set(prev);
-      for (const id of result.applied) next.add(id);
-      return next;
-    });
+    const next = new Set(dismissed);
+    for (const id of result.applied) next.add(id);
+    remember(next);
   };
 
   const dismissAll = () => {
-    setDismissed((prev) => {
-      const next = new Set(prev);
-      for (const s of visible) next.add(s.id);
-      return next;
-    });
+    const next = new Set(dismissed);
+    for (const s of visible) next.add(s.id);
+    remember(next);
   };
 
   const submitAsk = () => {
@@ -263,8 +283,9 @@ export function CopilotRail({
     setAsk("");
     // An explicit request deserves a fresh answer: without this, a card whose
     // content matches one dismissed earlier stays hidden and the rail looks
-    // like it ignored the question.
-    setDismissed(new Set());
+    // like it ignored the question. Cleared in storage too, or the next reload
+    // hides the answer again.
+    remember(new Set());
     void review({ instruction, selection });
   };
 
@@ -439,9 +460,7 @@ export function CopilotRail({
                     size="sm"
                     variant="ghost"
                     className="h-6 flex-1 text-[10px] gap-1"
-                    onClick={() =>
-                      setDismissed((prev) => new Set(prev).add(s.id))
-                    }
+                    onClick={() => remember(new Set(dismissed).add(s.id))}
                   >
                     <X className="size-3" aria-hidden />
                     {t(locale, "تجاهل", "Dismiss")}
