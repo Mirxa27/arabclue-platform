@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useUI } from "@/lib/store";
@@ -9,6 +10,14 @@ import { DashboardTopbar } from "./topbar";
 import { DashboardFooter } from "./footer";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
+
+// Mounted here rather than in the view map so the agent is reachable from the
+// page you need help with, instead of being a screen you leave for. Its own
+// chunk: `useChat` and the `ai` package should not be in the shell's bundle.
+const AssistantDock = dynamic(
+  () => import("./assistant-dock").then((m) => ({ default: m.AssistantDock })),
+  { ssr: false }
+);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { locale, dir } = useLocale();
@@ -61,6 +70,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <DashboardFooter />
         </div>
       </div>
+
+      <AssistantDock />
     </div>
   );
 }

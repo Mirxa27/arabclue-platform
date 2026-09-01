@@ -12,7 +12,7 @@ import {
   resolveOwnedProjectId,
 } from "@/lib/workspace-context";
 import type { Session } from "next-auth";
-import type { PlatformAgentContext } from "./context";
+import { resolveCurrentView, type PlatformAgentContext } from "./context";
 import { buildPlatformAgentInstructions } from "./instructions";
 import { resolvePlatformAgentModel } from "./model";
 import { createPlatformTools, type PlatformTools } from "./tools";
@@ -25,7 +25,11 @@ export type PlatformAgentUIMessage = UIMessage<
 
 export async function buildPlatformAgentContext(
   session: Session,
-  opts?: { missionId?: string | null; activeProjectId?: string | null }
+  opts?: {
+    missionId?: string | null;
+    activeProjectId?: string | null;
+    currentView?: unknown;
+  }
 ): Promise<PlatformAgentContext> {
   const tenant = await getTenantContext(session.user.id);
   const role = session.user.role;
@@ -54,12 +58,19 @@ export async function buildPlatformAgentContext(
     canWrite: canWriteRole(role),
     missionId: opts?.missionId ?? null,
     activeProjectId,
+    // Same reasoning as `activeProjectId`: client-supplied, so it is resolved
+    // here rather than trusted. Unlike it, this one reaches the prompt.
+    currentView: resolveCurrentView(opts?.currentView),
   };
 }
 
 export async function createPlatformAgent(
   session: Session,
-  opts?: { missionId?: string | null; activeProjectId?: string | null }
+  opts?: {
+    missionId?: string | null;
+    activeProjectId?: string | null;
+    currentView?: unknown;
+  }
 ) {
   const ctx = await buildPlatformAgentContext(session, opts);
   const { model, providerLabel, modelId } = await resolvePlatformAgentModel();
@@ -78,6 +89,7 @@ export async function createPlatformAgent(
           : ctx.workspace.name) || ctx.workspace.name,
       canWrite: ctx.canWrite,
       isAdmin: ctx.isAdmin,
+      currentView: ctx.currentView,
     }),
     tools,
     stopWhen: stepCountIs(AGENT_CONFIG.PLATFORM.toolLoopMaxSteps),

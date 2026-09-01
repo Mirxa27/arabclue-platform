@@ -2,6 +2,7 @@ import { jsonApiFailure } from "@/lib/api-controller";
 import { createAgentUIStreamResponse } from "ai";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
+import { resolveCurrentView } from "@/lib/agents/platform/context";
 import { detectPricingRequest } from "@/lib/guardrails";
 import { syncMissionTranscript } from "@/lib/agents/platform/mission-transcript";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
     messages?: unknown[];
     missionId?: string;
     activeProjectId?: string | null;
+    currentView?: unknown;
   };
   try {
     body = await req.json();
@@ -77,6 +79,10 @@ export async function POST(req: Request) {
     const { agent } = await createPlatformAgent(session, {
       missionId,
       activeProjectId: body.activeProjectId ?? mission.activeProjectId ?? null,
+      // The assistant dock opens over whatever page the user is on, so "summarise
+      // this" needs a referent. Resolved against the route table before it can
+      // reach the prompt.
+      currentView: resolveCurrentView(body.currentView),
     });
 
     // Persist inbound user turn immediately so crashes mid-stream still leave a trail

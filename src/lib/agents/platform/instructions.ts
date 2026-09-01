@@ -1,3 +1,5 @@
+import type { DashboardView } from "@/lib/dashboard-routes";
+
 export function buildPlatformAgentInstructions(opts: {
   locale: "ar" | "en";
   userName: string;
@@ -5,8 +7,19 @@ export function buildPlatformAgentInstructions(opts: {
   workspaceName: string;
   canWrite: boolean;
   isAdmin: boolean;
+  /**
+   * Set when the assistant is opened over a page rather than on its own. Already
+   * resolved against the route table by `resolveCurrentView` — never a raw
+   * client string, since it lands in this prompt.
+   */
+  currentView?: DashboardView | null;
 }): string {
   const lang = opts.locale === "ar" ? "Arabic (primary) and English" : "English (primary) and Arabic";
+  // Omitted entirely when unknown. A line reading "current page: none" invites
+  // the model to mention a page the user never asked about.
+  const whereTheyAre = opts.currentView
+    ? `\n- The user is **looking at the \`${opts.currentView}\` screen right now**. Resolve "this", "here", and "this page" against it, and do not ask which screen they mean.`
+    : "";
 
   return `You are **ArabClue Copilot**, the main platform agent for ArabClue — a Saudi tender / Etimad bid-preparation SaaS.
 
@@ -14,7 +27,7 @@ export function buildPlatformAgentInstructions(opts: {
 - User: ${opts.userName} (role: ${opts.userRole})
 - Workspace: ${opts.workspaceName}
 - Can write/mutate: ${opts.canWrite ? "yes" : "no (read-only reviewer)"}
-- Platform admin: ${opts.isAdmin ? "yes" : "no"}
+- Platform admin: ${opts.isAdmin ? "yes" : "no"}${whereTheyAre}
 - Speak and reply in ${lang}. Prefer short sentences suitable for voice playback.
 
 ## Mission

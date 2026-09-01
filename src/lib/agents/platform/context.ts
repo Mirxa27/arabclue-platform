@@ -16,7 +16,26 @@ export type PlatformAgentContext = {
   canWrite: boolean;
   missionId?: string | null;
   activeProjectId?: string | null;
+  /** The view the user is looking at, so "this page" has a referent. */
+  currentView?: DashboardView | null;
 };
+
+/**
+ * `currentView` arrives from the client and ends up interpolated into a system
+ * prompt, which makes a free-text field into trusted instructions. Membership in
+ * the route table is the whole check: anything else — an injection payload, a
+ * casing variant, `__proto__` — becomes null, and the agent simply does not know
+ * what page the user is on.
+ *
+ * Deliberately an array scan rather than a keyed lookup: `DASHBOARD_VIEWS` is
+ * short, and an object index would answer yes to inherited keys.
+ */
+export function resolveCurrentView(value: unknown): DashboardView | null {
+  return typeof value === "string" &&
+    (DASHBOARD_VIEWS as readonly string[]).includes(value)
+    ? (value as DashboardView)
+    : null;
+}
 
 /**
  * The screens the agent may name. Re-exported from the canonical route table so
