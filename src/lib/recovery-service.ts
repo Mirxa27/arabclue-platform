@@ -26,8 +26,14 @@
  *
  * A raw token value exists only inside the outgoing message. It is never
  * persisted, returned, logged, or written to an audit entry (criterion 2.5).
+ *
+ * The identical body is only half of criterion 2.1. Identical *cost* is the
+ * other half, so everything that a known address makes the service do — the
+ * token write, the send, the audit row — happens after the 202 rather than
+ * before it. See `recovery-request-timing-oracle.test.ts`.
  */
 
+import { after } from "next/server";
 import { z } from "zod";
 import {
   createTokenDigest,
@@ -376,6 +382,37 @@ export const defaultRecoveryPasswordHasher: PasswordHasher = Object.freeze({
   hash: (plainPassword) => hashPassword(plainPassword),
 });
 
+/**
+ * Runs work that the caller must not wait for.
+ *
+ * Returns a promise so the fallback can await the work: the default runs it
+ * inline wherever there is no request to outlive, and a caller that awaited
+ * nothing would leave every test racing its own side effects.
+ */
+export type AfterResponseDispatcher = (
+  work: () => Promise<void>
+) => Promise<void>;
+
+/**
+ * Hands the work to the platform's `waitUntil` so the response leaves first.
+ *
+ * `after()` throws outside a request scope — a script, a test, a queue worker —
+ * and there the work is simply awaited: nothing is being outlived, and dropping
+ * it would silently stop recovery mail everywhere except production.
+ * `schedule-pipeline.ts` makes the opposite choice in its own fallback
+ * (`void work()`) because an agent pipeline run inline would block a caller for
+ * its full duration. One email send will not.
+ */
+export const defaultAfterResponseDispatcher: AfterResponseDispatcher = async (
+  work
+) => {
+  try {
+    after(work);
+  } catch {
+    await work();
+  }
+};
+
 export type RecoveryServiceDependencies = Readonly<{
   repository: RecoveryRepository;
   email: RecoveryEmailProvider;
@@ -388,6 +425,8 @@ export type RecoveryServiceDependencies = Readonly<{
   emailDeadlineMs?: number;
   /** Injected only so a test can drive the delivery deadline without waiting. */
   deadlineScheduler?: DeadlineScheduler;
+  /** Injected only so a test can hold post-response work and inspect the seam. */
+  afterResponse?: AfterResponseDispatcher;
 }>;
 
 /* -------------------------------------------------------------------------- */
@@ -455,6 +494,8 @@ export function createRecoveryService(
     dependencies.emailDeadlineMs ?? RECOVERY_EMAIL_DEADLINE_MS;
   const deadlineScheduler =
     dependencies.deadlineScheduler ?? systemDeadlineScheduler;
+  const afterResponse =
+    dependencies.afterResponse ?? defaultAfterResponseDispatcher;
 
   async function appendAudit(entry: RecoveryAuditEntry): Promise<void> {
     try {
@@ -486,16 +527,57 @@ export function createRecoveryService(
     const request = validation.value;
     const now = utcNow(clock);
 
-    // Only create token if user is active and verified (criterion 2.1)
+    // The one lookup both branches pay for. Everything below that a registered
+    // address would add — the token write, the send, the audit row — is handed
+    // to `afterResponse` instead, so an unknown address and a known one cost
+    // the same before the caller is answered (criterion 2.1). The identical
+    // body is only half of anti-enumeration; a stopwatch reads the other half.
     const user = await repository.findEligibleUserByEmail(request.email);
 
-    // Check email configuration before creating token (criterion 2.7). Answered
-    // ahead of the unknown-address branch because whether recovery mail can be
-    // sent is a property of the deployment, not of the submitted address:
-    // reporting it only for a registered address would turn a switched-off
-    // transport into an account-enumeration oracle.
-    if (!emailProvider.isConfigured()) {
-      if (user) {
+    // Whether recovery mail can be sent is a property of the deployment, not of
+    // the submitted address, so a switched-off transport is reported for every
+    // caller (criterion 2.7). Reporting it only for a registered address would
+    // turn the outage itself into an account-enumeration oracle.
+    const configured = emailProvider.isConfigured();
+
+    if (user) {
+      await afterResponse(() =>
+        deliverRecovery({ user, now, sourceAddress, configured })
+      );
+    }
+
+    return {
+      ok: true,
+      status: 202,
+      code: configured
+        ? "RECOVERY_REQUEST_ACCEPTED"
+        : "RECOVERY_EMAIL_UNCONFIGURED",
+    };
+  }
+
+  /**
+   * Issue, send, and record — after the caller has already been answered.
+   *
+   * Never throws. Past the 202 there is no caller left to receive an error, and
+   * a rejection handed to `after()` would surface as an unhandled promise in a
+   * function instance that is already draining. A failed write here means one
+   * user does not get their mail, which the operator log below is for; the
+   * alternative — propagating and turning it into a 500 — was itself an
+   * enumeration oracle, since only a registered address could ever reach it.
+   */
+  async function deliverRecovery(
+    input: Readonly<{
+      user: NonNullable<
+        Awaited<ReturnType<RecoveryRepository["findEligibleUserByEmail"]>>
+      >;
+      now: Date;
+      sourceAddress: string;
+      configured: boolean;
+    }>
+  ): Promise<void> {
+    const { user, now, sourceAddress, configured } = input;
+    try {
+      if (!configured) {
         await appendAudit({
           action: "PASSWORD_RESET_REQUEST",
           userId: user.id,
@@ -508,96 +590,76 @@ export function createRecoveryService(
             reason: "email_unconfigured",
           },
         });
+        return;
       }
-      return {
-        ok: true,
-        status: 202,
-        code: "RECOVERY_EMAIL_UNCONFIGURED",
-      };
-    }
 
-    // Anti-enumeration: return same response whether user exists or not
-    if (!user) {
-      return {
-        ok: true,
-        status: 202,
-        code: "RECOVERY_REQUEST_ACCEPTED",
-      };
-    }
+      // Create token and invalidate earlier tokens (criterion 2.2)
+      const issued = createTokenDigest({ randomness });
+      const expiresAt = addUtcMilliseconds(now, RECOVERY_TOKEN_TTL_MS);
 
-    // Create token and invalidate earlier tokens (criterion 2.2)
-    const issued = createTokenDigest({ randomness });
-    const expiresAt = addUtcMilliseconds(now, RECOVERY_TOKEN_TTL_MS);
-
-    const outcome = await repository.createRecoveryToken({
-      userId: user.id,
-      email: user.email,
-      createdAt: now,
-      token: {
-        tokenHash: issued.tokenHash,
-        hashSalt: issued.hashSalt,
-        hashVersion: issued.hashVersion,
+      const outcome = await repository.createRecoveryToken({
+        userId: user.id,
+        email: user.email,
         createdAt: now,
-        expiresAt,
-      },
-    });
-
-    if (outcome.kind === "USER_NOT_ELIGIBLE") {
-      // Should not happen since we checked eligibility, but handle gracefully
-      return {
-        ok: true,
-        status: 202,
-        code: "RECOVERY_REQUEST_ACCEPTED",
-      };
-    }
-
-    const created = outcome.token;
-    
-    // Send recovery email with raw token (criterion 2.5)
-    const emailOutcome = await sendRecoveryEmail({
-      email: user.email,
-      locale: user.locale,
-      rawToken: issued.rawToken,
-    });
-
-    // Audit the request and email outcome
-    if (!emailOutcome.ok) {
-      await appendAudit({
-        action: "PASSWORD_RESET_EMAIL_FAILED",
-        userId: user.id,
-        resource: "RecoveryToken",
-        resourceId: created.id,
-        severity: "WARN",
-        sourceAddress,
-        details: {
-          email: user.email,
-          occurredAt: now.toISOString(),
-          error: "delivery_failed",
-          ...(emailOutcome.error ? { providerError: emailOutcome.error } : {}),
+        token: {
+          tokenHash: issued.tokenHash,
+          hashSalt: issued.hashSalt,
+          hashVersion: issued.hashVersion,
+          createdAt: now,
+          expiresAt,
         },
       });
-    } else {
-      await appendAudit({
-        action: "PASSWORD_RESET_REQUEST",
-        userId: user.id,
-        resource: "RecoveryToken",
-        resourceId: created.id,
-        severity: "INFO",
-        sourceAddress,
-        details: {
-          email: user.email,
-          occurredAt: now.toISOString(),
-          replacedCount: created.replacedCount,
-        },
+
+      if (outcome.kind === "USER_NOT_ELIGIBLE") {
+        // Eligibility was checked above; the user was deactivated in between.
+        return;
+      }
+
+      const created = outcome.token;
+
+      // Send recovery email with raw token (criterion 2.5)
+      const emailOutcome = await sendRecoveryEmail({
+        email: user.email,
+        locale: user.locale,
+        rawToken: issued.rawToken,
+      });
+
+      // Audit the request and email outcome
+      if (!emailOutcome.ok) {
+        await appendAudit({
+          action: "PASSWORD_RESET_EMAIL_FAILED",
+          userId: user.id,
+          resource: "RecoveryToken",
+          resourceId: created.id,
+          severity: "WARN",
+          sourceAddress,
+          details: {
+            email: user.email,
+            occurredAt: now.toISOString(),
+            error: "delivery_failed",
+            ...(emailOutcome.error ? { providerError: emailOutcome.error } : {}),
+          },
+        });
+      } else {
+        await appendAudit({
+          action: "PASSWORD_RESET_REQUEST",
+          userId: user.id,
+          resource: "RecoveryToken",
+          resourceId: created.id,
+          severity: "INFO",
+          sourceAddress,
+          details: {
+            email: user.email,
+            occurredAt: now.toISOString(),
+            replacedCount: created.replacedCount,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("[recovery-service] deferred recovery delivery failed", {
+        errorName: error instanceof Error ? error.name : typeof error,
       });
     }
-
-    // Always return 202 with same code (anti-enumeration, criterion 2.1)
-    return {
-      ok: true,
-      status: 202,
-      code: "RECOVERY_REQUEST_ACCEPTED",
-    };
   }
 
   async function sendRecoveryEmail(input: {
