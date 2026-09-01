@@ -293,7 +293,9 @@ function BrandForm({
                 } else {
                   toast({
                     title: locale === "ar" ? "فشل رفع الشعار" : "Logo upload failed",
-                    description: data.error,
+                    // `apiFailure` sets `error` to a bilingual object, so the old
+                    // `data.error` would hand React `{ ar, en }` as a child.
+                    description: apiErrorText(data, locale),
                     variant: "destructive",
                   });
                 }

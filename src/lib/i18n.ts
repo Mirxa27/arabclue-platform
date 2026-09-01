@@ -1956,6 +1956,18 @@ export const localizationRegistry = {
   INVALID_REQUEST: { ar: "طلب غير صالح", en: "Invalid request" },
   INVALID_VERSION: { ar: "رقم الإصدار غير صالح", en: "Invalid version" },
   NO_BRAND_PROFILE: { ar: "لا يوجد ملف تعريف علامة تجارية", en: "No brand profile" },
+  // Two codes, not the avatar route's single `INVALID_REQUEST`: a reader whose
+  // logo was rejected can act on "wrong kind of file" and on "this file will not
+  // open", and on nothing else. Both sentences keep naming the accepted formats,
+  // because the English literals they replace did.
+  LOGO_IMAGE_TYPE_UNSUPPORTED: {
+    ar: "ارفع صورة PNG أو JPEG أو WebP بحجم لا يتجاوز ٨ ميجابايت",
+    en: "Upload a PNG, JPEG, or WebP image up to 8 MiB",
+  },
+  LOGO_IMAGE_UNREADABLE: {
+    ar: "تعذر قراءة ملف الشعار. أعد تصديره بصيغة PNG أو JPEG أو WebP ثم حاول مرة أخرى",
+    en: "The logo file could not be read. Re-export it as PNG, JPEG, or WebP and try again",
+  },
 
   // Agent surface. The chat transport renders these verbatim, so both locales
   // must read as a finished sentence to the person in the console.
@@ -2936,6 +2948,8 @@ export const COMPLETION_ERROR_CONTRACTS = {
   INVALID_REQUEST: { actionKey: "error_action_validate_request", messageKey: "INVALID_REQUEST" },
   INVALID_VERSION: { actionKey: "error_action_complete_request", messageKey: "INVALID_VERSION" },
   NO_BRAND_PROFILE: { actionKey: "error_action_complete_request", messageKey: "NO_BRAND_PROFILE" },
+  LOGO_IMAGE_TYPE_UNSUPPORTED: { actionKey: "error_action_complete_request", messageKey: "LOGO_IMAGE_TYPE_UNSUPPORTED" },
+  LOGO_IMAGE_UNREADABLE: { actionKey: "error_action_complete_request", messageKey: "LOGO_IMAGE_UNREADABLE" },
   MISSION_NOT_FOUND: { actionKey: "error_action_run_agent", messageKey: "MISSION_NOT_FOUND" },
   ONBOARDING_INCOMPLETE: { actionKey: "error_action_run_agent", messageKey: "ONBOARDING_INCOMPLETE" },
   AGENT_RUN_IN_PROGRESS: { actionKey: "error_action_run_agent", messageKey: "AGENT_RUN_IN_PROGRESS" },
