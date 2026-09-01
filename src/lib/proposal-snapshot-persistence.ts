@@ -851,6 +851,40 @@ export function selectProposalDownloadEngine(
   return { kind: "STRUCTURED_FORMAT_UNSUPPORTED" };
 }
 
+/**
+ * What the proposal editor puts behind its single Download control.
+ *
+ * The route supports more formats than this (html, xlsx, pptx, slides,
+ * manifest, …), but they are packaging details rather than things a bidder
+ * asks for by name. ZIP is the bid package, PDF is the authoritative artifact,
+ * Word is the copy procurement redlines and returns — that is the whole menu.
+ */
+const EDITOR_DOWNLOAD_FORMATS = Object.freeze([
+  "zip",
+  "pdf",
+  "docx",
+] as const);
+
+/**
+ * Which of those the route would actually honour for this proposal.
+ *
+ * Derived from `selectProposalDownloadEngine` rather than re-stated, because
+ * the editor previously guessed from proposal *status* and got it wrong: a
+ * DRAFT gets a structured snapshot as soon as one is generated, and from that
+ * moment docx is refused, so the Word button led to a 409.
+ */
+export function offerableProposalDownloadFormats(
+  hasStructuredSnapshot: boolean
+): readonly string[] {
+  return Object.freeze(
+    EDITOR_DOWNLOAD_FORMATS.filter(
+      (format) =>
+        selectProposalDownloadEngine(hasStructuredSnapshot, format).kind !==
+        "STRUCTURED_FORMAT_UNSUPPORTED"
+    )
+  );
+}
+
 export function requiresStructuredSnapshotForAuthoritativeExport(input: {
   readonly proposalType: string;
   readonly proposalStatus: string;

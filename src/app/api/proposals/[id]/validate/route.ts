@@ -9,6 +9,7 @@ import {
   loadProjectIngestionEntities,
 } from "@/lib/proposal-studio";
 import { getContractExportReadiness } from "@/lib/contract-review";
+import { offerableProposalDownloadFormats } from "@/lib/proposal-snapshot-persistence";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,13 @@ export async function GET(
     : null;
 
   const hasApprovalPolicy = Boolean(policy && policy.steps.length > 0);
+  // The editor renders its Download menu from this, so it is computed with the
+  // same selector `/download` enforces with. Anything else lets the UI offer a
+  // format the route answers with a 409.
+  const downloadFormats = offerableProposalDownloadFormats(
+    proposal.structuredSnapshot !== null
+  );
+
   if (proposal.type === "CONTRACT") {
     const contractReadiness = getContractExportReadiness({
       contentMd: proposal.contentMd,
@@ -65,6 +73,7 @@ export async function GET(
       hasApprovalPolicy,
       exportReady: contractReadiness.exportReady,
       exportBlocker: contractReadiness.exportBlocker,
+      downloadFormats,
       status: proposal.status,
       version: proposal.version,
     });
@@ -102,6 +111,7 @@ export async function GET(
     exportBlocker: zipPolicy.allowed
       ? null
       : { code: zipPolicy.code, error: zipPolicy.error },
+    downloadFormats,
     status: proposal.status,
     version: proposal.version,
   });

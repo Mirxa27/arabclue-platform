@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   STRUCTURED_SNAPSHOT_INVALIDATION,
   canonicalizeProposalSnapshot,
+  offerableProposalDownloadFormats,
   requiresStructuredSnapshotForAuthoritativeExport,
   selectProposalDownloadEngine,
   type StructuredApprovedEvidenceBinding,
@@ -194,6 +195,51 @@ describe("structured proposal snapshot persistence", () => {
     });
     expect(selectProposalDownloadEngine(true, "xlsx-matrix")).toEqual({
       kind: "STRUCTURED_SUPPLEMENTAL",
+    });
+  });
+
+  describe("offerableProposalDownloadFormats", () => {
+    // The editor used to decide whether to show its Word button from the
+    // proposal's *status* (`!== APPROVED && !== EXPORTED`). But the download
+    // route refuses docx whenever a structured snapshot exists, and a DRAFT
+    // gets a snapshot as soon as one is generated — so the button was offered
+    // on proposals the route answers with a 409. Deriving the list from the
+    // same selector the route uses is the only way the two cannot drift.
+
+    test("offers every format before a snapshot exists", () => {
+      expect(offerableProposalDownloadFormats(false)).toEqual([
+        "zip",
+        "pdf",
+        "docx",
+      ]);
+    });
+
+    test("drops Word once a snapshot exists, whatever the status says", () => {
+      expect(offerableProposalDownloadFormats(true)).toEqual(["zip", "pdf"]);
+    });
+
+    test("never offers a format the download route would refuse", () => {
+      // Anti-vacuity: the loop below is worthless if the lists are empty or if
+      // no format is actually filtered out in either direction.
+      const withSnapshot = offerableProposalDownloadFormats(true);
+      const withoutSnapshot = offerableProposalDownloadFormats(false);
+      expect(withSnapshot.length).toBeGreaterThan(0);
+      expect(withoutSnapshot.length).toBeGreaterThan(withSnapshot.length);
+
+      for (const hasSnapshot of [true, false]) {
+        for (const format of offerableProposalDownloadFormats(hasSnapshot)) {
+          expect(selectProposalDownloadEngine(hasSnapshot, format).kind).not.toBe(
+            "STRUCTURED_FORMAT_UNSUPPORTED"
+          );
+        }
+      }
+    });
+
+    test("the returned list cannot be mutated by a caller", () => {
+      const formats = offerableProposalDownloadFormats(true);
+      expect(() =>
+        (formats as string[]).push("docx")
+      ).toThrow();
     });
   });
 

@@ -22,9 +22,17 @@ import {
   GitFork,
   Download,
   FileText,
+  Package,
+  ChevronDown,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -81,6 +89,53 @@ type BrandResponse = {
   brandProfile: LetterheadBrand | null;
   company?: LetterheadCompany | null;
 };
+
+/**
+ * The three artifacts a bidder actually asks for by name, behind one Download
+ * control. Which of them a given proposal can produce is decided server side
+ * (`offerableProposalDownloadFormats`) — the editor only renders the answer,
+ * because guessing it from proposal status is what previously offered Word on
+ * proposals the route refused.
+ */
+const DOWNLOAD_FORMAT_ICONS = {
+  zip: Package,
+  pdf: FileDown,
+  docx: FileText,
+} as const;
+
+type EditorDownloadFormat = keyof typeof DOWNLOAD_FORMAT_ICONS;
+
+function isEditorDownloadFormat(value: string): value is EditorDownloadFormat {
+  return value in DOWNLOAD_FORMAT_ICONS;
+}
+
+function downloadFormatLabel(
+  format: EditorDownloadFormat,
+  locale: "ar" | "en"
+): string {
+  if (format === "zip") return locale === "ar" ? "حزمة العطاء" : "Bid package";
+  if (format === "pdf") return locale === "ar" ? "عرض فني PDF" : "Technical proposal";
+  return locale === "ar" ? "نسخة Word" : "Word copy";
+}
+
+function downloadFormatHint(
+  format: EditorDownloadFormat,
+  locale: "ar" | "en"
+): string {
+  if (format === "zip") {
+    return locale === "ar"
+      ? "ZIP — كل شيء يُقدَّم للجهة"
+      : "ZIP — everything you submit";
+  }
+  if (format === "pdf") {
+    return locale === "ar"
+      ? "PDF — النسخة المعتمدة"
+      : "PDF — the authoritative copy";
+  }
+  return locale === "ar"
+    ? "DOCX — للمراجعة والتعديل"
+    : "DOCX — for redlines and edits";
+}
 
 const SKILLS: { id: ProposalSkill; en: string; ar: string }[] = [
   { id: "rewrite", en: "Rewrite", ar: "إعادة صياغة" },
@@ -636,10 +691,20 @@ function ProposalStudioBase({
   const showDocumentPreview = mode === "print" || mode === "preview";
   const issues = validationData?.validation?.issues ?? [];
   const exportBlocked = validationData != null && !validationData.exportReady;
-  // Word is the editable copy. Once approved or exported the proposal renders
-  // from its immutable structured snapshot, which has no Word channel, so the
-  // authoritative artifact is the PDF and the route would refuse docx anyway.
-  const wordAvailable = status !== "APPROVED" && status !== "EXPORTED";
+  const exportDisabled =
+    exportMutation.isPending || downloadBusy || exportBlocked;
+  const exportBlockedReason = exportBlocked
+    ? validationData?.exportBlocker?.error ??
+      (locale === "ar" ? "أكمل التحقق أولاً" : "Complete validation first")
+    : undefined;
+  // Which formats the download route would actually honour, computed server
+  // side from the same selector it enforces with. Falls back to the always-safe
+  // pair until validation lands, rather than guessing that Word is available.
+  const downloadFormats: readonly EditorDownloadFormat[] =
+    validationData?.downloadFormats?.filter(isEditorDownloadFormat) ?? [
+      "zip",
+      "pdf",
+    ];
 
   return (
     <StudioShell
@@ -858,81 +923,53 @@ function ProposalStudioBase({
                 )}
                 {tr("action_save", locale)}
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-[11px] gap-1"
-                disabled={
-                  exportMutation.isPending || downloadBusy || exportBlocked
-                }
-                title={
-                  exportBlocked
-                    ? validationData?.exportBlocker?.error ??
-                      (locale === "ar"
-                        ? "أكمل التحقق أولاً"
-                        : "Complete validation first")
-                    : undefined
-                }
-                onClick={() => exportMutation.mutate("zip")}
-              >
-                {busyFormat === "zip" ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <Download className="size-3" />
-                )}
-                ZIP
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-[11px] gap-1"
-                disabled={
-                  exportMutation.isPending || downloadBusy || exportBlocked
-                }
-                title={
-                  exportBlocked
-                    ? validationData?.exportBlocker?.error ??
-                      (locale === "ar"
-                        ? "أكمل التحقق أولاً"
-                        : "Complete validation first")
-                    : undefined
-                }
-                onClick={() => exportMutation.mutate("pdf")}
-              >
-                {busyFormat === "pdf" ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <FileDown className="size-3" />
-                )}
-                PDF
-              </Button>
-              {/* Word is the format procurement actually redlines and returns. */}
-              {wordAvailable ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-[11px] gap-1"
-                  disabled={
-                    exportMutation.isPending || downloadBusy || exportBlocked
-                  }
-                  title={
-                    exportBlocked
-                      ? validationData?.exportBlocker?.error ??
-                        (locale === "ar"
-                          ? "أكمل التحقق أولاً"
-                          : "Complete validation first")
-                      : undefined
-                  }
-                  onClick={() => exportMutation.mutate("docx")}
-                >
-                  {busyFormat === "docx" ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <FileText className="size-3" />
-                  )}
-                  Word
-                </Button>
-              ) : null}
+              {/* One action. Format is a detail of it, not a separate decision
+                  the bidder has to make three times across the toolbar. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    className="h-7 text-[11px] gap-1"
+                    disabled={exportDisabled}
+                    title={exportBlockedReason}
+                  >
+                    {exportMutation.isPending || downloadBusy ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <Download className="size-3" />
+                    )}
+                    {locale === "ar" ? "تنزيل" : "Download"}
+                    <ChevronDown className="size-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  {downloadFormats.map((format) => {
+                    const Icon = DOWNLOAD_FORMAT_ICONS[format];
+                    return (
+                      <DropdownMenuItem
+                        key={format}
+                        disabled={exportDisabled}
+                        onSelect={() => exportMutation.mutate(format)}
+                        className="gap-2 items-start"
+                      >
+                        {busyFormat === format ? (
+                          <Loader2 className="size-3.5 mt-0.5 animate-spin" />
+                        ) : (
+                          <Icon className="size-3.5 mt-0.5" />
+                        )}
+                        <span className="flex flex-col gap-0.5">
+                          <span className="text-xs font-medium">
+                            {downloadFormatLabel(format, locale)}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground leading-tight">
+                            {downloadFormatHint(format, locale)}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">
               <Input

@@ -26,14 +26,22 @@ const contracts = readFileSync(
 
 describe("proposal studio offers a Word download", () => {
   test("the export mutation is invoked with docx", () => {
-    expect(editor).toContain('exportMutation.mutate("docx")');
-    // Anti-vacuous: the PDF action this sits beside is still wired.
-    expect(editor).toContain('exportMutation.mutate("pdf")');
+    // The three copy-pasted buttons collapsed into one Download menu, so the
+    // format is a loop variable now rather than a literal per button. What
+    // still has to hold is that docx is one of the formats the menu can render.
+    expect(editor).toContain("exportMutation.mutate(format)");
+    expect(editor).toContain("DOWNLOAD_FORMAT_ICONS");
+    const icons = /const DOWNLOAD_FORMAT_ICONS = \{[^}]*\}/.exec(editor)?.[0];
+    expect(icons, "DOWNLOAD_FORMAT_ICONS not found").toBeTruthy();
+    expect(icons).toContain("docx");
+    // Anti-vacuous: the PDF action this sits beside is still offered.
+    expect(icons).toContain("pdf");
   });
 
   test("the button reports its own busy state", () => {
-    // A shared spinner would make every export look like the Word one.
-    expect(editor).toContain('busyFormat === "docx"');
+    // A shared spinner would make every export look like the Word one, so the
+    // menu row for the format being fetched is the one that spins.
+    expect(editor).toContain("busyFormat === format");
   });
 
   test("a download with no server filename still lands as .docx", () => {
@@ -45,17 +53,20 @@ describe("proposal studio offers a Word download", () => {
     expect(editor).toContain("Word");
   });
 
-  test("Word is withdrawn once the proposal stops being editable", () => {
-    // An APPROVED or EXPORTED proposal exports through the structured snapshot,
-    // which has no Word channel, so the route answers 409. Offering the button
-    // anyway would hand the user an English-only error for a document that is
-    // meant to be authoritative as a PDF, not editable in Word.
-    expect(editor).toContain('status !== "APPROVED" && status !== "EXPORTED"');
-    // Anti-vacuous: PDF stays available at every status.
-    const pdf = /onClick=\{\(\) => exportMutation\.mutate\("pdf"\)\}/.exec(
-      editor
-    );
-    expect(pdf, "pdf action not found").toBeTruthy();
+  test("Word is withdrawn exactly when the route would refuse it", () => {
+    // This used to read `status !== "APPROVED" && status !== "EXPORTED"`, which
+    // was wrong: the route refuses docx whenever a *structured snapshot* exists,
+    // and a DRAFT gets one as soon as it is generated. So the button was offered
+    // on proposals answered with a 409. The list is now computed server side by
+    // `offerableProposalDownloadFormats`, from the same selector `/download`
+    // enforces with — see proposal-snapshot-persistence.test.ts for that rule.
+    expect(editor).toContain("validationData?.downloadFormats");
+    // The defect was a status guess. Assert it has not crept back.
+    expect(editor).not.toContain('status !== "APPROVED"');
+    expect(editor).not.toContain('status !== "EXPORTED"');
+    // Anti-vacuous: `status` is still read for other purposes, so the two
+    // negative checks above are not passing merely because it went away.
+    expect(editor).toContain("const status = data?.proposal?.status");
   });
 });
 
