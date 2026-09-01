@@ -57,8 +57,6 @@ const REMAINING: readonly string[] = [
   "src/app/api/contracts/instances/[id]/versions/[revision]/route.ts",
   "src/app/api/contracts/templates/[key]/preview/route.ts",
   "src/app/api/contracts/templates/route.ts",
-  "src/app/api/files/route.ts",
-  "src/app/api/projects/[id]/route.ts",
   // Neither of these answers a bidder, which is why they are listed rather than
   // converted. `cron-auth` replies to Vercel's scheduler, and
   // `provider-connection-guard` rejects a malformed credential name typed by an
