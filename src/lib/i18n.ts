@@ -97,7 +97,7 @@ export const localizationRegistry = {
   nav_admin: { ar: "لوحة الإدارة", en: "Admin Panel" },
   nav_admin_ai: { ar: "مزودو الذكاء", en: "AI Providers" },
   nav_admin_env: { ar: "إدارة البيئة", en: "Environment" },
-  nav_admin_billing: { ar: "الفوترة والباقات", en: "Billing" },
+  nav_admin_billing: { ar: "الفوترة والباقات", en: "Billing & Plans" },
   nav_admin_myfatoorah: { ar: "مي فاتورة", en: "MyFatoorah" },
   nav_admin_security: { ar: "الأمن والصلاحيات", en: "Security & RBAC" },
   nav_admin_audit: { ar: "سجل التدقيق", en: "Audit Trail" },

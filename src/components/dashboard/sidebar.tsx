@@ -36,6 +36,11 @@ import {
   FileStack,
   MoreHorizontal,
   ChevronDown,
+  Briefcase,
+  Library,
+  Receipt,
+  Wallet,
+  Stamp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -53,7 +58,7 @@ const NAV_PRIMARY: { view: DashboardView; key: string; icon: typeof LayoutDashbo
   { view: "projects", key: "nav_projects", icon: FolderKanban },
   { view: "documents", key: "nav_documents", icon: FileText },
   { view: "proposals", key: "nav_proposals", icon: FileCheck2 },
-  { view: "reviews", key: "nav_reviews", icon: ScrollText },
+  { view: "reviews", key: "nav_reviews", icon: Stamp },
 ];
 
 /** Reachable in one click from `More`, and by name from the agent. */
@@ -61,13 +66,13 @@ const NAV_SECONDARY: typeof NAV_PRIMARY = [
   { view: "contracts", key: "nav_contracts", icon: Scale },
   { view: "agents", key: "nav_agents", icon: Bot },
   { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval" },
-  { view: "clause-library", key: "nav_clause_library", icon: Scale },
+  { view: "clause-library", key: "nav_clause_library", icon: Library },
   { view: "template-editor", key: "nav_template_editor", icon: FileStack },
   { view: "marketplace", key: "nav_marketplace", icon: Store },
   { view: "proposal-builder", key: "nav_proposal_builder", icon: LayoutList },
   { view: "analytics", key: "nav_analytics", icon: BarChart3 },
   { view: "account", key: "nav_account", icon: Building2 },
-  { view: "business-profile", key: "nav_business_profile", icon: Sparkles },
+  { view: "business-profile", key: "nav_business_profile", icon: Briefcase },
   { view: "billing", key: "nav_billing", icon: CreditCard },
   { view: "settings", key: "nav_settings", icon: Lock },
 ];
@@ -76,8 +81,8 @@ const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboar
   { view: "admin_overview", key: "nav_dashboard", icon: LayoutDashboard },
   { view: "admin_ai", key: "nav_admin_ai", icon: Cpu },
   { view: "admin_env", key: "nav_admin_env", icon: KeyRound },
-  { view: "admin_billing", key: "nav_admin_billing", icon: CreditCard },
-  { view: "admin_myfatoorah", key: "nav_admin_myfatoorah", icon: CreditCard },
+  { view: "admin_billing", key: "nav_admin_billing", icon: Receipt },
+  { view: "admin_myfatoorah", key: "nav_admin_myfatoorah", icon: Wallet },
   { view: "admin_security", key: "nav_admin_security", icon: Users },
   { view: "admin_audit", key: "nav_admin_audit", icon: ScrollText },
 ];
