@@ -3,7 +3,7 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { AGENTS } from "@/lib/constants";
 import { tr } from "@/lib/i18n";
 import { seedComplianceChecks } from "@/lib/bootstrap";
-import { runAgentPipeline } from "@/lib/agents/orchestrator";
+import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
 import { ApiError } from "@/lib/api-controller";
@@ -305,15 +305,14 @@ export async function maybeAutopilotAfterIngest(opts: {
     details: { projectId, via: "mission-autopilot" },
   });
 
-  void runAgentPipeline({
+  scheduleAgentPipeline({
     runId: run.id,
     projectId,
     workspaceId: opts.workspaceId,
     userId: opts.userId,
     locale: opts.locale,
     targetProposalId: null,
-  }).catch((err) => {
-    console.error("[mission-autopilot]", err);
+    logLabel: "[mission-autopilot]",
   });
 
   return {

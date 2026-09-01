@@ -5,7 +5,7 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { AGENTS } from "@/lib/constants";
 import { tr } from "@/lib/i18n";
 import { seedComplianceChecks } from "@/lib/bootstrap";
-import { runAgentPipeline } from "@/lib/agents/orchestrator";
+import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
 import { assertWorkspaceMatch } from "@/lib/workspace-context";
 import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
@@ -190,14 +190,15 @@ async function launchProjectPipeline(
     details: { projectId: project.id, source: "platform-agent" },
   });
 
-  void runAgentPipeline({
+  scheduleAgentPipeline({
     runId: run.run.id,
     projectId: project.id,
     workspaceId: ctx.workspace.id,
     userId: ctx.userId,
     locale,
     targetProposalId: null,
-  }).catch((err) => console.error("[platform-agent pipeline]", err));
+    logLabel: "[platform-agent pipeline]",
+  });
 
   return {
     ok: true as const,

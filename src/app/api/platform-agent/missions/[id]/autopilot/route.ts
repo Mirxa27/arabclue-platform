@@ -12,7 +12,7 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { AGENTS } from "@/lib/constants";
 import { tr } from "@/lib/i18n";
 import { seedComplianceChecks } from "@/lib/bootstrap";
-import { runAgentPipeline } from "@/lib/agents/orchestrator";
+import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { assertWithinQuota, QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
 import { assertOnboardingReady } from "@/lib/onboarding";
@@ -236,14 +236,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     details: { via: "extension-autopilot", projectId, tenderRef },
   });
 
-  void runAgentPipeline({
+  scheduleAgentPipeline({
     runId: run.id,
     projectId,
     workspaceId: tenant.workspace.id,
     userId: session.user.id,
     locale,
-  }).catch((err) => {
-    console.error("[extension-autopilot] pipeline", err);
+    logLabel: "[extension-autopilot] pipeline",
   });
 
   return NextResponse.json({
