@@ -17,9 +17,18 @@
  *
  * Four routes build failures by hand — `NextResponse.json({...apiFailure(code)},
  * ...)` — to attach those extra fields, which bypasses `jsonFailure` entirely.
- * `download` remembered the header on all twelve of its sites; the other three
- * files forgot it on all six of theirs. That is the drift a single owner plus a
- * scan is for, rather than trusting the next author to remember.
+ * Eight of those twenty sites had no cache header at all, `download`'s
+ * `accepted:` branch among them, and that branch was added in a recent batch by
+ * an author who had just written eleven correct ones in the same file. That is
+ * the drift a single owner plus a scan is for.
+ *
+ * The middleware is the other half, and the reason this scan does not stop at
+ * `src/app/api`. `src/proxy.ts` refuses before any route runs — no session, an
+ * unverified address, a forced password change, the wrong platform role — so it
+ * answers more 401s and 403s than any route does, and production confirmed it
+ * was still serving `public` on all four. `jsonRefusal` is its owner; the scan
+ * below holds it to exactly one `NextResponse.json` so a fifth refusal cannot
+ * quietly grow its own.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -143,6 +152,20 @@ describe("a failed API response is never cacheable", () => {
       offenders,
       `these NextResponse.json(apiFailure(...)) responses are missing Cache-Control: no-store:\n${offenders.join("\n")}`,
     ).toEqual([]);
+  });
+
+  test("the middleware routes every JSON refusal through one owner", () => {
+    // Counting the calls rather than grepping each one for `no-store`: a fifth
+    // refusal that copies the header would still pass a grep, and the next one
+    // after it is where the copying stops. One owner is the property worth
+    // holding, and it is cheap here because the middleware has exactly four.
+    const source = readFileSync(join(ROOT, "src/proxy.ts"), "utf8");
+    const calls = jsonResponseCalls(source);
+    expect(
+      calls.map((call) => call.split("\n")[0]!.trim()),
+      "src/proxy.ts must build JSON only through jsonRefusal, which owns Cache-Control: no-store",
+    ).toHaveLength(1);
+    expect(calls[0]).toContain('"Cache-Control": "no-store"');
   });
 
   test("the scan actually reaches the hand-rolled responses", () => {

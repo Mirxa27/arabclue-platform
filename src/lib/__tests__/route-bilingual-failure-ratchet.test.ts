@@ -69,6 +69,7 @@ const REMAINING: readonly string[] = [
   "src/app/api/documents/route.ts",
   "src/app/api/files/route.ts",
   "src/app/api/projects/[id]/route.ts",
+  "src/proxy.ts",
 ];
 
 const ROOT = process.cwd();
@@ -106,8 +107,20 @@ function bareErrorLiterals(source: string): string[] {
   );
 }
 
+/**
+ * Every file that can answer a caller with a failure body.
+ *
+ * `src/proxy.ts` is not a route and was therefore invisible to this scan, but
+ * it refuses before any route runs — so its two English literals reach more
+ * callers than most of the routes listed above. A scan scoped to a directory
+ * measures the directory, not the surface.
+ */
+function failureSources(): string[] {
+  return [...routeFiles(join(ROOT, "src/app/api")), join(ROOT, "src/proxy.ts")];
+}
+
 const violations = new Map<string, string[]>();
-for (const file of routeFiles(join(ROOT, "src/app/api"))) {
+for (const file of failureSources()) {
   const literals = bareErrorLiterals(readFileSync(file, "utf8"));
   if (literals.length > 0) violations.set(repoPath(file), literals);
 }

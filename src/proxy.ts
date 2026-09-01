@@ -25,6 +25,23 @@ export function bilingualFailureBody(
   return { ...contract, error: contract.message };
 }
 
+/**
+ * JSON refusal from the middleware, never cacheable.
+ *
+ * Each of these answers one caller's session state — no session, an unverified
+ * address, a forced password change, the wrong platform role. Next's default
+ * for a middleware response is `public, max-age=0, must-revalidate`, which is
+ * the wrong shape for all four. Routes inherit `no-store` from `jsonFailure`;
+ * the middleware refuses before any route runs, so it needs its own owner
+ * rather than four call sites that each have to remember.
+ */
+function jsonRefusal(body: unknown, status: number): NextResponse {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 /** Public marketing + health/auth surfaces (no session required). */
 export const PUBLIC_PATHS = new Set<string>([
   ...PUBLIC_PAGE_PATHS,
@@ -142,17 +159,15 @@ export default withAuth(
     // the caller is not signed in, and "Sign in to continue" is what the
     // bilingual body says.
     if (!token && isProtectedApiPath(path)) {
-      return NextResponse.json(bilingualFailureBody("UNAUTHORIZED"), {
-        status: 401,
-      });
+      return jsonRefusal(bilingualFailureBody("UNAUTHORIZED"), 401);
     }
 
     // Force password change before any app/API use
     if (token?.mustChangePassword && !isPasswordChangeAllowed(path)) {
       if (path.startsWith("/api/")) {
-        return NextResponse.json(
+        return jsonRefusal(
           { error: "Password change required", code: "MUST_CHANGE_PASSWORD" },
-          { status: 403 }
+          403
         );
       }
       const url = req.nextUrl.clone();
@@ -166,9 +181,9 @@ export default withAuth(
     // other authenticated page to the verification surface before it renders.
     if (token?.emailVerified === false && !isVerificationAllowedPath(path)) {
       if (path.startsWith("/api/")) {
-        return NextResponse.json(
+        return jsonRefusal(
           bilingualFailureBody("EMAIL_VERIFICATION_REQUIRED"),
-          { status: 403 }
+          403
         );
       }
       const url = req.nextUrl.clone();
@@ -181,7 +196,7 @@ export default withAuth(
     if (path.startsWith("/api/admin")) {
       const role = token?.role as string | undefined;
       if (role !== "SUPER_ADMIN" && role !== "ADMIN") {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return jsonRefusal({ error: "Forbidden" }, 403);
       }
     }
 
