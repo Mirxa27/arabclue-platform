@@ -152,10 +152,24 @@ describe("no client treats a parsed failure body as a string", () => {
   const files = [
     ...sourceFiles(join(REPO_ROOT, "src", "components")),
     ...sourceFiles(join(REPO_ROOT, "src", "hooks")),
+    // Pages are clients too, and this scan did not reach them until two live
+    // defects were found sitting there — including one on the forced
+    // password change, where the bilingual object landed in `useState<string
+    // | null>` and rendered as a bare child, which React does not tolerate.
+    //
+    // `.tsx` only: `route.ts` shares this tree and is the server half, which
+    // legitimately builds the very bodies these patterns hunt on receipt.
+    ...sourceFiles(join(REPO_ROOT, "src", "app")).filter((file) =>
+      file.endsWith(".tsx")
+    ),
   ];
 
   test("the scan covers the client tree", () => {
     expect(files.length).toBeGreaterThan(50);
+    // A scan scoped to a directory measures the directory, not the surface.
+    expect(files.some((file) => file.includes(join("app", "login")))).toBe(
+      true
+    );
   });
 
   const scan = (patterns: readonly RegExp[]) => scanFiles(files, patterns);

@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArabclueLogo } from "@/components/brand/arabclue-logo";
 import { useLocale } from "@/lib/store";
+import { apiErrorText } from "@/lib/api-failure-message";
 import { cn } from "@/lib/utils";
 
 function safeCallbackUrl(raw: string | null): string {
@@ -175,7 +176,17 @@ function LoginForm() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setError(data.error ?? "Password change failed");
+      // `error` on this contract is a bilingual object, and `res.json()` hands
+      // it back as `any` — so assigning it straight into `useState<string |
+      // null>` type-checked, then rendered as a bare child, which React
+      // refuses. The forced password change died on its own error path.
+      setError(
+        apiErrorText(
+          data,
+          locale,
+          ar ? "تعذر تغيير كلمة المرور" : "Password change failed"
+        )
+      );
       setLoading(false);
       return;
     }
