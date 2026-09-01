@@ -205,7 +205,13 @@ export function buildCopilotPrompt(input: CopilotPromptInput): string {
 export async function openCopilotSuggestionStream(
   input: CopilotGenerationInput
 ): Promise<ReadableStream<Uint8Array>> {
-  const { model, providerLabel, modelId } = await resolvePlatformAgentModel();
+  // Proposing replacement text for a sentence is section rewriting, so this
+  // asks for the engine that describes the job rather than the platform
+  // default. On a deployment where both point at the same connection this
+  // changes nothing; where an admin configured a REWRITE model, it is the
+  // difference between honouring that setting and ignoring it.
+  const { model, providerLabel, modelId } =
+    await resolvePlatformAgentModel("REWRITE");
 
   const result = streamObject({
     model,

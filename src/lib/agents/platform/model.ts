@@ -13,10 +13,23 @@ import { getProviderForEngine } from "@/lib/llm";
 import {
   normalizeOpenAiBase,
   requireConfiguredModelId,
+  type AgentEngine,
 } from "@/lib/llm/model-catalog";
 import { GATEWAY_MODEL_ID, gatewayAvailable } from "@/lib/llm/gateway";
 
-export async function resolvePlatformAgentModel() {
+/**
+ * `engine` names the kind of work, so an admin who configured a connection for
+ * it in Admin → AI Providers actually gets used. `getProviderForEngine` already
+ * falls back to DEFAULT and then to any active provider, so naming an engine
+ * can only narrow the choice, never leave a caller without one.
+ *
+ * The gateway branch is engine-blind by design: it is one credential and one
+ * catalogue id, and a deployment running on it has no per-engine connections to
+ * honour in the first place.
+ */
+export async function resolvePlatformAgentModel(
+  engine: AgentEngine = "DEFAULT"
+) {
   if (gatewayAvailable()) {
     return {
       model: gateway(GATEWAY_MODEL_ID),
@@ -25,7 +38,7 @@ export async function resolvePlatformAgentModel() {
     };
   }
 
-  const provider = await getProviderForEngine("DEFAULT");
+  const provider = await getProviderForEngine(engine);
   if (!provider) {
     throw new Error(
       "No active AI provider. Configure one under Admin → AI Providers, or set AI_GATEWAY_API_KEY."
