@@ -1182,6 +1182,18 @@ export const localizationRegistry = {
     ar: "مستند الدليل يفتقر إلى checksum — ارفع إصداراً جديداً",
     en: "Evidence document version is missing checksum — upload a new version",
   },
+  // Wider than EVIDENCE_VERSION_MISSING on purpose: the resolver refuses a
+  // pointer for four reasons — no such document, another workspace's document,
+  // no checksum, or a reference that contradicts the provenance — and the
+  // reader's next move is the same for all four.
+  KNOWLEDGE_EVIDENCE_INVALID: {
+    ar: "يتطلب الاعتماد مستند دليل من مساحة العمل هذه يحمل checksum",
+    en: "Approval requires a checksummed evidence document from this workspace",
+  },
+  KNOWLEDGE_REVOCATION_INVALID: {
+    ar: "يتطلب الإلغاء سجلاً معتمداً حالياً مع ذكر السبب",
+    en: "Revocation requires currently approved evidence and a reason",
+  },
 
   // Collaboration Comments (Req 12)
   COMMENT_EDIT_FORBIDDEN: {
@@ -2878,6 +2890,8 @@ export const COMPLETION_ERROR_CONTRACTS = {
   RECONCILE_PROVIDER_UNRESOLVED: { actionKey: "error_action_reconcile_billing", messageKey: "RECONCILE_PROVIDER_UNRESOLVED" },
   APPROVAL_FORBIDDEN: { actionKey: "error_action_decide_knowledge", messageKey: "APPROVAL_FORBIDDEN" },
   EVIDENCE_VERSION_MISSING: { actionKey: "error_action_decide_knowledge", messageKey: "EVIDENCE_VERSION_MISSING" },
+  KNOWLEDGE_EVIDENCE_INVALID: { actionKey: "error_action_decide_knowledge", messageKey: "KNOWLEDGE_EVIDENCE_INVALID" },
+  KNOWLEDGE_REVOCATION_INVALID: { actionKey: "error_action_decide_knowledge", messageKey: "KNOWLEDGE_REVOCATION_INVALID" },
   INVALID_QUEUE_CURSOR: { actionKey: "error_action_decide_knowledge", messageKey: "INVALID_QUEUE_CURSOR" },
   KNOWLEDGE_RECORD_NOT_FOUND: { actionKey: "error_action_decide_knowledge", messageKey: "KNOWLEDGE_RECORD_NOT_FOUND" },
   REJECTION_REASON_INVALID: { actionKey: "error_action_decide_knowledge", messageKey: "REJECTION_REASON_INVALID" },

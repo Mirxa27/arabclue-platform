@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { isWorkspaceManager } from "@/lib/auth";
 import {
-  isWorkspaceManager,
-  requireSession,
-  requireWriter,
-} from "@/lib/auth";
+  ApiError,
+  parseJsonBody,
+  parseWithSchema,
+  RequestValidationError,
+  ResourceNotFoundError,
+  withTenant,
+} from "@/lib/api-controller";
 import { embedText } from "@/lib/llm";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { getTenantContext } from "@/lib/workspace-context";
 import {
   DOCUMENT_BRAND_FONT_FAMILIES,
   extractLogoStoragePath,
@@ -144,300 +147,291 @@ export function validateBrandPatchForWorkspace(
 
 // GET /api/brand — fetch brand profile + past projects
 export async function GET() {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const { workspace, brandProfile } = await getTenantContext(session.user.id);
-  const company = {
-    name: workspace.name,
-    nameAr: workspace.nameAr,
-    crNumber: workspace.crNumber,
-    vatNumber: workspace.vatNumber,
-  };
-  const pastProjects = await db.pastProject.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { createdAt: "desc" },
-  });
-  return NextResponse.json({
-    workspaceId: workspace.id,
-    brandProfile,
-    company,
-    pastProjects,
-  });
+  return withTenant(
+    "session",
+    async ({ workspace, brandProfile }) => {
+      const company = {
+        name: workspace.name,
+        nameAr: workspace.nameAr,
+        crNumber: workspace.crNumber,
+        vatNumber: workspace.vatNumber,
+      };
+      const pastProjects = await db.pastProject.findMany({
+        where: { workspaceId: workspace.id },
+        orderBy: { createdAt: "desc" },
+      });
+      return NextResponse.json({
+        workspaceId: workspace.id,
+        brandProfile,
+        company,
+        pastProjects,
+      });
+    },
+    "[brand GET]"
+  );
 }
 
 // PATCH /api/brand — update brand profile
 export async function PATCH(req: NextRequest) {
-  const session = await requireWriter();
-  if (!session) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { workspace, brandProfile } = await getTenantContext(session.user.id);
-  if (!brandProfile) {
-    return NextResponse.json({ error: "No brand profile" }, { status: 400 });
-  }
-  const rawBody = await req.json().catch(() => null);
-  const data = validateBrandPatchForWorkspace(rawBody, workspace.id);
-  if (!data) {
-    return NextResponse.json(
-      { error: "Invalid brand update" },
-      { status: 400 }
-    );
-  }
+  return withTenant(
+    "writer",
+    async ({ session, workspace, brandProfile }) => {
+      if (!brandProfile) {
+        throw new ApiError("No brand profile", 400, "NO_BRAND_PROFILE");
+      }
+      const rawBody = await req.json().catch(() => null);
+      const data = validateBrandPatchForWorkspace(rawBody, workspace.id);
+      if (!data) {
+        // Two unrelated reasons answer null. Re-running the schema raises its
+        // own field paths when the schema is what rejected; getting past that
+        // line means the body was well-formed and the logo pointed outside this
+        // workspace. "Invalid brand update" named neither.
+        parseWithSchema(rawBody, brandPatchSchema);
+        throw new RequestValidationError(["logoUrl"]);
+      }
 
-  const updated = await db.brandProfile.update({
-    where: { id: brandProfile.id },
-    data,
-  });
-  await audit({
-    userId: session.user.id,
-    action: "BRAND_UPDATE",
-    resource: "BrandProfile",
-    resourceId: updated.id,
-  });
-  return NextResponse.json({ brandProfile: updated });
+      const updated = await db.brandProfile.update({
+        where: { id: brandProfile.id },
+        data,
+      });
+      await audit({
+        userId: session.user.id,
+        action: "BRAND_UPDATE",
+        resource: "BrandProfile",
+        resourceId: updated.id,
+      });
+      return NextResponse.json({ brandProfile: updated });
+    },
+    "[brand PATCH]"
+  );
 }
 
 // POST /api/brand — add past project with embedding for RAG
 export async function POST(req: NextRequest) {
-  const session = await requireWriter();
-  if (!session) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { workspace, brandProfile } = await getTenantContext(session.user.id);
-  if (!brandProfile) {
-    return NextResponse.json({ error: "No brand profile" }, { status: 400 });
-  }
-  // Every past project written here is embedded, and PUT re-embeds on edit, so
-  // the two handlers share one budget.
-  const limited = await checkAiRateLimit({
-    route: "brand.embed",
-    identifier: workspace.id,
-    limit: 20,
-    windowMs: 60_000,
-  });
-  if (limited) return limited;
+  return withTenant(
+    "writer",
+    async ({ session, workspace, brandProfile }) => {
+      if (!brandProfile) {
+        throw new ApiError("No brand profile", 400, "NO_BRAND_PROFILE");
+      }
+      // Every past project written here is embedded, and PUT re-embeds on edit,
+      // so the two handlers share one budget.
+      const limited = await checkAiRateLimit({
+        route: "brand.embed",
+        identifier: workspace.id,
+        limit: 20,
+        windowMs: 60_000,
+      });
+      if (limited) return limited;
 
-  const parsed = pastProjectCreateSchema.safeParse(
-    await req.json().catch(() => null)
-  );
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid past project" },
-      { status: 400 }
-    );
-  }
-  const body = parsed.data;
+      const body = await parseJsonBody(req, pastProjectCreateSchema);
 
-  const embeddingText = [
-    body.title,
-    body.titleAr,
-    body.clientName,
-    body.sector,
-    body.summary,
-    body.summaryAr,
-    body.tags,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const embedding = await embedText(embeddingText);
+      const embeddingText = [
+        body.title,
+        body.titleAr,
+        body.clientName,
+        body.sector,
+        body.summary,
+        body.summaryAr,
+        body.tags,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const embedding = await embedText(embeddingText);
 
-  const project = await db.pastProject.create({
-    data: {
-      workspaceId: workspace.id,
-      brandProfileId: brandProfile.id,
-      title: body.title,
-      titleAr: body.titleAr,
-      clientName: body.clientName,
-      clientNameAr: body.clientNameAr,
-      sector: body.sector,
-      contractValue: body.contractValue ?? null,
-      currency: "SAR",
-      startDate: body.startDate ? new Date(body.startDate) : null,
-      endDate: body.endDate ? new Date(body.endDate) : null,
-      outcome: body.outcome ?? "SUCCESSFUL",
-      summary: body.summary,
-      summaryAr: body.summaryAr,
-      tags: body.tags,
-      embeddingJson: embedding ? JSON.stringify(embedding) : null,
-      ...markKnowledgeContentUnreviewed(
-        pastProjectKnowledgeContent({
-          ...body,
+      const project = await db.pastProject.create({
+        data: {
+          workspaceId: workspace.id,
+          brandProfileId: brandProfile.id,
+          title: body.title,
+          titleAr: body.titleAr,
+          clientName: body.clientName,
+          clientNameAr: body.clientNameAr,
+          sector: body.sector,
+          contractValue: body.contractValue ?? null,
           currency: "SAR",
-        })
-      ),
+          startDate: body.startDate ? new Date(body.startDate) : null,
+          endDate: body.endDate ? new Date(body.endDate) : null,
+          outcome: body.outcome ?? "SUCCESSFUL",
+          summary: body.summary,
+          summaryAr: body.summaryAr,
+          tags: body.tags,
+          embeddingJson: embedding ? JSON.stringify(embedding) : null,
+          ...markKnowledgeContentUnreviewed(
+            pastProjectKnowledgeContent({
+              ...body,
+              currency: "SAR",
+            })
+          ),
+        },
+      });
+      await audit({
+        userId: session.user.id,
+        action: AUDIT_ACTIONS.DOC_UPLOAD,
+        resource: "PastProject",
+        resourceId: project.id,
+        details: { title: project.title },
+      });
+      return NextResponse.json({ project });
     },
-  });
-  await audit({
-    userId: session.user.id,
-    action: AUDIT_ACTIONS.DOC_UPLOAD,
-    resource: "PastProject",
-    resourceId: project.id,
-    details: { title: project.title },
-  });
-  return NextResponse.json({ project });
+    "[brand POST]"
+  );
 }
 
 /** PUT /api/brand — edit, evidence-approve, or revoke a past project. */
 export async function PUT(req: NextRequest) {
-  const session = await requireWriter();
-  if (!session) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { workspace, membershipRole } = await getTenantContext(session.user.id);
-  const limited = await checkAiRateLimit({
-    route: "brand.embed",
-    identifier: workspace.id,
-    limit: 20,
-    windowMs: 60_000,
-  });
-  if (limited) return limited;
+  return withTenant(
+    "writer",
+    async ({ session, workspace, membershipRole }) => {
+      const limited = await checkAiRateLimit({
+        route: "brand.embed",
+        identifier: workspace.id,
+        limit: 20,
+        windowMs: 60_000,
+      });
+      if (limited) return limited;
 
-  const body: unknown = await req.json().catch(() => null);
-  const parsed = pastProjectUpdateSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid past project update" },
-      { status: 400 }
-    );
-  }
-  const { id } = parsed.data;
-  const existing = await db.pastProject.findFirst({
-    where: { id, workspaceId: workspace.id },
-  });
-  if (!existing) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
-  }
+      const body = await parseJsonBody(req, pastProjectUpdateSchema);
+      const { id } = body;
+      const existing = await db.pastProject.findFirst({
+        where: { id, workspaceId: workspace.id },
+      });
+      if (!existing) {
+        throw new ResourceNotFoundError();
+      }
 
-  const content = pastProjectKnowledgeContent({
-    ...existing,
-    title: "title" in parsed.data ? parsed.data.title ?? existing.title : existing.title,
-    summary:
-      "summary" in parsed.data
-        ? parsed.data.summary ?? existing.summary
-        : existing.summary,
-  });
-  const data: {
-    title?: string;
-    summary?: string;
-    embeddingJson?: string | null;
-    approved?: boolean;
-    reviewStatus?: "UNREVIEWED" | "APPROVED" | "REVOKED";
-    evidenceRef?: string | null;
-    evidenceDocumentId?: string | null;
-    evidenceVersion?: number | null;
-    evidenceChecksum?: string | null;
-    provenanceJson?: string | null;
-    reviewedById?: string | null;
-    approvedAt?: Date | null;
-    revokedAt?: Date | null;
-    revokedById?: string | null;
-    revocationReason?: string | null;
-    contentHash?: string;
-  } = {};
-  if ("approved" in parsed.data && parsed.data.approved === true) {
-    if (!isWorkspaceManager(membershipRole, session.user.role)) {
-      return NextResponse.json(
-        { error: "Only a workspace manager may approve knowledge evidence" },
-        { status: 403 }
-      );
-    }
-    try {
-      const evidence = await resolveKnowledgeApprovalEvidence({
-        workspaceId: workspace.id,
-        request: {
-          approved: true,
-          provenance: parsed.data.provenance,
+      const content = pastProjectKnowledgeContent({
+        ...existing,
+        title: "title" in body ? body.title ?? existing.title : existing.title,
+        summary:
+          "summary" in body ? body.summary ?? existing.summary : existing.summary,
+      });
+      const data: {
+        title?: string;
+        summary?: string;
+        embeddingJson?: string | null;
+        approved?: boolean;
+        reviewStatus?: "UNREVIEWED" | "APPROVED" | "REVOKED";
+        evidenceRef?: string | null;
+        evidenceDocumentId?: string | null;
+        evidenceVersion?: number | null;
+        evidenceChecksum?: string | null;
+        provenanceJson?: string | null;
+        reviewedById?: string | null;
+        approvedAt?: Date | null;
+        revokedAt?: Date | null;
+        revokedById?: string | null;
+        revocationReason?: string | null;
+        contentHash?: string;
+      } = {};
+      if ("approved" in body && body.approved === true) {
+        // Not WORKSPACE_ROLE_FORBIDDEN: this caller may write here, and the one
+        // thing they cannot do is sign off evidence for a live bid.
+        if (!isWorkspaceManager(membershipRole, session.user.role)) {
+          throw new ApiError(
+            "Approving knowledge evidence requires a workspace manager",
+            403,
+            "APPROVAL_FORBIDDEN"
+          );
+        }
+        try {
+          const evidence = await resolveKnowledgeApprovalEvidence({
+            workspaceId: workspace.id,
+            request: {
+              approved: true,
+              provenance: body.provenance,
+            },
+          });
+          Object.assign(
+            data,
+            approveKnowledgeContent({
+              evidence,
+              reviewerId: session.user.id,
+              content,
+            })
+          );
+        } catch {
+          throw new ApiError(
+            "Approval evidence could not be resolved",
+            400,
+            "KNOWLEDGE_EVIDENCE_INVALID"
+          );
+        }
+      } else if ("approved" in body && body.approved === false) {
+        if (!isWorkspaceManager(membershipRole, session.user.role)) {
+          throw new ApiError(
+            "Revoking knowledge evidence requires a workspace manager",
+            403,
+            "APPROVAL_FORBIDDEN"
+          );
+        }
+        try {
+          Object.assign(
+            data,
+            revokeKnowledgeContent({
+              request: body,
+              content,
+              previous: existing,
+              revokerId: session.user.id,
+            })
+          );
+        } catch {
+          throw new ApiError(
+            "Revocation requires approved evidence and a reason",
+            400,
+            "KNOWLEDGE_REVOCATION_INVALID"
+          );
+        }
+      } else {
+        if (body.title !== undefined) data.title = body.title;
+        if (body.summary !== undefined) data.summary = body.summary;
+        Object.assign(data, markKnowledgeContentUnreviewed(content));
+        const reembedded = await embedText(
+          [
+            "title" in body ? body.title : existing.title,
+            "summary" in body ? body.summary : existing.summary,
+            existing.sector,
+            existing.tags,
+          ]
+            .filter(Boolean)
+            .join("\n")
+        );
+        // Null clears the stale vector rather than pinning it to the old text.
+        data.embeddingJson = reembedded ? JSON.stringify(reembedded) : null;
+      }
+
+      const project = await db.pastProject.update({
+        where: { id },
+        data,
+      });
+      await audit({
+        userId: session.user.id,
+        action:
+          data.reviewStatus === "APPROVED"
+            ? "KNOWLEDGE_APPROVE"
+            : data.reviewStatus === "REVOKED"
+              ? "KNOWLEDGE_REVOKE"
+              : "KNOWLEDGE_INVALIDATE",
+        resource: "PastProject",
+        resourceId: project.id,
+        details: {
+          approved: project.approved,
+          reviewStatus: project.reviewStatus,
+          contentHash: project.contentHash,
+          ...("reason" in body
+            ? {
+                reason: project.revocationReason,
+                evidenceRef: project.evidenceRef,
+                approvedById: project.reviewedById,
+                approvedAt: project.approvedAt?.toISOString(),
+                previousContentHash: existing.contentHash,
+                revokedById: project.revokedById,
+              }
+            : {}),
         },
       });
-      Object.assign(
-        data,
-        approveKnowledgeContent({
-          evidence,
-          reviewerId: session.user.id,
-          content,
-        })
-      );
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            "Approval requires a checksummed evidence document from this workspace",
-        },
-        { status: 400 }
-      );
-    }
-  } else if ("approved" in parsed.data && parsed.data.approved === false) {
-    if (!isWorkspaceManager(membershipRole, session.user.role)) {
-      return NextResponse.json(
-        { error: "Only a workspace manager may revoke knowledge evidence" },
-        { status: 403 }
-      );
-    }
-    try {
-      Object.assign(
-        data,
-        revokeKnowledgeContent({
-          request: parsed.data,
-          content,
-          previous: existing,
-          revokerId: session.user.id,
-        })
-      );
-    } catch {
-      return NextResponse.json(
-        { error: "Revocation requires currently approved evidence and a reason" },
-        { status: 400 }
-      );
-    }
-  } else {
-    if (parsed.data.title !== undefined) data.title = parsed.data.title;
-    if (parsed.data.summary !== undefined) data.summary = parsed.data.summary;
-    Object.assign(data, markKnowledgeContentUnreviewed(content));
-    const reembedded = await embedText(
-      [
-        "title" in parsed.data ? parsed.data.title : existing.title,
-        "summary" in parsed.data ? parsed.data.summary : existing.summary,
-        existing.sector,
-        existing.tags,
-      ]
-        .filter(Boolean)
-        .join("\n")
-    );
-    // Null clears the stale vector rather than pinning it to the old text.
-    data.embeddingJson = reembedded ? JSON.stringify(reembedded) : null;
-  }
-
-  const project = await db.pastProject.update({
-    where: { id },
-    data,
-  });
-  await audit({
-    userId: session.user.id,
-    action:
-      data.reviewStatus === "APPROVED"
-        ? "KNOWLEDGE_APPROVE"
-        : data.reviewStatus === "REVOKED"
-          ? "KNOWLEDGE_REVOKE"
-          : "KNOWLEDGE_INVALIDATE",
-    resource: "PastProject",
-    resourceId: project.id,
-    details: {
-      approved: project.approved,
-      reviewStatus: project.reviewStatus,
-      contentHash: project.contentHash,
-      ...("reason" in parsed.data
-        ? {
-            reason: project.revocationReason,
-            evidenceRef: project.evidenceRef,
-            approvedById: project.reviewedById,
-            approvedAt: project.approvedAt?.toISOString(),
-            previousContentHash: existing.contentHash,
-            revokedById: project.revokedById,
-          }
-        : {}),
+      return NextResponse.json({ project });
     },
-  });
-  return NextResponse.json({ project });
+    "[brand PUT]"
+  );
 }
