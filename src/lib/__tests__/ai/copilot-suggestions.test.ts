@@ -97,6 +97,22 @@ describe("applySuggestion", () => {
     const edited = DOC.replace("نقدم خدمات الدعم الفني.", "نقدم دعمًا.");
     expect(applySuggestion(edited, s)).toBeNull();
   });
+
+  test("returns null when the writer has since duplicated the anchored text", () => {
+    // Uniqueness is checked on the server when the pass starts
+    // (`copilot-suggestions.ts:62`) against the document as it was then. The
+    // rail applies against a buffer the writer keeps typing into, and repeated
+    // boilerplate is the ordinary case in a bid, not a contrived one — the same
+    // commitment restated under a second heading is enough. With two matches,
+    // `indexOf` is guessing which clause of a binding document to rewrite.
+    const [s] = reconcileSuggestions(DOC, [raw()]);
+    const doubled = `${DOC}\n## الدعم\n\n${s.anchor}\n`;
+
+    // Anti-vacuous: the anchor is emphatically still there, twice over. A null
+    // here has to be the ambiguity rule, not the stale one above.
+    expect(doubled).toContain(s.anchor);
+    expect(applySuggestion(doubled, s)).toBeNull();
+  });
 });
 
 describe("applySuggestions (bulk accept)", () => {
@@ -130,6 +146,32 @@ describe("applySuggestions (bulk accept)", () => {
     expect(out.applied).toEqual([overlapping[0].id]);
     expect(out.skipped).toEqual([overlapping[1].id]);
     expect(out.content).toBe(DOC.replace(raw().anchor, raw().replacement));
+  });
+
+  test("skips a suggestion an earlier replacement made ambiguous", () => {
+    // Reconciliation vets every anchor against the document as it was before
+    // any of them ran. Applying in order changes that document underneath the
+    // ones still queued: here the first edit writes a second copy of the second
+    // anchor, and from that point `indexOf` is choosing between two sites
+    // nothing ever vetted.
+    const list = reconcileSuggestions(DOC, [
+      raw({
+        anchor: "الشركة ملتزمة بالأنظمة.",
+        replacement: "نقدم خدمات الدعم الفني.",
+        kind: "compliance",
+      }),
+      raw(),
+    ]);
+    expect(list).toHaveLength(2);
+
+    const out = applySuggestions(DOC, list);
+    expect(out.applied).toEqual([list[0].id]);
+    expect(out.skipped).toEqual([list[1].id]);
+    // The scope sentence still reads exactly as the writer left it. Without the
+    // ambiguity rule this is where the skipped edit would have landed.
+    expect(out.content).toBe(
+      DOC.replace("الشركة ملتزمة بالأنظمة.", "نقدم خدمات الدعم الفني.")
+    );
   });
 
   test("returns the document untouched when nothing is accepted", () => {

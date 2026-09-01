@@ -92,6 +92,16 @@ describe("the rail watches content, not length", () => {
       /reviewedRef\.current = result\.content/
     );
   });
+
+  test("a card is only offered while its anchor resolves to one place", () => {
+    // The filter used to be `markdown.includes(s.anchor)` — existence only. A
+    // card whose anchored sentence the writer had since repeated elsewhere
+    // stayed on screen with a live Accept button, and `applySuggestion` now
+    // refuses those, so the button would have done nothing at all. Filtering on
+    // the same rule the edit enforces keeps the two in step.
+    expect(RAIL).toContain("anchorResolves(markdown, s.anchor)");
+    expect(RAIL).not.toContain("markdown.includes(s.anchor)");
+  });
 });
 
 describe("the rail consumes the pass as a stream", () => {

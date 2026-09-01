@@ -39,6 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { apiErrorText } from "@/lib/api-failure-message";
 import {
+  anchorResolves,
   applySuggestion,
   applySuggestions,
   changedChars,
@@ -213,7 +214,11 @@ export function CopilotRail({
   }, [markdown, paused, review]);
 
   const visible = suggestions.filter((s) => !dismissed.has(s.id));
-  const live = visible.filter((s) => markdown.includes(s.anchor));
+  // The same rule `applySuggestion` enforces, so Accept is only ever offered
+  // for a card that will actually land. Existence alone is not enough: text the
+  // writer has since repeated elsewhere would leave the button choosing between
+  // two places on their behalf.
+  const live = visible.filter((s) => anchorResolves(markdown, s.anchor));
 
   const accept = (s: CopilotSuggestion) => {
     const next = applySuggestion(markdown, s);
@@ -377,13 +382,16 @@ export function CopilotRail({
         )}
 
         {visible.map((s) => {
-          const stale = !markdown.includes(s.anchor);
+          // Edited away, or repeated somewhere else since the pass ran. Either
+          // way `applySuggestion` refuses it, so the card must say why instead
+          // of offering a button that silently does nothing.
+          const unresolved = !anchorResolves(markdown, s.anchor);
           return (
             <article
               key={s.id}
               className={cn(
                 "border rounded-md p-2 space-y-1.5 text-[11px] bg-card",
-                stale && "opacity-50"
+                unresolved && "opacity-50"
               )}
             >
               <div className="flex items-center gap-1 flex-wrap">
@@ -409,12 +417,12 @@ export function CopilotRail({
                 </p>
               </div>
 
-              {stale ? (
+              {unresolved ? (
                 <p className="text-[10px] text-muted-foreground">
                   {t(
                     locale,
-                    "تغيّر هذا النص — الاقتراح لم يعد ينطبق.",
-                    "That text changed — this no longer applies."
+                    "لم يعد هذا الاقتراح يشير إلى موضع واحد في المستند.",
+                    "This no longer points at one place in the document."
                   )}
                 </p>
               ) : (

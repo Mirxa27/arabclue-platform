@@ -71,13 +71,30 @@ export function occurrences(haystack: string, needle: string): number {
   }
 }
 
-/** The edited document, or null when the anchor no longer exists. */
+/**
+ * Whether the anchor still points at exactly one place in the document.
+ *
+ * The two ways this fails are different and both matter. Zero matches means the
+ * writer edited that text away, so there is nothing left to replace. More than
+ * one means `indexOf` would be picking a site on their behalf, and rewriting
+ * the wrong clause of a binding bid is worse than not offering the edit at all.
+ *
+ * Re-checked at the moment of the edit rather than trusted from review time:
+ * `reconcileSuggestion` vets uniqueness against the document as it was when the
+ * pass started, and the writer keeps typing while the cards sit on screen.
+ */
+export function anchorResolves(contentMd: string, anchor: string): boolean {
+  const at = contentMd.indexOf(anchor);
+  return at !== -1 && contentMd.indexOf(anchor, at + anchor.length) === -1;
+}
+
+/** The edited document, or null when the anchor no longer resolves. */
 export function applySuggestion(
   contentMd: string,
   suggestion: CopilotSuggestion
 ): string | null {
+  if (!anchorResolves(contentMd, suggestion.anchor)) return null;
   const at = contentMd.indexOf(suggestion.anchor);
-  if (at === -1) return null;
   return (
     contentMd.slice(0, at) +
     suggestion.replacement +
@@ -86,8 +103,10 @@ export function applySuggestion(
 }
 
 /**
- * Bulk accept. Applied in order, because an earlier edit can consume the text a
- * later one anchors to — those are reported as skipped rather than forced.
+ * Bulk accept. Applied in order, because each edit moves the document the rest
+ * are still anchored to: an earlier one can consume the text a later one points
+ * at, or write a second copy of it. Either way the later edit is reported as
+ * skipped rather than forced onto a site nothing vetted.
  */
 export function applySuggestions(
   contentMd: string,
