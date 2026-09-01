@@ -3,7 +3,7 @@
 import { apiErrorText } from "@/lib/api-failure-message";
 
 import Link from "next/link";
-import { startTransition, useState } from "react";
+import { Fragment, startTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { resolveDashboardNavigation } from "@/lib/dashboard-navigate";
@@ -47,6 +47,14 @@ import { Separator } from "@/components/ui/separator";
 import { ArabclueLogo } from "@/components/brand/arabclue-logo";
 import { usePendingApprovalCount } from "./knowledge-approval-queue";
 
+/** The three questions a disclosed panel answers: what am I doing, what am I
+ * drawing from, who am I. All three labels were already registered bilingually
+ * in `i18n.ts` and referenced nowhere. */
+type NavGroupKey =
+  | "nav_group_workflow"
+  | "nav_group_library"
+  | "nav_group_account";
+
 /**
  * The five destinations a bid actually passes through. Everything else the
  * platform can do is reached by asking the agent on the home screen, so the
@@ -61,20 +69,31 @@ const NAV_PRIMARY: { view: DashboardView; key: string; icon: typeof LayoutDashbo
   { view: "reviews", key: "nav_reviews", icon: Stamp },
 ];
 
-/** Reachable in one click from `More`, and by name from the agent. */
-const NAV_SECONDARY: typeof NAV_PRIMARY = [
-  { view: "contracts", key: "nav_contracts", icon: Scale },
-  { view: "agents", key: "nav_agents", icon: Bot },
-  { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval" },
-  { view: "clause-library", key: "nav_clause_library", icon: Library },
-  { view: "template-editor", key: "nav_template_editor", icon: FileStack },
-  { view: "marketplace", key: "nav_marketplace", icon: Store },
-  { view: "proposal-builder", key: "nav_proposal_builder", icon: LayoutList },
-  { view: "analytics", key: "nav_analytics", icon: BarChart3 },
-  { view: "account", key: "nav_account", icon: Building2 },
-  { view: "business-profile", key: "nav_business_profile", icon: Briefcase },
-  { view: "billing", key: "nav_billing", icon: CreditCard },
-  { view: "settings", key: "nav_settings", icon: Lock },
+/**
+ * Reachable in one click from `More`, and by name from the agent.
+ *
+ * One flat array, `group` on every row: the heading is rendered wherever the
+ * group changes, so `activeIsSecondary` and the badge roll-up below keep
+ * reading a single list. Rows of a group must therefore stay adjacent —
+ * `dashboard-sidebar-ia.test.ts` holds that, since a split group renders its
+ * heading twice and nothing on screen would say why.
+ *
+ * `knowledge-approval` leads because it is the only row here that can carry a
+ * pending count, and that count is usually why `More` was opened at all.
+ */
+const NAV_SECONDARY: (NavItem & { group: NavGroupKey })[] = [
+  { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval", group: "nav_group_workflow" },
+  { view: "contracts", key: "nav_contracts", icon: Scale, group: "nav_group_workflow" },
+  { view: "agents", key: "nav_agents", icon: Bot, group: "nav_group_workflow" },
+  { view: "proposal-builder", key: "nav_proposal_builder", icon: LayoutList, group: "nav_group_workflow" },
+  { view: "analytics", key: "nav_analytics", icon: BarChart3, group: "nav_group_workflow" },
+  { view: "clause-library", key: "nav_clause_library", icon: Library, group: "nav_group_library" },
+  { view: "template-editor", key: "nav_template_editor", icon: FileStack, group: "nav_group_library" },
+  { view: "marketplace", key: "nav_marketplace", icon: Store, group: "nav_group_library" },
+  { view: "account", key: "nav_account", icon: Building2, group: "nav_group_account" },
+  { view: "business-profile", key: "nav_business_profile", icon: Briefcase, group: "nav_group_account" },
+  { view: "billing", key: "nav_billing", icon: CreditCard, group: "nav_group_account" },
+  { view: "settings", key: "nav_settings", icon: Lock, group: "nav_group_account" },
 ];
 
 const ADMIN_NAV: { view: DashboardView; key: string; icon: typeof LayoutDashboard }[] = [
@@ -189,6 +208,29 @@ function MoreToggle({
         </span>
       )}
     </button>
+  );
+}
+
+/**
+ * Names the run of rows beneath it. Collapsed to 72px there is no room for a
+ * word, so the grouping survives as the rule that separates the icons — the
+ * same trade the admin heading below already makes.
+ */
+function NavGroupLabel({
+  groupKey,
+  collapsed,
+  locale,
+}: {
+  groupKey: NavGroupKey;
+  collapsed: boolean;
+  locale: "ar" | "en";
+}) {
+  if (collapsed) return <div className="my-2 mx-2 h-px bg-[var(--hairline)]" aria-hidden="true" />;
+  return (
+    <div className="pt-3 pb-1 px-2.5 flex items-center gap-2 text-[11px] font-[650] uppercase tracking-[0.08em] text-foreground/25">
+      {tr(groupKey, locale)}
+      <div className="h-px flex-1 bg-[var(--hairline)]" />
+    </div>
   );
 }
 
@@ -316,16 +358,20 @@ export function DashboardSidebar({ variant = "desktop" }: { variant?: "desktop" 
           onToggle={() => setMoreOpen((open) => !open)}
         />
         {showSecondary &&
-          NAV_SECONDARY.map((item) => (
-            <NavButton
-              key={item.view}
-              item={item}
-              active={view === item.view}
-              collapsed={collapsed}
-              locale={locale}
-              badgeCount={badgeFor(item)}
-              onNavigate={() => goToView(item.view)}
-            />
+          NAV_SECONDARY.map((item, index) => (
+            <Fragment key={item.view}>
+              {item.group !== NAV_SECONDARY[index - 1]?.group && (
+                <NavGroupLabel groupKey={item.group} collapsed={collapsed} locale={locale} />
+              )}
+              <NavButton
+                item={item}
+                active={view === item.view}
+                collapsed={collapsed}
+                locale={locale}
+                badgeCount={badgeFor(item)}
+                onNavigate={() => goToView(item.view)}
+              />
+            </Fragment>
           ))}
 
         {isAdmin && (
