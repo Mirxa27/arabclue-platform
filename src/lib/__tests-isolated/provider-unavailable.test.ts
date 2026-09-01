@@ -4,7 +4,6 @@ import {
   ProviderUnavailableError,
   guardCaughtOrThrow,
   guardOrThrow,
-  isRealAiOnlyStrict,
 } from "../ai/provider-unavailable";
 
 const ORIGINAL_ENV_VALUE = process.env.AUTONOMY_REAL_AI_ONLY;
@@ -25,28 +24,10 @@ afterEach(() => {
   setFlag(ORIGINAL_ENV_VALUE);
 });
 
-describe("isRealAiOnlyStrict", () => {
-  test("returns false when the flag is unset", () => {
-    expect(isRealAiOnlyStrict()).toBe(false);
-  });
-
-  test("returns true for truthy values", () => {
-    for (const value of ["1", "true", "TRUE", "on", "yes", "  Yes  "]) {
-      setFlag(value);
-      expect(isRealAiOnlyStrict()).toBe(true);
-    }
-  });
-
-  test("returns false for falsy or garbage values", () => {
-    for (const value of ["0", "false", "no", "off", "", "maybe", "1;"]) {
-      setFlag(value);
-      expect(isRealAiOnlyStrict()).toBe(false);
-    }
-  });
-});
-
+// The flag reader itself is pinned in `src/lib/__tests__/real-ai-only.test.ts`.
 describe("guardOrThrow", () => {
   test("no-op when result is not a fallback (flag off)", () => {
+    setFlag("0");
     expect(() =>
       guardOrThrow(
         { fallback: false, failureKind: "none", provider: "anthropic" },
@@ -66,12 +47,24 @@ describe("guardOrThrow", () => {
   });
 
   test("no-op when flag is off, even with fallback result", () => {
+    setFlag("0");
     expect(() =>
       guardOrThrow(
         { fallback: true, failureKind: "no_provider", provider: "none" },
         "test",
       ),
     ).not.toThrow();
+  });
+
+  test("throws on a fallback result when the flag is merely absent", () => {
+    // The default is what a forgetful deploy gets, so it is the case worth
+    // asserting on the guard itself and not only on the flag reader.
+    expect(() =>
+      guardOrThrow(
+        { fallback: true, failureKind: "no_provider", provider: "none" },
+        "test",
+      ),
+    ).toThrow(ProviderUnavailableError);
   });
 
   test("throws ProviderUnavailableError when flag is on and result is fallback", () => {
@@ -112,6 +105,7 @@ describe("guardOrThrow", () => {
 
 describe("guardCaughtOrThrow", () => {
   test("no-op when flag is off — caller keeps its fallback path", () => {
+    setFlag("0");
     const original = new Error("network down");
     expect(() => guardCaughtOrThrow(original, "compliance:scan")).not.toThrow();
   });

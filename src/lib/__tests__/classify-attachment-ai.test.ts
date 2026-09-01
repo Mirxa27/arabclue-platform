@@ -116,9 +116,11 @@ describe("model-led attachment classification", () => {
     expect(messages[0]?.content).toContain("RFP");
   });
 
-  test("no provider: keeps the keyword decision by default", async () => {
+  test("no provider, real-AI-only opted out: keeps the keyword decision", async () => {
+    // `"0"` rather than unset: unset is strict, so the permissive path is only
+    // reachable where a deploy asked for it.
     const decision = await withEnv(
-      { ARABCLUE_LLM_DETERMINISTIC: "1", AUTONOMY_REAL_AI_ONLY: undefined },
+      { ARABCLUE_LLM_DETERMINISTIC: "1", AUTONOMY_REAL_AI_ONLY: "0" },
       () =>
         classifyAttachmentWithAi({
           originalName: "Etimad-RFP-Cloud-2026.pdf",

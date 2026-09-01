@@ -1,5 +1,8 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { installNoExternalNetworkGuard } from "../support/provider-mocks";
+import {
+  installNoExternalNetworkGuard,
+  permitDeterministicFallback,
+} from "../support/provider-mocks";
 import {
   scoreProposal,
   generateImprovementSuggestions,
@@ -10,9 +13,13 @@ import {
 import type { IngestionEntities, ComplianceMatrixRow } from "../../types";
 
 const guard = installNoExternalNetworkGuard();
+// Every assertion below is about what the deterministic branch produces, so
+// this file is one of the few that asks for the fallback the default refuses.
+const restoreRealAiOnly = permitDeterministicFallback();
 
 afterAll(() => {
   guard();
+  restoreRealAiOnly();
 });
 
 const mockEntities: IngestionEntities = {

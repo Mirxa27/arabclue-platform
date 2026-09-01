@@ -23,7 +23,7 @@ import {
   type AgentEngine,
 } from "@/lib/llm/model-catalog";
 import { resolveProviderApiKey } from "@/lib/env-settings";
-import { getAutonomyFlagsFromProcessEnv } from "@/lib/autonomy-flags";
+import { isRealAiOnlyStrict } from "@/lib/real-ai-only";
 import { selectEmailTransport } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
@@ -175,13 +175,13 @@ export async function GET() {
   // fabricate deterministic text presented as model output (`permissive`).
   // The deploy is the trust boundary for that switch, so nothing outside the
   // running instance can otherwise observe which behaviour is live. Read from
-  // `process.env` deliberately: that is the same source the guard itself reads,
-  // so the probe cannot report strict while enforcement is permissive.
+  // `process.env` deliberately: this calls the same function the guard itself
+  // calls, so the probe cannot report strict while enforcement is permissive.
   // Never gates readiness — a policy flag must not pull the site out of the
   // load balancer.
   checks.realAi = {
     ok: true,
-    detail: getAutonomyFlagsFromProcessEnv().realAiOnly ? "strict" : "permissive",
+    detail: isRealAiOnlyStrict() ? "strict" : "permissive",
   };
 
   try {

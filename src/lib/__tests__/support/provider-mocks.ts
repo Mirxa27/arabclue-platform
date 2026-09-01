@@ -218,3 +218,26 @@ export function installNoExternalNetworkGuard(): () => void {
     }
   };
 }
+
+/**
+ * Opt this file into the keyword/template path that `AUTONOMY_REAL_AI_ONLY`
+ * refuses by default (`src/lib/real-ai-only.ts`).
+ *
+ * Only for suites whose declared subject *is* the fallback — they assert what
+ * the deterministic branch produces, which a strict deploy would never reach.
+ * Deliberately per-file rather than in `completion-test-preload.ts`: flipping
+ * the product's safety default off across all 274 suites would make permissive
+ * mode invisible, which is the failure the strict default exists to prevent.
+ *
+ * Returns a restore function; call it from `afterAll` so the default is back in
+ * force for every other file in the run.
+ */
+export function permitDeterministicFallback(): () => void {
+  const prior = process.env.AUTONOMY_REAL_AI_ONLY;
+  process.env.AUTONOMY_REAL_AI_ONLY = "0";
+
+  return () => {
+    if (prior === undefined) delete process.env.AUTONOMY_REAL_AI_ONLY;
+    else process.env.AUTONOMY_REAL_AI_ONLY = prior;
+  };
+}

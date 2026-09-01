@@ -1,21 +1,16 @@
 /**
- * `PROVIDER_UNAVAILABLE` signal for the real-AI-only path.
+ * `PROVIDER_UNAVAILABLE` — what happens when there is no model to call.
  *
- * When `AUTONOMY_REAL_AI_ONLY` is on, every LLM-backed helper in `src/lib/ai/*`
- * must refuse to fabricate a deterministic result if the provider call
- * degraded. Instead of returning a shaped-but-fake object with
- * `provider: "deterministic"`, it throws this error. The route handler catches
- * it and surfaces the honest "connect provider" empty state (Slice 6).
- *
- * The behaviour is deliberately gated by a synchronous `process.env` read —
- * an admin console override that re-enables fake AI without a redeploy would
- * defeat the invariant. Deploy is the trust boundary.
- *
- * When the flag is off, `guardOrThrow` is a no-op and existing deterministic
- * fallbacks stay wired. The legacy dashboard (`/app-legacy`) depends on this
- * until Slice 4 replaces it.
+ * Every LLM-backed helper in `src/lib/ai/*` and `src/lib/agents/*` has a
+ * deterministic keyword/template path it can take when the provider call
+ * degrades, and that path returns an object shaped exactly like a real answer.
+ * So whether it may stand in for a model is the difference between a product
+ * that does AI work and one that only looks like it does.
+ * `AUTONOMY_REAL_AI_ONLY` decides (`src/lib/real-ai-only.ts`), and the helpers
+ * ask here via `guardOrThrow` / `guardCaughtOrThrow`. Strict throws; the route
+ * catches it and surfaces the honest "connect provider" empty state.
  */
-import { getAutonomyFlagsFromProcessEnv } from "../autonomy-flags";
+import { isRealAiOnlyStrict } from "../real-ai-only";
 import type { LLMFailureKind, LLMResult } from "../llm";
 
 /**
@@ -56,22 +51,13 @@ export class ProviderUnavailableError extends Error {
 }
 
 /**
- * `true` when the current process was booted with `AUTONOMY_REAL_AI_ONLY`
- * force-set to a truthy value. Deliberately sync — see file header.
- */
-export function isRealAiOnlyStrict(): boolean {
-  return getAutonomyFlagsFromProcessEnv().realAiOnly;
-}
-
-/**
  * Guard the boundary between "we called the LLM" and "we're about to return a
  * fabricated result". Every `if (result.fallback) return deterministic;` site
  * in `src/lib/ai/*` calls this first.
  *
- * When the flag is off (production default until we finish rollout), returns
- * silently and the caller proceeds with its existing fallback. When the flag
- * is on, throws `ProviderUnavailableError` and the caller never reaches the
- * fabricator.
+ * Throws `ProviderUnavailableError` by default, so the caller never reaches
+ * the fabricator. Returns silently only where the deploy opted out, and then
+ * the caller proceeds with its existing fallback.
  */
 export function guardOrThrow(
   result: Pick<LLMResult, "fallback" | "failureKind" | "provider">,
