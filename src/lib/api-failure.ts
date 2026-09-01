@@ -127,12 +127,30 @@ export class ResourceNotFoundError extends ApiError {
 /** 400 — server-side schema validation rejected the payload. */
 export class RequestValidationError extends ApiError {
   constructor(fieldPaths: readonly string[]) {
-    super("Request validation failed", 400, "REQUEST_VALIDATION_FAILED", {
-      fieldPaths: fieldPaths.length > 0 ? fieldPaths : ["request"],
-      values: { fieldPath: (fieldPaths.length > 0 ? fieldPaths : ["request"]).join(", ") },
-    });
+    super(
+      "Request validation failed",
+      400,
+      "REQUEST_VALIDATION_FAILED",
+      validationFailureOptions(fieldPaths)
+    );
     this.name = "RequestValidationError";
   }
+}
+
+/**
+ * Pairs the `fieldPaths` array on the body with the `{{fieldPath}}` the message
+ * interpolates.
+ *
+ * Two fields, one fact, and supplying only the first is silent: the array is
+ * correct, the status is correct, and the sentence reads "...because of field
+ * {{fieldPath}}" with the braces intact. `zodErrorResponse` shipped that way
+ * for exactly as long as it took a test to read the rendered message.
+ */
+export function validationFailureOptions(
+  fieldPaths: readonly string[]
+): Required<Pick<FailureOptions, "fieldPaths" | "values">> {
+  const paths = fieldPaths.length > 0 ? fieldPaths : ["request"];
+  return { fieldPaths: paths, values: { fieldPath: paths.join(", ") } };
 }
 
 /* -------------------------------------------------------------------------- */

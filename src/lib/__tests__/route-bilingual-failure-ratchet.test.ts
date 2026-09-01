@@ -59,6 +59,14 @@ const REMAINING: readonly string[] = [
   "src/app/api/contracts/templates/route.ts",
   "src/app/api/files/route.ts",
   "src/app/api/projects/[id]/route.ts",
+  // Neither of these answers a bidder, which is why they are listed rather than
+  // converted. `cron-auth` replies to Vercel's scheduler, and
+  // `provider-connection-guard` rejects a malformed credential name typed by an
+  // admin into the provider console. Both are still English literals in a
+  // failure body, so they stay on the register — but translating them buys a
+  // reader neither one has.
+  "src/lib/cron-auth.ts",
+  "src/lib/llm/provider-connection-guard.ts",
   "src/proxy.ts",
 ];
 
@@ -104,9 +112,38 @@ function bareErrorLiterals(source: string): string[] {
  * it refuses before any route runs — so its two English literals reach more
  * callers than most of the routes listed above. A scan scoped to a directory
  * measures the directory, not the surface.
+ *
+ * The shared builders under `src/lib` are the same omission one layer down, and
+ * a worse one: a route can be spotless here while delegating its most common
+ * failure — a rejected request body — to a helper this scan never opened.
+ * `src/lib/validation.ts` served exactly that reply to 38 routes in English.
+ *
+ * Selected by behaviour rather than by name: a file that builds a
+ * `NextResponse.json` answers an HTTP caller, whatever directory it sits in.
+ * A hand-picked list would have to be extended by whoever adds the next helper,
+ * which is precisely the person who does not know this ratchet exists.
  */
+function httpBodyBuilders(dir: string, found: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      if (!entry.startsWith("__tests")) httpBodyBuilders(full, found);
+    } else if (
+      entry.endsWith(".ts") &&
+      readFileSync(full, "utf8").includes("NextResponse.json")
+    ) {
+      found.push(full);
+    }
+  }
+  return found;
+}
+
 function failureSources(): string[] {
-  return [...routeFiles(join(ROOT, "src/app/api")), join(ROOT, "src/proxy.ts")];
+  return [
+    ...routeFiles(join(ROOT, "src/app/api")),
+    ...httpBodyBuilders(join(ROOT, "src/lib")),
+    join(ROOT, "src/proxy.ts"),
+  ];
 }
 
 const violations = new Map<string, string[]>();
@@ -121,6 +158,14 @@ describe("api routes fail bilingually", () => {
     // assertion below pass against an empty set.
     const total = routeFiles(join(ROOT, "src/app/api")).length;
     expect(total).toBeGreaterThan(100);
+  });
+
+  test("the scan reaches the shared response builders too", () => {
+    // The same guard for the half added later. `validation.ts` stays in this
+    // set after its literals are gone — it still answers HTTP callers, so it is
+    // still where the next English literal would land.
+    const shared = httpBodyBuilders(join(ROOT, "src/lib")).map(repoPath);
+    expect(shared).toContain("src/lib/validation.ts");
   });
 
   test("no route outside the debt register carries an English error literal", () => {

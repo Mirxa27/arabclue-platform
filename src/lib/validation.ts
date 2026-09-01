@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
+import {
+  mappedApiFailure,
+  validationFailureOptions,
+  zodFieldPaths,
+  type FailureOptions,
+} from "./api-failure";
+import type { CompletionErrorCode } from "./i18n";
 
 /** Zod 4: prefer top-level z.email() over deprecated z.string().email() */
 export const emailSchema = z.email();
@@ -470,20 +477,43 @@ export const reviewDecisionSchema = z.object({
   comment: z.string().trim().max(5000).nullable().optional(),
 });
 
+/**
+ * Bilingual failure response, built here rather than imported from
+ * `api-controller`.
+ *
+ * `jsonApiFailure` does exactly this, but it lives beside the tenant and auth
+ * machinery, and this module is a leaf that 38 route files import. Reaching for
+ * it would hang the whole controller off every one of them to save two lines.
+ */
+function failureResponse(
+  code: CompletionErrorCode,
+  options: FailureOptions = {}
+): NextResponse {
+  const { status, body } = mappedApiFailure(code, options);
+  return NextResponse.json(body, { status });
+}
+
+/**
+ * The `issues` array is gone; the field paths moved into the message.
+ *
+ * It listed `{ path, message }` per issue, where `message` was Zod's own
+ * English ("Invalid email"). No client ever read it — the four `.issues`
+ * readers in the tree are all `data.validation?.issues`, the contract-review
+ * result, which is a different field on a different response. So the array was
+ * untranslated detail that reached nobody, while the sentence beside it said
+ * only "Validation failed" and named no field at all.
+ *
+ * `REQUEST_VALIDATION_FAILED` interpolates the offending paths, so the reader
+ * now gets *more* than before, in their own language.
+ */
 export function zodErrorResponse(error: z.ZodError) {
-  return NextResponse.json(
-    {
-      error: "Validation failed",
-      issues: error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    },
-    { status: 400 }
+  return failureResponse(
+    "REQUEST_VALIDATION_FAILED",
+    validationFailureOptions(zodFieldPaths(error))
   );
 }
 
-/** Parse JSON body with Zod; returns data or a NextResponse error */
+/** Parse JSON body with Zod; returns data or a bilingual NextResponse error */
 export async function parseJsonBody<T extends z.ZodType>(
   req: Request,
   schema: T
@@ -492,10 +522,7 @@ export async function parseJsonBody<T extends z.ZodType>(
   try {
     raw = await req.json();
   } catch {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }),
-    };
+    return { ok: false, response: failureResponse("INVALID_JSON_BODY") };
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
