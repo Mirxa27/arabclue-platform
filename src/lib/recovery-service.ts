@@ -75,6 +75,30 @@ export const RECOVERY_REQUEST_RATE_LIMIT = Object.freeze({
   windowMs: ONE_HOUR_MS,
 });
 
+/**
+ * Recovery requests allowed from one source address per hour.
+ *
+ * The per-address limit above caps how often one mailbox can be targeted; it
+ * cannot see an attacker who asks once for each of ten thousand mailboxes. This
+ * is the second axis OWASP API2:2023 asks for on a credential-recovery
+ * endpoint — a limit "by client (e.g. IP address)" alongside the one "by
+ * property (e.g. username)".
+ * https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/
+ *
+ * 20 rather than the 5 above because the axes bound different things. Bidders
+ * here are companies, and a company reaches us through one corporate egress
+ * address, so this bucket is shared by everyone in the office. OWASP Top
+ * 10:2025 A07 asks for the limit "while avoiding a denial-of-service
+ * scenario", and a limit that locks out a procurement team because a colleague
+ * forgot their password first is that scenario. Twenty distinct colleagues
+ * losing their password inside the same hour is not a workday; twenty distinct
+ * mailboxes per hour is not a mail-bomb.
+ */
+export const RECOVERY_SOURCE_RATE_LIMIT = Object.freeze({
+  limit: 20,
+  windowMs: ONE_HOUR_MS,
+});
+
 export const RECOVERY_TOKEN_SUBMISSION_RATE_LIMIT = Object.freeze({
   limit: 20,
   windowMs: ONE_HOUR_MS,

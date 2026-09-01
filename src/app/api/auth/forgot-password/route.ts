@@ -7,6 +7,7 @@ import {
 import { rateLimitAsync } from "@/lib/rate-limit";
 import {
   RECOVERY_REQUEST_RATE_LIMIT,
+  RECOVERY_SOURCE_RATE_LIMIT,
   createRecoveryService,
   normalizeRecoveryEmail,
   type RecoveryService,
@@ -44,20 +45,31 @@ export async function handleForgotPassword(
           )
         : "unknown";
 
-    const rl = await rateLimitAsync({
-      key: `recovery:req:${emailForRateLimit}`,
-      limit: RECOVERY_REQUEST_RATE_LIMIT.limit,
-      windowMs: RECOVERY_REQUEST_RATE_LIMIT.windowMs,
-    });
-    if (!rl.ok) {
-      return jsonApiFailure("RECOVERY_RATE_LIMITED", {
-        retryAfterSeconds: Math.max(1, Math.ceil(rl.retryAfterMs / 1000)),
-      });
+    const sourceAddress = getClientIp(req);
+
+    // Two axes, because they bound different attacks: the address bucket stops
+    // one mailbox being flooded, the source bucket stops one origin asking once
+    // for every mailbox it can name. Sequential with an early return rather than
+    // both counted up front — an origin already over its own budget must not be
+    // able to burn a victim's five, which would deny the real owner a reset.
+    // Both refuse with the same code and body on purpose: a 429 that revealed
+    // which bucket tripped would confirm the address exists, which is the one
+    // thing the uniform 202 below is built to never do.
+    for (const bucket of [
+      { key: `recovery:src:${sourceAddress}`, ...RECOVERY_SOURCE_RATE_LIMIT },
+      { key: `recovery:req:${emailForRateLimit}`, ...RECOVERY_REQUEST_RATE_LIMIT },
+    ]) {
+      const rl = await rateLimitAsync(bucket);
+      if (!rl.ok) {
+        return jsonApiFailure("RECOVERY_RATE_LIMITED", {
+          retryAfterSeconds: Math.max(1, Math.ceil(rl.retryAfterMs / 1000)),
+        });
+      }
     }
 
     const result = await service.requestRecovery({
       payload,
-      sourceAddress: getClientIp(req),
+      sourceAddress,
     });
 
     return jsonOk(
