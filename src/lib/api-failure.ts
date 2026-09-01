@@ -202,6 +202,18 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // The proposal cannot be written in its current status. Well-formed request,
   // authorized caller, wrong state — 409, and every call site already said so.
   STATUS_LOCKED: 409,
+  // Restoring a revision refuses on the state of the *stored* revision, not on
+  // the request: the request named a real revision and the caller may read it.
+  // The suffix rules would read these as 400 (malformed) and 403 (not allowed),
+  // and both would send the reader looking in the wrong place.
+  DOCUMENT_VERSION_CHECKSUM_MISSING: 409,
+  DOCUMENT_VERSION_BYTES_UNAVAILABLE: 409,
+  DOCUMENT_VERSION_INTEGRITY_FAILED: 409,
+  // `_FORBIDDEN` would say 403, i.e. "you may not delete documents". The caller
+  // may; this one document has been promoted to approved evidence and is now
+  // immutable. That is resource state, so 409 — and the route already answers
+  // 409 today, which the suffix rule would have quietly changed.
+  DOCUMENT_EVIDENCE_DELETE_FORBIDDEN: 409,
 };
 
 /**

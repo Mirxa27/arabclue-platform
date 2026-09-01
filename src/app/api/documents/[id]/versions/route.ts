@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { DocumentVersion } from "@prisma/client";
 import { db } from "@/lib/db";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import {
@@ -52,11 +53,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await requireSession();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return jsonApiFailure("UNAUTHORIZED");
   const { workspace } = await getTenantContext(session.user.id);
   const { id } = await params;
   const doc = await ownedDoc(id, workspace.id);
-  if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!doc) return jsonApiFailure("RESOURCE_NOT_FOUND");
 
   // Parse pagination params
   const searchParams = req.nextUrl.searchParams;
@@ -76,13 +77,7 @@ export async function GET(
       id
     );
     if (cursorVersion === null) {
-      return NextResponse.json(
-        {
-          error: "Version history cursor is invalid",
-          code: "VERSION_CURSOR_INVALID",
-        },
-        { status: 400 }
-      );
+      return jsonApiFailure("VERSION_CURSOR_INVALID");
     }
   }
 
@@ -149,20 +144,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await requireWriter();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session) return jsonApiFailure("FORBIDDEN");
   const { workspace } = await getTenantContext(session.user.id);
   const { id } = await params;
   const current = await ownedDoc(id, workspace.id);
-  if (!current) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!current) return jsonApiFailure("RESOURCE_NOT_FOUND");
 
   const parsed = createVersionSchema.safeParse(
     await req.json().catch(() => null)
   );
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid document version request" },
-      { status: 400 }
-    );
+    return jsonApiFailure("DOCUMENT_VERSION_REQUEST_INVALID");
   }
   const { storagePath, sizeBytes, changeLog } = parsed.data;
 
@@ -174,19 +166,13 @@ export async function POST(
       maxBytes: MAX_DOCUMENT_VERSION_BYTES,
     });
   } catch {
-    return NextResponse.json(
-      { error: "Stored version file was not found in this workspace" },
-      { status: 400 }
-    );
+    return jsonApiFailure("DOCUMENT_VERSION_FILE_MISSING");
   }
   let verified: ReturnType<typeof verifyDocumentVersionBytes>;
   try {
     verified = verifyDocumentVersionBytes(bytes, sizeBytes);
   } catch {
-    return NextResponse.json(
-      { error: "Declared version size does not match stored bytes" },
-      { status: 400 }
-    );
+    return jsonApiFailure("DOCUMENT_VERSION_SIZE_MISMATCH");
   }
   const { checksum } = verified;
 
@@ -246,10 +232,7 @@ export async function POST(
         "code" in error &&
         error.code === "P2002")
     ) {
-      return NextResponse.json(
-        { error: "Document changed concurrently; reload and retry" },
-        { status: 409 }
-      );
+      return jsonApiFailure("DOCUMENT_VERSION_CONFLICT");
     }
     throw error;
   }

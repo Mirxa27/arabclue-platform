@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { DocumentVersion } from "@prisma/client";
 import { db } from "@/lib/db";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { requireWriter } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
@@ -23,36 +24,24 @@ export async function POST(
   { params }: { params: Promise<{ id: string; version: string }> }
 ) {
   const session = await requireWriter();
-  if (!session) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!session) return jsonApiFailure("FORBIDDEN");
   const { workspace } = await getTenantContext(session.user.id);
   const userId = session.user.id;
   const { id, version: versionStr } = await params;
   const versionNum = Number(versionStr);
-  if (!versionNum) {
-    return NextResponse.json({ error: "invalid version" }, { status: 400 });
-  }
+  if (!versionNum) return jsonApiFailure("INVALID_VERSION");
 
   const doc = await db.uploadedDocument.findUnique({ where: { id } });
   if (!doc || !assertWorkspaceMatch(doc.workspaceId, workspace.id)) {
-    return NextResponse.json({ error: "document not found" }, { status: 404 });
+    return jsonApiFailure("RESOURCE_NOT_FOUND");
   }
 
   const target = await db.documentVersion.findUnique({
     where: { documentId_version: { documentId: id, version: versionNum } },
   });
-  if (!target) {
-    return NextResponse.json(
-      { error: "Version not found", code: "VERSION_NOT_FOUND" },
-      { status: 404 }
-    );
-  }
+  if (!target) return jsonApiFailure("VERSION_NOT_FOUND");
   if (!target.checksum || !/^[a-f0-9]{64}$/i.test(target.checksum)) {
-    return NextResponse.json(
-      { error: "Version has no verifiable checksum" },
-      { status: 409 }
-    );
+    return jsonApiFailure("DOCUMENT_VERSION_CHECKSUM_MISSING");
   }
   let bytes: Buffer;
   try {
@@ -60,26 +49,17 @@ export async function POST(
       maxBytes: MAX_DOCUMENT_VERSION_BYTES,
     });
   } catch {
-    return NextResponse.json(
-      { error: "Version bytes are unavailable" },
-      { status: 409 }
-    );
+    return jsonApiFailure("DOCUMENT_VERSION_BYTES_UNAVAILABLE");
   }
   let verified: ReturnType<typeof verifyDocumentVersionBytes>;
   try {
     verified = verifyDocumentVersionBytes(bytes, target.sizeBytes);
   } catch {
-    return NextResponse.json(
-      { error: "Version bytes failed integrity verification" },
-      { status: 409 }
-    );
+    return jsonApiFailure("DOCUMENT_VERSION_INTEGRITY_FAILED");
   }
   const actualChecksum = verified.checksum;
   if (actualChecksum !== target.checksum.toLowerCase()) {
-    return NextResponse.json(
-      { error: "Version bytes failed integrity verification" },
-      { status: 409 }
-    );
+    return jsonApiFailure("DOCUMENT_VERSION_INTEGRITY_FAILED");
   }
 
   let created: DocumentVersion;
@@ -134,10 +114,7 @@ export async function POST(
         "code" in error &&
         error.code === "P2002")
     ) {
-      return NextResponse.json(
-        { error: "Document changed concurrently; reload and retry" },
-        { status: 409 }
-      );
+      return jsonApiFailure("DOCUMENT_VERSION_CONFLICT");
     }
     throw error;
   }

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { toErrorResponse } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import type { DocCategory } from "@/lib/types";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
-import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
+import { assertWithinQuota } from "@/lib/quotas";
 import { ingestDocumentForWorkspace } from "@/lib/agents/platform/ingest-document";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import {
@@ -18,9 +18,7 @@ export const maxDuration = 60;
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSession();
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!session) return jsonApiFailure("UNAUTHORIZED");
     const { workspace } = await getTenantContext(session.user.id);
     const projectId = req.nextUrl.searchParams.get("projectId");
 
@@ -49,9 +47,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await requireWriter();
-    if (!session) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!session) return jsonApiFailure("FORBIDDEN");
     const { workspace } = await getTenantContext(session.user.id);
     const userId = session.user.id;
 
@@ -65,30 +61,22 @@ export async function POST(req: NextRequest) {
     });
     if (limited) return limited;
 
-    try {
-      await assertWithinQuota(userId, "document");
-    } catch (e) {
-      if (e instanceof QuotaExceededError) {
-        return NextResponse.json(
-          { error: e.message, code: e.code },
-          { status: 402 }
-        );
-      }
-      throw e;
-    }
+    // Not caught here on purpose: `toErrorResponse` below already answers 402
+    // for `QuotaExceededError`, and it translates the internal `"DOCUMENTS"`
+    // enum into the registered `QUOTA_DOCUMENTS_EXCEEDED` pair. The local catch
+    // this replaces echoed `e.message` — internal English — and put the raw
+    // enum in `code`, so an Arabic reader was told nothing they could act on.
+    await assertWithinQuota(userId, "document");
 
     const contentType = req.headers.get("content-type") ?? "";
     if (!contentType.includes("multipart/form-data")) {
-      return NextResponse.json(
-        { error: "multipart/form-data with file field is required" },
-        { status: 400 }
-      );
+      return jsonApiFailure("DOCUMENT_UPLOAD_FORM_INVALID");
     }
 
     const form = await req.formData();
     const file = form.get("file");
     if (!file || !(file instanceof File)) {
-      return NextResponse.json({ error: "file is required" }, { status: 400 });
+      return jsonApiFailure("DOCUMENT_FILE_MISSING");
     }
 
     const originalName = file.name;
@@ -100,21 +88,15 @@ export async function POST(req: NextRequest) {
     const bytes = Buffer.from(await file.arrayBuffer());
 
     if (!originalName || !docCategory) {
-      return NextResponse.json(
-        { error: "originalName and docCategory are required" },
-        { status: 400 }
-      );
+      return jsonApiFailure("DOCUMENT_METADATA_MISSING");
     }
     if (!projectId) {
-      return NextResponse.json(
-        { error: "projectId is required — select an active project first" },
-        { status: 400 }
-      );
+      return jsonApiFailure("DOCUMENT_PROJECT_MISSING");
     }
 
     const project = await db.tenderProject.findUnique({ where: { id: projectId } });
     if (!project || !assertWorkspaceMatch(project.workspaceId, workspace.id)) {
-      return NextResponse.json({ error: "project not found" }, { status: 404 });
+      return jsonApiFailure("PROJECT_NOT_FOUND");
     }
 
     const ingested = await ingestDocumentForWorkspace({

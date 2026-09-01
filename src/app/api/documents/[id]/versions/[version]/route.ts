@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import {
@@ -20,15 +21,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string; version: string }> }
 ) {
   const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!session) return jsonApiFailure("UNAUTHORIZED");
 
   const { workspace } = await getTenantContext(session.user.id);
   const { id, version: versionRaw } = await params;
   const versionNum = Number.parseInt(versionRaw, 10);
   if (!Number.isFinite(versionNum) || versionNum < 1) {
-    return NextResponse.json({ error: "Invalid version" }, { status: 400 });
+    return jsonApiFailure("INVALID_VERSION");
   }
 
   const doc = await db.uploadedDocument.findUnique({
@@ -42,7 +41,7 @@ export async function GET(
     },
   });
   if (!doc || !assertWorkspaceMatch(doc.workspaceId, workspace.id)) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return jsonApiFailure("RESOURCE_NOT_FOUND");
   }
 
   const row = await db.documentVersion.findUnique({
@@ -53,9 +52,7 @@ export async function GET(
       },
     },
   });
-  if (!row) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
-  }
+  if (!row) return jsonApiFailure("VERSION_NOT_FOUND");
 
   const author = row.createdBy
     ? await db.user.findUnique({

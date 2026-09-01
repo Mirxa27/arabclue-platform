@@ -5,6 +5,7 @@ import { startTransition } from "react";
 import { useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
+import { apiErrorText } from "@/lib/api-failure-message";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -74,7 +75,11 @@ export function DocumentMatrix() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(
-          typeof err.error === "string" ? err.error : "Failed to load documents"
+          apiErrorText(
+            err,
+            locale,
+            locale === "ar" ? "تعذر تحميل المستندات" : "Failed to load documents"
+          )
         );
       }
       return res.json() as Promise<{ documents: ApiDocument[] }>;
@@ -87,7 +92,11 @@ export function DocumentMatrix() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(
-          typeof err.error === "string" ? err.error : "Delete failed"
+          apiErrorText(
+            err,
+            locale,
+            locale === "ar" ? "فشل الحذف" : "Delete failed"
+          )
         );
       }
     },

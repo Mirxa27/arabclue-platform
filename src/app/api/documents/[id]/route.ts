@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { toErrorResponse } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -31,13 +31,11 @@ export async function GET(
 ) {
   try {
     const session = await requireSession();
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!session) return jsonApiFailure("UNAUTHORIZED");
     const { workspace } = await getTenantContext(session.user.id);
     const { id } = await params;
     const doc = await loadOwnedDoc(id, workspace.id);
-    if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (!doc) return jsonApiFailure("RESOURCE_NOT_FOUND");
     return NextResponse.json({ document: doc });
   } catch (err) {
     return toErrorResponse(err, "[documents GET id]");
@@ -51,13 +49,11 @@ export async function DELETE(
 ) {
   try {
     const session = await requireWriter();
-    if (!session) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!session) return jsonApiFailure("FORBIDDEN");
     const { workspace } = await getTenantContext(session.user.id);
     const { id } = await params;
     const doc = await loadOwnedDoc(id, workspace.id);
-    if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (!doc) return jsonApiFailure("RESOURCE_NOT_FOUND");
     const [
       pastProjectReferences,
       certificateReferences,
@@ -75,14 +71,9 @@ export async function DELETE(
       methodologyReferences +
       libraryReferences;
     if (evidenceReferenceCount > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Document is retained as reviewed knowledge evidence and cannot be deleted",
-          code: "DOCUMENT_EVIDENCE_DELETE_FORBIDDEN",
-        },
-        { status: 409 }
-      );
+      // The code was already on the wire under this name but was registered
+      // nowhere, so `error` carried the only readable text and it was English.
+      return jsonApiFailure("DOCUMENT_EVIDENCE_DELETE_FORBIDDEN");
     }
     try {
       await db.uploadedDocument.delete({ where: { id } });
@@ -93,14 +84,7 @@ export async function DELETE(
         "code" in error &&
         error.code === "P2003"
       ) {
-        return NextResponse.json(
-          {
-            error:
-              "Document became reviewed knowledge evidence and cannot be deleted",
-            code: "DOCUMENT_EVIDENCE_DELETE_CONFLICT",
-          },
-          { status: 409 }
-        );
+        return jsonApiFailure("DOCUMENT_EVIDENCE_DELETE_CONFLICT");
       }
       throw error;
     }
@@ -128,16 +112,14 @@ export async function PATCH(
 ) {
   try {
     const session = await requireWriter();
-    if (!session) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!session) return jsonApiFailure("FORBIDDEN");
     const parsed = await parseJsonBody(req, documentPatchSchema);
     if (!parsed.ok) return parsed.response;
 
     const { workspace } = await getTenantContext(session.user.id);
     const { id } = await params;
     const doc = await loadOwnedDoc(id, workspace.id);
-    if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (!doc) return jsonApiFailure("RESOURCE_NOT_FOUND");
 
     const updated = await db.uploadedDocument.update({
       where: { id },

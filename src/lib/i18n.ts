@@ -1861,6 +1861,70 @@ export const localizationRegistry = {
   LOCALIZATION_PLACEHOLDER_MISMATCH: { ar: "تعذر تنسيق النص المحلي بسبب اختلاف المتغيرات", en: "Localized text could not be formatted because placeholders differ" },
   INTERNAL_ERROR: { ar: "تعذر إكمال الطلب بسبب خطأ داخلي", en: "The request could not be completed because of an internal error" },
 
+  // Document upload and revision history. Every one of these reaches a bid
+  // writer mid-task — dragging in a tender pack, restoring yesterday's file —
+  // so each says what to do next rather than naming the check that tripped.
+  DOCUMENT_UPLOAD_FORM_INVALID: {
+    ar: "يجب إرسال المستند كملف مرفق في نموذج الرفع",
+    en: "The document must be sent as an attached file in the upload form",
+  },
+  DOCUMENT_FILE_MISSING: {
+    ar: "لم يُرفَق أي ملف بعملية الرفع",
+    en: "No file was attached to the upload",
+  },
+  DOCUMENT_METADATA_MISSING: {
+    ar: "يلزم اسم الملف وتصنيف المستند قبل الرفع",
+    en: "The upload needs a file name and a document category",
+  },
+  DOCUMENT_PROJECT_MISSING: {
+    ar: "اختر مشروعًا نشطًا قبل رفع المستند",
+    en: "Select an active project before uploading the document",
+  },
+  DOCUMENT_EVIDENCE_DELETE_FORBIDDEN: {
+    ar: "يُحفَظ هذا المستند كدليل معرفة مُعتمد ولا يمكن حذفه",
+    en: "This document is retained as reviewed knowledge evidence and cannot be deleted",
+  },
+  DOCUMENT_EVIDENCE_DELETE_CONFLICT: {
+    ar: "أصبح هذا المستند دليل معرفة مُعتمدًا أثناء الحذف، فتوقّف الحذف",
+    en: "This document became reviewed knowledge evidence during the delete, so the delete stopped",
+  },
+  DOCUMENT_VERSION_REQUEST_INVALID: {
+    ar: "طلب إنشاء إصدار المستند غير صالح",
+    en: "The request to create a document revision is not valid",
+  },
+  DOCUMENT_VERSION_FILE_MISSING: {
+    ar: "ملف الإصدار المخزَّن غير موجود في مساحة العمل هذه",
+    en: "The stored revision file was not found in this workspace",
+  },
+  DOCUMENT_VERSION_SIZE_MISMATCH: {
+    ar: "الحجم المعلَن للإصدار لا يطابق حجم البيانات المخزَّنة",
+    en: "The declared revision size does not match the stored bytes",
+  },
+  DOCUMENT_COMPARE_VERSIONS_MISSING: {
+    ar: "تتطلب المقارنة رقمي إصدارين",
+    en: "Comparing revisions needs two revision numbers",
+  },
+  DOCUMENT_VERSION_CONFLICT: {
+    ar: "تغيَّر المستند أثناء عملك؛ أعد التحميل ثم حاول مرة أخرى",
+    en: "The document changed while you were working; reload and retry",
+  },
+  // The three below are separate codes on purpose. They read alike to the
+  // writer but name different server states, and the last one is the only
+  // signal that stored bytes changed under a recorded checksum — collapsing it
+  // into the others would erase a tamper indication from the response.
+  DOCUMENT_VERSION_CHECKSUM_MISSING: {
+    ar: "لا يحمل هذا الإصدار بصمة تحقق، لذا لا يمكن التأكد منه قبل الاستعادة",
+    en: "This revision carries no checksum, so it cannot be verified before restoring",
+  },
+  DOCUMENT_VERSION_BYTES_UNAVAILABLE: {
+    ar: "البيانات المخزَّنة لهذا الإصدار غير متاحة",
+    en: "The stored bytes for this revision are unavailable",
+  },
+  DOCUMENT_VERSION_INTEGRITY_FAILED: {
+    ar: "فشل التحقق من سلامة البيانات المخزَّنة لهذا الإصدار",
+    en: "The stored bytes for this revision failed integrity verification",
+  },
+
   // MFA and password error codes (audit: i18n — replace hardcoded English)
   MFA_NOT_SET_UP: { ar: "لم يتم إعداد المصادقة الثنائية", en: "MFA is not set up" },
   MFA_TOKEN_INVALID: { ar: "رمز المصادقة الثنائية غير صالح", en: "Invalid MFA token" },
@@ -2282,6 +2346,7 @@ export const localizationRegistry = {
   error_action_manage_comment: { ar: "تعذر تنفيذ إجراء التعليق", en: "Unable to complete the comment action" },
   error_action_update_presence: { ar: "تعذر تحديث حضور المشاهدين", en: "Unable to update viewer presence" },
   error_action_load_version_history: { ar: "تعذر تنفيذ إجراء سجل الإصدارات", en: "Unable to complete the version history action" },
+  error_action_upload_document: { ar: "تعذر رفع المستند", en: "Unable to upload the document" },
   error_action_resolve_route: { ar: "تعذر فتح مسار التطبيق", en: "Unable to open the application route" },
   error_action_manage_marketplace: { ar: "تعذر تنفيذ إجراء السوق", en: "Unable to complete the marketplace action" },
   error_action_check_readiness: { ar: "تعذر فحص جاهزية المنصة", en: "Unable to check platform readiness" },
@@ -2814,6 +2879,20 @@ export const COMPLETION_ERROR_CONTRACTS = {
   VERSION_NOT_FOUND: { actionKey: "error_action_load_version_history", messageKey: "VERSION_NOT_FOUND" },
   VERSION_CURSOR_INVALID: { actionKey: "error_action_load_version_history", messageKey: "VERSION_CURSOR_INVALID" },
   REVERT_FORBIDDEN: { actionKey: "error_action_load_version_history", messageKey: "REVERT_FORBIDDEN" },
+  DOCUMENT_VERSION_REQUEST_INVALID: { actionKey: "error_action_load_version_history", messageKey: "DOCUMENT_VERSION_REQUEST_INVALID" },
+  DOCUMENT_VERSION_FILE_MISSING: { actionKey: "error_action_load_version_history", messageKey: "DOCUMENT_VERSION_FILE_MISSING" },
+  DOCUMENT_VERSION_SIZE_MISMATCH: { actionKey: "error_action_load_version_history", messageKey: "DOCUMENT_VERSION_SIZE_MISMATCH" },
+  DOCUMENT_VERSION_CHECKSUM_MISSING: { actionKey: "error_action_load_version_history", messageKey: "DOCUMENT_VERSION_CHECKSUM_MISSING" },
+  DOCUMENT_VERSION_BYTES_UNAVAILABLE: { actionKey: "error_action_load_version_history", messageKey: "DOCUMENT_VERSION_BYTES_UNAVAILABLE" },
+  DOCUMENT_VERSION_INTEGRITY_FAILED: { actionKey: "error_action_load_version_history", messageKey: "DOCUMENT_VERSION_INTEGRITY_FAILED" },
+  DOCUMENT_VERSION_CONFLICT: { actionKey: "error_action_load_version_history", messageKey: "DOCUMENT_VERSION_CONFLICT" },
+  DOCUMENT_COMPARE_VERSIONS_MISSING: { actionKey: "error_action_load_version_history", messageKey: "DOCUMENT_COMPARE_VERSIONS_MISSING" },
+  DOCUMENT_UPLOAD_FORM_INVALID: { actionKey: "error_action_upload_document", messageKey: "DOCUMENT_UPLOAD_FORM_INVALID" },
+  DOCUMENT_FILE_MISSING: { actionKey: "error_action_upload_document", messageKey: "DOCUMENT_FILE_MISSING" },
+  DOCUMENT_METADATA_MISSING: { actionKey: "error_action_upload_document", messageKey: "DOCUMENT_METADATA_MISSING" },
+  DOCUMENT_PROJECT_MISSING: { actionKey: "error_action_upload_document", messageKey: "DOCUMENT_PROJECT_MISSING" },
+  DOCUMENT_EVIDENCE_DELETE_FORBIDDEN: { actionKey: "error_action_access_resource", messageKey: "DOCUMENT_EVIDENCE_DELETE_FORBIDDEN" },
+  DOCUMENT_EVIDENCE_DELETE_CONFLICT: { actionKey: "error_action_access_resource", messageKey: "DOCUMENT_EVIDENCE_DELETE_CONFLICT" },
   ROUTE_VIEW_NOT_FOUND: { actionKey: "error_action_resolve_route", messageKey: "ROUTE_VIEW_NOT_FOUND" },
   ROUTE_VIEW_FORBIDDEN: { actionKey: "error_action_resolve_route", messageKey: "ROUTE_VIEW_FORBIDDEN" },
   ROUTE_VIEW_MOVED: { actionKey: "error_action_resolve_route", messageKey: "ROUTE_VIEW_MOVED" },
