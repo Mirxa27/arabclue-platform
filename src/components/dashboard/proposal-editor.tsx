@@ -16,6 +16,9 @@ import {
   Sparkles,
   Eye,
   Pencil,
+  Columns2,
+  Calculator,
+  Languages,
   History,
   ShieldCheck,
   RefreshCw,
@@ -70,12 +73,45 @@ import { submitProposalWithStructuredSnapshot } from "@/lib/proposal-submit-clie
 type StudioMode =
   | "edit"
   | "preview"
-  | "print"
   | "split"
   | "financial"
   | "versions"
   | "validation"
   | "bilingual";
+
+/**
+ * How the bidder is looking at the document. One of these is always active.
+ *
+ * `print` used to sit here too, but all it did was open the preview with its
+ * HTML/PDF toggle already flipped to PDF — a whole tab for one control's
+ * default, on a row the bidder already had to read eight items deep.
+ */
+const VIEW_TABS = [
+  ["edit", Pencil],
+  ["split", Columns2],
+  ["preview", Eye],
+] as const;
+
+/**
+ * Everything else about the proposal. These replace the document, so they are
+ * a different kind of choice and are separated from the view group above.
+ */
+const PANEL_TABS = [
+  ["financial", Calculator],
+  ["versions", History],
+  ["validation", ShieldCheck],
+  ["bilingual", Languages],
+] as const;
+
+function studioModeLabel(mode: StudioMode, locale: "ar" | "en"): string {
+  if (mode === "edit") return tr("action_edit", locale);
+  if (mode === "preview") return tr("proposal_preview", locale);
+  if (mode === "split") return locale === "ar" ? "مقسّم" : "Split";
+  if (mode === "financial") return locale === "ar" ? "المالي" : "Financial";
+  if (mode === "versions") return locale === "ar" ? "الإصدارات" : "Versions";
+  if (mode === "validation") return locale === "ar" ? "التحقق" : "Validation";
+  return locale === "ar" ? "ثنائي اللغة" : "Bilingual";
+}
 
 type ProposalSkill =
   | "rewrite"
@@ -688,7 +724,7 @@ function ProposalStudioBase({
 
   const version = data?.proposal?.version ?? 1;
   const status = data?.proposal?.status ?? "DRAFT";
-  const showDocumentPreview = mode === "print" || mode === "preview";
+  const showDocumentPreview = mode === "preview";
   const issues = validationData?.validation?.issues ?? [];
   const exportBlocked = validationData != null && !validationData.exportReady;
   const exportDisabled =
@@ -778,54 +814,31 @@ function ProposalStudioBase({
                 className="shrink-0 py-3"
               />
             ) : null}
-            <div className="flex flex-wrap items-center gap-2 shrink-0">              <div className="flex rounded-md border p-0.5 flex-wrap">
-                {(
-                  [
-                    ["edit", Pencil, tr("action_edit", locale)],
-                    ["split", Eye, "Split"],
-                    ["preview", Eye, tr("proposal_preview", locale)],
-                    [
-                      "print",
-                      FileText,
-                      locale === "ar" ? "PDF / طباعة" : "PDF / Print",
-                    ],
-                    [
-                      "financial",
-                      Save,
-                      locale === "ar" ? "المالي" : "Financial",
-                    ],
-                    [
-                      "versions",
-                      History,
-                      locale === "ar" ? "الإصدارات" : "Versions",
-                    ],
-                    [
-                      "validation",
-                      ShieldCheck,
-                      locale === "ar" ? "التحقق" : "Validation",
-                    ],
-                    [
-                      "bilingual",
-                      FileText,
-                      locale === "ar" ? "ثنائي اللغة" : "Bilingual",
-                    ],
-                  ] as const
-                ).map(([key, Icon, label]) => (
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {/* Two groups, not one row of eight: picking a view of the
+                  document and swapping the document out for another panel are
+                  different decisions and should not look like the same one. */}
+              <div
+                className="flex rounded-md border p-0.5"
+                role="group"
+                aria-label={
+                  locale === "ar" ? "طريقة العرض" : "Document view"
+                }
+              >
+                {VIEW_TABS.map(([key, Icon]) => (
                   <Button
                     key={key}
                     size="sm"
                     variant={mode === key ? "default" : "ghost"}
                     className="h-7 text-[11px] gap-1"
+                    aria-pressed={mode === key}
                     onClick={() => {
-                      if (
-                        isDirty &&
-                        (key === "preview" || key === "print")
-                      ) {
+                      if (isDirty && key === "preview") {
                         toast({
                           title:
                             locale === "ar"
-                              ? "معاينة PDF/التخطيط تعرض آخر حفظ"
-                              : "Layout/PDF preview shows the last save",
+                              ? "المعاينة تعرض آخر حفظ"
+                              : "Preview shows the last save",
                           description:
                             locale === "ar"
                               ? "احفظ المسودة لتحديث المعاينة الرسمية."
@@ -836,7 +849,26 @@ function ProposalStudioBase({
                     }}
                   >
                     <Icon className="size-3" />
-                    {label}
+                    {studioModeLabel(key, locale)}
+                  </Button>
+                ))}
+              </div>
+              <div
+                className="flex rounded-md border p-0.5 flex-wrap"
+                role="group"
+                aria-label={locale === "ar" ? "لوحات العطاء" : "Bid panels"}
+              >
+                {PANEL_TABS.map(([key, Icon]) => (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant={mode === key ? "default" : "ghost"}
+                    className="h-7 text-[11px] gap-1"
+                    aria-pressed={mode === key}
+                    onClick={() => setMode(key)}
+                  >
+                    <Icon className="size-3" />
+                    {studioModeLabel(key, locale)}
                   </Button>
                 ))}
               </div>
@@ -1371,7 +1403,7 @@ function ProposalStudioBase({
                   locale={propLocale}
                   proposalId={proposalId}
                   title={data?.proposal?.title}
-                  defaultMode={mode === "print" ? "pdf" : "html"}
+                  defaultMode="html"
                   contentRevision={data?.proposal?.updatedAt}
                   stale={isDirty}
                   onRequestSave={() => saveMutation.mutate()}
