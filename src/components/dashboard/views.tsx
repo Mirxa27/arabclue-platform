@@ -429,8 +429,8 @@ function AgentsView() {
         title={tr("nav_agents", locale)}
         subtitle={
           ar
-            ? "خط أنابيب من 6 وكلاء — راقب التقدم الحي ثم افتح العطاء والامتثال"
-            : "6-agent pipeline — watch live progress, then open proposals & compliance"
+            ? "يقرأ مستندات المناقصة ويكتب العطاء ومسودة عقد ثنائية اللغة"
+            : "Reads your tender documents and writes the bid plus a bilingual contract draft"
         }
         locale={locale}
       />

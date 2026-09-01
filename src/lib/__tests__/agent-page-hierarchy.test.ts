@@ -147,7 +147,13 @@ describe("the page's claims match what it can do", () => {
     expect(AGENTS.length).toBe(6);
     expect(SOURCE).toMatch(/AGENTS\.length/);
     expect(SOURCE).not.toMatch(/\{doneCount\}\/6/);
-    expect(SOURCE).not.toMatch(/6-agent pipeline/);
+    // There was a `not.toMatch(/6-agent pipeline/)` here, and it passed for as
+    // long as it existed while the page rendered exactly that string twice:
+    // once as `` `${AGENTS.length}-agent pipeline` `` in this file, invisible to
+    // a literal pattern, and once in `views.tsx`, which this test never opens.
+    // The real ratchet is in `agent-page-comprehension.test.ts` — it matches the
+    // interpolated form and reads both files. Restating it here would just be a
+    // second copy to keep in sync.
   });
 
   test("no branch pretends to distinguish cases it treats identically", () => {

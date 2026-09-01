@@ -47,6 +47,7 @@ import type { AgentRunHistoryItem } from "./agent-run-history";
 import type { AgentState, AgentId } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
 import { NO_DOCUMENTS_PREFLIGHT } from "@/lib/agents/run-preflight";
+import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 
 const AGENT_META: Record<
   AgentId,
@@ -114,6 +115,10 @@ function normalizeStatus(s: string | undefined): AgentState["status"] {
 export function AgentWorkflow() {
   const { locale } = useLocale();
   const { tenderType, activeProjectId, setActiveProjectId, setView } = useUI();
+  // Shares the `["projects"]` query `app-shell` already runs, so this costs no
+  // request. It is only here to tell two states apart that the page used to
+  // report as one: no project selected, and no project to select.
+  const { projects, isSuccess: projectsLoaded } = useEnsureActiveProject();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [runId, setRunId] = useState<string | null>(null);
@@ -340,10 +345,12 @@ export function AgentWorkflow() {
   const runMutation = useMutation({
     mutationFn: async () => {
       if (!activeProjectId) {
+        // Same reason as the context strip: this is only reachable with zero
+        // projects, so there is nothing to select.
         throw new Error(
           locale === "ar"
-            ? "اختر مشروعاً نشطاً أولاً"
-            : "Select an active project first"
+            ? "أنشئ مشروع مناقصة أولاً"
+            : "Create a project first"
         );
       }
       const res = await fetch("/api/agents/run", {
@@ -614,6 +621,10 @@ export function AgentWorkflow() {
   }
 
   const runBlocked = !!activeProjectId && !docsLoading && !hasDocuments;
+  // Six radial gauges reading 0%, six dashed circles, six "00" step numbers:
+  // that was the page's dominant content before anything had happened. There is
+  // nothing to gauge until a run exists.
+  const hasRun = !!runId || running || completed;
 
   return (
     <Card className="p-0 overflow-hidden border-border/70 shadow-sm">
@@ -627,11 +638,10 @@ export function AgentWorkflow() {
           >
             <Bot className="size-5 text-violet-600" />
           </div>
+          {/* No title here: `AgentsView`'s PageHeader already names the page,
+              and it sat directly above a second copy of the same words. */}
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-semibold">
-                {tr("section_agents", locale)}
-              </h3>
               {(() => {
                 const badge = runHeadlineBadge(
                   { running, completed, status: runStatus },
@@ -659,15 +669,16 @@ export function AgentWorkflow() {
                 );
               })()}
             </div>
-            <p className="text-[11px] text-foreground/70 mt-0.5">
-              {running && activeAgent
-                ? locale === "ar"
+            {/* Only the live step. Idle, this line described the pipeline to
+                itself — "ingest → compliance → technical → finance → draft →
+                contract" — which is the vocabulary of whoever built it. */}
+            {running && activeAgent ? (
+              <p className="text-[11px] text-foreground/70 mt-0.5">
+                {locale === "ar"
                   ? `يعمل الآن: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`
-                  : `Now running: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`
-                : locale === "ar"
-                  ? `خط أنابيب من ${AGENTS.length} وكلاء — استيعاب → امتثال → فني → مالي → صياغة → عقد`
-                  : `${AGENTS.length}-agent pipeline — ingest → compliance → technical → finance → draft → contract`}
-            </p>
+                  : `Now running: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -742,7 +753,11 @@ export function AgentWorkflow() {
               </Badge>
             ) : null}
           </>
-        ) : (
+        ) : projectsLoaded && projects.length === 0 ? (
+          // `app-shell` mounts `useEnsureActiveProject`, which selects the first
+          // project whenever the workspace has one. So reaching here with the
+          // list loaded means there is nothing to select — the old copy asked
+          // for a choice that could not be made.
           <button
             type="button"
             onClick={() => startTransition(() => setView("projects"))}
@@ -750,13 +765,12 @@ export function AgentWorkflow() {
           >
             <AlertCircle className="size-3.5" />
             {locale === "ar"
-              ? "اختر مشروعاً نشطاً لتشغيل الوكلاء"
-              : "Select an active project to run agents"}
+              ? "أنشئ مشروع مناقصة أولاً"
+              : "Create a project first"}
           </button>
-        )}
-        {(running || (completed && overall > 0)) && (
-          <span className="ms-auto font-mono font-bold tabular-nums text-sm text-violet-700 dark:text-violet-300">
-            {Math.round(overall)}%
+        ) : (
+          <span className="text-muted-foreground">
+            {locale === "ar" ? "جاري تحميل المشروع…" : "Loading project…"}
           </span>
         )}
         {documentCount > 0 ? (
@@ -819,43 +833,28 @@ export function AgentWorkflow() {
               {doneCount}/{AGENTS.length} {locale === "ar" ? "وكلاء" : "agents"}
             </span>
           </div>
+          {/* The six-bar strip that used to sit here said the same thing as the
+              six gauges below it, one screenful apart, with less detail. */}
           <Progress value={overall} className="h-2.5 bg-slate-200 dark:bg-slate-700" />
-          {/* Mini pipeline strip */}
-          <div className="flex items-center gap-1 pt-1">
-            {agentStates.map((a, i) => {
-              const meta = AGENT_META[a.id];
-              const status = normalizeStatus(a.status);
-              const done = status === "completed";
-              const live = status === "running";
-              const failed = status === "failed";
-              return (
-                <div key={a.id} className="flex items-center gap-1 flex-1 min-w-0">
-                  <div
-                    className={cn(
-                      "h-1.5 flex-1 rounded-full transition-colors",
-                      done && "bg-emerald-500",
-                      live && "bg-violet-500 animate-pulse",
-                      failed && "bg-destructive",
-                      !done && !live && !failed && "bg-slate-200 dark:bg-slate-700"
-                    )}
-                    title={tr(`agent_${a.id}_name`, locale)}
-                  />
-                  {i < agentStates.length - 1 ? (
-                    <ChevronRight className="size-2.5 text-muted-foreground shrink-0 opacity-50" />
-                  ) : null}
-                  <span className="sr-only">
-                    {meta ? tr(`agent_${a.id}_name`, locale) : a.id}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 
       {errorMessage && runStatus === "FAILED" && (
-        <div className="mx-3 mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-          {errorMessage}
+        <div className="mx-3 mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-destructive min-w-0">{errorMessage}</p>
+          {/* The completion banner beside this one offers two ways forward.
+              This one offered none: the way to retry was the Run button back up
+              in the header, which a bidder has just scrolled past. */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[11px] gap-1.5 shrink-0"
+            onClick={handleRunClick}
+            disabled={running || runMutation.isPending || runBlocked}
+          >
+            <Play className="size-3" />
+            {locale === "ar" ? "إعادة المحاولة" : "Try again"}
+          </Button>
         </div>
       )}
 
@@ -929,153 +928,178 @@ export function AgentWorkflow() {
         </div>
       )}
 
-      {/* Agent cards — always visible */}
-      <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-        {agentStates.map((a, idx) => {
-          const meta = AGENT_META[a.id] ?? {
-            icon: Bot,
-            color: "text-muted-foreground",
-            bg: "bg-muted",
-            ring: "text-muted-foreground",
-          };
-          const Icon = meta.icon;
-          const status = normalizeStatus(a.status);
-          const isRunning = status === "running";
-          const isDone = status === "completed";
-          const isFailed = status === "failed";
-          const outputText = agentOutputText(a.output, locale);
-          const isPending = status === "pending";
-          const pct = isDone ? 100 : Math.round(a.progress || 0);
+      {/* Agent cards — one per step, once there is a run to show */}
+      {hasRun ? (
+        <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {agentStates.map((a, idx) => {
+            const meta = AGENT_META[a.id] ?? {
+              icon: Bot,
+              color: "text-muted-foreground",
+              bg: "bg-muted",
+              ring: "text-muted-foreground",
+            };
+            const Icon = meta.icon;
+            const status = normalizeStatus(a.status);
+            const isRunning = status === "running";
+            const isDone = status === "completed";
+            const isFailed = status === "failed";
+            const outputText = agentOutputText(a.output, locale);
+            const isPending = status === "pending";
+            const pct = isDone ? 100 : Math.round(a.progress || 0);
 
-          return (
-            <div
-              key={a.id}
-              className={cn(
-                "rounded-xl border p-3.5 transition-all",
-                isRunning &&
-                  "border-violet-500/50 bg-violet-500/8 shadow-[0_0_0_1px_rgba(139,92,246,0.12)]",
-                isDone && "border-emerald-500/35 bg-emerald-500/6",
-                isFailed && "border-destructive/40 bg-destructive/5",
-                isPending && "border-border/80 bg-card"
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <RadialGauge
-                  value={pct}
-                  size={52}
-                  strokeWidth={5}
-                  trackClassName={
-                    isFailed
-                      ? "text-destructive/25"
-                      : isRunning
-                        ? "text-violet-200 dark:text-violet-900"
-                        : "text-slate-300 dark:text-slate-600"
-                  }
-                  className={cn(
-                    isFailed
-                      ? "text-destructive"
-                      : isDone
-                        ? "text-emerald-500"
+            return (
+              <div
+                key={a.id}
+                className={cn(
+                  "rounded-xl border p-3.5 transition-all",
+                  isRunning &&
+                    "border-violet-500/50 bg-violet-500/8 shadow-[0_0_0_1px_rgba(139,92,246,0.12)]",
+                  isDone && "border-emerald-500/35 bg-emerald-500/6",
+                  isFailed && "border-destructive/40 bg-destructive/5",
+                  isPending && "border-border/80 bg-card"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <RadialGauge
+                    value={pct}
+                    size={52}
+                    strokeWidth={5}
+                    trackClassName={
+                      isFailed
+                        ? "text-destructive/25"
                         : isRunning
-                          ? "text-violet-500"
-                          : meta.ring + "/40"
-                  )}
-                  ariaLabel={`${tr(`agent_${a.id}_name`, locale)} ${pct}%`}
-                >
-                  <div
+                          ? "text-violet-200 dark:text-violet-900"
+                          : "text-slate-300 dark:text-slate-600"
+                    }
                     className={cn(
-                      "size-9 rounded-full flex items-center justify-center",
-                      meta.bg,
-                      isRunning && "agent-pulse"
+                      isFailed
+                        ? "text-destructive"
+                        : isDone
+                          ? "text-emerald-500"
+                          : isRunning
+                            ? "text-violet-500"
+                            : meta.ring + "/40"
                     )}
+                    ariaLabel={`${tr(`agent_${a.id}_name`, locale)} ${pct}%`}
                   >
-                    <Icon className={cn("size-4", meta.color)} />
-                  </div>
-                </RadialGauge>
+                    <div
+                      className={cn(
+                        "size-9 rounded-full flex items-center justify-center",
+                        meta.bg,
+                        isRunning && "agent-pulse"
+                      )}
+                    >
+                      <Icon className={cn("size-4", meta.color)} />
+                    </div>
+                  </RadialGauge>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-mono font-semibold text-muted-foreground">
-                          {String(idx + 1).padStart(2, "0")}
-                        </span>
-                        <span className="text-xs font-semibold truncate">
-                          {tr(`agent_${a.id}_name`, locale)}
-                        </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono font-semibold text-muted-foreground">
+                            {String(idx + 1).padStart(2, "0")}
+                          </span>
+                          <span className="text-xs font-semibold truncate">
+                            {tr(`agent_${a.id}_name`, locale)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-foreground/65 mt-0.5 line-clamp-2 leading-snug">
+                          {isRunning && a.findings?.[0]
+                            ? a.findings[0]
+                            : tr(`agent_${a.id}_desc`, locale)}
+                        </p>
                       </div>
-                      <p className="text-[11px] text-foreground/65 mt-0.5 line-clamp-2 leading-snug">
-                        {isRunning && a.findings?.[0]
-                          ? a.findings[0]
-                          : tr(`agent_${a.id}_desc`, locale)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span
-                        className={cn(
-                          "text-[11px] font-mono font-bold tabular-nums",
-                          isDone && "text-emerald-600",
-                          isRunning && "text-violet-600",
-                          isFailed && "text-destructive",
-                          isPending && "text-muted-foreground"
-                        )}
-                      >
-                        {pct}%
-                      </span>
-                      {isDone && (
-                        <CheckCircle2 className="size-3.5 text-emerald-600" />
-                      )}
-                      {isRunning && (
-                        <Loader2 className="size-3.5 text-violet-600 animate-spin" />
-                      )}
-                      {isFailed && (
-                        <XCircle className="size-3.5 text-destructive" />
-                      )}
-                      {isPending && (
-                        <CircleDashed className="size-3.5 text-muted-foreground" />
-                      )}
-                    </div>
-                  </div>
-
-                  {(isRunning || isDone || isFailed) && a.findings && a.findings.length > 0 && (
-                    <ul className="mt-2 space-y-1 border-t border-border/50 pt-2">
-                      {a.findings.slice(0, isDone ? 3 : 2).map((f, i) => (
-                        <li
-                          key={i}
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span
                           className={cn(
-                            "flex items-start gap-1.5 text-[10px]",
-                            isFailed ? "text-destructive/90" : "text-foreground/70"
+                            "text-[11px] font-mono font-bold tabular-nums",
+                            isDone && "text-emerald-600",
+                            isRunning && "text-violet-600",
+                            isFailed && "text-destructive",
+                            isPending && "text-muted-foreground"
                           )}
                         >
-                          <ChevronRight
+                          {pct}%
+                        </span>
+                        {isDone && (
+                          <CheckCircle2 className="size-3.5 text-emerald-600" />
+                        )}
+                        {isRunning && (
+                          <Loader2 className="size-3.5 text-violet-600 animate-spin" />
+                        )}
+                        {isFailed && (
+                          <XCircle className="size-3.5 text-destructive" />
+                        )}
+                        {isPending && (
+                          <CircleDashed className="size-3.5 text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+
+                    {(isRunning || isDone || isFailed) && a.findings && a.findings.length > 0 && (
+                      <ul className="mt-2 space-y-1 border-t border-border/50 pt-2">
+                        {a.findings.slice(0, isDone ? 3 : 2).map((f, i) => (
+                          <li
+                            key={i}
                             className={cn(
-                              "size-2.5 mt-0.5 shrink-0",
-                              isFailed ? "text-destructive" : "text-violet-500"
+                              "flex items-start gap-1.5 text-[10px]",
+                              isFailed ? "text-destructive/90" : "text-foreground/70"
                             )}
-                          />
-                          <span className="leading-relaxed">{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                          >
+                            <ChevronRight
+                              className={cn(
+                                "size-2.5 mt-0.5 shrink-0",
+                                isFailed ? "text-destructive" : "text-violet-500"
+                              )}
+                            />
+                            <span className="leading-relaxed">{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
 
-                  {outputText && isFailed && (
-                    <div className="mt-2 text-[10px] text-destructive bg-destructive/10 rounded-md px-2 py-1.5 border border-destructive/20">
-                      {outputText}
-                    </div>
-                  )}
+                    {outputText && isFailed && (
+                      <div className="mt-2 text-[10px] text-destructive bg-destructive/10 rounded-md px-2 py-1.5 border border-destructive/20">
+                        {outputText}
+                      </div>
+                    )}
 
-                  {outputText && isDone && (
-                    <div className="mt-2 text-[10px] text-emerald-800 dark:text-emerald-300 bg-emerald-500/10 rounded-md px-2 py-1.5 border border-emerald-500/20">
-                      ✓ {outputText}
-                    </div>
-                  )}
+                    {outputText && isDone && (
+                      <div className="mt-2 text-[10px] text-emerald-800 dark:text-emerald-300 bg-emerald-500/10 rounded-md px-2 py-1.5 border border-emerald-500/20">
+                        ✓ {outputText}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="p-4 sm:p-5">
+          <h4 className="text-xs font-semibold text-foreground/80">
+            {locale === "ar"
+              ? "ما يحدث عند التشغيل"
+              : "What happens when you run"}
+          </h4>
+          <ol className="mt-2.5 space-y-1.5">
+            {AGENTS.map((a, i) => (
+              <li key={a.id} className="flex items-start gap-2.5 text-[11px]">
+                <span className="font-mono text-[10px] font-semibold text-muted-foreground mt-px shrink-0">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span className="font-medium shrink-0">
+                  {tr(`agent_${a.id}_name`, locale)}
+                </span>
+                <span className="text-foreground/60 min-w-0">
+                  {tr(`agent_${a.id}_desc`, locale)}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       <AgentRunHistory
         runs={runHistory}
