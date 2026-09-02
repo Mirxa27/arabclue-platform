@@ -31,6 +31,7 @@ import {
 import { createMetricsTracker, mergeMetricsSnapshots } from "../agents/agent-metrics";
 import { createDecisionLogger } from "../agents/decision-logger";
 import { mergeOwnedAgentStates } from "../agents/run-recorder";
+import { DRAFTING_MAX_TOKENS } from "../agents/drafting";
 import { parseAgentRunConfig } from "../proposal-studio";
 import type { AgentState } from "../types";
 
@@ -149,6 +150,14 @@ describe("the orchestrator is four stages that hand each other plain data", () =
   test("the two long calls get the whole step window", () => {
     has("src/lib/agents/drafting.ts", "a step-sized budget", /timeoutMs:\s*27\d_000/);
     has("src/lib/agents/law-contract.ts", "a step-sized budget", /timeoutMs:\s*27\d_000/);
+  });
+
+  test("the draft is no longer capped where the first real runs were cut off", () => {
+    // Both completed production runs ended `truncated: true` at 8 192 tokens.
+    expect(DRAFTING_MAX_TOKENS).toBeGreaterThan(8192);
+    // ~65 tokens/s measured on the drafting row: the cap has to clear the
+    // 270 s budget with room for the validation gate and the writes after it.
+    expect(DRAFTING_MAX_TOKENS / 65).toBeLessThan(220);
   });
 });
 

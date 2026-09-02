@@ -12,6 +12,8 @@ import type {
   Locale,
 } from "../types";
 
+export const DRAFTING_MAX_TOKENS = 12_288;
+
 /** Hard ceiling on the assembled drafting prompt, in characters. */
 const MAX_PROMPT_CHARS = 90_000;
 
@@ -113,7 +115,12 @@ export async function draftProposal(opts: {
       { role: "user", content: user },
     ],
     {
-      maxTokens: 8192,
+      // The first two real runs (2026-09-02) both ended `truncated: true` at
+      // 8 192: a full technical-and-financial proposal in this template runs
+      // longer than that. Measured at ~65 tokens/s on the production drafting
+      // row, 12 288 fits the 270 s budget below with margin; the transport
+      // still records `truncated` if the model runs out of room.
+      maxTokens: DRAFTING_MAX_TOKENS,
       temperature: 0.28,
       engine: "DRAFTING",
       // Minutes of generation, once, inside the drafting step's own 300 s
