@@ -101,19 +101,21 @@ export function ComplianceMonitor() {
   return (
     <Card className="p-0 overflow-hidden border-border/60">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/30">
-        <div className="flex items-center gap-2.5">
-          <div className="size-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+      {/* Wraps: in the one-third column the title broke over three lines and
+          the score and the analyse button were clipped at the card's edge. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4 border-b border-border/60 bg-muted/30">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="size-8 shrink-0 rounded-lg bg-emerald-500/10 flex items-center justify-center">
             <ShieldCheck className="size-4 text-emerald-600" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold">{tr("section_compliance", locale)}</h3>
             <p className="text-[11px] text-muted-foreground">
               {locale === "ar" ? "تقدم الامتثال في الوقت الفعلي" : "Real-time compliance progress"}
             </p>
           </div>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-2 ms-auto">
           <div className="text-end">
             <div className={cn("text-2xl font-bold tabular-nums", pct === 100 ? "text-emerald-600" : "text-chart-1")}>
               {isLoading ? "—" : `${pct}%`}

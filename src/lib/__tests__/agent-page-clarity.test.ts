@@ -153,3 +153,9 @@ describe("the ingestion card header in a narrow column", () => {
     expect(/cursor-pointer select-none whitespace-nowrap/.test(src)).toBe(true);
   });
 });
+
+describe("the compliance monitor header in a narrow column", () => {
+  test("wraps instead of clipping the score and the analyse button", () => {
+    has("src/components/dashboard/compliance-monitor.tsx", "a wrapping header", /flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4/);
+  });
+});

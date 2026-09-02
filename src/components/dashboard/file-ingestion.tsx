@@ -332,7 +332,7 @@ export function FileIngestion() {
           <label className="flex items-center gap-2 cursor-pointer select-none whitespace-nowrap">
             <span className="text-[11px] font-medium text-foreground/80">
               {locale === "ar" ? "الطيار الآلي" : "Autopilot"}
-              <span className="hidden xl:inline text-muted-foreground font-normal">
+              <span className="hidden 2xl:inline text-muted-foreground font-normal">
                 {locale === "ar" ? " — شغّل الوكلاء بعد الرفع" : " — run the agents after upload"}
               </span>
             </span>
