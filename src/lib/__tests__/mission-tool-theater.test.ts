@@ -259,3 +259,32 @@ describe("mission tool theater parts", () => {
     ).toBe("listening");
   });
 });
+
+describe("previews never draw a gauge nobody measured", () => {
+  // Production, Agent page: every "Document" preview under the live execution
+  // path carried a 45 % bar — the value a short output body was assigned — and
+  // a regulatory card with no findings read 55 %. The theater already shows a
+  // finished tool as 100 % and a running one as indeterminate; the previews
+  // now leave progress out unless the output carries a real measure.
+  test("a short document body has no progress", () => {
+    const preview = extractDocumentPreview({ title: "Stage attachment", content: "RFP · 90%" });
+    expect(preview).not.toBeNull();
+    expect(preview?.progress).toBeUndefined();
+  });
+
+  test("a pipeline output keeps its measured overall progress", () => {
+    const preview = extractDocumentPreview({
+      agentStates: [{ name: "Ingestion", status: "completed", progress: 100 }, { name: "Compliance", status: "running", progress: 20 }],
+      overallProgress: 37,
+    });
+    expect(preview?.progress).toBeCloseTo(0.37);
+  });
+
+  test("a regulatory synthesis with nothing in it has no progress", () => {
+    const preview = extractRegulatoryPreview({ frameworks: [{ framework: "NCA" }], findings: [], gaps: [] });
+    expect(preview).not.toBeNull();
+    expect(preview?.progress).toBeUndefined();
+    const withFindings = extractRegulatoryPreview({ findings: [{ topic: "PDPL", certainty: "HIGH", statement: "Residency applies" }] });
+    expect(withFindings?.progress).toBe(1);
+  });
+});

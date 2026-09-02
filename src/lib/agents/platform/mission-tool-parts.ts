@@ -668,7 +668,13 @@ export function summarizeStoredOutput(
 export function extractDocumentPreview(output: unknown): {
   title: string;
   body: string;
-  progress: number;
+  /**
+   * Only when the output carries a real measure (a pipeline's overall
+   * progress). Absent otherwise: the theater then reads the tool's own state —
+   * done is 100 %, running is indeterminate — instead of a number nobody
+   * measured.
+   */
+  progress?: number;
   sections: string[];
 } | null {
   if (!output || typeof output !== "object") return null;
@@ -723,7 +729,7 @@ export function extractDocumentPreview(output: unknown): {
   return {
     title: title || "Document",
     body: body.slice(0, 4000),
-    progress: body.length > 80 ? 1 : 0.45,
+    // No progress: "45 %" for a short body was a guess drawn as a gauge.
     sections: sections.map((s) => s.split("\n")[0].replace(/^#+\s*/, "").slice(0, 60)),
   };
 }
@@ -738,7 +744,8 @@ export type RegulatoryPreview = {
   }>;
   gaps: Array<{ framework: string; controlId: string; status: string; title: string }>;
   disclaimer: string;
-  progress: number;
+  /** Present only when findings or gaps were actually produced. */
+  progress?: number;
 };
 
 export function extractRegulatoryPreview(output: unknown): RegulatoryPreview | null {
@@ -802,6 +809,7 @@ export function extractRegulatoryPreview(output: unknown): RegulatoryPreview | n
     findings,
     gaps,
     disclaimer,
-    progress: findings.length || gaps.length ? 1 : 0.55,
+    // No findings yet means no measured progress, not 55 %.
+    ...(findings.length || gaps.length ? { progress: 1 } : {}),
   };
 }
