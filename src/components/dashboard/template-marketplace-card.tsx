@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   Star,
-  Download,
+  Layers,
   Eye,
   Plus,
   Sparkles,
@@ -354,12 +354,17 @@ export function TemplateMarketplaceCard({
             )}
           </div>
 
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <Download className="size-3" />
+          {/* Real applications to proposals. The download counter it replaced had
+              no writer anywhere; its figures were seeded. */}
+          <div
+            className="flex items-center gap-1 text-muted-foreground"
+            title={locale === "ar" ? "مرات الاستخدام في عطاءات" : "Times used in proposals"}
+          >
+            <Layers className="size-3" />
             <span className="text-[10px]">
-              {template.downloadCount > 999
-                ? `${(template.downloadCount / 1000).toFixed(1)}k`
-                : template.downloadCount}
+              {template.usageCount > 999
+                ? `${(template.usageCount / 1000).toFixed(1)}k`
+                : template.usageCount}
             </span>
           </div>
 

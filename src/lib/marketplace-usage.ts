@@ -83,3 +83,38 @@ export async function countMarketplaceApplications(
 ): Promise<number> {
   return db.templateMarketplaceApplication.count({ where: { entryId } });
 }
+
+export interface MarketplaceEntryCounts {
+  readonly rating: number;
+  readonly ratingCount: number;
+  readonly usageCount: number;
+  readonly downloadCount: number;
+}
+
+/**
+ * Rewrites an entry's engagement columns from the tables that record the
+ * events: the average and count of its ratings, the count of proposals it was
+ * applied to. `downloadCount` has no writer anywhere and goes to zero.
+ *
+ * Exists because the system catalog rows were seeded, before the catalog was
+ * zeroed, with invented figures ("4.8 ★ (126) · 920") that the seed's update
+ * path then preserved for months. The seed calls this for every system entry.
+ */
+export async function reconcileMarketplaceEntryCounts(
+  entryId: string,
+  client: Pick<typeof db, "templateMarketplaceRating" | "templateMarketplaceApplication" | "templateMarketplaceEntry"> = db,
+): Promise<MarketplaceEntryCounts> {
+  const [ratings, usageCount] = await Promise.all([
+    client.templateMarketplaceRating.aggregate({
+      where: { entryId },
+      _avg: { rating: true },
+      _count: { _all: true },
+    }),
+    client.templateMarketplaceApplication.count({ where: { entryId } }),
+  ]);
+  const ratingCount = ratings._count._all;
+  const rating = ratingCount > 0 && ratings._avg.rating != null ? Math.round(ratings._avg.rating * 10) / 10 : 0;
+  const counts: MarketplaceEntryCounts = { rating, ratingCount, usageCount, downloadCount: 0 };
+  await client.templateMarketplaceEntry.update({ where: { id: entryId }, data: counts });
+  return counts;
+}

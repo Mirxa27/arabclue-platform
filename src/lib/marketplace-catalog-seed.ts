@@ -4,6 +4,7 @@
  */
 
 import { db } from "./db";
+import { reconcileMarketplaceEntryCounts } from "./marketplace-usage";
 import { asSchemaMigrationPendingError } from "./api-failure";
 import { SYSTEM_TEMPLATE_CATALOG } from "./template-marketplace-catalog";
 
@@ -74,6 +75,9 @@ export async function ensureSystemMarketplaceCatalogSeeded(
           where: { id: existing.id },
           data: baseData,
         });
+        // Engagement columns come from the rating and application tables, not
+        // from whatever an earlier seed wrote (see marketplace-usage.ts).
+        await reconcileMarketplaceEntryCounts(existing.id, client);
         updated += 1;
       } else {
         await client.templateMarketplaceEntry.create({

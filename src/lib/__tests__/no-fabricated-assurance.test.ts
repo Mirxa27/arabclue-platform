@@ -106,3 +106,22 @@ describe("dashboard chrome does not invent compliance", () => {
     expect(source).not.toContain("PDPL");
   });
 });
+
+describe("seeded marketplace rows are reconciled, and downloads left the card", () => {
+  test("the seed's update path reconciles engagement counts from the tables", () => {
+    const seed = read("src/lib/marketplace-catalog-seed.ts");
+    expect(seed).toContain("reconcileMarketplaceEntryCounts(");
+  });
+
+  test("the card shows real uses, not a download counter nothing increments", () => {
+    const card = read("src/components/dashboard/template-marketplace-card.tsx");
+    expect(card).not.toContain("template.downloadCount");
+    expect(card).toContain("template.usageCount");
+  });
+
+  test("the popular sort orders by real uses", () => {
+    const route = read("src/app/api/templates/marketplace/route.ts");
+    expect(route).not.toContain('{ downloadCount: "desc" as const }');
+    expect(route).toContain('{ usageCount: "desc" as const }');
+  });
+});

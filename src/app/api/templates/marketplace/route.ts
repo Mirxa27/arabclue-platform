@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       parsed.sortBy === "rating"
         ? { rating: "desc" as const }
         : parsed.sortBy === "downloads"
-          ? { downloadCount: "desc" as const }
+          ? { usageCount: "desc" as const }
           : { createdAt: "desc" as const };
 
     const [rows, total] = await Promise.all([
