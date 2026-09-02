@@ -30,13 +30,14 @@ export async function GET(request: NextRequest) {
 
         // A missing `StandardClause` relation propagates to the central mapper,
         // which answers HTTP 503 SCHEMA_MIGRATION_PENDING (requirement 16.2).
-        const count = await db.standardClause.count({ where: { workspaceId: null } });
-        if (count === 0) {
+        let catalogCount = await db.standardClause.count({ where: { workspaceId: null } });
+        if (catalogCount === 0) {
           // Logged, not swallowed: an empty catalog failed here on every read
           // for weeks against a check constraint, and nothing said so.
           await seedStandardClausesWithPrisma().catch((err: unknown) => {
             console.error("[clauses] catalog seed failed", err);
           });
+          catalogCount = await db.standardClause.count({ where: { workspaceId: null } });
         }
 
         const result = await listClauses({
@@ -52,6 +53,9 @@ export async function GET(request: NextRequest) {
           clauses: result.clauses,
           nextCursor: result.nextCursor,
           count: result.clauses.length,
+          // Size of the shared catalogue, so the screen states the real number
+          // rather than one typed into copy.
+          catalogCount,
         });
       }
     },

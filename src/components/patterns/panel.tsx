@@ -45,8 +45,8 @@ export function Panel({
         className
       )}
     >
-      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50 bg-gradient-to-b from-muted/40 to-transparent">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-border/50 bg-gradient-to-b from-muted/40 to-transparent">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1 basis-[12rem]">
           <div
             className={cn(
               "size-8 rounded-lg flex items-center justify-center ring-1 shrink-0",

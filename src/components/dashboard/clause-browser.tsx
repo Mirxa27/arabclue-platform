@@ -28,6 +28,7 @@ import {
 import { useLocale, useUI } from "@/lib/store";
 import { apiJson } from "@/lib/api-client";
 import { tr } from "@/lib/i18n";
+import { legalReviewStatusLabel } from "@/lib/status-labels";
 import { useToast } from "@/hooks/use-toast";
 import { create } from "zustand";
 
@@ -52,6 +53,7 @@ type Clause = {
 type ClausesResponse = {
   clauses: Clause[];
   nextCursor: string | null;
+  catalogCount?: number;
 };
 
 const CATEGORY_OPTIONS = [
@@ -214,24 +216,17 @@ export function ClauseBrowser() {
             <div className="size-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
               <BookOpen className="size-5" />
             </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold">{tr("clause_library_title", locale)}</h3>
-              <p className="text-xs text-muted-foreground mt-1 max-w-2xl leading-relaxed">
-                {tr("clause_library_subtitle", locale)}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="min-w-0 flex flex-wrap items-center gap-1.5 self-center">
+              {typeof data?.catalogCount === "number" ? (
                 <Badge variant="outline" className="text-[10px] gap-1">
                   <Scale className="size-3" />
-                  {ar ? "32 بند معياري" : "32 standard clauses"}
+                  {tr("clause_catalog_count", locale, { count: data.catalogCount })}
                 </Badge>
-                <Badge variant="secondary" className="text-[10px] gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                  <ShieldAlert className="size-3" />
-                  {tr("clause_counsel_required", locale)}
-                </Badge>
-                <Badge variant="outline" className="text-[10px]">
-                  UNREVIEWED
-                </Badge>
-              </div>
+              ) : null}
+              <Badge variant="secondary" className="text-[10px] gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                <ShieldAlert className="size-3" />
+                {tr("clause_counsel_required", locale)}
+              </Badge>
             </div>
           </div>
           <div className="flex gap-2">
@@ -401,7 +396,7 @@ export function ClauseBrowser() {
                     )}
                     <Badge variant="outline" className="text-[10px] gap-1">
                       <ShieldAlert className="size-3" />
-                      {cl.legalReviewStatus}
+                      {legalReviewStatusLabel(cl.legalReviewStatus, locale)}
                     </Badge>
                     {cl.counselReviewRequired && (
                       <span title={tr("clause_counsel_required", locale)} className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5">

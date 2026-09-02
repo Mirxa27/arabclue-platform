@@ -135,6 +135,7 @@ describe("the dashboard polls only while a run is live", () => {
       "src/components/dashboard/projects-list.tsx",
       "src/components/dashboard/compliance-monitor.tsx",
       "src/components/dashboard/stat-cards.tsx",
+      "src/components/dashboard/knowledge-approval-queue.tsx",
     ]) {
       const src = read(file);
       expect(/refetchInterval:\s*liveDataPollMs\(/.test(src), file).toBe(true);

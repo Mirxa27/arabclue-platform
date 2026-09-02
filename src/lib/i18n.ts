@@ -485,9 +485,10 @@ export const localizationRegistry = {
 
   clause_library_title: { ar: "مكتبة البنود المعيارية", en: "Standard Clause Library" },
   clause_library_subtitle: {
-    ar: "32 بندًا معياريًا + بنود مخصصة لمساحة العمل — معاينة ثنائية اللغة ومراجعة قانونية مطلوبة",
-    en: "32 standard clauses + workspace custom clauses — bilingual preview, counsel review required",
+    ar: "البنود المعيارية + بنود مخصصة لمساحة العمل — معاينة ثنائية اللغة ومراجعة قانونية مطلوبة",
+    en: "Standard clauses + workspace custom clauses — bilingual preview, counsel review required",
   },
+  clause_catalog_count: { ar: "{{count}} بندًا معياريًا", en: "{{count}} standard clauses" },
   clause_filter_category: { ar: "تصفية حسب الفئة", en: "Filter by category" },
   clause_filter_mandatory: { ar: "الإلزامية فقط", en: "Mandatory only" },
   clause_filter_search: { ar: "بحث في البنود...", en: "Search clauses..." },
@@ -826,6 +827,24 @@ export const localizationRegistry = {
     ar: "نشط",
     en: "Active",
   },
+  // Billing vocabulary shown to the customer (plan keys, cycle, statuses).
+  plan_name_starter: { ar: "المبتدئ", en: "Starter" },
+  plan_name_pro: { ar: "الاحترافي", en: "Pro" },
+  plan_name_enterprise: { ar: "المؤسسات", en: "Enterprise" },
+  plan_name_pay_as_you_go: { ar: "الدفع حسب الاستخدام", en: "Pay as you go" },
+  billing_cycle_monthly: { ar: "شهري", en: "Monthly" },
+  billing_cycle_yearly: { ar: "سنوي", en: "Yearly" },
+  subscription_status_pending: { ar: "قيد الانتظار", en: "Pending" },
+  subscription_status_active: { ar: "نشط", en: "Active" },
+  subscription_status_past_due: { ar: "متأخر السداد", en: "Past due" },
+  subscription_status_cancelled: { ar: "ملغى", en: "Cancelled" },
+  subscription_status_trialing: { ar: "فترة تجريبية", en: "Trial" },
+  subscription_status_expired: { ar: "منتهي", en: "Expired" },
+  payment_status_pending: { ar: "قيد الانتظار", en: "Pending" },
+  payment_status_paid: { ar: "مدفوع", en: "Paid" },
+  payment_status_failed: { ar: "فشل", en: "Failed" },
+  payment_status_refunded: { ar: "مستردّ", en: "Refunded" },
+  template_list_heading: { ar: "قوالب مساحة العمل", en: "Workspace templates" },
   recurring_status_canceled: {
     ar: "ملغى",
     en: "Canceled",
@@ -2666,6 +2685,34 @@ export const DYNAMIC_TRANSLATION_KEY_MANIFEST = {
     SUSPENDED: "recurring_status_suspended",
     CANCELLED: "recurring_status_cancelled",
   },
+  // prisma Plan.name seeds (src/lib/constants.ts DEFAULT_PLANS)
+  planName: {
+    STARTER: "plan_name_starter",
+    PRO: "plan_name_pro",
+    ENTERPRISE: "plan_name_enterprise",
+    PAY_AS_YOU_GO: "plan_name_pay_as_you_go",
+  },
+  billingCycle: {
+    MONTHLY: "billing_cycle_monthly",
+    YEARLY: "billing_cycle_yearly",
+  },
+  // prisma Subscription.status
+  subscriptionStatus: {
+    PENDING: "subscription_status_pending",
+    ACTIVE: "subscription_status_active",
+    PAST_DUE: "subscription_status_past_due",
+    CANCELLED: "subscription_status_cancelled",
+    TRIALING: "subscription_status_trialing",
+    EXPIRED: "subscription_status_expired",
+  },
+  // prisma BillingRecord.status
+  paymentStatus: {
+    PENDING: "payment_status_pending",
+    PAID: "payment_status_paid",
+    FAILED: "payment_status_failed",
+    REFUNDED: "payment_status_refunded",
+  },
+
   knowledgeRecord: {
     CERTIFICATE: "knowledge_record_certificate",
     PAST_PROJECT: "knowledge_record_past_project",

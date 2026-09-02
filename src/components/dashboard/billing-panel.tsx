@@ -28,6 +28,12 @@ import {
 } from "@/components/patterns";
 import { apiJson } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import {
+  billingCycleLabel,
+  paymentStatusLabel,
+  planDisplayName,
+  subscriptionStatusLabel,
+} from "@/lib/status-labels";
 
 type Plan = {
   id: string;
@@ -289,12 +295,11 @@ export function BillingPanel() {
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold">
-                      {locale === "ar"
-                        ? sub.plan.nameAr ?? sub.plan.name
-                        : sub.plan.name}
+                      {planDisplayName(sub.plan, locale)}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      {sub.billingCycle} · {sub.status}
+                      {billingCycleLabel(sub.billingCycle, locale)} ·{" "}
+                      {subscriptionStatusLabel(sub.status, locale)}
                     </div>
                   </div>
                   <Badge
@@ -306,7 +311,7 @@ export function BillingPanel() {
                         : "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
                     )}
                   >
-                    {sub.status}
+                    {subscriptionStatusLabel(sub.status, locale)}
                   </Badge>
                 </div>
                 <UsageBar
@@ -382,7 +387,7 @@ export function BillingPanel() {
               </p>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {plans.map((plan) => {
                 const price =
                   cycle === "YEARLY" ? plan.priceYearly : plan.priceMonthly;
@@ -399,7 +404,7 @@ export function BillingPanel() {
                   >
                     <div>
                       <div className="text-sm font-semibold">
-                        {locale === "ar" ? plan.nameAr ?? plan.name : plan.name}
+                        {planDisplayName(plan, locale)}
                       </div>
                       <div className="text-lg font-bold tabular-nums mt-1">
                         {price > 0
@@ -523,7 +528,7 @@ export function BillingPanel() {
                     {r.currency} {r.amount.toLocaleString()}
                   </div>
                   <Badge variant="outline" className="text-[9px]">
-                    {r.status}
+                    {paymentStatusLabel(r.status, locale)}
                   </Badge>
                 </div>
               </div>

@@ -7,7 +7,8 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useLocale } from "@/lib/store";
+import { useLocale, useUI } from "@/lib/store";
+import { liveDataPollMs } from "@/lib/agents/autopilot";
 import { tr } from "@/lib/i18n";
 import { selectApiFailureMessage } from "@/lib/api-failure-message";
 import { Badge } from "@/components/ui/badge";
@@ -94,6 +95,7 @@ async function responseError(response: Response, locale: "ar" | "en"): Promise<s
 
 export function KnowledgeApprovalQueue() {
   const { locale } = useLocale();
+  const activeRunLive = useUI((s) => s.activeRunLive);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -122,7 +124,9 @@ export function KnowledgeApprovalQueue() {
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.nextCursor : null,
     staleTime: 30_000,
-    refetchInterval: 5_000,
+    // New records come out of agent runs; poll while one is live, otherwise
+    // the decision handlers and window focus refresh the list.
+    refetchInterval: liveDataPollMs(activeRunLive, 5_000),
   });
 
   const documentsQuery = useQuery({
@@ -616,6 +620,7 @@ export function KnowledgeApprovalQueue() {
 }
 
 export function usePendingApprovalCount() {
+  const activeRunLive = useUI((s) => s.activeRunLive);
   return useQuery({
     queryKey: ["knowledge-pending-approval-count"],
     queryFn: async () => {
@@ -625,6 +630,6 @@ export function usePendingApprovalCount() {
       return data.total ?? 0;
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: liveDataPollMs(activeRunLive, 60_000),
   });
 }

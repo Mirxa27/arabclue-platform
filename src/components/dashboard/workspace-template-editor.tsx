@@ -201,7 +201,7 @@ export function WorkspaceTemplateEditor() {
       <aside className="rounded-xl border bg-card p-3 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">
-            {tr("template_editor_title", locale)}
+            {tr("template_list_heading", locale)}
           </h3>
           <Button
             size="sm"
