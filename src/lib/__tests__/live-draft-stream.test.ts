@@ -223,6 +223,19 @@ describe("the wiring", () => {
     has("src/components/dashboard/agent-workflow.tsx", "the panel mounted", /<LiveDraftPanel/);
   });
 
+  test("the draft is rendered as the document it is, not raw markdown, and the page clears the dock", () => {
+    const panel = "src/components/dashboard/live-draft-panel.tsx";
+    // The production screenshot showed `**Limitations:**` and `| table |`
+    // pipes as typed. The shared escaped renderer turns them into headings,
+    // lists and tables; useDeferredValue keeps the page responsive while the
+    // text grows (28 000 characters by the end of a draft).
+    has(panel, "the shared escaped renderer", /markdownToHtml\(/);
+    has(panel, "deferred rendering of a growing document", /useDeferredValue\(/);
+    // The floating dock covered the panel's last lines at 375 px; the content
+    // column now ends with clearance for it on every page.
+    has("src/components/dashboard/app-shell.tsx", "bottom clearance for the dock", /pb-24/);
+  });
+
   test("the panel's copy exists in both languages", () => {
     for (const key of ["live_draft_title", "live_draft_waiting", "live_draft_retrying", "live_draft_done", "live_draft_truncated", "live_draft_words"]) {
       for (const locale of ["ar", "en"] as const) {

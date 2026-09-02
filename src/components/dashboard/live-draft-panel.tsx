@@ -12,13 +12,27 @@
  * a dropped connection resumes where it left off.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { PenLine } from "lucide-react";
 import { tr } from "@/lib/i18n";
+import { markdownToHtml } from "@/lib/markdown";
 import type { Locale } from "@/lib/types";
 import type { DraftStreamChunk } from "@/lib/agents/draft-stream";
 import { cn } from "@/lib/utils";
+
+/** Same presentation as the proposal preview, so the live draft looks like the document it becomes. */
+const DOCUMENT_CLASSES = cn(
+  "text-[13px] leading-6 text-foreground/90",
+  "[&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2",
+  "[&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-4 [&_h2]:mb-2",
+  "[&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1.5",
+  "[&_p]:mb-2.5 [&_ul]:mb-2.5 [&_ol]:mb-2.5 [&_li]:ms-4",
+  "[&_table]:w-full [&_table]:border-collapse [&_table]:mb-3 [&_table]:text-[12px]",
+  "[&_td]:border [&_td]:border-border/50 [&_td]:px-2 [&_td]:py-1 [&_td]:align-top",
+  "[&_th]:border [&_th]:border-border/50 [&_th]:px-2 [&_th]:py-1 [&_th]:text-start",
+  "[&_blockquote]:border-s-2 [&_blockquote]:border-violet-500/40 [&_blockquote]:ps-3 [&_blockquote]:text-muted-foreground",
+);
 
 type Phase = "waiting" | "writing" | "retrying" | "done";
 
@@ -58,11 +72,19 @@ export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Local
     return () => source.close();
   }, [runId]);
 
+  // Rendering 28 000 characters of markdown on every chunk would fight the
+  // stream for the main thread; the deferred value lets React render the
+  // document a beat behind the words while the header count stays live.
+  // `markdownToHtml` escapes every span of content before emitting markup —
+  // the draft is model output and untrusted.
+  const deferredText = useDeferredValue(text);
+  const html = useMemo(() => markdownToHtml(deferredText), [deferredText]);
+
   // Follow the writing: the newest words stay in view.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [text]);
+  }, [html]);
 
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   const live = phase === "waiting" || phase === "writing" || phase === "retrying";
@@ -102,20 +124,15 @@ export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Local
         <span className="ms-auto text-[11px] tabular-nums text-muted-foreground">{status}</span>
       </header>
       <div ref={scrollRef} className="max-h-72 overflow-y-auto px-4 py-3">
-        <pre
-          dir="auto"
-          className="whitespace-pre-wrap break-words font-sans text-[13px] leading-6 text-foreground/90"
-        >
-          {text}
-          {live ? (
-            <motion.span
-              aria-hidden
-              className="ms-0.5 inline-block h-4 w-[2px] translate-y-[3px] bg-violet-500"
-              animate={reduceMotion ? undefined : { opacity: [1, 0, 1] }}
-              transition={reduceMotion ? undefined : { duration: 1, repeat: Infinity, ease: "linear" }}
-            />
-          ) : null}
-        </pre>
+        <div dir="auto" className={DOCUMENT_CLASSES} dangerouslySetInnerHTML={{ __html: html }} />
+        {live ? (
+          <motion.span
+            aria-hidden
+            className="mt-1 inline-block h-4 w-[2px] bg-violet-500"
+            animate={reduceMotion ? undefined : { opacity: [1, 0, 1] }}
+            transition={reduceMotion ? undefined : { duration: 1, repeat: Infinity, ease: "linear" }}
+          />
+        ) : null}
       </div>
     </section>
   );

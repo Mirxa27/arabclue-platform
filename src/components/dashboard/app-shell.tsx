@@ -82,7 +82,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex-1 flex flex-col min-w-0 bg-[var(--surface-0)]">
           <DashboardTopbar />
           <main className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
-            <div className="mx-auto w-full max-w-[1600px] p-3 sm:p-4 lg:p-6 2xl:p-8">{children}</div>
+            {/* The dock floats over the bottom-end corner on every page; the column
+                ends with enough clearance that the last content can scroll past it. */}
+            <div className="mx-auto w-full max-w-[1600px] px-3 pt-3 pb-24 sm:px-4 sm:pt-4 lg:px-6 lg:pt-6 2xl:px-8 2xl:pt-8">{children}</div>
           </main>
           <DashboardFooter />
         </div>
