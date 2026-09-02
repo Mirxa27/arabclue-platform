@@ -113,7 +113,14 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "font-src 'self' data:",
-              "connect-src 'self'",
+              // The voice session is minted server-side but the browser holds
+              // the socket and the WebRTC offer itself (see realtime.ts and
+              // live-voice-session.tsx). With 'self' alone the console showed
+              // "violates the following Content Security Policy directive" and
+              // Live connect never connected. A custom voice base configured by
+              // an admin needs its origin added here; this policy cannot follow
+              // a database row.
+              "connect-src 'self' https://api.openai.com wss://api.openai.com https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com",
               "media-src 'self' blob:",
               "worker-src 'self' blob:",
               "frame-src 'self' blob:",
