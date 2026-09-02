@@ -8,10 +8,10 @@ import {
   defaultApiBase,
   defaultApiKeyEnvKey,
   enrichRemoteModel,
-  normalizeOpenAiBase,
   type ModelCapability,
   type RemoteModelMeta,
 } from "./model-catalog";
+import { providerAuthHeaders, resolveOpenAiCompatibleTarget } from "./provider-wire";
 
 export type FetchModelsResult = {
   models: ModelCapability[];
@@ -45,9 +45,7 @@ async function fetchOpenAiCompatibleModels(
   apiKey: string | null,
   provider: string
 ): Promise<ModelCapability[]> {
-  const fallbackBase = defaultApiBase(provider);
-  const base = normalizeOpenAiBase(apiBase || fallbackBase);
-  if (!base) {
+  if (!apiBase && !defaultApiBase(provider)) {
     throw new Error(
       "API Base URL is required to auto-fetch models for this provider"
     );
@@ -57,9 +55,15 @@ async function fetchOpenAiCompatibleModels(
       "API key missing — configure it in Env Settings first"
     );
   }
+  // Same root the chat transport dials (Azure /openai/v1, Bedrock regional
+  // host, Gemini compat…), so the list an admin picks from is the list that
+  // endpoint will actually serve.
+  const { base } = resolveOpenAiCompatibleTarget({ provider, apiBase, modelId: null });
 
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...providerAuthHeaders(provider, apiKey),
+  };
 
   let res: Response;
   try {
@@ -132,7 +136,12 @@ async function fetchGoogleModels(
   apiBase: string | null,
   apiKey: string
 ): Promise<ModelCapability[]> {
-  const base = (apiBase || defaultApiBase("google")).replace(/\/$/, "");
+  // A chat row points at the OpenAI-compat root (…/v1beta/openai); the model
+  // list comes from the native endpoint one level up, which also returns the
+  // Live-capable ids the VOICE engine filters for.
+  const base = (apiBase || defaultApiBase("google"))
+    .replace(/\/+$/, "")
+    .replace(/\/openai$/i, "");
   const url = `${base}/models?key=${encodeURIComponent(apiKey)}&pageSize=200`;
   let res: Response;
   try {

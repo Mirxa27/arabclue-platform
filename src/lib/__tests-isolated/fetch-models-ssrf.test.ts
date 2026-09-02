@@ -16,11 +16,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 const fetchCalls: string[] = [];
+const fetchHeaders: Record<string, string>[] = [];
 const originalFetch = globalThis.fetch;
 const CREDENTIAL_VARS = [
   "OPENAI_API_KEY",
   "OPENAI_API_KEY_GATEWAY",
   "GEMINI_API_KEY",
+  "AZURE_OPENAI_API_KEY",
+  "AWS_BEARER_TOKEN_BEDROCK",
 ] as const;
 const previousEnv = new Map<string, string | undefined>();
 
@@ -32,8 +35,13 @@ beforeAll(async () => {
     process.env[name] = `sk-${name.toLowerCase()}`;
   }
 
-  globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
     fetchCalls.push(String(input));
+    const headers: Record<string, string> = {};
+    new Headers(init?.headers).forEach((value, key) => {
+      headers[key] = value;
+    });
+    fetchHeaders.push(headers);
     return new Response(JSON.stringify({ data: [{ id: "gpt-4o" }] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -53,6 +61,7 @@ afterAll(() => {
 
 beforeEach(() => {
   fetchCalls.length = 0;
+  fetchHeaders.length = 0;
 });
 
 describe("fetchLiveProviderModels credential-origin enforcement", () => {
@@ -126,5 +135,62 @@ describe("fetchLiveProviderModels credential-origin enforcement", () => {
 
     expect(result.source).toBe("ollama");
     expect(fetchCalls).toEqual(["http://127.0.0.1:11434/v1/models"]);
+  });
+});
+
+describe("fetchLiveProviderModels dials each vendor's documented models endpoint", () => {
+  test("Azure OpenAI: bare resource endpoint → /openai/v1/models with api-key auth", async () => {
+    const result = await fetchLiveProviderModels({
+      provider: "azure_openai",
+      apiBase: "https://contoso.openai.azure.com",
+      apiKeyEnvKey: null,
+    });
+
+    expect(result.models.map((m) => m.id)).toContain("gpt-4o");
+    expect(fetchCalls).toEqual(["https://contoso.openai.azure.com/openai/v1/models"]);
+    // Other suites in this process stand in for `resolveProviderApiKey`, so the
+    // value is not pinned — the wiring is: the same key in both header forms.
+    expect(fetchHeaders[0].authorization).toMatch(/^Bearer \S+$/);
+    expect(fetchHeaders[0]["api-key"]).toBe(fetchHeaders[0].authorization.replace(/^Bearer /, ""));
+  });
+
+  test("Amazon Bedrock: regional runtime host → /openai/v1/models with the bearer token", async () => {
+    const result = await fetchLiveProviderModels({
+      provider: "aws_bedrock",
+      apiBase: "https://bedrock-runtime.eu-central-1.amazonaws.com",
+      apiKeyEnvKey: null,
+    });
+
+    expect(result.models.map((m) => m.id)).toContain("gpt-4o");
+    expect(fetchCalls).toEqual([
+      "https://bedrock-runtime.eu-central-1.amazonaws.com/openai/v1/models",
+    ]);
+    expect(fetchHeaders[0].authorization).toMatch(/^Bearer \S+$/);
+    expect(fetchHeaders[0]["api-key"]).toBeUndefined();
+  });
+
+  test("Amazon Bedrock: the token is refused for a non-Bedrock AWS host", async () => {
+    await expect(
+      fetchLiveProviderModels({
+        provider: "aws_bedrock",
+        apiBase: "https://evil-bucket.s3.amazonaws.com/openai/v1",
+        apiKeyEnvKey: null,
+      })
+    ).rejects.toThrow(/AWS_BEARER_TOKEN_BEDROCK may only be sent to/);
+
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test("Google: a chat row on the compat root still lists models from the native endpoint", async () => {
+    await fetchLiveProviderModels({
+      provider: "google",
+      apiBase: "https://generativelanguage.googleapis.com/v1beta/openai",
+      apiKeyEnvKey: "GEMINI_API_KEY",
+    });
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]).toMatch(
+      /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\?key=[^&]+&pageSize=200$/
+    );
   });
 });

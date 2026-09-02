@@ -16,10 +16,14 @@ import {
 } from "../guardrails";
 import {
   type AgentEngine,
-  normalizeOpenAiBase,
   providerServesEngine,
   requireConfiguredModelId,
 } from "./model-catalog";
+import {
+  isOpenAiCompatibleChatProvider,
+  providerAuthHeaders,
+  resolveOpenAiCompatibleTarget,
+} from "./provider-wire";
 import {
   LLMTransportError,
   classifyFailure,
@@ -354,15 +358,13 @@ export async function generateCompletion(
       );
     }
 
-    if (
-      pid === "openai" ||
-      pid === "openai_compatible" ||
-      pid === "ollama" ||
-      pid === "azure_openai"
-    ) {
+    // OpenAI, Azure OpenAI (v1), Google Gemini, Amazon Bedrock, Mistral, Ollama
+    // and every OpenAI-compatible gateway: same wire shape, different root and
+    // auth header (see provider-wire.ts).
+    if (isOpenAiCompatibleChatProvider(pid)) {
       return await runTransport(
         () => callOpenAiCompatible(provider, filteredMessages, temperature, maxTokens, opts?.onDelta),
-        0.92
+        pid === "mistral" ? 0.9 : 0.92
       );
     }
 
@@ -370,22 +372,6 @@ export async function generateCompletion(
       return await runTransport(
         () => callAnthropic(provider, filteredMessages, temperature, maxTokens),
         0.93
-      );
-    }
-
-    if (pid === "mistral") {
-      return await runTransport(
-        () =>
-          callOpenAiCompatible(
-            {
-              ...provider,
-              apiBase: provider.apiBase || "https://api.mistral.ai/v1",
-            },
-            filteredMessages,
-            temperature,
-            maxTokens
-          ),
-        0.9
       );
     }
 
@@ -449,25 +435,19 @@ async function callOpenAiCompatible(
     );
   }
 
-  const base = normalizeOpenAiBase(
-    provider.apiBase ||
-      (pid === "mistral"
-        ? "https://api.mistral.ai/v1"
-        : pid === "ollama"
-          ? "http://127.0.0.1:11434/v1"
-          : "https://api.openai.com/v1")
-  );
+  const target = resolveOpenAiCompatibleTarget(provider);
+  const base = target.base;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...providerAuthHeaders(pid, key),
   };
-  if (key) headers.Authorization = `Bearer ${key}`;
 
   // Per-vendor shape: GPT-5-class models reject `max_tokens` and a custom
   // temperature; GLM needs its thinking budget handled. See request-shape.ts.
   const body = openAiCompatibleRequestBody({
     provider: provider.provider,
-    modelId: requireConfiguredModelId(provider.modelId),
+    modelId: requireConfiguredModelId(target.modelId),
     messages,
     temperature,
     maxTokens,
@@ -599,11 +579,15 @@ export async function embedText(text: string): Promise<number[] | null> {
     const provider = await getProviderForEngine("EMBEDDING");
     if (provider) {
       const pid = provider.provider.toLowerCase();
+      // Vendors documenting an OpenAI-shaped `/embeddings`: OpenAI, Azure v1
+      // (in its spec), Gemini's compat layer, Mistral, Ollama and the gateways.
+      // Bedrock's OpenAI-compatible surface documents chat completions only.
       const supportsRemoteEmbed =
         pid === "openai" ||
         pid === "openai_compatible" ||
         pid === "ollama" ||
         pid === "azure_openai" ||
+        pid === "google" ||
         pid === "mistral";
 
       if (supportsRemoteEmbed) {
@@ -612,18 +596,12 @@ export async function embedText(text: string): Promise<number[] | null> {
           provider.apiKeyEnvKey
         );
         if (key || pid === "ollama") {
-          const base = normalizeOpenAiBase(
-            provider.apiBase ||
-              (pid === "mistral"
-                ? "https://api.mistral.ai/v1"
-                : pid === "ollama"
-                  ? "http://127.0.0.1:11434/v1"
-                  : "https://api.openai.com/v1")
-          );
+          const target = resolveOpenAiCompatibleTarget(provider);
+          const base = target.base;
           const headers: Record<string, string> = {
             "Content-Type": "application/json",
+            ...providerAuthHeaders(pid, key),
           };
-          if (key) headers.Authorization = `Bearer ${key}`;
 
           const controller = new AbortController();
           const timer = setTimeout(
@@ -636,7 +614,7 @@ export async function embedText(text: string): Promise<number[] | null> {
               method: "POST",
               headers,
               body: JSON.stringify({
-                model: requireConfiguredModelId(provider.modelId),
+                model: requireConfiguredModelId(target.modelId),
                 input: trimmed,
               }),
               signal: controller.signal,

@@ -11,10 +11,13 @@ import { gateway } from "ai";
 import { resolveProviderApiKey } from "@/lib/env-settings";
 import { getProviderForEngine } from "@/lib/llm";
 import {
-  normalizeOpenAiBase,
   requireConfiguredModelId,
   type AgentEngine,
 } from "@/lib/llm/model-catalog";
+import {
+  isOpenAiCompatibleChatProvider,
+  resolveOpenAiCompatibleTarget,
+} from "@/lib/llm/provider-wire";
 import { GATEWAY_MODEL_ID, gatewayAvailable } from "@/lib/llm/gateway";
 
 /**
@@ -64,37 +67,28 @@ export async function resolvePlatformAgentModel(
     };
   }
 
-  if (
-    pid === "openai" ||
-    pid === "openai_compatible" ||
-    pid === "ollama" ||
-    pid === "azure_openai" ||
-    pid === "mistral" ||
-    pid === "zai"
-  ) {
+  if (isOpenAiCompatibleChatProvider(pid)) {
     if (!key && pid !== "ollama") {
       throw new Error(
         `API key missing for ${provider.provider} (${provider.apiKeyEnvKey || "default env"}).`
       );
     }
-    const baseURL =
-      normalizeOpenAiBase(
-        provider.apiBase ||
-          (pid === "mistral"
-            ? "https://api.mistral.ai/v1"
-            : pid === "ollama"
-              ? "http://127.0.0.1:11434/v1"
-              : "https://api.openai.com/v1")
-      ) || undefined;
-
+    const target = resolveOpenAiCompatibleTarget(provider);
     const openai = createOpenAI({
       apiKey: key || "ollama",
-      baseURL,
+      baseURL: target.base || undefined,
+      // Azure key auth is the `api-key` header; the SDK only sets Authorization.
+      headers: pid === "azure_openai" && key ? { "api-key": key } : undefined,
     });
+    // `openai(id)` is the Responses API in this SDK version. OpenAI and Azure
+    // OpenAI v1 serve it; Gemini's compat layer, Bedrock, DeepSeek, Groq,
+    // Mistral, Z.AI and Ollama document /chat/completions only.
+    const servesResponsesApi = pid === "openai" || pid === "azure_openai";
+    const wireModelId = requireConfiguredModelId(target.modelId);
     return {
-      model: openai(modelId),
+      model: servesResponsesApi ? openai(wireModelId) : openai.chat(wireModelId),
       providerLabel: provider.provider,
-      modelId,
+      modelId: wireModelId,
     };
   }
 

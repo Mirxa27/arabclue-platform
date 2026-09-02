@@ -29,19 +29,11 @@ mock.module("../crypto", () => ({
   rotateEncryption: mock((c: string) => c),
 }));
 
-// Mock model-catalog to control defaultApiKeyEnvKey
-mock.module("../llm/model-catalog", () => ({
-  defaultApiKeyEnvKey: mock((provider: string) => {
-    switch (provider) {
-      case "openai":
-        return "OPENAI_API_KEY";
-      case "google":
-        return "GOOGLE_GENERATIVE_AI_API_KEY";
-      default:
-        return "";
-    }
-  }),
-}));
+// `model-catalog` is pure and is used as-is: `defaultApiKeyEnvKey` already
+// answers OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY / "" for the providers
+// below. A partial stand-in here would replace the module for every later file
+// in this process (mock.module is process-wide), hiding `isAllowedProviderApiKeyEnv`
+// and the Bedrock/Azure defaults from the provider transport suites.
 
 ({ getDecryptedEnv, getProviderApiKey, resolveProviderApiKey } =
   await import("../env-settings"));

@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ApiAIProvider, ProviderPatch } from "@/lib/api-types";
+import { LLM_PROVIDER_TYPES } from "@/lib/llm/model-catalog";
 
 type EngineMeta = { id: string; label: { en: string; ar: string } };
 type Preset = Record<string, string | number | boolean | null>;
@@ -1289,15 +1290,7 @@ function AddProviderForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[
-                "openai",
-                "openai_compatible",
-                "ollama",
-                "azure_openai",
-                "anthropic",
-                "mistral",
-                "zai",
-              ].map((t) => (
+              {LLM_PROVIDER_TYPES.map((t) => (
                 <SelectItem key={t} value={t} className="text-xs font-mono">
                   {t}
                 </SelectItem>

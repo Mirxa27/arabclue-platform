@@ -46,6 +46,7 @@ export const LLM_PROVIDER_TYPES = [
   "mistral",
   "zai",
   "google",
+  "aws_bedrock",
 ] as const;
 
 export type LlmProviderType = (typeof LLM_PROVIDER_TYPES)[number];
@@ -150,6 +151,32 @@ export const PROVIDER_CONNECTION_TEMPLATES: ProviderConnectionTemplate[] = [
     apiBase: "https://generativelanguage.googleapis.com/v1beta",
     apiKeyEnvKey: "GOOGLE_GENERATIVE_AI_API_KEY",
     engine: "VOICE",
+  },
+  {
+    // Gemini's OpenAI-compatibility root (ai.google.dev/gemini-api/docs/openai).
+    name: "Google Gemini",
+    provider: "google",
+    apiBase: "https://generativelanguage.googleapis.com/v1beta/openai",
+    apiKeyEnvKey: "GOOGLE_GENERATIVE_AI_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    // Resource endpoint is per tenant: https://RESOURCE.openai.azure.com — the
+    // transport appends /openai/v1 (Azure OpenAI v1 API).
+    name: "Azure OpenAI",
+    provider: "azure_openai",
+    apiBase: "",
+    apiKeyEnvKey: "AZURE_OPENAI_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    // Region is part of the host; change it to the Region the models are
+    // enabled in (docs.aws.amazon.com/bedrock … inference-chat-completions).
+    name: "Amazon Bedrock",
+    provider: "aws_bedrock",
+    apiBase: "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1",
+    apiKeyEnvKey: "AWS_BEARER_TOKEN_BEDROCK",
+    engine: "DEFAULT",
   },
   {
     name: "Z.AI (OpenAI-compatible)",
@@ -283,6 +310,8 @@ export function defaultApiBase(provider: string): string {
       return "http://127.0.0.1:11434/v1";
     case "google":
       return "https://generativelanguage.googleapis.com/v1beta";
+    case "aws_bedrock":
+      return "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1";
     case "openai_compatible":
     case "zai":
       return "";
@@ -316,6 +345,7 @@ export const PROVIDER_API_KEY_ENV_BASES: readonly string[] = Object.freeze([
   "OPENROUTER_API_KEY",
   "GROQ_API_KEY",
   "DEEPSEEK_API_KEY",
+  "AWS_BEARER_TOKEN_BEDROCK",
 ]);
 
 /**
@@ -339,7 +369,8 @@ export function isAllowedProviderApiKeyEnv(
 /**
  * Hosts each canonical provider credential is allowed to reach, derived from
  * `PROVIDER_CONNECTION_TEMPLATES` so the two cannot drift. A `*.` prefix means
- * "this host or any subdomain of it".
+ * "this host or any subdomain of it"; a `*` inside the name stands for exactly
+ * one DNS label (`bedrock-runtime.*.amazonaws.com` = one Region).
  */
 const CANONICAL_CREDENTIAL_HOSTS: ReadonlyMap<string, readonly string[]> =
   (() => {
@@ -358,18 +389,37 @@ const CANONICAL_CREDENTIAL_HOSTS: ReadonlyMap<string, readonly string[]> =
       if (!existing.includes(host)) existing.push(host);
       hosts.set(envKey, existing);
     }
-    // Credentials with no connection template of their own: the Gemini key
-    // aliases, and Azure, whose host is per-tenant rather than fixed.
+    // Credentials whose vendor host is per-tenant or per-region rather than
+    // the one fixed host a template can carry, plus the Gemini key aliases.
     hosts.set("GOOGLE_API_KEY", ["generativelanguage.googleapis.com"]);
     hosts.set("GEMINI_API_KEY", ["generativelanguage.googleapis.com"]);
-    hosts.set("AZURE_OPENAI_API_KEY", ["*.openai.azure.com"]);
+    // Azure OpenAI v1 endpoint families (api-version-lifecycle + the v1 spec's
+    // server variable, e.g. https://westus.api.cognitive.microsoft.com).
+    hosts.set("AZURE_OPENAI_API_KEY", [
+      "*.openai.azure.com",
+      "*.services.ai.azure.com",
+      "*.cognitiveservices.azure.com",
+      "*.api.cognitive.microsoft.com",
+    ]);
+    // Only the two Bedrock endpoint hosts, not every amazonaws.com subdomain —
+    // anyone can serve content from an S3 bucket or API Gateway there.
+    hosts.set("AWS_BEARER_TOKEN_BEDROCK", [
+      "bedrock-runtime.*.amazonaws.com",
+      "bedrock-mantle.*.api.aws",
+    ]);
     return hosts;
   })();
 
 function hostMatchesRule(host: string, rule: string): boolean {
-  return rule.startsWith("*.")
-    ? host.endsWith(rule.slice(1))
-    : host === rule;
+  if (rule.startsWith("*.")) return host.endsWith(rule.slice(1));
+  if (rule.includes("*")) {
+    const pattern = rule
+      .split(".")
+      .map((label) => (label === "*" ? "[a-z0-9-]+" : label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+      .join("\\.");
+    return new RegExp(`^${pattern}$`, "i").test(host);
+  }
+  return host === rule;
 }
 
 /**
@@ -457,6 +507,8 @@ export function defaultApiKeyEnvKey(provider: string): string {
       return "ZAI_API_KEY";
     case "google":
       return "GOOGLE_GENERATIVE_AI_API_KEY";
+    case "aws_bedrock":
+      return "AWS_BEARER_TOKEN_BEDROCK";
     case "ollama":
       return "";
     default:
