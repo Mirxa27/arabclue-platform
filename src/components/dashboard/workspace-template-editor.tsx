@@ -197,7 +197,7 @@ export function WorkspaceTemplateEditor() {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
       <aside className="rounded-xl border bg-card p-3 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">
@@ -298,7 +298,7 @@ export function WorkspaceTemplateEditor() {
           </div>
         ) : (
           <>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {showCreate && (
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label htmlFor="tpl-key">{ar ? "مفتاح القالب" : "Template key"}</Label>
@@ -331,7 +331,7 @@ export function WorkspaceTemplateEditor() {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{tr("template_section_title", locale)} (EN)</Label>
                 <Input

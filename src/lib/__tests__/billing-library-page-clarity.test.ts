@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   billingCycleLabel,
@@ -86,7 +86,7 @@ describe("billing panel", () => {
   });
 
   test("four plans get four columns on a wide screen", () => {
-    expect(src).toMatch(/grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4/);
+    expect(src).toMatch(/grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4/);
   });
 });
 
@@ -96,6 +96,19 @@ describe("Panel header survives a phone", () => {
     expect(src).toMatch(/flex flex-wrap items-center justify-between gap-3/);
     // The title block takes the row; actions drop below when it cannot.
     expect(src).toMatch(/flex items-center gap-2\.5 min-w-0 flex-1/);
+  });
+});
+
+describe("header action rows wrap on a phone", () => {
+  test("admin AI providers: the actions row measured 580 px wide at 375 px", () => {
+    const src = read("src/components/admin/ai-providers.tsx");
+    expect(src).toMatch(/flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b/);
+    expect(src).toMatch(/<div className="flex flex-wrap items-center gap-2">\s*<Badge/);
+  });
+
+  test("proposal builder live preview header", () => {
+    const src = read("src/components/dashboard/proposal-builder-preview.tsx");
+    expect(src).toMatch(/flex flex-wrap items-center justify-between gap-2 border-b/);
   });
 });
 
@@ -109,6 +122,27 @@ describe("library pages do not repeat their own page header", () => {
     expect(src).not.toMatch(/>\s*UNREVIEWED\s*</);
     expect(src).toMatch(/legalReviewStatusLabel\(cl\.legalReviewStatus/);
     expect(src).not.toMatch(/\{cl\.legalReviewStatus\}/);
+  });
+
+  test("no grid defines its columns only from a breakpoint up", () => {
+    // Account Setup's Brand Configuration card measured 509 px wide at 375 px:
+    // `grid lg:grid-cols-3` leaves the phone layout to an implicit auto track,
+    // which the browser sized to the form controls' intrinsic widths. A base
+    // `grid-cols-1` (minmax(0, 1fr)) pins the track to the container.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join(REPO_ROOT, dir), { withFileTypes: true })) {
+        const rel = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) walk(rel);
+        else if (entry.name.endsWith(".tsx")) {
+          const src = read(rel);
+          if (/className="grid (gap-[0-9.]+ )?(sm|md|lg|xl|2xl):grid-cols-/.test(src)) offenders.push(rel);
+        }
+      }
+    };
+    walk("src/components");
+    walk("src/app");
+    expect(offenders).toEqual([]);
   });
 
   test("the clause list track cannot outgrow a phone", () => {

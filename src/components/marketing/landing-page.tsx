@@ -742,7 +742,7 @@ function LandingContent() {
       <section className="relative border-b border-[var(--hairline)] py-14 sm:py-18 lg:py-24 overflow-hidden">
         <div className="absolute inset-0 -z-10 marketing-band-wash" />
         <div className="container-premium">
-          <div className="grid lg:grid-cols-2 gap-6 lg:gap-8 items-stretch">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-stretch">
             <motion.div initial={{ opacity: 0, y: 16, x: ar ? 16 : -16 }} whileInView={{ opacity: 1, y: 0, x: 0 }} viewport={SCROLL_VIEWPORT} className="relative rounded-[24px] border border-[var(--hairline)] bg-white/[0.03] p-[1px] overflow-hidden">
               <div className="rounded-[23px] bg-[var(--surface-1)]/80 p-6 sm:p-8 h-full">
                 <div className="flex items-center gap-2">
@@ -900,7 +900,7 @@ function LandingContent() {
       <section id="features" className="scroll-mt-24 relative border-b border-[var(--hairline)] py-16 sm:py-20 lg:py-28 overflow-hidden">
         <div className="absolute left-1/2 top-0 -z-10 h-[640px] w-[960px] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,oklch(0.55_0.08_200/.12),transparent_70%)] blur-[30px]" />
         <div className="container-premium">
-          <div className="grid lg:grid-cols-[0.92fr_1.15fr] gap-8 lg:gap-12 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[0.92fr_1.15fr] gap-8 lg:gap-12 items-start">
             <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} className="lg:sticky lg:top-28">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3.5 py-1 backdrop-blur">
                 <span className="h-1.5 w-1.5 rounded-full bg-amber-200 animate-pulse" />
@@ -963,7 +963,7 @@ function LandingContent() {
       <section className="marketing-dark-island relative py-16 sm:py-20 lg:py-24 border-b border-[var(--hairline)] overflow-hidden bg-[oklch(0.14_0.025_220)]">
         <div className="absolute inset-0 z-0 pointer-events-none bg-gradient-to-br from-amber-200/[0.06] via-transparent to-cyan-200/[0.06]" />
         <div className="container-premium relative z-10">
-          <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-12 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-12 items-center">
             <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={SCROLL_VIEWPORT} className="relative">
               <div className="inline-flex items-center gap-2 rounded-full border border-amber-200/20 bg-amber-200/10 px-3.5 py-1.5">
                 <motion.div animate={{ rotate: [0, -8, 8, 0] }} transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}>
@@ -1070,7 +1070,7 @@ function LandingContent() {
       {/* FAQ */}
       <section className="relative border-b border-[var(--hairline)] py-16 sm:py-20 lg:py-24">
         <div className="container-premium">
-          <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-16 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-16 items-start">
             <div className="lg:sticky lg:top-28">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
                 <MessageSquare className="h-3.5 w-3.5 text-white/40" />

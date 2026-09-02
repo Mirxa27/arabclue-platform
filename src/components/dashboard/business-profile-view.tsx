@@ -624,7 +624,7 @@ export function BusinessProfileView() {
         <h3 className="text-sm font-semibold">
           {ar ? "أبرز المشاريع" : "Flagship projects"}
         </h3>
-        <div className="grid md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {profile.highlights.pastProjects.length === 0 ? (
             <EmptyHint ar={ar} onSetup={() => startTransition(() => setView("account"))} />
           ) : (
@@ -648,7 +648,7 @@ export function BusinessProfileView() {
         </div>
       </section>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ListPanel
           title={ar ? "الفريق" : "Team"}
           empty={profile.highlights.staff.length === 0}

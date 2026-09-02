@@ -212,7 +212,7 @@ export function AdminMyFatoorah() {
         </Badge>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card className="p-4 space-y-3">
           <div className="text-sm font-medium flex items-center gap-2">
             <Shield className="h-4 w-4" /> Configuration
@@ -281,7 +281,7 @@ export function AdminMyFatoorah() {
         <div className="text-sm font-medium">
           {locale === "ar" ? "تدوير الأسرار / الوضع" : "Rotate secrets / mode"}
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="space-y-2">
             <Label>Mode</Label>
             <Select

@@ -463,7 +463,7 @@ function LegalPanel({
   };
 
   return (
-    <div className="grid lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Panel icon={Shield} title={locale === "ar" ? "السجل التجاري والضريبة" : "CR & VAT"}>
         <div className="space-y-3 p-4">
           <div>
@@ -719,7 +719,7 @@ function StaffPanel() {
   return (
     <Panel icon={Users} title={locale === "ar" ? "رأس المال البشري" : "Human capital"}>
       <div className="space-y-3 p-4">
-        <div className="grid md:grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           <Input placeholder={locale === "ar" ? "الاسم" : "Name"} value={name} onChange={(e) => setName(e.target.value)} />
           <Input placeholder={locale === "ar" ? "المسمى" : "Role"} value={roleTitle} onChange={(e) => setRoleTitle(e.target.value)} />
           <Input placeholder="ISO_27001_LEAD, ..." value={tags} onChange={(e) => setTags(e.target.value)} />
@@ -988,7 +988,7 @@ function SectorsPanel() {
   });
 
   return (
-    <div className="grid lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Panel icon={Target} title={locale === "ar" ? "القطاعات المستهدفة" : "Target sectors"}>
         <div className="p-4 space-y-2">
           <div className="flex gap-2">

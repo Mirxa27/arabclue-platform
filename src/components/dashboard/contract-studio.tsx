@@ -626,7 +626,7 @@ export function BilingualContractStudio({
           <p className="text-xs text-white/55 leading-relaxed max-w-4xl mb-4">
             {ar ? research.updatePostureAr : research.updatePostureEn}
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {research.findings.slice(0, 6).map((f) => (
               <div
                 key={f.id}
@@ -918,7 +918,7 @@ export function BilingualContractStudio({
                   </div>
 
                 {mode === "split" ? (
-                  <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10 rtl:md:divide-x-reverse">
+                  <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10 rtl:md:divide-x-reverse">
                     <div
                       className="p-5 font-[family-name:var(--font-space-grotesk)]"
                       dir="ltr"

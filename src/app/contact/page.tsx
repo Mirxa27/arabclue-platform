@@ -11,7 +11,7 @@ function ContactChannels() {
   const ar = locale === "ar";
 
   return (
-    <div className="grid gap-8 sm:grid-cols-3 mb-4">
+    <div className="grid grid-cols-1 gap-8 sm:grid-cols-3 mb-4">
       {contactChannels.map((c, i) => (
         <motion.div
           key={c.email}

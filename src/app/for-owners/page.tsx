@@ -133,7 +133,7 @@ function OwnersContent() {
       </section>
 
       <section className="mx-auto max-w-6xl px-4 sm:px-6 py-14 sm:py-16">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-3">
           {CAPABILITIES.map((c, i) => {
             const Icon = c.icon;
             return (

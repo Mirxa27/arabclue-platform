@@ -152,7 +152,7 @@ export function MarketplacePublishDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="mp-name-en">Name (EN)</Label>
               <Input
@@ -175,7 +175,7 @@ export function MarketplacePublishDialog({
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="mp-desc-en">Description (EN)</Label>
               <Textarea

@@ -154,7 +154,7 @@ export function BrandSetup() {
   }
 
   return (
-    <div className="grid lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {brandDraft && (
         <BrandForm
           brand={brandDraft}
@@ -581,7 +581,7 @@ function PastProjectsPanel({ pastProjects }: { pastProjects: ApiPastProject[] })
           <Plus className="size-3" />
           {tr("action_add_project", locale)}
         </div>
-        <div className="grid sm:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Input
             placeholder={locale === "ar" ? "عنوان المشروع" : "Project title"}
             value={newProject.title}

@@ -345,7 +345,7 @@ export function ContractTemplateCatalog() {
           />
         </Card>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {(data?.templates ?? []).map((template) => (
             <Card key={template.key} className="flex flex-col gap-3 p-4">
               <div className="flex items-start gap-3">
@@ -435,7 +435,7 @@ export function ContractTemplateCatalog() {
                   : "Entire workspace"}
             </span>
           </div>
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             {savedDrafts.map((draft) => (
               <Card key={draft.id} className="p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">

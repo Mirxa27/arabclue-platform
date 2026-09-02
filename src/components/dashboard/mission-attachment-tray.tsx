@@ -259,7 +259,7 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
       </AnimatePresence>
 
       {attachments.length > 0 ? (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {attachments.map((a) => (
             <motion.div key={a.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="group/card relative overflow-hidden rounded-[14px] border border-zinc-200/70 dark:border-white/[0.08] bg-white/70 dark:bg-zinc-900/50 backdrop-blur px-3 py-2.5 shadow-sm">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-black/5 dark:via-white/10 to-transparent" />
@@ -297,7 +297,7 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
           </DialogHeader>
 
           {importSource !== "browser" ? (
-            <RadioGroup value={importSource} onValueChange={(value) => setImportSource(value as ExternalImportSource)} className="grid gap-2 sm:grid-cols-3">
+            <RadioGroup value={importSource} onValueChange={(value) => setImportSource(value as ExternalImportSource)} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {EXTERNAL_IMPORT_SOURCES.map((source) => (
                 <Label key={source.id} htmlFor={`${importTextId}-${source.id}`} className="rounded-xl border border-zinc-200/70 dark:border-white/10 p-3 text-start hover:bg-black/[0.02] dark:hover:bg-white/[0.04] cursor-pointer transition-colors">
                   <div className="flex items-start gap-2">

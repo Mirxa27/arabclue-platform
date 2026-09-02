@@ -212,7 +212,7 @@ export function TenderSetupWizard({ open, onOpenChange }: Props) {
           ) : null}
 
           {step === 1 ? (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {TENDER_TYPES.map((t) => {
                 const selected = category === t.id;
                 return (
@@ -241,7 +241,7 @@ export function TenderSetupWizard({ open, onOpenChange }: Props) {
           ) : null}
 
           {step === 2 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="tender-budget">
                   {ar ? "الميزانية (ر.س)" : "Budget (SAR)"}

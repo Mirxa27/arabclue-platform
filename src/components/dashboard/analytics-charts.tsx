@@ -37,7 +37,7 @@ export function AnalyticsCharts({
 }) {
   const loc = locale as Locale;
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <ChartCard
         title={tr("chart_proposalsOverTime", loc)}
         subtitle={tr("chart_axis_date", loc)}

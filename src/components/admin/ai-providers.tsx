@@ -221,12 +221,12 @@ export function AdminAIProviders() {
 
   return (
     <Card className="p-0 overflow-hidden border-border/60">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/30">
-        <div className="flex items-center gap-2.5">
-          <div className="size-8 rounded-lg bg-chart-1/10 flex items-center justify-center">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-border/60 bg-muted/30">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1 basis-[14rem]">
+          <div className="size-8 rounded-lg bg-chart-1/10 flex items-center justify-center shrink-0">
             <Cpu className="size-4 text-chart-1" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold">
               {tr("admin_ai_providers", locale)}
             </h3>
@@ -237,7 +237,7 @@ export function AdminAIProviders() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge
             variant="outline"
             className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1 text-[10px]"

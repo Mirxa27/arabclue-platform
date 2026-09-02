@@ -98,7 +98,7 @@ export function AdminOverview() {
         })}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Users by role */}
         <Card className="p-0 overflow-hidden border-border/60">
           <div className="px-5 py-3.5 border-b border-border/60 bg-muted/30 flex items-center gap-2">

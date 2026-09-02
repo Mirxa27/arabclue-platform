@@ -152,7 +152,7 @@ export function TenderFlowBoard() {
           ) : null}
         </div>
 
-        <ol className="grid gap-0 sm:grid-cols-2 xl:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-border/40">
+        <ol className="grid grid-cols-1 gap-0 sm:grid-cols-2 xl:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-border/40">
           {steps.map((step, i) => {
             const Icon = step.icon;
             const isNext = step.id === nextId;

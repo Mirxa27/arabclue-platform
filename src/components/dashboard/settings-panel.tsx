@@ -289,7 +289,7 @@ export function SettingsPanel() {
   }
 
   return (
-    <div className="grid lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Panel
         icon={Settings}
         title={locale === "ar" ? "الملف الشخصي" : "Profile"}

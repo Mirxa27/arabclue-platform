@@ -188,7 +188,7 @@ export function AnalyticsDashboard() {
           />
         ) : (
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {summary.metrics.map((metric) => (
                 <MetricCard key={metric.key} metric={metric} locale={locale} />
               ))}

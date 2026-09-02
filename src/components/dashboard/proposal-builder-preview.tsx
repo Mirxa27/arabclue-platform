@@ -42,7 +42,7 @@ export function ProposalBuilderPreview({
   return (
     <div className="flex h-full flex-col">
       {/* Preview header */}
-      <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
         <div className="flex items-center gap-2">
           <FileText className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium">
@@ -169,7 +169,7 @@ function PreviewSection({
 
       {/* Bilingual layout */}
       {previewMode === "bilingual" ? (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {/* Arabic column */}
           <div dir="rtl" className="space-y-3">
             <h3 className="text-lg font-semibold">{section.title.ar || "—"}</h3>
