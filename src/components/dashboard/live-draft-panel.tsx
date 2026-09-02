@@ -104,7 +104,7 @@ export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Local
       <div ref={scrollRef} className="max-h-72 overflow-y-auto px-4 py-3">
         <pre
           dir="auto"
-          className="whitespace-pre-wrap break-words font-[inherit] text-[13px] leading-6 text-foreground/90"
+          className="whitespace-pre-wrap break-words font-sans text-[13px] leading-6 text-foreground/90"
         >
           {text}
           {live ? (
