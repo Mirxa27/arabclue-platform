@@ -215,9 +215,12 @@ export function ProposalsList() {
                     key={p.id}
                     className="rounded-xl border border-border/50 p-3.5 hover:border-border hover:shadow-sm transition-all bg-card"
                   >
-                    <div className="flex items-start justify-between gap-2 mb-2">
+                    {/* On a phone the badges took the row and the title read
+                        "Technical & Fin…"; they stack there and sit beside it
+                        from sm up. */}
+                    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-2 mb-2">
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold truncate tracking-tight">
+                        <div className="text-xs font-semibold tracking-tight sm:truncate">
                           {locale === "ar" ? (p.titleAr ?? p.title) : p.title}
                         </div>
                         <div className="text-[10px] text-muted-foreground">
@@ -226,7 +229,7 @@ export function ProposalsList() {
                           {p.version ? ` · v${p.version}` : ""}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex flex-wrap items-center gap-1 shrink-0">
                         <Badge
                           variant="outline"
                           className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1"
@@ -266,7 +269,7 @@ export function ProposalsList() {
                     </div>
 
                     {artifacts.length > 0 && (
-                      <div className="grid grid-cols-2 gap-1.5 mt-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-2">
                         {artifacts.map((a, i) => {
                           const Icon = artifactIcon(a.type);
                           const fmt = resolveArtifactDownloadFormat(a);

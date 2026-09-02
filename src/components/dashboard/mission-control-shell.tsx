@@ -276,7 +276,7 @@ export function MissionControlShell({
               transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
               className="overflow-hidden"
             >
-              <div className="max-h-[38dvh] overflow-y-auto overscroll-contain scrollbar-thin border-t border-black/[0.06] dark:border-white/[0.06] px-3 py-3 sm:px-4 sm:py-3.5 space-y-3 bg-[radial-gradient(60%_100%_at_50%_0%,rgba(20,184,166,0.06),transparent)]">
+              <div className="max-h-[52dvh] lg:max-h-[38dvh] overflow-y-auto overscroll-contain scrollbar-thin border-t border-black/[0.06] dark:border-white/[0.06] px-3 py-3 sm:px-4 sm:py-3.5 space-y-3 bg-[radial-gradient(60%_100%_at_50%_0%,rgba(20,184,166,0.06),transparent)]">
                 {kit}
               </div>
             </motion.div>

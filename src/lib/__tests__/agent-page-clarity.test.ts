@@ -86,7 +86,7 @@ describe("the shell never clips its own body", () => {
     // and the transcript were cut to a sliver under it.
     has(SHELL, "a height-gated max height", /lg:\[@media\(min-height:920px\)\]:max-h-\[calc\(100dvh-6\.5rem\)\]/);
     lacks(SHELL, "the unconditional cap", /\slg:max-h-\[calc\(100dvh-6\.5rem\)\]/);
-    has(SHELL, "the files panel scrolls inside a cap", /max-h-\[38dvh\] overflow-y-auto/);
+    has(SHELL, "the files panel scrolls inside a cap", /max-h-\[52dvh\] lg:max-h-\[38dvh\] overflow-y-auto/);
   });
   test("the panel subtitle no longer advertises the extension", () => {
     lacks(SHELL, "extension in the subtitle", /upload · extension · live pulse/);
@@ -121,5 +121,13 @@ describe("the floating launcher", () => {
     expect(/const onAgentPage = view === "overview";/.test(dock)).toBe(true);
     expect(/\{onAgentPage \? null : \(\s*<Button/.test(dock)).toBe(true);
     expect(/raised=\{!onAgentPage\}/.test(dock)).toBe(true);
+  });
+});
+
+describe("the proposals list on a phone", () => {
+  const LIST = "src/components/dashboard/proposals-list.tsx";
+  test("title and badges stack, artifacts go single column", () => {
+    has(LIST, "stacked header on small screens", /flex flex-col gap-1\.5 sm:flex-row sm:items-start sm:justify-between/);
+    has(LIST, "single-column artifacts on small screens", /grid grid-cols-1 sm:grid-cols-2 gap-1\.5 mt-2/);
   });
 });
