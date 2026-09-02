@@ -1,4 +1,4 @@
-import { generateCompletion } from "../llm";
+import { generateCompletion, type LLMMessage } from "../llm";
 import { guardOrThrow } from "../ai/provider-unavailable";
 import { systemDrafting, draftingUserPrompt } from "./prompts";
 import { LEGAL_DISCLAIMER, LEGAL_DISCLAIMER_AR } from "../procurement-rules";
@@ -13,11 +13,17 @@ import type {
 } from "../types";
 
 export const DRAFTING_MAX_TOKENS = 12_288;
+/**
+ * One more step's worth of draft when the first hit the cap. The continuation
+ * prompt carries the whole draft so far as an assistant turn, so its budget is
+ * smaller than the first pass's.
+ */
+export const DRAFT_CONTINUATION_MAX_TOKENS = 8_192;
 
 /** Hard ceiling on the assembled drafting prompt, in characters. */
 const MAX_PROMPT_CHARS = 90_000;
 
-export async function draftProposal(opts: {
+export type DraftProposalOptions = {
   projectTitle: string;
   etimadRef: string | null;
   tenderTypeName: string;
@@ -32,17 +38,11 @@ export async function draftProposal(opts: {
   restrictions?: string;
   /** Receives the draft as the model writes it; the result is unchanged. */
   onDelta?: (text: string) => void;
-}): Promise<{
-  contentMd: string;
-  provider: string;
-  model: string;
-  tokensUsed: number;
-  fallback: boolean;
-  locale: Locale;
-  /** Why the LLM path degraded (null when a live draft was produced). */
-  failureKind: string | null;
-  truncated: boolean;
-}> {
+};
+
+/** The system and user turns the draft is written from; the continuation reuses both. */
+export function buildDraftingMessages(opts: Omit<DraftProposalOptions, "onDelta">): { system: string; user: string } {
+
   const locale: Locale = opts.locale === "en" ? "en" : "ar";
   const complianceJson = JSON.stringify(
     opts.complianceRows.slice(0, 50).map((r) => ({
@@ -111,9 +111,26 @@ export async function draftProposal(opts: {
     restrictions: opts.restrictions,
   });
 
+  return { system: systemDrafting(locale), user };
+}
+
+export async function draftProposal(opts: DraftProposalOptions): Promise<{
+  contentMd: string;
+  provider: string;
+  model: string;
+  tokensUsed: number;
+  fallback: boolean;
+  locale: Locale;
+  /** Why the LLM path degraded (null when a live draft was produced). */
+  failureKind: string | null;
+  truncated: boolean;
+}> {
+  const locale: Locale = opts.locale === "en" ? "en" : "ar";
+  const { system, user } = buildDraftingMessages(opts);
+
   const result = await generateCompletion(
     [
-      { role: "system", content: systemDrafting(locale) },
+      { role: "system", content: system },
       { role: "user", content: user },
     ],
     {
@@ -167,6 +184,93 @@ export async function draftProposal(opts: {
         ? (result.failureKind ?? "unknown")
         : null,
     truncated: result.truncated === true && !usedFallback,
+  };
+}
+
+/**
+ * The turns that ask the model to finish a draft it left cut off: the original
+ * prompt, its own draft so far as an assistant turn, and the instruction.
+ */
+export function continuationMessages(input: {
+  system: string;
+  user: string;
+  draftSoFar: string;
+  locale: Locale;
+}): LLMMessage[] {
+  const instruction =
+    input.locale === "ar"
+      ? "توقفت المسودة أعلاه عند حد الرموز. تابع من النقطة التي انتهت فيها تماماً، دون تكرار أي نص سابق ودون إعادة كتابة العناوين المكتملة، وأكمل الأقسام المتبقية حتى نهاية الوثيقة."
+      : "The draft above stopped at the token limit. Continue exactly where it stops — do not repeat any earlier text or rewrite completed headings — and finish the remaining sections through the end of the document.";
+  return [
+    { role: "system", content: input.system },
+    { role: "user", content: input.user },
+    { role: "assistant", content: input.draftSoFar },
+    { role: "user", content: instruction },
+  ];
+}
+
+/** The draft with its continuation appended; a repeated last line is kept once. */
+export function appendContinuation(draft: string, continuation: string): string {
+  const more = continuation.replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/i, "").trimEnd();
+  if (!more.trim()) return draft;
+  const lastLine = draft.slice(draft.lastIndexOf("\n") + 1).trim();
+  const trimmedMore = more.replace(/^\s+/, "");
+  if (lastLine.length > 0 && trimmedMore.startsWith(lastLine)) {
+    // Whatever followed the repeated line — a paragraph break, a space — is
+    // the model's own spacing for what comes next; keep it.
+    return `${draft}${trimmedMore.slice(lastLine.length)}`;
+  }
+  // Mid-word cut: the model resumes the word, so no separator.
+  const midWord = /\S$/.test(draft) && /^\S/.test(more) && !/^[#\-*|>]/.test(more);
+  return midWord ? `${draft}${more}` : `${draft}\n${trimmedMore}`;
+}
+
+export async function continueProposalDraft(
+  opts: DraftProposalOptions & { draftSoFar: string }
+): Promise<{
+  continuation: string;
+  provider: string;
+  model: string;
+  tokensUsed: number;
+  truncated: boolean;
+  fallback: boolean;
+}> {
+  const locale: Locale = opts.locale === "en" ? "en" : "ar";
+  const { system, user } = buildDraftingMessages(opts);
+  const result = await generateCompletion(
+    continuationMessages({ system, user, draftSoFar: opts.draftSoFar, locale }),
+    {
+      maxTokens: DRAFT_CONTINUATION_MAX_TOKENS,
+      temperature: 0.28,
+      engine: "DRAFTING",
+      timeoutMs: 270_000,
+      maxAttempts: 1,
+      onDelta: opts.onDelta,
+      promptOrigin: "system",
+    }
+  );
+  if (result.failureKind === "pricing_refusal") {
+    throw new Error("drafting:continueProposal refused: the composed prompt tripped the pricing guard");
+  }
+  if (result.fallback || !result.content?.trim()) {
+    // No deterministic continuation exists; the truncated draft stands.
+    guardOrThrow(result, "drafting:continueProposal");
+    return {
+      continuation: "",
+      provider: result.provider,
+      model: result.model,
+      tokensUsed: result.tokensUsed,
+      truncated: false,
+      fallback: true,
+    };
+  }
+  return {
+    continuation: result.content,
+    provider: result.provider,
+    model: result.model,
+    tokensUsed: result.tokensUsed,
+    truncated: result.truncated === true,
+    fallback: false,
   };
 }
 

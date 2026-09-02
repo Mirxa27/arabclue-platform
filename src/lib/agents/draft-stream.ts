@@ -14,12 +14,13 @@ export const DRAFT_STREAM_NAMESPACE = "draft";
 export type DraftStreamChunk =
   | { kind: "reset"; attempt: number }
   | { kind: "delta"; text: string }
-  | { kind: "done"; truncated: boolean };
+  /** `continues` — the draft was cut off and a continuation will follow on this same stream. */
+  | { kind: "done"; truncated: boolean; continues?: boolean };
 
 export interface DraftStreamSink {
   reset(attempt: number): void;
   push(text: string): void;
-  done(truncated: boolean): Promise<void>;
+  done(truncated: boolean, opts?: { continues?: boolean }): Promise<void>;
   /** Ends the stream. Only after a finished draft: a closed stream refuses every later write (HTTP 409). */
   close(): Promise<void>;
   /** Flushes and unlocks the writer, leaving the stream open for a retried attempt. */
@@ -84,9 +85,9 @@ export function createDraftStreamSink(
       }
       if (!timer) timer = setTimeout(flush, flushEveryMs);
     },
-    async done(truncated) {
+    async done(truncated, opts) {
       flush();
-      write({ kind: "done", truncated });
+      write(opts?.continues ? { kind: "done", truncated, continues: true } : { kind: "done", truncated });
       await queue;
     },
     async release() {
@@ -119,6 +120,45 @@ export function createDraftStreamSink(
       }
     },
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* The reader's view of the stream                                            */
+/* -------------------------------------------------------------------------- */
+
+export type DraftViewPhase = "waiting" | "writing" | "retrying" | "continuing" | "done";
+
+export interface DraftView {
+  text: string;
+  phase: DraftViewPhase;
+  truncated: boolean;
+  /** Whether the reader should keep the connection open. */
+  listening: boolean;
+}
+
+export function initialDraftView(): DraftView {
+  return { text: "", phase: "waiting", truncated: false, listening: true };
+}
+
+/**
+ * How one chunk changes what the page shows. Pure, so the panel is a thin
+ * shell around it. A `done` marked `continues` is not the end: the workflow's
+ * continuation step keeps writing to the same stream and sends the final
+ * `done` itself, with `truncated` telling whether it too ran out of room.
+ */
+export function reduceDraftChunk(view: DraftView, chunk: DraftStreamChunk): DraftView {
+  switch (chunk.kind) {
+    case "reset":
+      return { text: "", phase: chunk.attempt > 1 ? "retrying" : "waiting", truncated: false, listening: true };
+    case "delta":
+      return { ...view, text: view.text + chunk.text, phase: "writing", truncated: false };
+    case "done":
+      return chunk.continues
+        ? { ...view, phase: "continuing", truncated: true, listening: true }
+        : { ...view, phase: "done", truncated: chunk.truncated, listening: false };
+    default:
+      return view;
+  }
 }
 
 /** One server-sent event per chunk; the id is the chunk's index in the stream so a client can resume. */

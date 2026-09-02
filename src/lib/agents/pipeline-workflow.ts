@@ -15,6 +15,7 @@ import { getStepMetadata, getWritable } from "workflow";
 import { DRAFT_STREAM_NAMESPACE, createDraftStreamSink, type DraftStreamChunk } from "./draft-stream";
 import {
   failRunAfterCrash,
+  runDraftContinuationStage,
   runDraftingStage,
   runFinalizeStage,
   runLawStage,
@@ -48,6 +49,18 @@ async function draftingStep(input: PipelineInput, ctx: PreparedContext): Promise
   return runDraftingStage(input, ctx, attemptOf(draftingStep.maxRetries), sink);
 }
 draftingStep.maxRetries = STAGE_RETRIES;
+
+async function continueDraftStep(
+  input: PipelineInput,
+  ctx: PreparedContext,
+  prior: Extract<DraftingOutcome, { ok: true }>,
+): Promise<DraftingOutcome> {
+  "use step";
+  const sink = createDraftStreamSink(getWritable<DraftStreamChunk>({ namespace: DRAFT_STREAM_NAMESPACE }));
+  return runDraftContinuationStage(input, ctx, prior, sink);
+}
+// Best effort and not idempotent (it appends to the proposal): one attempt.
+continueDraftStep.maxRetries = 0;
 
 async function lawStep(input: PipelineInput, ctx: PreparedContext): Promise<LawOutcome> {
   "use step";
@@ -99,10 +112,20 @@ export async function agentPipelineWorkflow(input: PipelineInput): Promise<Orche
     draftingStep(input, prepared.ctx),
     lawStep(input, prepared.ctx),
   ]);
-  const draftingOutcome: DraftingOutcome | StageCrash =
+  let draftingOutcome: DraftingOutcome | StageCrash =
     drafting.status === "fulfilled" ? drafting.value : { ok: false, crashed: crashMessage("Drafting", drafting.reason) };
   const lawOutcome: LawOutcome | StageCrash =
     law.status === "fulfilled" ? law.value : { ok: false, crashed: crashMessage("Contract", law.reason) };
+
+  // A draft that stopped at the token cap gets one continuation. Best effort:
+  // if the step itself dies, the truncated draft stands as saved.
+  if (draftingOutcome.ok && draftingOutcome.truncated) {
+    try {
+      draftingOutcome = await continueDraftStep(input, prepared.ctx, draftingOutcome);
+    } catch {
+      // keep the original outcome
+    }
+  }
 
   try {
     return await finalizeStep(input, prepared.ctx, draftingOutcome, lawOutcome);

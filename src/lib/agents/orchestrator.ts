@@ -22,7 +22,12 @@ import { engineNote } from "./run-presentation";
 import { evaluateCompliance } from "./compliance";
 import { runTechnicalArchitect } from "./technical";
 import { runFinancialAgent } from "./financial";
-import { draftProposal } from "./drafting";
+import {
+  appendContinuation,
+  continueProposalDraft,
+  draftProposal,
+  type DraftProposalOptions,
+} from "./drafting";
 import { draftLawContract, validateContractDraft } from "./law-contract";
 import { buildCoveragePlan, type CoveragePlan } from "./coverage";
 import {
@@ -150,7 +155,15 @@ export type StageCrash = { ok: false; crashed: string };
 
 export type PrepareOutcome = { ok: true; ctx: PreparedContext } | StageFailure;
 export type DraftingOutcome =
-  | { ok: true; proposalId: string; provider: string; metrics: MetricsSnapshot; decisions: AgentDecisionEntry[] }
+  | {
+      ok: true;
+      proposalId: string;
+      provider: string;
+      /** The model stopped at the cap; the workflow runs one continuation step. */
+      truncated: boolean;
+      metrics: MetricsSnapshot;
+      decisions: AgentDecisionEntry[];
+    }
   | StageFailure;
 export type LawOutcome =
   | {
@@ -213,6 +226,29 @@ function currentResult(
     overallProgress: row.overallProgress ?? Math.round(states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1)),
     status: status === "RUNNING" || status === "COMPLETED" || status === "FAILED" || status === "CANCELLED" ? status : "FAILED",
     errorMessage: row.errorMessage ?? undefined,
+  };
+}
+
+/** The drafting call's inputs, from the prepared context; the continuation reuses them. */
+function draftingInputsFrom(ctx: PreparedContext, locale: Locale): Omit<DraftProposalOptions, "onDelta"> {
+  const tenderType = getTenderType(ctx.project.category);
+  return {
+    projectTitle: ctx.project.title,
+    etimadRef: ctx.project.etimadRef,
+    tenderTypeName: `${tenderType.name} / ${tenderType.nameAr}`,
+    entities: ctx.entities,
+    complianceRows: ctx.rows,
+    technical: ctx.technical,
+    financial: ctx.financial as FinancialExtract,
+    coverage: ctx.coverage,
+    brandTagline: resolveBidderDisplayName(
+      locale,
+      ctx.brand ? { tagline: ctx.brand.tagline, taglineAr: ctx.brand.taglineAr } : null,
+      { name: ctx.workspaceIdentity?.name, nameAr: ctx.workspaceIdentity?.nameAr },
+    ),
+    vision2030: ctx.brand?.vision2030Alignment ?? "thriving-economy",
+    locale,
+    restrictions: ctx.restrictionsText,
   };
 }
 
@@ -1116,14 +1152,15 @@ export async function runDraftingStage(
   const recorder = createRunRecorder({ runId: input.runId, states, owned: new Set<AgentId>(["PROPOSAL_DRAFTING"]) });
   const { mark } = recorder;
   const {
-    project, entities, rows, score, technical, financial, coverage, brand, workspaceIdentity,
-    restrictions, restrictionsText, evidenceDocIds, knowledgeFindings,
+    project, entities, rows, score, technical, financial, coverage,
+    restrictions, evidenceDocIds, knowledgeFindings,
   } = ctx;
 
   // A retried attempt appends to the same stream; the page starts over on `reset`.
   sink?.reset(attempt.attempt);
   let streamedChars = 0;
   let draftStreamed = false;
+  let draftTruncated = false;
 
   try {
     await carryRetryFindings(recorder, "PROPOSAL_DRAFTING", attempt);
@@ -1136,29 +1173,8 @@ export async function runDraftingStage(
       startedAt: new Date().toISOString(),
     });
 
-    const tenderType = getTenderType(project.category);
     const draft = await draftProposal({
-      projectTitle: project.title,
-      etimadRef: project.etimadRef,
-      tenderTypeName: `${tenderType.name} / ${tenderType.nameAr}`,
-      entities,
-      complianceRows: rows as ComplianceMatrixRow[],
-      technical,
-      financial: financial as FinancialExtract,
-      coverage,
-      brandTagline: resolveBidderDisplayName(
-        locale,
-        brand
-          ? { tagline: brand.tagline, taglineAr: brand.taglineAr }
-          : null,
-        {
-          name: workspaceIdentity?.name,
-          nameAr: workspaceIdentity?.nameAr,
-        }
-      ),
-      vision2030: brand?.vision2030Alignment ?? "thriving-economy",
-      locale,
-      restrictions: restrictionsText,
+      ...draftingInputsFrom(ctx, locale),
       onDelta: sink
         ? (text) => {
             streamedChars += text.length;
@@ -1169,8 +1185,10 @@ export async function runDraftingStage(
     // A transport that cannot stream (SDK paths) delivers the whole draft at
     // once; the page still gets to show it.
     if (sink && streamedChars === 0 && draft.contentMd) sink.push(draft.contentMd);
-    await sink?.done(draft.truncated);
+    // A cut-off draft is continued by the next step on this same stream.
+    await sink?.done(draft.truncated, draft.truncated ? { continues: true } : undefined);
     draftStreamed = true;
+    draftTruncated = draft.truncated;
 
     // Mandatory validation gate (blocks marking export-ready)
     const { validateProposalOutput } = await import("../validation-gate");
@@ -1476,14 +1494,148 @@ export async function runDraftingStage(
       tokensUsed: draft.tokensUsed,
     });
 
-    return { ok: true, proposalId: proposal.id, provider: draft.provider, metrics: metrics.snapshot(), decisions: logger.getEntries() };
+    return {
+      ok: true,
+      proposalId: proposal.id,
+      provider: draft.provider,
+      truncated: draft.truncated,
+      metrics: metrics.snapshot(),
+      decisions: logger.getEntries(),
+    };
     });
   } catch (err) {
     return settleStageFailure(err, { input, recorder, agentId: "PROPOSAL_DRAFTING", attempt, runStartedAtIso: ctx.runStartedAtIso });
   } finally {
-    // Closed only once the draft finished: a failed attempt leaves the stream
-    // open so the retry can keep writing to it (a closed stream answers 409).
-    if (sink) await (draftStreamed ? sink.close() : sink.release());
+    // Closed only once the draft finished whole. A failed attempt leaves the
+    // stream open so the retry can keep writing to it (a closed stream answers
+    // 409), and a truncated draft leaves it open for the continuation step.
+    if (sink) await (draftStreamed && !draftTruncated ? sink.close() : sink.release());
+  }
+}
+
+/**
+ * Stage 2a′ — one continuation of a draft that stopped at the token cap.
+ *
+ * The model is shown the whole prompt and its own draft and asked to carry on
+ * where it stopped; the continuation is appended, the validation gate re-run on
+ * the whole, the proposal row and its latest version updated, and the tokens
+ * streamed into the same live draft. Bounded to this one step: a draft still
+ * truncated afterwards stays flagged. Best effort — a failure here leaves the
+ * truncated proposal exactly as the drafting stage saved it and never fails
+ * the run; the workflow catches a rejection and keeps the original outcome.
+ */
+export async function runDraftContinuationStage(
+  input: PipelineInput,
+  ctx: PreparedContext,
+  prior: Extract<DraftingOutcome, { ok: true }>,
+  sink?: DraftStreamSink,
+): Promise<DraftingOutcome> {
+  const locale: Locale = input.locale === "en" ? "en" : "ar";
+  const states = ctx.states.map((s) => ({ ...s }));
+  const recorder = createRunRecorder({ runId: input.runId, states, owned: new Set<AgentId>(["PROPOSAL_DRAFTING"]) });
+  const logger = createDecisionLogger(prior.decisions);
+
+  try {
+    return await withHeartbeat(recorder, async (): Promise<DraftingOutcome> => {
+      const proposal = await db.generatedProposal.findFirst({
+        where: { id: prior.proposalId, workspaceId: input.workspaceId, projectId: input.projectId },
+        select: { id: true, contentMd: true, version: true, status: true },
+      });
+      if (!proposal?.contentMd) return prior;
+
+      const more = await continueProposalDraft({
+        ...draftingInputsFrom(ctx, locale),
+        draftSoFar: proposal.contentMd,
+        onDelta: sink ? (text) => sink.push(text) : undefined,
+      });
+      if (more.fallback || !more.continuation.trim()) {
+        await sink?.done(true);
+        return prior;
+      }
+
+      const contentMd = appendContinuation(proposal.contentMd, more.continuation);
+      const { validateProposalOutput } = await import("../validation-gate");
+      const validationReport = validateProposalOutput({
+        contentMd,
+        financial: ctx.financial as FinancialExtract,
+        entities: ctx.entities,
+        complianceRows: ctx.rows,
+        restrictions: ctx.restrictions,
+        approvedEvidenceIds: ctx.evidenceDocIds,
+      });
+      const status = validationReport.blocking ? "DRAFT" : "GENERATED";
+
+      await db.$transaction([
+        db.generatedProposal.update({
+          where: { id: proposal.id },
+          data: {
+            contentMd,
+            status,
+            ...STRUCTURED_SNAPSHOT_INVALIDATION,
+            ...CONTRACT_RENDER_SNAPSHOT_INVALIDATION,
+          },
+        }),
+        db.proposalVersion.updateMany({
+          where: { proposalId: proposal.id, version: proposal.version },
+          data: { contentMd },
+        }),
+      ]);
+
+      // The run record's summary of the draft follows the completed text.
+      const row = await db.agentRun.findUnique({ where: { id: input.runId }, select: { finalArtifact: true } });
+      let artifact: Record<string, unknown> = {};
+      try {
+        artifact = row?.finalArtifact ? (JSON.parse(row.finalArtifact) as Record<string, unknown>) : {};
+      } catch {
+        artifact = {};
+      }
+      const priorTokens = typeof artifact.tokensUsed === "number" ? artifact.tokensUsed : 0;
+      await db.agentRun.update({
+        where: { id: input.runId },
+        data: {
+          finalArtifact: JSON.stringify({
+            ...artifact,
+            tokensUsed: priorTokens + more.tokensUsed,
+            truncated: more.truncated,
+            validation: validationReport,
+            exportReady: !validationReport.blocking,
+            continuation: { tokensUsed: more.tokensUsed, truncated: more.truncated, at: new Date().toISOString() },
+          }),
+        },
+      });
+      if (proposal.status !== status) {
+        // Idempotent either way; recorded so the change of status is explained.
+        decision(logger, {
+          agentId: "PROPOSAL_DRAFTING",
+          ruleId: "validation-gate-blocking",
+          sourceCategory: "DETERMINISTIC_CALC",
+          level: validationReport.blocking ? "BLOCKING" : "INFO",
+          message: `Proposal ${proposal.id} ${status} after continuation`,
+          runId: input.runId,
+        });
+      }
+
+      const state = states.find((s) => s.id === "PROPOSAL_DRAFTING");
+      await recorder.mark("PROPOSAL_DRAFTING", {
+        findings: [
+          ...(state?.findings ?? []),
+          `Continued after the token cap (+${more.tokensUsed} tokens${more.truncated ? ", still cut off" : ""})`,
+        ],
+      });
+      await sink?.done(more.truncated);
+      return { ...prior, truncated: more.truncated, decisions: logger.getEntries() };
+    });
+  } catch (err) {
+    if (err instanceof PipelineCancelledError) {
+      // Cancelled or ended from outside while continuing: the row says so.
+      return prior;
+    }
+    console.error("[orchestrator] draft continuation failed; the truncated draft stands", err);
+    await sink?.done(true);
+    return prior;
+  } finally {
+    // This step is the stream's last writer whatever happened.
+    await sink?.close();
   }
 }
 

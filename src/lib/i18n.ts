@@ -632,6 +632,10 @@ export const localizationRegistry = {
     ar: "قُطعت المسودة عند حد الرموز",
     en: "The draft was cut off at the token limit",
   },
+  live_draft_continuing: {
+    ar: "بلغت المسودة حد الرموز — يتابع الوكيل الكتابة…",
+    en: "The draft reached the token limit — the agent is continuing…",
+  },
   live_draft_words: { ar: "{{count}} كلمة", en: "{{count}} words" },
   event_document_uploaded: { ar: "تم رفع المستند", en: "Document Uploaded" },
   event_document_version_created: { ar: "تم إنشاء إصدار مستند", en: "Document Version Created" },

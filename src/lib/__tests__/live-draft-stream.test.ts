@@ -195,10 +195,11 @@ describe("the wiring", () => {
   test("the drafting step owns the run's draft stream and the stage writes to it", () => {
     has("src/lib/agents/pipeline-workflow.ts", "the stream opened in the step", /getWritable<DraftStreamChunk>\(\{\s*namespace:\s*DRAFT_STREAM_NAMESPACE\s*\}\)/);
     has("src/lib/agents/orchestrator.ts", "reset at the start of an attempt", /sink\?\.reset\(attempt\.attempt\)/);
-    has("src/lib/agents/orchestrator.ts", "done with the truncation flag", /sink\?\.done\(draft\.truncated\)|sink\.done\(draft\.truncated\)/);
-    // Closed only after a finished draft; a failed attempt releases the writer
-    // so the retry can keep writing to the same stream.
-    has("src/lib/agents/orchestrator.ts", "close after done, release otherwise", /finally\s*\{[\s\S]{0,200}draftStreamed\s*\?\s*sink\.close\(\)\s*:\s*sink\.release\(\)/);
+    has("src/lib/agents/orchestrator.ts", "done with the truncation flag", /sink\?\.done\(draft\.truncated,/);
+    // Closed only after a finished, whole draft; a failed attempt releases the
+    // writer so the retry can keep writing, and a truncated draft releases it
+    // for the continuation step (see draft-continuation.test.ts).
+    has("src/lib/agents/orchestrator.ts", "close after done, release otherwise", /finally\s*\{[\s\S]{0,300}draftStreamed && !draftTruncated\s*\?\s*sink\.close\(\)\s*:\s*sink\.release\(\)/);
   });
 
   test("the stream route reads the run's draft namespace, resumes from Last-Event-ID, and can be cancelled", () => {

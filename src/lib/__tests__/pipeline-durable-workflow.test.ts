@@ -85,12 +85,13 @@ describe("the build knows about workflows", () => {
 });
 
 describe("the workflow module", () => {
-  test("one workflow, five steps, drafting and the contract in parallel", () => {
-    // prepare, drafting, law, finalise — and one that fails the run when a
-    // step's function died without its stage getting to write anything.
+  test("one workflow, six steps, drafting and the contract in parallel", () => {
+    // prepare, drafting, law, finalise, one that fails the run when a step's
+    // function died without its stage getting to write anything, and one
+    // continuation of a draft that stopped at the token cap.
     has(WORKFLOW, "the workflow directive", /export async function agentPipelineWorkflow[\s\S]{0,200}"use workflow"/);
     const steps = read(WORKFLOW).match(/"use step"/g) ?? [];
-    expect(steps.length).toBe(5);
+    expect(steps.length).toBe(6);
     has(WORKFLOW, "parallel drafting and law", /Promise\.allSettled\(\[\s*draftingStep\(/);
   });
 

@@ -18,7 +18,12 @@ import { PenLine } from "lucide-react";
 import { tr } from "@/lib/i18n";
 import { markdownToHtml } from "@/lib/markdown";
 import type { Locale } from "@/lib/types";
-import type { DraftStreamChunk } from "@/lib/agents/draft-stream";
+import {
+  initialDraftView,
+  reduceDraftChunk,
+  type DraftStreamChunk,
+  type DraftView,
+} from "@/lib/agents/draft-stream";
 import { cn } from "@/lib/utils";
 
 /** Same presentation as the proposal preview, so the live draft looks like the document it becomes. */
@@ -34,19 +39,14 @@ const DOCUMENT_CLASSES = cn(
   "[&_blockquote]:border-s-2 [&_blockquote]:border-violet-500/40 [&_blockquote]:ps-3 [&_blockquote]:text-muted-foreground",
 );
 
-type Phase = "waiting" | "writing" | "retrying" | "done";
-
 export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Locale }) {
   const reduceMotion = useReducedMotion();
-  const [text, setText] = useState("");
-  const [phase, setPhase] = useState<Phase>("waiting");
-  const [truncated, setTruncated] = useState(false);
+  const [view, setView] = useState<DraftView>(initialDraftView);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { text, phase, truncated } = view;
 
   useEffect(() => {
-    setText("");
-    setPhase("waiting");
-    setTruncated(false);
+    setView(initialDraftView());
     const source = new EventSource(`/api/agents/runs/${encodeURIComponent(runId)}/stream`);
     source.onmessage = (event: MessageEvent<string>) => {
       let chunk: DraftStreamChunk;
@@ -55,18 +55,13 @@ export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Local
       } catch {
         return;
       }
-      if (chunk.kind === "reset") {
-        setText("");
-        setTruncated(false);
-        setPhase(chunk.attempt > 1 ? "retrying" : "waiting");
-      } else if (chunk.kind === "delta") {
-        setText((current) => current + chunk.text);
-        setPhase("writing");
-      } else if (chunk.kind === "done") {
-        setTruncated(chunk.truncated);
-        setPhase("done");
-        source.close();
-      }
+      setView((current) => {
+        const next = reduceDraftChunk(current, chunk);
+        // A cut-off draft is continued by the workflow on the same stream;
+        // only the final `done` ends the connection.
+        if (!next.listening) source.close();
+        return next;
+      });
     };
     // A 5xx reconnects by itself (with Last-Event-ID); a 404 stays closed.
     return () => source.close();
@@ -87,19 +82,21 @@ export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Local
   }, [html]);
 
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const live = phase === "waiting" || phase === "writing" || phase === "retrying";
+  const live = phase !== "done";
   const status =
     phase === "done"
       ? [tr("live_draft_done", locale), truncated ? tr("live_draft_truncated", locale) : null]
           .filter(Boolean)
           .join(" · ")
-      : phase === "retrying"
-        ? tr("live_draft_retrying", locale)
-        : phase === "writing"
-          ? tr("live_draft_words", locale, {
-              count: words.toLocaleString(locale === "ar" ? "ar-SA" : "en-GB"),
-            })
-          : tr("live_draft_waiting", locale);
+      : phase === "continuing"
+        ? tr("live_draft_continuing", locale)
+        : phase === "retrying"
+          ? tr("live_draft_retrying", locale)
+          : phase === "writing"
+            ? tr("live_draft_words", locale, {
+                count: words.toLocaleString(locale === "ar" ? "ar-SA" : "en-GB"),
+              })
+            : tr("live_draft_waiting", locale);
 
   return (
     <section
