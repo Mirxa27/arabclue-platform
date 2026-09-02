@@ -122,6 +122,10 @@ export function LiveVoiceSession({
   const ar = locale === "ar";
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The cause recorded by the start sequence. Its catch disconnects the
+  // still-connecting socket, whose own error fires afterwards; without this
+  // the generic socket message overwrote the real reason.
+  const startErrorRef = useRef<string | null>(null);
   const [followView, setFollowView] = useState<DashboardView | null>(null);
   const [starting, setStarting] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -182,6 +186,7 @@ export function LiveVoiceSession({
       // The transport throws the raw response text; the mapped body carries the
       // reader's language, so keep the raw reason in the console only.
       console.error("[live-voice]", err);
+      if (startErrorRef.current) return;
       setError(
         sdkErrorText(
           err,
@@ -334,6 +339,7 @@ export function LiveVoiceSession({
       return;
     }
     setError(null);
+    startErrorRef.current = null;
     setStarting(true);
 
     let stream: MediaStream | null = null;
@@ -356,24 +362,25 @@ export function LiveVoiceSession({
       // Use AudioWorklet capture (not AI SDK ScriptProcessorNode) to avoid deprecation warnings.
       await startCapture(stream);
     } catch (err) {
+      const cause = sdkErrorText(
+        err,
+        locale,
+        // Mic failures already arrive localized from micErrorMessage.
+        err instanceof Error && err.message
+          ? err.message
+          : ar
+            ? "فشل بدء الصوت المباشر"
+            : "Failed to start live voice"
+      );
+      // Recorded before the teardown so the socket error it provokes is ignored.
+      startErrorRef.current = cause;
+      setError(cause);
       await releaseMic();
       try {
         transportRef.current?.disconnect();
       } catch {
         /* ignore partial connect */
       }
-      setError(
-        sdkErrorText(
-          err,
-          locale,
-          // Mic failures already arrive localized from micErrorMessage.
-          err instanceof Error && err.message
-            ? err.message
-            : ar
-              ? "فشل بدء الصوت المباشر"
-              : "Failed to start live voice"
-        )
-      );
     } finally {
       setStarting(false);
     }

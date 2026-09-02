@@ -8,33 +8,17 @@ import {
   experimental_resampleAudio as resampleAudio,
 } from "ai";
 
-const WORKLET_NAME = "arabclue-pcm-capture";
+/** Must match `registerProcessor(...)` in the static worklet file. */
+export const REALTIME_CAPTURE_WORKLET_NAME = "arabclue-pcm-capture";
+/**
+ * Served from `public/` on purpose: worklet modules are fetched under the
+ * page's `script-src` (`'self'`), and the `blob:` module this used to build
+ * was refused by the browser — "Unable to load a worklet's module" — so the
+ * live session never captured a sample in production.
+ */
+export const REALTIME_CAPTURE_WORKLET_PATH = "/audio/arabclue-pcm-capture.worklet.js";
 // Match the AI SDK browser capture buffer: ~171 ms per chunk at 24 kHz.
 const SDK_CAPTURE_BATCH_SAMPLES = 4_096;
-
-const WORKLET_SOURCE = `
-class ArabCluePcmCaptureProcessor extends AudioWorkletProcessor {
-  process(inputs) {
-    const channel = inputs[0]?.[0];
-    if (channel && channel.length > 0) {
-      // Copy — AudioWorklet reuses the underlying buffer across callbacks.
-      this.port.postMessage(channel.slice(0));
-    }
-    return true;
-  }
-}
-registerProcessor('${WORKLET_NAME}', ArabCluePcmCaptureProcessor);
-`;
-
-let workletModuleUrl: string | null = null;
-
-function getWorkletModuleUrl(): string {
-  if (!workletModuleUrl) {
-    const blob = new Blob([WORKLET_SOURCE], { type: "application/javascript" });
-    workletModuleUrl = URL.createObjectURL(blob);
-  }
-  return workletModuleUrl;
-}
 
 export type RealtimeAudioWorkletCaptureOptions = {
   /** Target PCM rate for the realtime provider (OpenAI default 24 kHz). */
@@ -124,10 +108,10 @@ export class RealtimeAudioWorkletCapture {
     await this.stop();
 
     const context = new AudioContext({ sampleRate: this.targetSampleRate });
-    await context.audioWorklet.addModule(getWorkletModuleUrl());
+    await context.audioWorklet.addModule(REALTIME_CAPTURE_WORKLET_PATH);
 
     const source = context.createMediaStreamSource(stream);
-    const worklet = new AudioWorkletNode(context, WORKLET_NAME);
+    const worklet = new AudioWorkletNode(context, REALTIME_CAPTURE_WORKLET_NAME);
     const silentGain = context.createGain();
     silentGain.gain.value = 0;
 
