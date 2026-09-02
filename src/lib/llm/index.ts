@@ -112,6 +112,17 @@ export async function generateCompletion(
     maxTokens?: number;
     temperature?: number;
     engine?: AgentEngine;
+    /**
+     * Budget for this one call, over the provider row's default. A proposal
+     * draft is minutes of generation; the row's 60 s is sized for a JSON
+     * enrichment.
+     */
+    timeoutMs?: number;
+    /**
+     * Transport attempts. A long call that timed out will time out again;
+     * retrying it only multiplies the wall time inside a fixed function window.
+     */
+    maxAttempts?: number;
   }
 ): Promise<LLMResult> {
   const engine = opts?.engine ?? "DEFAULT";
@@ -131,8 +142,8 @@ export async function generateCompletion(
     };
   }
 
-  const provider = await getProviderForEngine(engine);
-  if (!provider) {
+  const providerRow = await getProviderForEngine(engine);
+  if (!providerRow) {
     return {
       content: "",
       provider: "none",
@@ -144,6 +155,11 @@ export async function generateCompletion(
       failureKind: "no_provider",
     };
   }
+  // The transports read the row's timeout; a per-call budget overrides it here
+  // so none of them has to learn a new parameter.
+  const provider = opts?.timeoutMs
+    ? { ...providerRow, timeoutMs: opts.timeoutMs }
+    : providerRow;
 
   const pid = provider.provider.toLowerCase();
   // The tenant row still supplies policy (temperature, ceilings, guardrails)
@@ -267,7 +283,10 @@ export async function generateCompletion(
       }>,
       baseConfidence: number
     ): Promise<LLMResult> => {
-      const { result, attempts } = await withRetries({ operation });
+      const { result, attempts } = await withRetries({
+        operation,
+        maxAttempts: opts?.maxAttempts,
+      });
       return finalize(
         result.text,
         baseConfidence,

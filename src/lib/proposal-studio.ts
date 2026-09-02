@@ -235,6 +235,8 @@ export type AgentRunConfig = {
   projectId: string;
   regenerateMode?: RegenerateMode;
   targetProposalId?: string | null;
+  /** Times a stale run has been restarted from zero (see agents/status). */
+  resumeCount: number;
 };
 
 export function parseAgentRunConfig(raw: string | null | undefined): AgentRunConfig | null {
@@ -249,6 +251,13 @@ export function parseAgentRunConfig(raw: string | null | undefined): AgentRunCon
       projectId: v.projectId,
       regenerateMode: v.regenerateMode === "fork" ? "fork" : v.regenerateMode === "version" ? "version" : undefined,
       targetProposalId: v.targetProposalId ?? null,
+      // How many times a stale run has been restarted from zero. Bounded by
+      // the status route: a run that cannot fit the window twice is failed
+      // with a reason rather than resumed forever at the caller's expense.
+      resumeCount:
+        typeof v.resumeCount === "number" && Number.isFinite(v.resumeCount)
+          ? Math.max(0, Math.floor(v.resumeCount))
+          : 0,
     };
   } catch {
     return null;

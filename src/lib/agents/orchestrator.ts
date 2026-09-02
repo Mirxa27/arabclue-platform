@@ -846,6 +846,13 @@ export async function runAgentPipeline(opts: {
     }
 
     // ─── Agent 5: PROPOSAL_DRAFTING ───────────────────────────────────────
+    // Agents 5 and 6 share no inputs — the contract is drafted from the
+    // ingestion entities and the compliance rows, not from the proposal — so
+    // they run concurrently. In sequence they were the whole tail of the run,
+    // and on a 300 s function ceiling (Vercel Hobby) that tail did not fit.
+    // Each stage is a closure over the state gathered above; their bodies keep
+    // their original indentation to keep this diff reviewable.
+    const runDraftingStage = async () => {
     metrics.startAgent("PROPOSAL_DRAFTING");
     logger.startTimer("drafting");
     await mark("PROPOSAL_DRAFTING", {
@@ -1182,8 +1189,11 @@ export async function runAgentPipeline(opts: {
       provider: draft.provider,
       tokensUsed: draft.tokensUsed,
     });
+    return { draft, proposal };
+    };
 
     // ─── Agent 6: LAW_CONTRACT (research then bilingual draft) ────────────
+    const runLawStage = async () => {
     metrics.startAgent("LAW_CONTRACT");
     logger.startTimer("law_contract");
     await mark("LAW_CONTRACT", {
@@ -1328,6 +1338,21 @@ export async function runAgentPipeline(opts: {
       provider: lawDraft.provider,
       tokensUsed: lawDraft.tokensUsed,
     });
+    return { lawDraft, contract, contractValidation };
+    };
+
+    // `allSettled`, not `all`: a rejection in one stage while the other is
+    // mid-write would leave a proposal row behind for a run about to be marked
+    // FAILED. Both finish, then the first failure is raised.
+    const [draftingOutcome, lawOutcome] = await Promise.allSettled([
+      runDraftingStage(),
+      runLawStage(),
+    ]);
+    if (draftingOutcome.status === "rejected") throw draftingOutcome.reason;
+    if (lawOutcome.status === "rejected") throw lawOutcome.reason;
+    const { draft, proposal } = draftingOutcome.value;
+    const { lawDraft, contract, contractValidation } = lawOutcome.value;
+
 
     // Augment final artifact with contract id
     const priorArtifact = await db.agentRun.findUnique({

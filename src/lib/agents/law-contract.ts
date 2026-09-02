@@ -338,7 +338,14 @@ export async function draftLawContract(opts: {
           content: `Research brief JSON:\n${JSON.stringify(research).slice(0, 14000)}\n\nDeterministic draft to refine (preserve article markers :::en :::ar):\n${deterministic.contentMd.slice(0, 12000)}\n\nRefine operative language for formality. Do not add pricing. Do not claim 100% certainty. Keep bilingual article format exactly.`,
         },
       ],
-      { engine: "LAW", temperature: 0.15, maxTokens: 8192 }
+      {
+        engine: "LAW",
+        temperature: 0.15,
+        maxTokens: 8192,
+        // Same reasoning as the proposal draft: one long attempt.
+        timeoutMs: 200_000,
+        maxAttempts: 1,
+      }
     );
 
     if (completion.fallback) {

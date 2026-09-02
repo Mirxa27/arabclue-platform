@@ -12,7 +12,16 @@ import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// A resumed pipeline runs inside this invocation's `after()`. At 60 s it was
+// killed before its third agent, every time.
+export const maxDuration = 300;
+
+/**
+ * A stale run is restarted from zero at most this many times. Each restart
+ * spends provider tokens on the same first agents; a run that cannot fit the
+ * platform's execution window twice is failed with a reason instead.
+ */
+const MAX_STALE_RESUMES = 1;
 
 // In-memory resume locks to avoid double-resume in same instance
 const resumeLocks = new Set<string>();
@@ -83,6 +92,31 @@ export async function GET(req: NextRequest) {
       })
     ) {
       const cfg = parseAgentRunConfig(run.configJson);
+      if (cfg && cfg.resumeCount >= MAX_STALE_RESUMES) {
+        // Second time this run has gone quiet past the heartbeat window. The
+        // message is internal English by design (it is mapped to bilingual
+        // copy where it is shown); the record has to say what happened.
+        await db.agentRun.updateMany({
+          where: { id: runId, status: { in: ["QUEUED", "RUNNING"] } },
+          data: {
+            status: "FAILED",
+            errorMessage:
+              "Agent run exceeded the execution window twice (stale after resume). Start a new run.",
+            completedAt: new Date(),
+          },
+        });
+        return NextResponse.json({
+          runId: run.id,
+          status: "FAILED",
+          overallProgress: run.overallProgress,
+          agentStates: run.agentStates ? JSON.parse(run.agentStates) : [],
+          finalArtifact: null,
+          errorMessage:
+            "Agent run exceeded the execution window twice (stale after resume). Start a new run.",
+          resumed: false,
+          resumeExhausted: true,
+        });
+      }
       if (cfg && !resumeLocks.has(runId)) {
         // Resume is a real side-effect that spends LLM tokens. Bound how
         // often a workspace can trigger it — real polling only needs 1 or
@@ -117,6 +151,10 @@ export async function GET(req: NextRequest) {
             status: "QUEUED",
             errorMessage: null,
             overallProgress: 0,
+            configJson: JSON.stringify({
+              ...cfg,
+              resumeCount: cfg.resumeCount + 1,
+            }),
           },
         });
         scheduleAgentPipeline({

@@ -112,7 +112,15 @@ export async function draftProposal(opts: {
       { role: "system", content: systemDrafting(locale) },
       { role: "user", content: user },
     ],
-    { maxTokens: 8192, temperature: 0.28, engine: "DRAFTING" }
+    {
+      maxTokens: 8192,
+      temperature: 0.28,
+      engine: "DRAFTING",
+      // Minutes of generation, once. The row's 60 s is an enrichment budget,
+      // and a retry of a timed-out draft only times out again.
+      timeoutMs: 200_000,
+      maxAttempts: 1,
+    }
   );
 
   let contentMd = result.content?.trim() ?? "";
