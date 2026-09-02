@@ -575,7 +575,7 @@ export function VersionHistory() {
   const items = activeTab === "documents" ? docs : proposals;
 
   return (
-    <Card className="p-0 overflow-hidden border-border/60 h-full">
+    <Card className="p-0 overflow-hidden border-border/60">
       <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/30">
         <div className="flex items-center gap-2.5">
           <div className="size-8 rounded-lg bg-chart-4/10 flex items-center justify-center">

@@ -263,11 +263,14 @@ export function RequirementsMatrix() {
             <thead>
               <tr className="border-b text-start text-muted-foreground">
                 <th className="p-3 font-medium">#</th>
-                <th className="p-3 font-medium">
+                {/* The requirement is the row's content; it gets the width.
+                    Auto-sized columns squeezed it into a tall sliver beside
+                    two generous select columns. */}
+                <th className="p-3 font-medium w-[46%] min-w-[16rem]">
                   {ar ? "المتطلب" : "Requirement"}
                 </th>
                 <th className="p-3 font-medium">{ar ? "المرجع" : "Ref"}</th>
-                <th className="p-3 font-medium">{ar ? "الحالة" : "Status"}</th>
+                <th className="p-3 font-medium w-40">{ar ? "الحالة" : "Status"}</th>
                 <th className="p-3 font-medium min-w-[220px]">
                   {ar ? "دليل الحساب" : "Account evidence"}
                 </th>

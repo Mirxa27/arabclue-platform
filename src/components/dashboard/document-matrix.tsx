@@ -206,10 +206,10 @@ export function DocumentMatrix() {
                 <TableHead className="text-[10px] uppercase tracking-wider h-8 hidden md:table-cell">
                   {locale === "ar" ? "الحالة" : "Status"}
                 </TableHead>
-                <TableHead className="text-[10px] uppercase tracking-wider h-8 hidden lg:table-cell">
+                <TableHead className="text-[10px] uppercase tracking-wider h-8 hidden 2xl:table-cell">
                   {locale === "ar" ? "الإصدار" : "Version"}
                 </TableHead>
-                <TableHead className="text-[10px] uppercase tracking-wider h-8 hidden sm:table-cell">
+                <TableHead className="text-[10px] uppercase tracking-wider h-8 hidden 2xl:table-cell">
                   {locale === "ar" ? "الحجم" : "Size"}
                 </TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider h-8 hidden lg:table-cell">
@@ -265,13 +265,13 @@ export function DocumentMatrix() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell">
+                    <TableCell className="hidden 2xl:table-cell">
                       <span className="text-[10px] font-mono text-muted-foreground">v{d.currentVersion ?? 1}</span>
                       {(d._count?.versions ?? 0) > 1 && (
                         <span className="text-[9px] text-muted-foreground"> ({d._count?.versions})</span>
                       )}
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell text-[10px] font-mono text-muted-foreground">
+                    <TableCell className="hidden 2xl:table-cell text-[10px] font-mono text-muted-foreground">
                       {formatBytes(d.sizeBytes)}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground">

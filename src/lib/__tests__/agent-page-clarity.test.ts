@@ -131,3 +131,17 @@ describe("the proposals list on a phone", () => {
     has(LIST, "single-column artifacts on small screens", /grid grid-cols-1 sm:grid-cols-2 gap-1\.5 mt-2/);
   });
 });
+
+describe("the documents page tables", () => {
+  test("the matrix hides its narrowest columns until the card is wide enough", () => {
+    // At 1280 px the two-thirds column clipped the UPDATED header.
+    const src = read("src/components/dashboard/document-matrix.tsx");
+    expect((src.match(/hidden 2xl:table-cell/g) ?? []).length).toBe(4);
+  });
+  test("the requirement column gets the width", () => {
+    has("src/components/dashboard/requirements-matrix.tsx", "a wide requirement column", /w-\[46%\] min-w-\[16rem\]/);
+  });
+  test("the version history card does not stretch to the left column's height", () => {
+    lacks("src/components/dashboard/version-history.tsx", "the stretched card", /border-border\/60 h-full"/);
+  });
+});
