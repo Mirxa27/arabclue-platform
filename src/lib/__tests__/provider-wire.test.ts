@@ -252,6 +252,33 @@ describe("what the operator can pick from", () => {
     expect(bedrock?.apiKeyEnvKey).toBe("AWS_BEARER_TOKEN_BEDROCK");
   });
 
+  /**
+   * OpenAI-compatible vendors added as templates. Each base was probed
+   * unauthenticated on 2026-09-02 and answered its `/models` route with an
+   * OpenAI-shaped 401/403 (Hugging Face's router lists publicly), so the admin
+   * "Fetch models" flow has a live list to offer. Perplexity is left out: its
+   * API documents no `/models` route (probe 404), and this product refuses a
+   * typed-in model id by design.
+   */
+  test.each([
+    ["xAI (Grok)", "https://api.x.ai/v1", "XAI_API_KEY"],
+    ["Together AI", "https://api.together.ai/v1", "TOGETHER_API_KEY"],
+    ["Fireworks AI", "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY"],
+    ["Cohere (compatibility API)", "https://api.cohere.ai/compatibility/v1", "COHERE_API_KEY"],
+    ["Cerebras", "https://api.cerebras.ai/v1", "CEREBRAS_API_KEY"],
+    ["Hugging Face Inference", "https://router.huggingface.co/v1", "HF_TOKEN"],
+  ])("%s is an openai_compatible template pinned to its own host", (name, apiBase, envKey) => {
+    const template = PROVIDER_CONNECTION_TEMPLATES.find((t) => t.name === name);
+    expect(template?.provider).toBe("openai_compatible");
+    expect(template?.apiBase).toBe(apiBase);
+    expect(template?.apiKeyEnvKey).toBe(envKey);
+    expect(isAllowedProviderApiKeyEnv(envKey)).toBe(true);
+    expect(() => assertProviderCredentialOrigin({ apiBase, apiKeyEnvKey: envKey })).not.toThrow();
+    expect(() =>
+      assertProviderCredentialOrigin({ apiBase: "https://attacker.example/v1", apiKeyEnvKey: envKey })
+    ).toThrow(/may only be sent to/);
+  });
+
   test("the admin provider-type select is driven by LLM_PROVIDER_TYPES, not a second list", () => {
     const source = readFileSync(
       join(REPO_ROOT, "src/components/admin/ai-providers.tsx"),

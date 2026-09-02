@@ -138,6 +138,53 @@ export const PROVIDER_CONNECTION_TEMPLATES: ProviderConnectionTemplate[] = [
     apiKeyEnvKey: "DEEPSEEK_API_KEY",
     engine: "DEFAULT",
   },
+  // Further OpenAI-compatible vendors. Bases from each vendor's OpenAI
+  // compatibility page (docs.x.ai/docs/overview, docs.together.ai
+  // openai-api-compatibility, docs.fireworks.ai openai-compatibility,
+  // docs.cohere.com compatibility-api) and confirmed live on 2026-09-02 by an
+  // unauthenticated GET {base}/models answering an OpenAI-shaped 401/403.
+  {
+    name: "xAI (Grok)",
+    provider: "openai_compatible",
+    apiBase: "https://api.x.ai/v1",
+    apiKeyEnvKey: "XAI_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "Together AI",
+    provider: "openai_compatible",
+    apiBase: "https://api.together.ai/v1",
+    apiKeyEnvKey: "TOGETHER_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "Fireworks AI",
+    provider: "openai_compatible",
+    apiBase: "https://api.fireworks.ai/inference/v1",
+    apiKeyEnvKey: "FIREWORKS_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "Cohere (compatibility API)",
+    provider: "openai_compatible",
+    apiBase: "https://api.cohere.ai/compatibility/v1",
+    apiKeyEnvKey: "COHERE_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "Cerebras",
+    provider: "openai_compatible",
+    apiBase: "https://api.cerebras.ai/v1",
+    apiKeyEnvKey: "CEREBRAS_API_KEY",
+    engine: "DEFAULT",
+  },
+  {
+    name: "Hugging Face Inference",
+    provider: "openai_compatible",
+    apiBase: "https://router.huggingface.co/v1",
+    apiKeyEnvKey: "HF_TOKEN",
+    engine: "DEFAULT",
+  },
   {
     name: "OpenAI Realtime (voice live)",
     provider: "openai",
@@ -346,6 +393,12 @@ export const PROVIDER_API_KEY_ENV_BASES: readonly string[] = Object.freeze([
   "GROQ_API_KEY",
   "DEEPSEEK_API_KEY",
   "AWS_BEARER_TOKEN_BEDROCK",
+  "XAI_API_KEY",
+  "TOGETHER_API_KEY",
+  "FIREWORKS_API_KEY",
+  "COHERE_API_KEY",
+  "CEREBRAS_API_KEY",
+  "HF_TOKEN",
 ]);
 
 /**
