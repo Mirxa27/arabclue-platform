@@ -6,8 +6,8 @@ import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { parseAgentRunConfig } from "@/lib/proposal-studio";
 import {
-  DRAFT_STREAM_NAMESPACE,
   encodeSseEvent,
+  streamNamespaceFor,
   type DraftStreamChunk,
 } from "@/lib/agents/draft-stream";
 
@@ -19,9 +19,10 @@ export const maxDuration = 300;
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * GET /api/agents/runs/[id]/stream — the run's live proposal draft as
- * server-sent events, one `DraftStreamChunk` per event, the event id being
- * the chunk's index in the workflow's `draft` stream (foundations/streaming).
+ * GET /api/agents/runs/[id]/stream?channel=draft|contract — one of the run's
+ * live documents as server-sent events, one `DraftStreamChunk` per event, the
+ * event id being the chunk's index in the workflow's namespaced stream
+ * (foundations/streaming). The proposal draft is the default channel.
  * A reconnecting client sends `Last-Event-ID`; the stream resumes after it.
  * The route is marked `supportsCancellation` in vercel.json so a closed tab
  * tears the invocation down instead of billing until maxDuration.
@@ -31,6 +32,10 @@ export async function GET(req: NextRequest, { params }: Params) {
     const session = await requireSession();
     if (!session) return jsonApiFailure("UNAUTHORIZED", { status: 401 });
     const { id } = await params;
+    const namespace = streamNamespaceFor(req.nextUrl.searchParams.get("channel"));
+    if (!namespace) {
+      return jsonApiFailure("REQUEST_VALIDATION_FAILED", { status: 400, fieldPaths: ["channel"] });
+    }
     const { workspace } = await getTenantContext(session.user.id);
 
     const run = await db.agentRun.findUnique({
@@ -50,7 +55,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     let index = startIndex ?? 0;
     const encoder = new TextEncoder();
     const events = getRun(workflowRunId)
-      .getReadable<DraftStreamChunk>({ namespace: DRAFT_STREAM_NAMESPACE, startIndex })
+      .getReadable<DraftStreamChunk>({ namespace, startIndex })
       .pipeThrough(
         new TransformStream<DraftStreamChunk, Uint8Array>({
           transform(chunk, controller) {

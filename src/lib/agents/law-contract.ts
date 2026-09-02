@@ -306,6 +306,8 @@ export async function draftLawContract(opts: {
   clientNameAr?: string | null;
   restrictions?: string[];
   locale?: Locale;
+  /** Receives the refined contract as the model writes it; the result is unchanged. */
+  onDelta?: (text: string) => void;
 }): Promise<BilingualContractDraft> {
   const research = researchSaudiLawForContract({
     entities: opts.entities,
@@ -346,6 +348,7 @@ export async function draftLawContract(opts: {
         timeoutMs: 270_000,
         maxAttempts: 1,
         promptOrigin: "system",
+        onDelta: opts.onDelta,
       }
     );
 

@@ -14,7 +14,7 @@
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { PenLine } from "lucide-react";
+import { PenLine, Scale } from "lucide-react";
 import { tr } from "@/lib/i18n";
 import { markdownToHtml } from "@/lib/markdown";
 import type { Locale } from "@/lib/types";
@@ -23,6 +23,7 @@ import {
   reduceDraftChunk,
   type DraftStreamChunk,
   type DraftView,
+  type LiveStreamChannel,
 } from "@/lib/agents/draft-stream";
 import { cn } from "@/lib/utils";
 
@@ -39,15 +40,28 @@ const DOCUMENT_CLASSES = cn(
   "[&_blockquote]:border-s-2 [&_blockquote]:border-violet-500/40 [&_blockquote]:ps-3 [&_blockquote]:text-muted-foreground",
 );
 
-export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Locale }) {
+export function LiveDraftPanel({
+  runId,
+  locale,
+  channel = "draft",
+}: {
+  runId: string;
+  locale: Locale;
+  /** Which of the run's documents to follow; the contract streams beside the proposal. */
+  channel?: LiveStreamChannel;
+}) {
   const reduceMotion = useReducedMotion();
+  const titleKey = channel === "contract" ? "live_contract_title" : "live_draft_title";
+  const accent = channel === "contract" ? "bg-teal-600" : "bg-violet-500";
   const [view, setView] = useState<DraftView>(initialDraftView);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { text, phase, truncated } = view;
 
   useEffect(() => {
     setView(initialDraftView());
-    const source = new EventSource(`/api/agents/runs/${encodeURIComponent(runId)}/stream`);
+    const source = new EventSource(
+      `/api/agents/runs/${encodeURIComponent(runId)}/stream?channel=${channel}`,
+    );
     source.onmessage = (event: MessageEvent<string>) => {
       let chunk: DraftStreamChunk;
       try {
@@ -65,7 +79,7 @@ export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Local
     };
     // A 5xx reconnects by itself (with Last-Event-ID); a 404 stays closed.
     return () => source.close();
-  }, [runId]);
+  }, [runId, channel]);
 
   // Rendering 28 000 characters of markdown on every chunk would fight the
   // stream for the main thread; the deferred value lets React render the
@@ -100,24 +114,33 @@ export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Local
 
   return (
     <section
-      aria-label={tr("live_draft_title", locale)}
+      aria-label={tr(titleKey, locale)}
       aria-live="polite"
-      className="mx-3 mb-3 sm:mx-4 sm:mb-4 overflow-hidden rounded-xl border border-violet-500/25 bg-gradient-to-b from-violet-500/[0.07] via-background to-background shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06)]"
+      className={cn(
+        "min-w-0 overflow-hidden rounded-xl border shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06)] bg-gradient-to-b via-background to-background",
+        channel === "contract"
+          ? "border-teal-500/25 from-teal-500/[0.07]"
+          : "border-violet-500/25 from-violet-500/[0.07]",
+      )}
     >
-      <header className="flex items-center gap-2 border-b border-violet-500/15 px-4 py-2.5">
+      <header className={cn("flex items-center gap-2 border-b px-4 py-2.5", channel === "contract" ? "border-teal-500/15" : "border-violet-500/15")}>
         <span className="relative flex size-2" aria-hidden>
           {phase === "writing" && !reduceMotion ? (
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-violet-500/60" />
+            <span className={cn("absolute inline-flex size-full animate-ping rounded-full opacity-60", accent)} />
           ) : null}
           <span
             className={cn(
               "relative inline-flex size-2 rounded-full",
-              phase === "done" ? "bg-emerald-500" : "bg-violet-500",
+              phase === "done" ? "bg-emerald-500" : accent,
             )}
           />
         </span>
-        <PenLine className="size-3.5 text-violet-600" aria-hidden />
-        <h4 className="text-xs font-semibold tracking-wide">{tr("live_draft_title", locale)}</h4>
+        {channel === "contract" ? (
+          <Scale className="size-3.5 text-teal-700 dark:text-teal-300" aria-hidden />
+        ) : (
+          <PenLine className="size-3.5 text-violet-600" aria-hidden />
+        )}
+        <h4 className="text-xs font-semibold tracking-wide">{tr(titleKey, locale)}</h4>
         <span className="ms-auto text-[11px] tabular-nums text-muted-foreground">{status}</span>
       </header>
       <div ref={scrollRef} className="max-h-72 overflow-y-auto px-4 py-3">
@@ -125,7 +148,7 @@ export function LiveDraftPanel({ runId, locale }: { runId: string; locale: Local
         {live ? (
           <motion.span
             aria-hidden
-            className="mt-1 inline-block h-4 w-[2px] bg-violet-500"
+            className={cn("mt-1 inline-block h-4 w-[2px]", accent)}
             animate={reduceMotion ? undefined : { opacity: [1, 0, 1] }}
             transition={reduceMotion ? undefined : { duration: 1, repeat: Infinity, ease: "linear" }}
           />

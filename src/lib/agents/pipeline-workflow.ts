@@ -12,7 +12,12 @@
  */
 
 import { getStepMetadata, getWritable } from "workflow";
-import { DRAFT_STREAM_NAMESPACE, createDraftStreamSink, type DraftStreamChunk } from "./draft-stream";
+import {
+  CONTRACT_STREAM_NAMESPACE,
+  DRAFT_STREAM_NAMESPACE,
+  createDraftStreamSink,
+  type DraftStreamChunk,
+} from "./draft-stream";
 import {
   failRunAfterCrash,
   runDraftContinuationStage,
@@ -64,7 +69,8 @@ continueDraftStep.maxRetries = 0;
 
 async function lawStep(input: PipelineInput, ctx: PreparedContext): Promise<LawOutcome> {
   "use step";
-  return runLawStage(input, ctx, attemptOf(lawStep.maxRetries));
+  const sink = createDraftStreamSink(getWritable<DraftStreamChunk>({ namespace: CONTRACT_STREAM_NAMESPACE }));
+  return runLawStage(input, ctx, attemptOf(lawStep.maxRetries), sink);
 }
 lawStep.maxRetries = STAGE_RETRIES;
 

@@ -1644,6 +1644,8 @@ export async function runLawStage(
   input: PipelineInput,
   ctx: PreparedContext,
   attempt: StageAttempt,
+  /** The run's live contract stream, when the step opened one. */
+  sink?: DraftStreamSink,
 ): Promise<LawOutcome> {
   const locale: Locale = input.locale === "en" ? "en" : "ar";
   const states = ctx.states.map((s) => ({ ...s }));
@@ -1652,6 +1654,9 @@ export async function runLawStage(
   const recorder = createRunRecorder({ runId: input.runId, states, owned: new Set<AgentId>(["LAW_CONTRACT"]) });
   const { mark } = recorder;
   const { project, entities, rows, score, workspaceIdentity, restrictions } = ctx;
+  sink?.reset(attempt.attempt);
+  let streamedText = "";
+  let contractStreamed = false;
 
   try {
     await carryRetryFindings(recorder, "LAW_CONTRACT", attempt);
@@ -1676,7 +1681,24 @@ export async function runLawStage(
       clientNameAr: "العميل (الجهة الطارحة — يُستكمل من الكراسة)",
       restrictions,
       locale,
+      onDelta: sink
+        ? (text) => {
+            streamedText += text;
+            sink.push(text);
+          }
+        : undefined,
     });
+    if (sink) {
+      // The saved contract can differ from what was streamed: the deterministic
+      // draft stands in when the model's version parses to too few articles.
+      // The page is then shown the document that was actually kept.
+      if (streamedText.trim() !== lawDraft.contentMd.trim()) {
+        sink.reset(attempt.attempt);
+        sink.push(lawDraft.contentMd);
+      }
+      await sink.done(false);
+      contractStreamed = true;
+    }
 
     await mark("LAW_CONTRACT", {
       status: "running",
@@ -1810,6 +1832,8 @@ export async function runLawStage(
     });
   } catch (err) {
     return settleStageFailure(err, { input, recorder, agentId: "LAW_CONTRACT", attempt, runStartedAtIso: ctx.runStartedAtIso });
+  } finally {
+    if (sink) await (contractStreamed ? sink.close() : sink.release());
   }
 }
 

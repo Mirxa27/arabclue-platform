@@ -617,8 +617,11 @@ export function AgentWorkflow() {
   // The live draft appears the moment the drafting agent starts and stays
   // until the run ends — the words keep arriving while the contract finishes.
   const draftingState = agentStates.find((a) => a.id === "PROPOSAL_DRAFTING");
+  const lawState = agentStates.find((a) => a.id === "LAW_CONTRACT");
   const showLiveDraft =
     running && !!runId && draftingState != null && normalizeStatus(draftingState.status) !== "pending";
+  const showLiveContract =
+    running && !!runId && lawState != null && normalizeStatus(lawState.status) !== "pending";
 
   const projectTitle = useMemo(() => {
     const p = projectMeta?.project;
@@ -1147,7 +1150,12 @@ export function AgentWorkflow() {
             );
           })}
         </div>
-        {showLiveDraft && runId ? <LiveDraftPanel runId={runId} locale={locale} /> : null}
+        {runId && (showLiveDraft || showLiveContract) ? (
+          <div className="mx-3 mb-3 grid grid-cols-1 gap-2.5 sm:mx-4 sm:mb-4 lg:grid-cols-2">
+            {showLiveDraft ? <LiveDraftPanel runId={runId} locale={locale} channel="draft" /> : null}
+            {showLiveContract ? <LiveDraftPanel runId={runId} locale={locale} channel="contract" /> : null}
+          </div>
+        ) : null}
         </>
       ) : (
         <div className="p-4 sm:p-5">

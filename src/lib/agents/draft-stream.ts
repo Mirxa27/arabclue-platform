@@ -10,6 +10,16 @@
  */
 
 export const DRAFT_STREAM_NAMESPACE = "draft";
+export const CONTRACT_STREAM_NAMESPACE = "contract";
+
+/** The two documents a run writes live; the stream route selects one by `?channel=`. */
+export type LiveStreamChannel = "draft" | "contract";
+
+export function streamNamespaceFor(channel: string | null | undefined): string | null {
+  if (channel === "contract") return CONTRACT_STREAM_NAMESPACE;
+  if (channel === "draft" || channel == null || channel === "") return DRAFT_STREAM_NAMESPACE;
+  return null;
+}
 
 export type DraftStreamChunk =
   | { kind: "reset"; attempt: number }

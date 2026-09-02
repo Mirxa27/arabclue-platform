@@ -622,6 +622,7 @@ export const localizationRegistry = {
   },
   agent_run_failure_details: { ar: "التفاصيل التقنية", en: "Technical details" },
   live_draft_title: { ar: "المسودة المباشرة", en: "Live draft" },
+  live_contract_title: { ar: "مسودة العقد المباشرة", en: "Live contract draft" },
   live_draft_waiting: { ar: "بانتظار أول الكلمات…", en: "Waiting for the first words…" },
   live_draft_retrying: {
     ar: "توقف المزوّد لحظة — تبدأ الصياغة من جديد",

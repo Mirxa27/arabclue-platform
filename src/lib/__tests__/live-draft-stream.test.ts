@@ -19,9 +19,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readOpenAiCompatibleStream } from "../llm/sse-stream";
 import {
+  CONTRACT_STREAM_NAMESPACE,
   DRAFT_STREAM_NAMESPACE,
   createDraftStreamSink,
   encodeSseEvent,
+  streamNamespaceFor,
   type DraftStreamChunk,
 } from "../agents/draft-stream";
 import { resolveTranslation } from "../i18n";
@@ -205,7 +207,7 @@ describe("the wiring", () => {
   test("the stream route reads the run's draft namespace, resumes from Last-Event-ID, and can be cancelled", () => {
     const route = "src/app/api/agents/runs/[id]/stream/route.ts";
     has(route, "the run looked up by workflow id", /getRun\(/);
-    has(route, "the draft namespace", /namespace:\s*DRAFT_STREAM_NAMESPACE/);
+    has(route, "the namespace chosen by channel", /getReadable<DraftStreamChunk>\(\{\s*namespace,/);
     has(route, "resume from the client's last id", /last-event-id/i);
     has(route, "the SSE content type", /text\/event-stream/);
     has(route, "tenant check", /assertWorkspaceMatch\(/);
@@ -235,6 +237,27 @@ describe("the wiring", () => {
     // The floating dock covered the panel's last lines at 375 px; the content
     // column now ends with clearance for it on every page.
     has("src/components/dashboard/app-shell.tsx", "bottom clearance for the dock", /pb-24/);
+  });
+
+  test("the contract is streamed on its own channel and shown beside the proposal", () => {
+    // Agents 5 and 6 write at the same time; the page shows both documents.
+    has("src/lib/agents/law-contract.ts", "the contract forwards deltas", /onDelta:\s*opts\.onDelta/);
+    has("src/lib/agents/pipeline-workflow.ts", "the law step opens the contract stream", /getWritable<DraftStreamChunk>\(\{\s*namespace:\s*CONTRACT_STREAM_NAMESPACE\s*\}\)/);
+    has("src/lib/agents/orchestrator.ts", "the law stage takes a sink", /export async function runLawStage\([\s\S]{0,200}sink\?: DraftStreamSink/);
+    const route = "src/app/api/agents/runs/[id]/stream/route.ts";
+    has(route, "a channel query", /searchParams\.get\("channel"\)/);
+    has(route, "namespace resolved from the channel", /streamNamespaceFor\(/);
+    expect(streamNamespaceFor("contract")).toBe(CONTRACT_STREAM_NAMESPACE);
+    expect(streamNamespaceFor("draft")).toBe(DRAFT_STREAM_NAMESPACE);
+    expect(streamNamespaceFor("anything-else")).toBeNull();
+    const panel = read("src/components/dashboard/live-draft-panel.tsx");
+    expect(/channel/.test(panel)).toBe(true);
+    const page = read("src/components/dashboard/agent-workflow.tsx");
+    expect((page.match(/<LiveDraftPanel/g) ?? []).length).toBe(2);
+    expect(/channel="contract"/.test(page)).toBe(true);
+    for (const locale of ["ar", "en"] as const) {
+      expect(resolveTranslation("live_contract_title", locale).missing).toBe(false);
+    }
   });
 
   test("the panel's copy exists in both languages", () => {
