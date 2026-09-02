@@ -67,6 +67,19 @@ describe("the build knows about workflows", () => {
     const pkg = JSON.parse(read("package.json")) as { dependencies: Record<string, string> };
     expect(pkg.dependencies.workflow).toBeDefined();
   });
+
+  test("the undici override stays on the major the workflow worlds are written for", () => {
+    // Bun honours only top-level overrides, so the advisory pin on undici
+    // reaches @workflow/world-vercel too. Its events dispatcher composes with
+    // undici 7 semantics; under the 6.28.0 pin every start() in production
+    // failed with "fetch failed — Cannot read private member #dispatch".
+    // @vercel/blob, the pin's original target, imports only `fetch`, which is
+    // the same API on both majors, so the pin moves up rather than away.
+    const pkg = JSON.parse(read("package.json")) as { overrides?: Record<string, string> };
+    const pin = pkg.overrides?.undici;
+    expect(pin).toBeDefined();
+    expect(/^(?:\^|~)?7\./.test(pin ?? "")).toBe(true);
+  });
 });
 
 describe("the workflow module", () => {
