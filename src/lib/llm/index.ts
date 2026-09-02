@@ -1,5 +1,7 @@
 import ZAI from "z-ai-web-dev-sdk";
 import { glmThinkingParams } from "./glm-thinking";
+import { openAiCompatibleRequestBody } from "./request-shape";
+import { redactSensitiveText } from "@/lib/api-failure";
 import { db } from "../db";
 import type { AIProviderConfig } from "@prisma/client";
 import { resolveProviderApiKey } from "../env-settings";
@@ -97,6 +99,11 @@ export interface LLMResult {
    * run record can say why, and on success as an advisory for the audit row.
    */
   guardrailReasons?: string[];
+  /**
+   * The transport's own words when the call failed (`openai HTTP 400: …`),
+   * redacted and bounded. Never user copy; it is what the operator needs.
+   */
+  failureDetail?: string;
 }
 
 export async function generateCompletion(
@@ -362,6 +369,9 @@ export async function generateCompletion(
       fallback: true,
       engine,
       failureKind,
+      failureDetail: redactSensitiveText(
+        err instanceof Error ? err.message : String(err)
+      ).slice(0, 300),
     };
   }
 }
@@ -405,19 +415,15 @@ async function callOpenAiCompatible(
   };
   if (key) headers.Authorization = `Bearer ${key}`;
 
-  const body: Record<string, unknown> = {
-    model: requireConfiguredModelId(provider.modelId),
+  // Per-vendor shape: GPT-5-class models reject `max_tokens` and a custom
+  // temperature; GLM needs its thinking budget handled. See request-shape.ts.
+  const body = openAiCompatibleRequestBody({
+    provider: provider.provider,
+    modelId: requireConfiguredModelId(provider.modelId),
     messages,
     temperature,
-    max_tokens: maxTokens,
-    // GLM reasons by default and spends `max_tokens` on `reasoning_content`
-    // first; at 2048 that returned `content: ""` and failed the production
-    // ingestion step. See glm-thinking.ts for the per-model rule.
-    ...glmThinkingParams(provider.modelId),
-  };
-  if (provider.supportsJsonMode && /gpt|o\d|mistral|deepseek|qwen|llama/i.test(provider.modelId)) {
-    // Only request json_object when caller messages likely want it — avoid breaking freeform drafting
-  }
+    maxTokens,
+  });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), provider.timeoutMs || 60000);

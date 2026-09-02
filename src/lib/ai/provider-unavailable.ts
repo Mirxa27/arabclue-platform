@@ -67,7 +67,7 @@ export class ProviderUnavailableError extends Error {
 export function guardOrThrow(
   result: Pick<
     LLMResult,
-    "fallback" | "failureKind" | "provider" | "guardrailReasons"
+    "fallback" | "failureKind" | "provider" | "guardrailReasons" | "failureDetail"
   >,
   context: string,
 ): void {
@@ -77,11 +77,11 @@ export function guardOrThrow(
     context,
     llmFailureKind: result.failureKind,
     provider: result.provider,
-    // The guardrail's own words, so the run record answers "why" instead of
-    // the operator re-running the step to find out.
+    // The guardrail's or the transport's own words, so the run record answers
+    // "why" instead of the operator re-running the step to find out.
     detail: result.guardrailReasons?.length
       ? result.guardrailReasons.join(", ")
-      : undefined,
+      : result.failureDetail || undefined,
   });
 }
 
