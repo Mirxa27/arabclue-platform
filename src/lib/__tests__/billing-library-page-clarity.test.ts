@@ -106,6 +106,17 @@ describe("header action rows wrap on a phone", () => {
     expect(src).toMatch(/<div className="flex flex-wrap items-center gap-2">\s*<Badge/);
   });
 
+  test("proposal builder stacks its three panes below lg", () => {
+    // At 375 px the sections pane was a fixed 320 px and the editor/preview
+    // pane got the remaining 15 px: everything but "Sections" was off-screen.
+    const src = read("src/components/dashboard/proposal-builder.tsx");
+    expect(src).toMatch(/flex min-h-0 flex-1 flex-col gap-4 lg:flex-row/);
+    expect(src).toMatch(/"w-full lg:w-80 lg:shrink-0"/);
+    expect(src).not.toMatch(/: "w-80 shrink-0"/);
+    expect(src).toMatch(/grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-2/);
+    expect(src).toMatch(/lg:h-\[calc\(100dvh-10rem\)\]/);
+  });
+
   test("proposal builder live preview header", () => {
     const src = read("src/components/dashboard/proposal-builder-preview.tsx");
     expect(src).toMatch(/flex flex-wrap items-center justify-between gap-2 border-b/);

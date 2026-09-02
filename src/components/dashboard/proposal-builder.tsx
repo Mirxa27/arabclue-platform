@@ -317,7 +317,7 @@ export function ProposalBuilder() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-10rem)] flex-col gap-4">
+    <div className="flex flex-col gap-4 lg:h-[calc(100dvh-10rem)]">
       {draftBanner ? (
         <div
           className="flex items-start justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm"
@@ -385,12 +385,12 @@ export function ProposalBuilder() {
       </div>
 
       {/* Main content area */}
-      <div className="flex min-h-0 flex-1 gap-4">
-        {/* Section list (left panel) */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+        {/* Section list (left panel) — a column on a phone, a sidebar from lg */}
         <div
           className={cn(
             "flex flex-col gap-3 overflow-hidden rounded-xl border border-border/60 bg-background/60 backdrop-blur-xl",
-            mode === "preview" ? "hidden" : "w-80 shrink-0"
+            mode === "preview" ? "hidden" : "w-full lg:w-80 lg:shrink-0"
           )}
         >
           <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
@@ -432,7 +432,7 @@ export function ProposalBuilder() {
         </div>
 
         {/* Editor / Preview area */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/60 backdrop-blur-xl">
+        <div className="flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/60 backdrop-blur-xl lg:min-h-0">
           {mode === "edit" && selectedSection ? (
             <SectionEditor
               locale={locale}
@@ -449,8 +449,8 @@ export function ProposalBuilder() {
             />
           ) : (
             // Split mode
-            <div className="grid min-h-0 flex-1 grid-cols-2 gap-0">
-              <div className="overflow-auto border-e border-border/50">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-2">
+              <div className="min-h-[14rem] overflow-auto border-b border-border/50 lg:border-b-0 lg:border-e">
                 {selectedSection ? (
                   <SectionEditor
                     locale={locale}
@@ -465,7 +465,7 @@ export function ProposalBuilder() {
                   </div>
                 )}
               </div>
-              <div className="overflow-auto">
+              <div className="min-h-[14rem] overflow-auto">
                 <ProposalBuilderPreview
                   locale={locale}
                   sections={sections}
