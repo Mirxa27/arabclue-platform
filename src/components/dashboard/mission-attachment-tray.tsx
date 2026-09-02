@@ -18,9 +18,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { Camera, FileUp, Globe2, Link2, Loader2, Mail, Undo2, Sparkles } from "lucide-react";
+import { useUI } from "@/lib/store";
+import { Camera, ChevronDown, FileUp, Globe2, Link2, Loader2, Mail, Puzzle, Undo2, Sparkles, Cloud, HardDrive } from "lucide-react";
 import { MISSION_CONNECTORS } from "@/lib/agents/platform/connectors";
+import { EXTENSION_WIZARD_OPEN_EVENT } from "./mission-extension-bridge";
 
 type AttachmentRow = {
   id: string;
@@ -70,6 +81,10 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
   const [importFile, setImportFile] = useState<File | null>(null);
 
   const connectors = useMemo(() => MISSION_CONNECTORS, []);
+  // The same persisted preference the Documents page shows: a document that
+  // lands here starts the agents when it is on.
+  const autopilot = useUI((s) => s.autopilot);
+  const setAutopilot = useUI((s) => s.setAutopilot);
   const importCanSubmit = Boolean(importText.trim() || (importSource !== "browser" && importFile));
 
   async function stageFile(file: File, source: string) {
@@ -176,54 +191,65 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
       >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_100%_at_20%_0%,rgba(20,184,166,0.08),transparent_60%)] opacity-60" />
         <div className="relative flex flex-col gap-3">
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="flex size-6 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/[0.06]"><Sparkles className="size-3.5 text-teal-600 dark:text-teal-300" /></span>
-                <p className="text-[13px] font-[600] tracking-tight">{ar ? "أسقط الملفات — يصنف ويشغل تلقائياً" : "Drop files — auto-classify & run"}</p>
+                <span className="flex size-7 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/[0.06]"><Sparkles className="size-3.5 text-teal-600 dark:text-teal-300" /></span>
+                <p className="text-[15px] font-[650] tracking-tight">{ar ? "أسقط مستندات المناقصة هنا" : "Drop your tender here"}</p>
               </div>
-              <p className="mt-1 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400">{ar ? "مناقصات، ZIP، صور، روابط، كاميرا، متصفح، بريد، Google Drive، OneDrive" : "Tenders, ZIP, images, URLs, camera, browser, email, Google Drive, OneDrive"}</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {ar
+                  ? "يقرأها الوكلاء، ويتحققون من الامتثال، ويكتبون العطاء والعقد — وأنت تعتمد."
+                  : "The agents read it, check compliance, and write the proposal and the contract — you approve."}
+              </p>
+              <label className="mt-2.5 inline-flex items-center gap-2 rounded-full border border-zinc-200/70 dark:border-white/10 bg-white/70 dark:bg-white/[0.04] px-2.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300 cursor-pointer select-none">
+                <Switch checked={autopilot} onCheckedChange={setAutopilot} aria-label={ar ? "الطيار الآلي" : "Autopilot"} className="scale-[0.8]" />
+                <span className="font-medium">
+                  {autopilot
+                    ? ar ? "الطيار الآلي يعمل — يبدأ التشغيل تلقائياً" : "Autopilot on — runs start on their own"
+                    : ar ? "الطيار الآلي متوقف — شغّل الوكلاء يدوياً" : "Autopilot off — start the agents yourself"}
+                </span>
+              </label>
             </div>
-            <div className="flex flex-wrap gap-1.5 sm:max-w-[62%]">
-              <Button type="button" size="sm" variant="default" disabled={!missionId || uploading || busy} onClick={() => fileRef.current?.click()} className="h-8 rounded-full px-3 text-[12px] gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+              <Button type="button" size="sm" variant="default" disabled={!missionId || uploading || busy} onClick={() => fileRef.current?.click()} className="h-9 rounded-full px-4 text-[12px] gap-1.5">
                 {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <FileUp className="size-3.5" />}
-                {ar ? "رفع" : "Upload"}
+                {ar ? "رفع الملفات" : "Upload files"}
               </Button>
-              <Button type="button" size="sm" variant="outline" disabled={!missionId || uploading} onClick={() => cameraRef.current?.click()} className="h-8 rounded-full px-3 text-[11px] gap-1">
-                <Camera className="size-3.5" />
-                {ar ? "كاميرا" : "Camera"}
-              </Button>
-              <Button type="button" size="sm" variant="outline" disabled={!missionId || uploading} onClick={() => openImportDialog("browser")} className="h-8 rounded-full px-3 text-[11px] gap-1">
-                <Globe2 className="size-3.5" />
-                {ar ? "متصفح" : "Browser"}
-              </Button>
-              <Button type="button" size="sm" variant="outline" disabled={!missionId || uploading} onClick={() => openImportDialog("email")} className="h-8 rounded-full px-3 text-[11px] gap-1">
-                <Mail className="size-3.5" />
-                {ar ? "بريد" : "Email"}
-              </Button>
-              <Button type="button" size="sm" variant="outline" disabled={!missionId || uploading} onClick={() => openImportDialog("google_drive")} className="h-8 rounded-full px-3 text-[11px]">Drive</Button>
-              <Button type="button" size="sm" variant="outline" disabled={!missionId || uploading} onClick={() => openImportDialog("onedrive")} className="h-8 rounded-full px-3 text-[11px]">OneDrive</Button>
-              {onUndo ? <Button type="button" size="sm" variant="ghost" onClick={onUndo} className="h-8 rounded-full px-3 text-[11px] gap-1"><Undo2 className="size-3.5" /> Undo</Button> : null}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" size="sm" variant="outline" disabled={!missionId || uploading} className="h-9 rounded-full px-3 text-[12px] gap-1">
+                    {ar ? "مصادر أخرى" : "More sources"}
+                    <ChevronDown className="size-3.5 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="text-[11px] text-muted-foreground">{ar ? "جلب مستند من" : "Bring a document from"}</DropdownMenuLabel>
+                  <DropdownMenuItem onSelect={() => cameraRef.current?.click()} className="gap-2 text-[12px]"><Camera className="size-3.5" />{ar ? "الكاميرا" : "Camera"}</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => openImportDialog("browser")} className="gap-2 text-[12px]"><Globe2 className="size-3.5" />{ar ? "نص من صفحة متصفح" : "Text from a browser page"}</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => openImportDialog("email")} className="gap-2 text-[12px]"><Mail className="size-3.5" />{ar ? "بريد إلكتروني" : "Email"}</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => openImportDialog("google_drive")} className="gap-2 text-[12px]"><Cloud className="size-3.5" />Google Drive</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => openImportDialog("onedrive")} className="gap-2 text-[12px]"><HardDrive className="size-3.5" />OneDrive</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent(EXTENSION_WIZARD_OPEN_EVENT))} className="gap-2 text-[12px] text-muted-foreground">
+                    <Puzzle className="size-3.5" />
+                    {ar ? "امتداد المتصفح (اختياري)" : "Browser extension (optional)"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {onUndo ? <Button type="button" size="sm" variant="ghost" onClick={onUndo} className="h-9 rounded-full px-3 text-[11px] gap-1"><Undo2 className="size-3.5" /> {ar ? "تراجع" : "Undo"}</Button> : null}
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1 min-w-0">
               <Link2 className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={ar ? "https://… استيراد رابط" : "https://… import URL"} className="h-9 ps-8 rounded-full bg-white/80 dark:bg-black/20 border-zinc-200/70 dark:border-white/10 text-[13px]" />
+              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={ar ? "أو الصق رابط المناقصة…" : "Or paste a tender link…"} className="h-9 ps-8 rounded-full bg-white/80 dark:bg-black/20 border-zinc-200/70 dark:border-white/10 text-[13px]" onKeyDown={(e) => { if (e.key === "Enter" && url.trim()) { e.preventDefault(); void submitUrl(); } }} />
             </div>
             <Button type="button" size="sm" variant="secondary" disabled={!url.trim() || !missionId || uploading} onClick={() => void submitUrl()} className="h-9 rounded-full px-4 shrink-0">
               <Link2 className="size-3.5 me-1.5" />
               {ar ? "جلب" : "Fetch"}
             </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-1">
-            {connectors.map((c) => (
-              <Badge key={c.id} variant="secondary" className="rounded-full text-[10px] border-zinc-200/60 dark:border-white/10 bg-white/60 dark:bg-white/[0.04] text-zinc-600 dark:text-zinc-400">
-                {ar ? c.label.ar : c.label.en}
-              </Badge>
-            ))}
           </div>
         </div>
       </div>

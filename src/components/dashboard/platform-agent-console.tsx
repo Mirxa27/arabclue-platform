@@ -712,6 +712,7 @@ export function PlatformAgentConsole() {
           />
           <MissionExtensionBridge
             locale={locale}
+            presentation="quiet"
             onExtensionEvent={(payload) => {
               const data = payload as {
                 attachment?: {

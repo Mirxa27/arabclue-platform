@@ -31,6 +31,12 @@ type Props = {
    * Default false — the extension is optional, not required.
    */
   autoPrompt?: boolean;
+  /**
+   * "card" renders the status card; "quiet" renders only the dialog and opens
+   * it on EXTENSION_WIZARD_OPEN_EVENT. The Agent page is quiet: the extension
+   * is optional and was taking a card's worth of the intake for it.
+   */
+  presentation?: "card" | "quiet";
 };
 
 type StepId =
@@ -44,6 +50,13 @@ type StepId =
 const DISMISS_KEY = "arabclue.extension.install.dismissed";
 
 /** Returns true when `installed` is older than `latest` (loose semver). */
+/**
+ * Opens the install/update wizard from anywhere on the page — the intake
+ * card's "More sources" menu dispatches it, so the extension no longer needs
+ * a card of its own on the Agent page.
+ */
+export const EXTENSION_WIZARD_OPEN_EVENT = "arabclue:extension-wizard-open";
+
 export function isVersionOutdated(installed: string, latest: string): boolean {
   const parse = (v: string) =>
     v
@@ -174,6 +187,7 @@ export function MissionExtensionBridge({
   locale,
   onExtensionEvent,
   autoPrompt = false,
+  presentation = "card",
 }: Props) {
   const ar = locale === "ar";
   const { present, lastEvent, version, ping } =
@@ -210,6 +224,16 @@ export function MissionExtensionBridge({
     setOpen(true);
     setStep("download");
   }, [autoPrompt, present]);
+
+  useEffect(() => {
+    const onOpen = () => {
+      setWizardMode(present && updateAvailable ? "update" : "install");
+      setStep("download");
+      setOpen(true);
+    };
+    window.addEventListener(EXTENSION_WIZARD_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(EXTENSION_WIZARD_OPEN_EVENT, onOpen);
+  }, [present, updateAvailable]);
 
   useEffect(() => {
     if (!open) return;
@@ -332,6 +356,7 @@ export function MissionExtensionBridge({
 
   return (
     <>
+      {presentation === "quiet" ? null : (
       <div
         className={cn(
           "rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-3",
@@ -452,6 +477,7 @@ export function MissionExtensionBridge({
           )}
         </div>
       </div>
+      )}
 
       <Dialog
         open={open}
@@ -460,7 +486,8 @@ export function MissionExtensionBridge({
           else setOpen(true);
         }}
       >
-        <DialogContent className="max-w-lg border-cyan-500/30 bg-gradient-to-b from-background via-teal-500/[0.04] to-background">
+        <DialogContent className="max-w-lg border-cyan-500/30 bg-background shadow-2xl">
+          <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-lg bg-gradient-to-r from-teal-500/70 via-cyan-500/70 to-teal-500/70" />
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <span className="flex size-8 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-500/10">
@@ -480,8 +507,8 @@ export function MissionExtensionBridge({
                   ? "نزّل الحزمة الجديدة واستبدل المجلد ثم أعد تحميل الامتداد."
                   : "Download the new package, replace the folder, and reload the extension."
                 : ar
-                  ? "اختياري بالكامل — Mission Control يعمل بدونه. يقوّي الوكيل بالتقاط أي تبويب."
-                  : "Fully optional — Mission Control works without it. Strengthens the agent by capturing any browser tab."}
+                  ? "اختياري بالكامل — الوكيل يعمل بدونه. يضيف التقاط أي تبويب متصفح مباشرة إلى المهمة. الخطوات أدناه يفرضها Chrome على أي امتداد يُثبَّت من خارج متجر Chrome."
+                  : "Fully optional — the agent works without it. It adds capturing any browser tab straight into the mission. The steps below are what Chrome requires for an extension installed from outside the Chrome Web Store."}
             </DialogDescription>
           </DialogHeader>
 

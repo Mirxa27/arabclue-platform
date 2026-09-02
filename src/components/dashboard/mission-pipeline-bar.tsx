@@ -49,7 +49,10 @@ export function MissionPipelineBar({
     [hasTelemetry, tools]
   );
 
-  const shouldRender = performing || hasTelemetry;
+  // Only while the agent is working. Persisted history used to keep the strip
+  // up with checkmarks from hours-old tool calls beside an idle page; that
+  // history is already listed in the feed below.
+  const shouldRender = performing || activeStep >= 0;
   if (!shouldRender) return null;
 
   const progressPct =
