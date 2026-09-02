@@ -50,6 +50,13 @@ const SettingsPanel = dynamic(
   () => import("./settings-panel").then((m) => ({ default: m.SettingsPanel })),
   { loading: PanelLoading }
 );
+const TeamInvitationsPanel = dynamic(
+  () =>
+    import("./team-invitations-panel").then((m) => ({
+      default: m.TeamInvitationsPanel,
+    })),
+  { ssr: false }
+);
 const BillingPanel = dynamic(
   () =>
     import("./billing-panel").then((m) => ({ default: m.BillingPanel })),
@@ -525,6 +532,7 @@ function SettingsView() {
         locale={locale}
       />
       <SettingsPanel />
+      <TeamInvitationsPanel />
     </PageSection>
   );
 }
