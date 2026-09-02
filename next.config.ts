@@ -29,6 +29,21 @@ export const bilingualFontTraceIncludes = Object.freeze([
   ),
 ]);
 
+/**
+ * Files the PDF renderer opens at runtime through paths `@vercel/nft` cannot
+ * follow. `playwright-core` reads `browsers.json` and its `package.json` via
+ * `require(path.join(packageRoot, …))`; `@sparticuz/chromium` inflates its
+ * brotli archives from a `../../bin` it computes at call time. Production
+ * answered 503 `PDF_UNAVAILABLE` ("Cannot find module '/…json'") because
+ * `browsers.json` never shipped. Per the Next.js output-file-tracing reference
+ * (16.3.4), values are globs from the project root.
+ */
+export const pdfRuntimeTraceIncludes = Object.freeze([
+  "./node_modules/playwright-core/package.json",
+  "./node_modules/playwright-core/browsers.json",
+  "./node_modules/@sparticuz/chromium/bin/**/*",
+]);
+
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
   reactStrictMode: true,
@@ -37,6 +52,9 @@ const nextConfig: NextConfig = {
     ? { output: "standalone" as const }
     : {}),
   // Keep Chromium/Playwright out of the webpack/turbopack bundle — load at runtime.
+  // Externals are loaded from node_modules inside the function, so whatever they
+  // open through computed paths has to be traced by hand (see
+  // pdfRuntimeTraceIncludes and scripts/check-bilingual-font-traces.mjs).
   serverExternalPackages: [
     "playwright",
     "playwright-core",
@@ -52,9 +70,18 @@ const nextConfig: NextConfig = {
     "/api/platform-agent/extension/download": [
       "./extensions/arabclue-agent/**/*",
     ],
-    "/api/proposals/*/download": [...bilingualFontTraceIncludes],
-    "/api/contracts/templates/*/preview": [...bilingualFontTraceIncludes],
-    "/api/business-profile/export": [...bilingualFontTraceIncludes],
+    "/api/proposals/*/download": [
+      ...bilingualFontTraceIncludes,
+      ...pdfRuntimeTraceIncludes,
+    ],
+    "/api/contracts/templates/*/preview": [
+      ...bilingualFontTraceIncludes,
+      ...pdfRuntimeTraceIncludes,
+    ],
+    "/api/business-profile/export": [
+      ...bilingualFontTraceIncludes,
+      ...pdfRuntimeTraceIncludes,
+    ],
   },
   async headers() {
     return [

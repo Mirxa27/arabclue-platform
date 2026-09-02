@@ -41,19 +41,43 @@ export const REQUIRED_BILINGUAL_FONT_ASSETS = Object.freeze([
   ),
 ]);
 
+/**
+ * What the PDF renderer loads at runtime through paths the tracer cannot
+ * follow. `playwright-core` reads `browsers.json` (and its `package.json`)
+ * via `require(path.join(packageRoot, …))`; `@sparticuz/chromium` inflates
+ * its brotli archives from a `../../bin` it computes at call time. Production
+ * answered 503 `PDF_UNAVAILABLE` — "Cannot find module '/…json'" — because
+ * `browsers.json` never shipped, and the archives would have been next.
+ */
+export const REQUIRED_PDF_RUNTIME_ASSETS = Object.freeze([
+  "node_modules/playwright-core/package.json",
+  "node_modules/playwright-core/browsers.json",
+  "node_modules/@sparticuz/chromium/bin/chromium.br",
+  "node_modules/@sparticuz/chromium/bin/al2023.tar.br",
+  "node_modules/@sparticuz/chromium/bin/fonts.tar.br",
+  "node_modules/@sparticuz/chromium/bin/swiftshader.tar.br",
+]);
+
 function normalized(value) {
   return value.replaceAll("\\", "/");
 }
 
-export function missingBilingualFontAssets(files) {
+function missingFrom(files, required) {
   const normalizedFiles = files.map(normalized);
-  return REQUIRED_BILINGUAL_FONT_ASSETS.filter(
-    (required) =>
+  return required.filter(
+    (asset) =>
       !normalizedFiles.some(
-        (candidate) =>
-          candidate === required || candidate.endsWith(`/${required}`)
+        (candidate) => candidate === asset || candidate.endsWith(`/${asset}`)
       )
   );
+}
+
+export function missingBilingualFontAssets(files) {
+  return missingFrom(files, REQUIRED_BILINGUAL_FONT_ASSETS);
+}
+
+export function missingPdfRuntimeAssets(files) {
+  return missingFrom(files, REQUIRED_PDF_RUNTIME_ASSETS);
 }
 
 export async function assertBilingualFontTraces(repositoryRoot) {
@@ -78,7 +102,10 @@ export async function assertBilingualFontTraces(repositoryRoot) {
       failures.push(`${route}: invalid Next.js trace manifest`);
       continue;
     }
-    const missing = missingBilingualFontAssets(parsed.files);
+    const missing = [
+      ...missingBilingualFontAssets(parsed.files),
+      ...missingPdfRuntimeAssets(parsed.files),
+    ];
     if (missing.length > 0) {
       failures.push(`${route}: missing ${missing.join(", ")}`);
     }
@@ -97,6 +124,6 @@ if (import.meta.main) {
   );
   await assertBilingualFontTraces(repositoryRoot);
   process.stdout.write(
-    `[font-trace] Verified ${REQUIRED_BILINGUAL_FONT_ASSETS.length} embedded font assets in ${BILINGUAL_FONT_TRACE_ROUTES.length} route traces.\n`
+    `[font-trace] Verified ${REQUIRED_BILINGUAL_FONT_ASSETS.length} embedded font assets and ${REQUIRED_PDF_RUNTIME_ASSETS.length} PDF runtime files in ${BILINGUAL_FONT_TRACE_ROUTES.length} route traces.\n`
   );
 }
