@@ -33,6 +33,7 @@ describe("serializeAgentRun", () => {
       progress: 42.4,
       currentAgent: "TECHNICAL_ARCHITECT",
       errorMessage: "RFP parsing failed",
+      failureKind: null,
       createdAt: createdAt.toISOString(),
       completedAt: completedAt.toISOString(),
     });

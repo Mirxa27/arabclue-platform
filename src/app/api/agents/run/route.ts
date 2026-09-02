@@ -140,6 +140,7 @@ export async function POST(req: NextRequest) {
             status: "FAILED",
             errorMessage:
               "Agent run timed out without progress (stale serverless invocation). Start a new run.",
+            failureKind: "TIMEOUT",
             completedAt: new Date(),
           },
         });

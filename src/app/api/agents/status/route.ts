@@ -102,6 +102,7 @@ export async function GET(req: NextRequest) {
             status: "FAILED",
             errorMessage:
               "Agent run exceeded the execution window twice (stale after resume). Start a new run.",
+            failureKind: "TIMEOUT",
             completedAt: new Date(),
           },
         });
@@ -113,6 +114,7 @@ export async function GET(req: NextRequest) {
           finalArtifact: null,
           errorMessage:
             "Agent run exceeded the execution window twice (stale after resume). Start a new run.",
+          failureKind: "TIMEOUT",
           resumed: false,
           resumeExhausted: true,
         });
@@ -138,6 +140,7 @@ export async function GET(req: NextRequest) {
               ? JSON.parse(run.finalArtifact)
               : null,
             errorMessage: run.errorMessage,
+            failureKind: run.failureKind,
             resumed: false,
             rateLimited: true,
           });
@@ -208,6 +211,7 @@ export async function GET(req: NextRequest) {
       agentStates: run.agentStates ? JSON.parse(run.agentStates) : [],
       finalArtifact,
       errorMessage: run.errorMessage,
+      failureKind: run.failureKind,
       resumed,
       proposalId: finalArtifact?.proposalId ?? null,
       contractId: finalArtifact?.contractId ?? null,

@@ -7,6 +7,7 @@ import { startTransition } from "react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
+import { runFailureCopyKey } from "@/lib/agents/run-failure";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -135,6 +136,7 @@ export function AgentWorkflow() {
   const [coveragePercent, setCoveragePercent] = useState<number | null>(null);
   const [exportReady, setExportReady] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [runFailureKind, setRunFailureKind] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: projectMeta, isError: projectMetaIsError, error: projectMetaError, refetch: refetchProjectMeta, isLoading: projectMetaLoading } = useQuery({
@@ -233,6 +235,7 @@ export function AgentWorkflow() {
       coveragePercent?: number | null;
       exportReady?: boolean | null;
       errorMessage?: string | null;
+      failureKind?: string | null;
     }
   ) {
     if (data.runId) setRunId(data.runId);
@@ -262,6 +265,7 @@ export function AgentWorkflow() {
     setOverall(data.overallProgress ?? 0);
     setRunStatus(data.status ?? null);
     setErrorMessage(data.errorMessage ?? null);
+    setRunFailureKind(data.failureKind ?? null);
 
     const fa = data.finalArtifact;
     if (fa) {
@@ -295,6 +299,7 @@ export function AgentWorkflow() {
     setRunStatus(run.status);
     setOverall(run.progress);
     setErrorMessage(run.status === "FAILED" ? run.errorMessage : null);
+    setRunFailureKind(run.status === "FAILED" ? run.failureKind : null);
     setLlmFallback(false);
     setLlmProvider(null);
     setProposalId(null);
@@ -543,7 +548,10 @@ export function AgentWorkflow() {
                 : locale === "ar"
                   ? "فشل سير العمل"
                   : "Agent workflow failed",
-            description: data.errorMessage ?? "error",
+            description:
+              data.status === "CANCELLED"
+                ? tr("agent_run_failure_cancelled", locale)
+                : tr(runFailureCopyKey(data.failureKind), locale),
             variant: data.status === "CANCELLED" ? "default" : "destructive",
           });
           qc.invalidateQueries({ queryKey: ["agent-runs"] });
@@ -841,7 +849,22 @@ export function AgentWorkflow() {
 
       {errorMessage && runStatus === "FAILED" && (
         <div className="mx-3 mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-destructive min-w-0">{errorMessage}</p>
+          <div className="min-w-0 flex-1 space-y-1">
+            {/* The sentence is for the bidder, keyed on the stable failure
+                kind. The raw message is the operator's breadcrumb — provider,
+                step, guardrail reason — and stays available, not on top. */}
+            <p className="text-xs text-destructive">
+              {tr(runFailureCopyKey(runFailureKind), locale)}
+            </p>
+            <details className="text-[11px] text-destructive/70">
+              <summary className="cursor-pointer select-none">
+                {tr("agent_run_failure_details", locale)}
+              </summary>
+              <p className="mt-1 font-mono break-words" dir="ltr">
+                {errorMessage}
+              </p>
+            </details>
+          </div>
           {/* The completion banner beside this one offers two ways forward.
               This one offered none: the way to retry was the Run button back up
               in the header, which a bidder has just scrolled past. */}

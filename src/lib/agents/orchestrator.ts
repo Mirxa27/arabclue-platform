@@ -2,6 +2,7 @@ import { db } from "../db";
 import { AGENTS, getTenderType } from "../constants";
 import { tr } from "../i18n";
 import type { AgentState, AgentId, IngestionEntities, ComplianceMatrixRow, FinancialExtract } from "../types";
+import { classifyRunFailure, type AgentRunFailureKind } from "./run-failure";
 import { extractTextFromStorage, parseTenderText, buildIngestionSummary, sanitizeText } from "./ingestion";
 import { engineNote } from "./run-presentation";
 import { evaluateCompliance } from "./compliance";
@@ -133,7 +134,11 @@ export async function runAgentPipeline(opts: {
     }
   };
 
-  const persist = async (status: "RUNNING" | "COMPLETED" | "FAILED", errorMessage?: string) => {
+  const persist = async (
+    status: "RUNNING" | "COMPLETED" | "FAILED",
+    errorMessage?: string,
+    failureKind?: AgentRunFailureKind
+  ) => {
     await assertNotCancelled();
     const overall = Math.round(
       states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1)
@@ -145,6 +150,8 @@ export async function runAgentPipeline(opts: {
         overallProgress: overall,
         agentStates: JSON.stringify(states),
         errorMessage: errorMessage ?? null,
+        // The stable kind the page speaks to; the message stays the operator's.
+        failureKind: status === "FAILED" ? (failureKind ?? "INTERNAL") : null,
         ...(status === "COMPLETED" || status === "FAILED"
           ? { completedAt: new Date() }
           : {}),
@@ -256,7 +263,7 @@ export async function runAgentPipeline(opts: {
         },
         findings: ["Upload at least one RFP / conditions booklet before running agents"],
       });
-      const overall = await persist("FAILED", "No documents uploaded for ingestion");
+      const overall = await persist("FAILED", "No documents uploaded for ingestion", "INVALID_INPUT");
       await recordAgentRunAnalyticsEvent({
         eventType: "agent_run_failed",
         runId: opts.runId,
@@ -1464,7 +1471,7 @@ export async function runAgentPipeline(opts: {
     const message = err instanceof Error ? err.message : "Agent pipeline failed";
     console.error("[orchestrator]", err);
     try {
-      const overall = await persist("FAILED", message);
+      const overall = await persist("FAILED", message, classifyRunFailure(err));
       // The provider message stays in the run record and the server log; the
       // analytics payload carries only a closed outcome code (requirement 4.6).
       await recordAgentRunAnalyticsEvent({

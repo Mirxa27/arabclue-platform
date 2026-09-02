@@ -11,6 +11,7 @@ type SerializableAgentRun = {
   overallProgress: number;
   agentStates?: string | null;
   errorMessage?: string | null;
+  failureKind?: string | null;
   createdAt: Date;
   completedAt?: Date | null;
   project: AgentRunProject;
@@ -25,6 +26,7 @@ export type AgentRunDto = {
   progress: number;
   currentAgent: string | null;
   errorMessage: string | null;
+  failureKind: string | null;
   createdAt: string;
   completedAt: string | null;
 };
@@ -57,6 +59,7 @@ export function serializeAgentRun(run: SerializableAgentRun): AgentRunDto {
     progress: run.overallProgress,
     currentAgent: currentAgentFromStates(run.agentStates),
     errorMessage: run.errorMessage ?? null,
+    failureKind: run.failureKind ?? null,
     createdAt: run.createdAt.toISOString(),
     completedAt: run.completedAt ? run.completedAt.toISOString() : null,
   };

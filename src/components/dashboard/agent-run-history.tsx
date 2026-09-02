@@ -39,6 +39,7 @@ export type AgentRunHistoryItem = {
   progress: number;
   currentAgent: string | null;
   errorMessage: string | null;
+  failureKind: string | null;
   createdAt: string;
   completedAt: string | null;
 };

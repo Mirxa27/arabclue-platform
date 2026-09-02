@@ -595,6 +595,32 @@ export const localizationRegistry = {
   event_agent_run_completed: { ar: "اكتمل تشغيل الوكيل", en: "Agent Run Completed" },
   event_agent_run_failed: { ar: "فشل تشغيل الوكيل", en: "Agent Run Failed" },
   event_agent_run_cancelled: { ar: "تم إلغاء تشغيل الوكيل", en: "Agent Run Cancelled" },
+  // What a bidder is told when a pipeline run fails, keyed on AgentRun.failureKind.
+  agent_run_failure_provider_unavailable: {
+    ar: "لم يستطع مزوّد الذكاء الاصطناعي إكمال إحدى الخطوات: لم يصل جواب صالح أو رُفض إخراجه. راجع إعدادات المزوّدين ثم أعد المحاولة.",
+    en: "The AI provider could not finish a step: no usable answer came back, or its output was refused. Check AI providers, then try again.",
+  },
+  agent_run_failure_rate_limit: {
+    ar: "قيّد المزوّد عدد الطلبات أثناء التشغيل. انتظر دقيقة ثم أعد المحاولة.",
+    en: "The provider rate-limited the run. Wait a minute, then try again.",
+  },
+  agent_run_failure_invalid_input: {
+    ar: "لا توجد مستندات في هذا المشروع. ارفع مستند المناقصة ثم أعد التشغيل.",
+    en: "This project has no documents. Upload the tender document, then run again.",
+  },
+  agent_run_failure_timeout: {
+    ar: "تجاوز التشغيل مهلة التنفيذ المسموحة. ابدأ تشغيلاً جديداً؛ وإن تكرر ذلك فقلّل حجم المستندات.",
+    en: "The run exceeded its execution window. Start a new run; if it repeats, reduce the document set.",
+  },
+  agent_run_failure_internal: {
+    ar: "حدث خطأ داخل خط الأنابيب وتم تسجيل التفاصيل. أعد المحاولة، وإن تكرر فراجع سجل التدقيق.",
+    en: "Something failed inside the pipeline; the details are logged. Try again, and check the audit trail if it repeats.",
+  },
+  agent_run_failure_cancelled: {
+    ar: "أوقفت هذا التشغيل. يمكنك بدء تشغيل جديد في أي وقت.",
+    en: "You stopped this run. You can start a new one at any time.",
+  },
+  agent_run_failure_details: { ar: "التفاصيل التقنية", en: "Technical details" },
   event_document_uploaded: { ar: "تم رفع المستند", en: "Document Uploaded" },
   event_document_version_created: { ar: "تم إنشاء إصدار مستند", en: "Document Version Created" },
   event_template_used: { ar: "تم استخدام القالب", en: "Template Used" },
