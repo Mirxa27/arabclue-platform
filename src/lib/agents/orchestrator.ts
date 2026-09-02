@@ -64,6 +64,7 @@ import {
   mergeMetricsSnapshots,
   type MetricsSnapshot,
 } from "./agent-metrics";
+import type { DraftStreamSink } from "./draft-stream";
 import { AGENT_CONFIG } from "./agent-config";
 import {
   analyticsBackgroundOrigin,
@@ -1070,6 +1071,8 @@ export async function runDraftingStage(
   input: PipelineInput,
   ctx: PreparedContext,
   attempt: StageAttempt,
+  /** The run's live draft stream, when the step opened one. */
+  sink?: DraftStreamSink,
 ): Promise<DraftingOutcome> {
   const locale: Locale = input.locale === "en" ? "en" : "ar";
   const states = ctx.states.map((s) => ({ ...s }));
@@ -1081,6 +1084,10 @@ export async function runDraftingStage(
     project, entities, rows, score, technical, financial, coverage, brand, workspaceIdentity,
     restrictions, restrictionsText, evidenceDocIds, knowledgeFindings,
   } = ctx;
+
+  // A retried attempt appends to the same stream; the page starts over on `reset`.
+  sink?.reset(attempt.attempt);
+  let streamedChars = 0;
 
   try {
     return await withHeartbeat(recorder, async (): Promise<DraftingOutcome> => {
@@ -1115,7 +1122,17 @@ export async function runDraftingStage(
       vision2030: brand?.vision2030Alignment ?? "thriving-economy",
       locale,
       restrictions: restrictionsText,
+      onDelta: sink
+        ? (text) => {
+            streamedChars += text.length;
+            sink.push(text);
+          }
+        : undefined,
     });
+    // A transport that cannot stream (SDK paths) delivers the whole draft at
+    // once; the page still gets to show it.
+    if (sink && streamedChars === 0 && draft.contentMd) sink.push(draft.contentMd);
+    await sink?.done(draft.truncated);
 
     // Mandatory validation gate (blocks marking export-ready)
     const { validateProposalOutput } = await import("../validation-gate");
@@ -1425,6 +1442,8 @@ export async function runDraftingStage(
     });
   } catch (err) {
     return settleStageFailure(err, { input, recorder, agentId: "PROPOSAL_DRAFTING", attempt, runStartedAtIso: ctx.runStartedAtIso });
+  } finally {
+    await sink?.close();
   }
 }
 

@@ -30,6 +30,8 @@ export async function draftProposal(opts: {
   vision2030: string;
   locale?: Locale;
   restrictions?: string;
+  /** Receives the draft as the model writes it; the result is unchanged. */
+  onDelta?: (text: string) => void;
 }): Promise<{
   contentMd: string;
   provider: string;
@@ -128,6 +130,7 @@ export async function draftProposal(opts: {
       // retried by the workflow as a whole stage, not by the transport.
       timeoutMs: 270_000,
       maxAttempts: 1,
+      onDelta: opts.onDelta,
     }
   );
 

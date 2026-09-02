@@ -621,6 +621,18 @@ export const localizationRegistry = {
     en: "You stopped this run. You can start a new one at any time.",
   },
   agent_run_failure_details: { ar: "التفاصيل التقنية", en: "Technical details" },
+  live_draft_title: { ar: "المسودة المباشرة", en: "Live draft" },
+  live_draft_waiting: { ar: "بانتظار أول الكلمات…", en: "Waiting for the first words…" },
+  live_draft_retrying: {
+    ar: "توقف المزوّد لحظة — تبدأ الصياغة من جديد",
+    en: "The provider paused — starting the draft again",
+  },
+  live_draft_done: { ar: "اكتملت المسودة", en: "Draft complete" },
+  live_draft_truncated: {
+    ar: "قُطعت المسودة عند حد الرموز",
+    en: "The draft was cut off at the token limit",
+  },
+  live_draft_words: { ar: "{{count}} كلمة", en: "{{count}} words" },
   event_document_uploaded: { ar: "تم رفع المستند", en: "Document Uploaded" },
   event_document_version_created: { ar: "تم إنشاء إصدار مستند", en: "Document Version Created" },
   event_template_used: { ar: "تم استخدام القالب", en: "Template Used" },
@@ -2268,6 +2280,10 @@ export const localizationRegistry = {
     ar: "لم يتم العثور على تشغيل الوكلاء",
     en: "The agent run was not found",
   },
+  AGENT_RUN_STREAM_NOT_FOUND: {
+    ar: "لا توجد مسودة مباشرة لهذا التشغيل",
+    en: "This run has no live draft to replay",
+  },
   // `_MISSING`, not `_REQUIRED`: resolveFailureStatus maps a `_REQUIRED`
   // suffix to 403, and this is a malformed query, not a permission problem.
   AGENT_RUN_SELECTOR_MISSING: {
@@ -3066,6 +3082,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   PROPOSAL_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "PROPOSAL_NOT_FOUND" },
   PROJECT_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "PROJECT_NOT_FOUND" },
   AGENT_RUN_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AGENT_RUN_NOT_FOUND" },
+  AGENT_RUN_STREAM_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AGENT_RUN_STREAM_NOT_FOUND" },
   AGENT_RUN_SELECTOR_MISSING: { actionKey: "error_action_run_agent", messageKey: "AGENT_RUN_SELECTOR_MISSING" },
   CONTRACT_DRAFT_BODY_TOO_LARGE: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_BODY_TOO_LARGE" },
   CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED" },

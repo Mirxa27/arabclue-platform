@@ -8,6 +8,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { runFailureCopyKey } from "@/lib/agents/run-failure";
+import { LiveDraftPanel } from "./live-draft-panel";
 import { RUN_STARTED_EVENT } from "@/lib/agents/autopilot";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -613,6 +614,11 @@ export function AgentWorkflow() {
   const doneCount = agentStates.filter((a) => a.status === "completed").length;
   const activeAgent = agentStates.find((a) => a.status === "running");
   const runHistory = runHistoryData?.runs ?? [];
+  // The live draft appears the moment the drafting agent starts and stays
+  // until the run ends — the words keep arriving while the contract finishes.
+  const draftingState = agentStates.find((a) => a.id === "PROPOSAL_DRAFTING");
+  const showLiveDraft =
+    running && !!runId && draftingState != null && normalizeStatus(draftingState.status) !== "pending";
 
   const projectTitle = useMemo(() => {
     const p = projectMeta?.project;
@@ -976,6 +982,7 @@ export function AgentWorkflow() {
 
       {/* Agent cards — one per step, once there is a run to show */}
       {hasRun ? (
+        <>
         <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {agentStates.map((a, idx) => {
             const meta = AGENT_META[a.id] ?? {
@@ -1140,6 +1147,8 @@ export function AgentWorkflow() {
             );
           })}
         </div>
+        {showLiveDraft && runId ? <LiveDraftPanel runId={runId} locale={locale} /> : null}
+        </>
       ) : (
         <div className="p-4 sm:p-5">
           <h4 className="text-xs font-semibold text-foreground/80">

@@ -11,7 +11,8 @@
  * with a delay; the attempt count reaches the stage through `getStepMetadata`.
  */
 
-import { getStepMetadata } from "workflow";
+import { getStepMetadata, getWritable } from "workflow";
+import { DRAFT_STREAM_NAMESPACE, createDraftStreamSink, type DraftStreamChunk } from "./draft-stream";
 import {
   failRunAfterCrash,
   runDraftingStage,
@@ -42,7 +43,9 @@ prepareStep.maxRetries = STAGE_RETRIES;
 
 async function draftingStep(input: PipelineInput, ctx: PreparedContext): Promise<DraftingOutcome> {
   "use step";
-  return runDraftingStage(input, ctx, attemptOf(draftingStep.maxRetries));
+  // The run's live draft: read back by GET /api/agents/runs/[id]/stream.
+  const sink = createDraftStreamSink(getWritable<DraftStreamChunk>({ namespace: DRAFT_STREAM_NAMESPACE }));
+  return runDraftingStage(input, ctx, attemptOf(draftingStep.maxRetries), sink);
 }
 draftingStep.maxRetries = STAGE_RETRIES;
 

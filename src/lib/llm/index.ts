@@ -1,6 +1,7 @@
 import ZAI from "z-ai-web-dev-sdk";
 import { glmThinkingParams } from "./glm-thinking";
 import { openAiCompatibleRequestBody } from "./request-shape";
+import { readOpenAiCompatibleStream } from "./sse-stream";
 import { redactSensitiveText } from "@/lib/api-failure";
 import { db } from "../db";
 import type { AIProviderConfig } from "@prisma/client";
@@ -123,6 +124,13 @@ export async function generateCompletion(
      * retrying it only multiplies the wall time inside a fixed function window.
      */
     maxAttempts?: number;
+    /**
+     * Receives the model's text as it is generated. Only the OpenAI-compatible
+     * transport streams; the others call this once with nothing and return the
+     * whole text as before. The final result is identical either way — the
+     * guardrails run on the assembled text.
+     */
+    onDelta?: (text: string) => void;
   }
 ): Promise<LLMResult> {
   const engine = opts?.engine ?? "DEFAULT";
@@ -307,7 +315,7 @@ export async function generateCompletion(
       // Prefer OpenAI-compatible path when apiBase is configured (live models)
       if (provider.apiBase?.trim()) {
         return await runTransport(
-          () => callOpenAiCompatible(provider, filteredMessages, temperature, maxTokens),
+          () => callOpenAiCompatible(provider, filteredMessages, temperature, maxTokens, opts?.onDelta),
           0.92
         );
       }
@@ -345,7 +353,7 @@ export async function generateCompletion(
       pid === "azure_openai"
     ) {
       return await runTransport(
-        () => callOpenAiCompatible(provider, filteredMessages, temperature, maxTokens),
+        () => callOpenAiCompatible(provider, filteredMessages, temperature, maxTokens, opts?.onDelta),
         0.92
       );
     }
@@ -405,11 +413,20 @@ type TransportCompletion = {
   truncated: boolean;
 };
 
+/**
+ * Vendors whose streaming accepts `stream_options.include_usage` (OpenAI and
+ * Azure by definition; DeepSeek, the `openai_compatible` row in production, per
+ * api-docs.deepseek.com). Others stream without it and the token count is
+ * estimated, as it already is when a vendor omits `usage`.
+ */
+const STREAM_USAGE_PROVIDERS = new Set(["openai", "azure_openai", "openai_compatible"]);
+
 async function callOpenAiCompatible(
   provider: AIProviderConfig,
   messages: LLMMessage[],
   temperature: number,
-  maxTokens: number
+  maxTokens: number,
+  onDelta?: (text: string) => void
 ): Promise<TransportCompletion> {
   const key = await resolveProviderApiKey(
     provider.provider,
@@ -448,13 +465,22 @@ async function callOpenAiCompatible(
     maxTokens,
   });
 
+  const streaming = typeof onDelta === "function";
+  const requestBody = streaming
+    ? {
+        ...body,
+        stream: true,
+        ...(STREAM_USAGE_PROVIDERS.has(pid) ? { stream_options: { include_usage: true } } : {}),
+      }
+    : body;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), provider.timeoutMs || 60000);
   try {
     const res = await fetch(`${base}/chat/completions`, {
       method: "POST",
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -463,6 +489,14 @@ async function callOpenAiCompatible(
         `${provider.provider} HTTP ${res.status}: ${errText.slice(0, 200)}`,
         { status: res.status }
       );
+    }
+    if (streaming) {
+      if (!res.body) {
+        throw new LLMTransportError(`${provider.provider} returned no stream body`, {
+          status: res.status,
+        });
+      }
+      return await readOpenAiCompatibleStream(res.body, onDelta);
     }
     const data = await res.json();
     const choice = data.choices?.[0];

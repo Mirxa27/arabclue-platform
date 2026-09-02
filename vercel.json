@@ -2,14 +2,31 @@
   "framework": "nextjs",
   "buildCommand": "bun run build",
   "installCommand": "bun install",
+  "functions": {
+    "src/app/api/agents/runs/**/stream/route.ts": {
+      "supportsCancellation": true
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self), geolocation=()" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(self), microphone=(self), geolocation=()"
+        }
       ]
     }
   ],
