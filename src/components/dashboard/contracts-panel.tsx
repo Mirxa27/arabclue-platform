@@ -249,6 +249,16 @@ export function ContractsPanel() {
           </Card>
         }
       >
+        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+          <h3 className="text-sm font-semibold">
+            {ar ? "العقود المُنشأة" : "Generated contracts"}
+          </h3>
+          <p className="text-[11px] text-muted-foreground">
+            {ar
+              ? `${contracts.length} — الأحدث أولاً · تبقى كل مسودة للمراجعة القانونية`
+              : `${contracts.length} — newest first · every draft awaits legal review`}
+          </p>
+        </div>
         <div className="grid gap-3">
           {contracts.map((c) => {
             const canSubmit = ![
@@ -261,8 +271,11 @@ export function ContractsPanel() {
             return (
               <Card
                 key={c.id}
-                className="p-4 border-border/60 flex flex-wrap items-center justify-between gap-3 hover:border-teal-500/30 transition-colors"
+                className="p-4 border-border/60 hover:border-teal-500/30 transition-colors"
               >
+                {/* The row lives in its own flex box: Card is a column flex, so
+                    putting the row classes on it centred every title and button. */}
+                <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold truncate">
@@ -375,6 +388,7 @@ export function ContractsPanel() {
                     )}
                     PDF
                   </Button>
+                </div>
                 </div>
               </Card>
             );

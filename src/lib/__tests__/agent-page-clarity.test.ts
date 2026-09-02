@@ -159,3 +159,18 @@ describe("the compliance monitor header in a narrow column", () => {
     has("src/components/dashboard/compliance-monitor.tsx", "a wrapping header", /flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4/);
   });
 });
+
+describe("the generated contracts list", () => {
+  const PANEL = "src/components/dashboard/contracts-panel.tsx";
+  test("rows read left to right and the list has a heading", () => {
+    // Card is a column flex; row classes on it centred every title and button.
+    lacks(PANEL, "row classes on the Card", /<Card\s+key=\{c\.id\}\s+className="[^"]*flex flex-wrap items-center justify-between/);
+    has(PANEL, "a heading over the list", /Generated contracts/);
+  });
+});
+
+describe("the admin providers list", () => {
+  test("grows with the page instead of scrolling inside 36rem", () => {
+    lacks("src/components/admin/ai-providers.tsx", "the inner scroll cap", /max-h-\[36rem\] overflow-y-auto/);
+  });
+});

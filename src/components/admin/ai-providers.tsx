@@ -313,7 +313,9 @@ export function AdminAIProviders() {
         ))}
       </div>
 
-      <div className="p-4 space-y-3 max-h-[36rem] overflow-y-auto scrollbar-thin">
+      {/* The list grows with the page; a 36rem inner scroll hid providers past
+          the third card above a screen of empty space (production audit). */}
+      <div className="p-4 space-y-3">
         {isLoading ? (
           <div className="p-8 text-center flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
