@@ -291,3 +291,31 @@ describe("state that crosses a step boundary", () => {
     expect(first.getEntries()).toHaveLength(1);
   });
 });
+
+describe("the run tells its initiator how it ended", () => {
+  test("finalise notifies on completion and the failure path on failure, never failing the run for it", () => {
+    const src = read(ORCH);
+    expect(/notifyAgentRunCompleted\(/.test(src)).toBe(true);
+    expect(/notifyAgentRunFailed\(/.test(src)).toBe(true);
+    // Both sit inside their own try/catch: a notification problem is logged,
+    // not surfaced as a pipeline failure.
+    expect(/try\s*\{\s*await notifyAgentRunCompleted\([\s\S]{0,400}\}\s*catch/.test(src)).toBe(true);
+    expect(/try\s*\{\s*await notifyAgentRunFailed\([\s\S]{0,400}\}\s*catch/.test(src)).toBe(true);
+  });
+
+  test("the copy and the event labels exist in both languages", () => {
+    const i18n = read("src/lib/i18n.ts");
+    for (const key of [
+      "notification_agent_run_completed_subject",
+      "notification_agent_run_completed_body",
+      "notification_agent_run_completed_event",
+      "notification_agent_run_failed_subject",
+      "notification_agent_run_failed_body",
+      "notification_agent_run_failed_event",
+    ]) {
+      expect(new RegExp(`^  ${key}: \\{`, "m").test(i18n), key).toBe(true);
+    }
+    expect(/AGENT_RUN_COMPLETED:\s*"notification_agent_run_completed_event"/.test(i18n)).toBe(true);
+    expect(/AGENT_RUN_FAILED:\s*"notification_agent_run_failed_event"/.test(i18n)).toBe(true);
+  });
+});

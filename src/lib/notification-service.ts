@@ -16,6 +16,7 @@
 import { db } from "./db";
 import { isEmailConfigured, sendEmail } from "./email";
 import { tr } from "./i18n";
+import { getPathForView } from "./dashboard-routes";
 import { utcDeadline } from "./time";
 import type { Locale } from "./types";
 
@@ -25,7 +26,9 @@ export type NotificationType =
   | "REVIEW_REQUESTED"
   | "REVIEW_DECISION"
   | "SUBSCRIPTION_PAST_DUE"
-  | "SUBSCRIPTION_FAILED";
+  | "SUBSCRIPTION_FAILED"
+  | "AGENT_RUN_COMPLETED"
+  | "AGENT_RUN_FAILED";
 
 export type NotificationRecipient = {
   userId: string;
@@ -96,8 +99,9 @@ export function composeContent(
   const subject = interpolate(tr(subjectKey, locale), params ?? {});
   const bodyEn = interpolate(tr(bodyKey, "en"), params ?? {});
   const bodyAr = interpolate(tr(bodyKey, "ar"), params ?? {});
-  const titleEn = tr(subjectKey, "en");
-  const titleAr = tr(subjectKey, "ar");
+  // Subjects may name the project; the in-app title is the same sentence.
+  const titleEn = interpolate(tr(subjectKey, "en"), params ?? {});
+  const titleAr = interpolate(tr(subjectKey, "ar"), params ?? {});
 
   return { subject, bodyEn, bodyAr, titleEn, titleAr };
 }
@@ -338,9 +342,77 @@ export async function getNotificationRecipients(
     case "SUBSCRIPTION_PAST_DUE":
     case "SUBSCRIPTION_FAILED":
       return getSubscriptionAlertRecipients(context);
+    case "AGENT_RUN_COMPLETED":
+    case "AGENT_RUN_FAILED":
+      return getRunInitiatorRecipient(context);
     default:
       return [];
   }
+}
+
+/** The member who started the run — the one who may have walked away from it. */
+async function getRunInitiatorRecipient(
+  context: GetNotificationRecipientsContext
+): Promise<NotificationRecipient[]> {
+  if (!context.userId) return [];
+  const user = await db.user.findUnique({
+    where: { id: context.userId },
+    select: { id: true, email: true, locale: true },
+  });
+  if (!user) return [];
+  return [{ userId: user.id, email: user.email, locale: (user.locale as Locale) || "ar" }];
+}
+
+type AgentRunNotificationInput = {
+  workspaceId: string;
+  userId: string;
+  runId: string;
+  projectId: string;
+  projectTitle: string;
+};
+
+/** The proposal and contract drafts are ready for the initiator's review. */
+export async function notifyAgentRunCompleted(
+  opts: AgentRunNotificationInput
+): Promise<SendTransactionalNotificationResult> {
+  const eventId = `agent_run_completed_${opts.runId}`;
+  const recipients = await getNotificationRecipients("AGENT_RUN_COMPLETED", {
+    workspaceId: opts.workspaceId,
+    userId: opts.userId,
+  });
+  if (recipients.length === 0) return { eventId, totalRecipients: 0, deliveries: [] };
+  return sendTransactionalNotification({
+    eventId,
+    recipients,
+    type: "AGENT_RUN_COMPLETED",
+    subjectKey: "notification_agent_run_completed_subject",
+    bodyKey: "notification_agent_run_completed_body",
+    bodyParams: { projectTitle: opts.projectTitle },
+    href: getPathForView("proposals", opts.projectId),
+    workspaceId: opts.workspaceId,
+  });
+}
+
+/** The run ended without a proposal; the agents page carries the classified reason. */
+export async function notifyAgentRunFailed(
+  opts: AgentRunNotificationInput
+): Promise<SendTransactionalNotificationResult> {
+  const eventId = `agent_run_failed_${opts.runId}`;
+  const recipients = await getNotificationRecipients("AGENT_RUN_FAILED", {
+    workspaceId: opts.workspaceId,
+    userId: opts.userId,
+  });
+  if (recipients.length === 0) return { eventId, totalRecipients: 0, deliveries: [] };
+  return sendTransactionalNotification({
+    eventId,
+    recipients,
+    type: "AGENT_RUN_FAILED",
+    subjectKey: "notification_agent_run_failed_subject",
+    bodyKey: "notification_agent_run_failed_body",
+    bodyParams: { projectTitle: opts.projectTitle },
+    href: getPathForView("agents", opts.projectId),
+    workspaceId: opts.workspaceId,
+  });
 }
 
 /**

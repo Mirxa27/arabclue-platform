@@ -1490,6 +1490,22 @@ export const localizationRegistry = {
     ar: "لم نتمكن من تحصيل دفعة الاشتراك. يرجى تحديث معلومات الدفع لتجنب انقطاع الخدمة.",
     en: "We were unable to process your subscription payment. Please update your payment information to avoid service interruption.",
   },
+  notification_agent_run_completed_subject: {
+    ar: "اكتمل العطاء: {{projectTitle}}",
+    en: "Your proposal is ready: {{projectTitle}}",
+  },
+  notification_agent_run_completed_body: {
+    ar: "أنهى الوكلاء قراءة مستندات المناقصة «{{projectTitle}}» وصاغوا مسودة العطاء ومسودة العقد ثنائية اللغة. المسودتان بانتظار مراجعتك واعتمادك.",
+    en: "The agents have read the tender documents for “{{projectTitle}}” and drafted the proposal and the bilingual contract. Both drafts are waiting for your review and approval.",
+  },
+  notification_agent_run_failed_subject: {
+    ar: "توقف تشغيل الوكلاء: {{projectTitle}}",
+    en: "The agent run stopped: {{projectTitle}}",
+  },
+  notification_agent_run_failed_body: {
+    ar: "لم يكتمل تشغيل الوكلاء لمشروع «{{projectTitle}}». افتح صفحة الوكلاء لمعرفة السبب وابدأ تشغيلاً جديداً عندما تكون مستعداً.",
+    en: "The agent run for “{{projectTitle}}” did not finish. Open the agents page to see why, and start a new run when you are ready.",
+  },
 
   // Platform completion: account and invitation surfaces
   account_registration_success: { ar: "تم إنشاء الحساب ومساحة العمل بنجاح", en: "Account and workspace created successfully" },
@@ -1740,6 +1756,8 @@ export const localizationRegistry = {
   notification_review_rejected_event: { ar: "تم رفض العرض", en: "Proposal rejected" },
   notification_subscription_past_due_event: { ar: "الاشتراك متأخر السداد", en: "Subscription past due" },
   notification_subscription_failed_event: { ar: "فشل الاشتراك", en: "Subscription failed" },
+  notification_agent_run_completed_event: { ar: "اكتمل تشغيل الوكلاء", en: "Agent run completed" },
+  notification_agent_run_failed_event: { ar: "توقف تشغيل الوكلاء", en: "Agent run stopped" },
   notification_minimized_subject: { ar: "إشعار {{eventLabel}}: {{title}}", en: "{{eventLabel}} notification: {{title}}" },
   notification_minimized_body: {
     ar: "يتطلب الحدث {{eventLabel}} للعنصر «{{title}}» انتباهك. المنفذ: {{actor}}. الوقت: {{timestamp}}. الرابط: {{link}}",
@@ -2674,6 +2692,8 @@ export const DYNAMIC_TRANSLATION_KEY_MANIFEST = {
     REVIEW_REJECTED: "notification_review_rejected_event",
     SUBSCRIPTION_PAST_DUE: "notification_subscription_past_due_event",
     SUBSCRIPTION_FAILED: "notification_subscription_failed_event",
+    AGENT_RUN_COMPLETED: "notification_agent_run_completed_event",
+    AGENT_RUN_FAILED: "notification_agent_run_failed_event",
   },
   notificationDelivery: {
     PENDING: "notification_delivery_pending",
@@ -2940,6 +2960,8 @@ export const COMPLETION_TRANSLATION_KEY_MANIFEST = {
     "notification_review_requested_event", "notification_review_approved_event",
     "notification_review_rejected_event", "notification_subscription_past_due_event",
     "notification_subscription_failed_event", "notification_minimized_subject", "notification_minimized_body",
+    "notification_agent_run_completed_subject", "notification_agent_run_completed_body", "notification_agent_run_completed_event",
+    "notification_agent_run_failed_subject", "notification_agent_run_failed_body", "notification_agent_run_failed_event",
     "notification_delivery_pending", "notification_delivery_sent", "notification_delivery_failed",
     "notification_delivery_unconfigured",
   ],

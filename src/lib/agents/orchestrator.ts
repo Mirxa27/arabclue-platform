@@ -76,6 +76,7 @@ import {
   analyticsBackgroundOrigin,
   recordAgentRunAnalyticsEvent,
 } from "../analytics-collector";
+import { notifyAgentRunCompleted, notifyAgentRunFailed } from "../notification-service";
 
 /**
  * The six-agent pipeline as four durable stages.
@@ -284,6 +285,8 @@ async function settleStageFailure(
     agentId?: AgentId;
     attempt: StageAttempt;
     runStartedAtIso: string;
+    /** Named in the failure notification when the stage knows it. */
+    projectTitle?: string;
   },
 ): Promise<StageFailure> {
   const { input, recorder, attempt } = opts;
@@ -372,6 +375,17 @@ async function settleStageFailure(
         progressPercent: toProgressPercent(overall),
       },
     });
+    try {
+      await notifyAgentRunFailed({
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        runId: input.runId,
+        projectId: input.projectId,
+        projectTitle: opts.projectTitle ?? input.projectId,
+      });
+    } catch (notifyErr) {
+      console.error("[orchestrator] failure notification failed", notifyErr);
+    }
     return { ok: false, result: { agentStates: recorder.states, overallProgress: overall, status: "FAILED", errorMessage: message } };
   } catch (inner) {
     if (inner instanceof PipelineCancelledError) return settleStageFailure(inner, opts);
@@ -1504,7 +1518,14 @@ export async function runDraftingStage(
     };
     });
   } catch (err) {
-    return settleStageFailure(err, { input, recorder, agentId: "PROPOSAL_DRAFTING", attempt, runStartedAtIso: ctx.runStartedAtIso });
+    return settleStageFailure(err, {
+      input,
+      recorder,
+      agentId: "PROPOSAL_DRAFTING",
+      attempt,
+      runStartedAtIso: ctx.runStartedAtIso,
+      projectTitle: ctx.project.title,
+    });
   } finally {
     // Closed only once the draft finished whole. A failed attempt leaves the
     // stream open so the retry can keep writing to it (a closed stream answers
@@ -1831,7 +1852,14 @@ export async function runLawStage(
     };
     });
   } catch (err) {
-    return settleStageFailure(err, { input, recorder, agentId: "LAW_CONTRACT", attempt, runStartedAtIso: ctx.runStartedAtIso });
+    return settleStageFailure(err, {
+      input,
+      recorder,
+      agentId: "LAW_CONTRACT",
+      attempt,
+      runStartedAtIso: ctx.runStartedAtIso,
+      projectTitle: ctx.project.title,
+    });
   } finally {
     if (sink) await (contractStreamed ? sink.close() : sink.release());
   }
@@ -1954,6 +1982,19 @@ export async function runFinalizeStage(
         progressPercent: toProgressPercent(overall),
       },
     });
+    // The initiator may have walked away from an autopilot run; tell them the
+    // drafts are ready. In-app always, email when configured, once per run.
+    try {
+      await notifyAgentRunCompleted({
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        runId: input.runId,
+        projectId: input.projectId,
+        projectTitle: ctx.project.title,
+      });
+    } catch (notifyErr) {
+      console.error("[orchestrator] completion notification failed", notifyErr);
+    }
 
     return {
       agentStates: states,
@@ -1962,7 +2003,9 @@ export async function runFinalizeStage(
       proposalId: drafting.proposalId,
     };
   } catch (err) {
-    return (await settleStageFailure(err, { input, recorder, attempt, runStartedAtIso })).result;
+    return (
+      await settleStageFailure(err, { input, recorder, attempt, runStartedAtIso, projectTitle: ctx.project.title })
+    ).result;
   }
 }
 
