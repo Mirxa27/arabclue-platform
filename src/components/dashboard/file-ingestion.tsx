@@ -314,23 +314,25 @@ export function FileIngestion() {
   return (
     <Card className="p-0 overflow-hidden border-border/60">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/30">
-        <div className="flex items-center gap-2.5">
-          <div className="size-8 rounded-lg bg-chart-1/10 flex items-center justify-center">
+      {/* Wraps: in the projects page's one-third column the title broke over
+          three lines and the autopilot label stood in a sliver beside it. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 px-5 py-4 border-b border-border/60 bg-muted/30">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="size-8 shrink-0 rounded-lg bg-chart-1/10 flex items-center justify-center">
             <UploadCloud className="size-4 text-chart-1" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold">{tr("section_ingestion", locale)}</h3>
             <p className="text-[11px] text-muted-foreground">
               {locale === "ar" ? "منطقة الإسقاط المركزية" : "Central drop zone"}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <label className="flex items-center gap-2 cursor-pointer select-none whitespace-nowrap">
             <span className="text-[11px] font-medium text-foreground/80">
               {locale === "ar" ? "الطيار الآلي" : "Autopilot"}
-              <span className="hidden sm:inline text-muted-foreground font-normal">
+              <span className="hidden xl:inline text-muted-foreground font-normal">
                 {locale === "ar" ? " — شغّل الوكلاء بعد الرفع" : " — run the agents after upload"}
               </span>
             </span>
