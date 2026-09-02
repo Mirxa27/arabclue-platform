@@ -28,17 +28,22 @@ export class ProviderUnavailableError extends Error {
   /** Underlying provider name when known (e.g. `"openai"`, `"anthropic"`). */
   readonly provider: string | undefined;
 
+  /** Guardrail reasons when the kind is `guardrail_rejected`; never user copy. */
+  readonly detail: string | undefined;
+
   constructor(opts: {
     context: string;
     llmFailureKind?: LLMFailureKind;
     provider?: string;
     cause?: unknown;
+    detail?: string;
   }) {
     super(
       `Provider unavailable in real-AI-only mode (${opts.context}${
         opts.llmFailureKind ? `, ${opts.llmFailureKind}` : ""
-      })`,
+      }${opts.detail ? `: ${opts.detail}` : ""})`,
     );
+    this.detail = opts.detail;
     this.name = "ProviderUnavailableError";
     this.context = opts.context;
     this.llmFailureKind = opts.llmFailureKind;
@@ -60,7 +65,10 @@ export class ProviderUnavailableError extends Error {
  * the caller proceeds with its existing fallback.
  */
 export function guardOrThrow(
-  result: Pick<LLMResult, "fallback" | "failureKind" | "provider">,
+  result: Pick<
+    LLMResult,
+    "fallback" | "failureKind" | "provider" | "guardrailReasons"
+  >,
   context: string,
 ): void {
   if (!result.fallback) return;
@@ -69,6 +77,11 @@ export function guardOrThrow(
     context,
     llmFailureKind: result.failureKind,
     provider: result.provider,
+    // The guardrail's own words, so the run record answers "why" instead of
+    // the operator re-running the step to find out.
+    detail: result.guardrailReasons?.length
+      ? result.guardrailReasons.join(", ")
+      : undefined,
   });
 }
 

@@ -90,6 +90,12 @@ export interface LLMResult {
   truncated?: boolean;
   /** Transport attempts consumed (>= 1) when a provider was contacted. */
   attempts?: number;
+  /**
+   * What the output guardrail observed (`confidence_0.52_below_0.85`,
+   * `refs_omitted_1`, `hallucination_cues`). Populated on rejection so the
+   * run record can say why, and on success as an advisory for the audit row.
+   */
+  guardrailReasons?: string[];
 }
 
 export async function generateCompletion(
@@ -222,6 +228,7 @@ export async function generateCompletion(
         engine,
         failureKind: "guardrail_rejected",
         attempts: meta.attempts,
+        guardrailReasons: guarded.reasons,
       };
     }
     return {
@@ -235,6 +242,7 @@ export async function generateCompletion(
       failureKind: "none",
       truncated,
       attempts: meta.attempts,
+      guardrailReasons: guarded.reasons.length ? guarded.reasons : undefined,
     };
   };
 

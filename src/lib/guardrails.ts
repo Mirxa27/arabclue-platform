@@ -21,13 +21,22 @@ const TOXIC_PATTERNS: RegExp[] = [
 ];
 
 /** Phrases that typically signal ungrounded / fabricated claims */
-const HALLUCINATION_CUES: RegExp[] = [
+/** The model talking about itself instead of the tender. */
+const AI_SELF_REFERENCE_CUES: RegExp[] = [
   /\bas an ai (language )?model\b/i,
   /\bi (don't|do not) have (access|real[- ]time)\b/i,
   /\bmy (training|knowledge) (data|cutoff)\b/i,
   /\baccording to (my|the) (knowledge|training)\b/i,
-  /\b(?:etimad|اعتماد)\s*(?:ref|reference|#)?\s*[:#]?\s*[A-Z0-9-]{12,}\b/i,
 ];
+/**
+ * An Etimad reference in prose. A cue for the grounding *score* only — whether
+ * a given reference is fabricated is decided by the redaction below, which
+ * keeps the ones present in the context. Treating every reference as a
+ * hallucination penalised proposals for quoting the tender's own number.
+ */
+const ETIMAD_REF_CUE =
+  /\b(?:etimad|اعتماد)\s*(?:ref|reference|#)?\s*[:#]?\s*[A-Z0-9-]{12,}\b/i;
+const HALLUCINATION_CUES: RegExp[] = [...AI_SELF_REFERENCE_CUES, ETIMAD_REF_CUE];
 
 /** Bid pricing / commercial strategy — must refuse (Section 2) */
 const PRICING_INPUT_PATTERNS: RegExp[] = [
@@ -178,17 +187,33 @@ export function applyOutputGuardrails(
     };
   }
 
+  // Signals that the model made something up, as opposed to merely saying it
+  // in its own words. Only these make a low confidence fatal.
+  let fabricationSignal = false;
   if (provider.hallucinationGuard) {
     const grounding = estimateGroundingConfidence(out, messages);
     confidence = Math.min(confidence, grounding + 0.35);
-    const ctx = messages.map((m) => m.content).join("\n");
+    const ctx = messages.map((m) => m.content).join("\n").toLowerCase();
+    let refsOmitted = 0;
+    // Hyphenated on purpose: the product's own references look like
+    // `ETM-EE794200-85E3-…`, which the previous `[A-Z0-9]{8,}` never matched,
+    // so a fabricated one in that shape sailed through unredacted.
     out = out.replace(
-      /\b(?:ETM|ETIMAD|اعتماد)[-_\s]?[A-Z0-9]{8,}\b/gi,
-      (match) => (ctx.toLowerCase().includes(match.toLowerCase()) ? match : "[REF_OMITTED]")
+      /\b(?:ETM|ETIMAD|اعتماد)[-_\s]?[A-Z0-9][A-Z0-9-]{7,}\b/gi,
+      (match) => {
+        if (ctx.includes(match.toLowerCase())) return match;
+        refsOmitted += 1;
+        return "[REF_OMITTED]";
+      }
     );
-    if (HALLUCINATION_CUES.some((r) => r.test(out))) {
+    if (refsOmitted > 0) {
+      reasons.push(`refs_omitted_${refsOmitted}`);
+      fabricationSignal = true;
+    }
+    if (AI_SELF_REFERENCE_CUES.some((r) => r.test(out))) {
       reasons.push("hallucination_cues");
       confidence *= 0.7;
+      fabricationSignal = true;
     }
   }
 
@@ -200,7 +225,16 @@ export function applyOutputGuardrails(
     reasons.push(
       `confidence_${confidence.toFixed(2)}_below_${provider.confidenceThreshold}`
     );
-    return { content: "", confidence, rejected: true, reasons };
+    // Lexical overlap is a proxy, not a detector. A structured JSON answer, a
+    // paraphrase, or any Arabic sentence (clitics turn a restated word into a
+    // new token) shares few tokens with its prompt without fabricating a
+    // thing. Under strict real-AI mode a rejection here fails the whole run,
+    // and it did, on every generative step. So low confidence is fatal only
+    // beside a fabrication signal; otherwise it travels with the result for
+    // the UI and the audit row.
+    if (fabricationSignal) {
+      return { content: "", confidence, rejected: true, reasons };
+    }
   }
 
   return { content: out, confidence, rejected: false, reasons };
