@@ -23,6 +23,7 @@ import {
   DRAFT_STREAM_NAMESPACE,
   createDraftStreamSink,
   encodeSseEvent,
+  hideArticleMarkers,
   streamNamespaceFor,
   type DraftStreamChunk,
 } from "../agents/draft-stream";
@@ -172,6 +173,13 @@ describe("createDraftStreamSink", () => {
     await expect(sink.done(true)).resolves.toBeUndefined();
     await expect(sink.close()).resolves.toBeUndefined();
     expect(sink.failed).toBe(true);
+  });
+});
+
+describe("hideArticleMarkers", () => {
+  test("drops the bilingual fence lines and nothing else", () => {
+    const md = "## Article 1\n:::en\nThe Contractor shall…\n:::\n:::ar\nيلتزم المتعاقد…\n:::\nNext ::: inline stays";
+    expect(hideArticleMarkers(md)).toBe("## Article 1\nThe Contractor shall…\nيلتزم المتعاقد…\nNext ::: inline stays");
   });
 });
 

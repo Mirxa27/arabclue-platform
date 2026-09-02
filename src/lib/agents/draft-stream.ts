@@ -171,6 +171,15 @@ export function reduceDraftChunk(view: DraftView, chunk: DraftStreamChunk): Draf
   }
 }
 
+/**
+ * The bilingual contract format fences each article's languages with `:::en`,
+ * `:::ar` and `:::` lines that the contract renderer understands and a plain
+ * markdown pass shows as typed. The live view hides them; the saved text keeps them.
+ */
+export function hideArticleMarkers(markdown: string): string {
+  return markdown.replace(/^[ \t]*:::(?:en|ar)?[ \t]*\r?\n?/gm, "");
+}
+
 /** One server-sent event per chunk; the id is the chunk's index in the stream so a client can resume. */
 export function encodeSseEvent(index: number, chunk: DraftStreamChunk): string {
   return `id: ${index}\ndata: ${JSON.stringify(chunk)}\n\n`;

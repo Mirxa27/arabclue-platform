@@ -19,6 +19,7 @@ import { tr } from "@/lib/i18n";
 import { markdownToHtml } from "@/lib/markdown";
 import type { Locale } from "@/lib/types";
 import {
+  hideArticleMarkers,
   initialDraftView,
   reduceDraftChunk,
   type DraftStreamChunk,
@@ -87,7 +88,10 @@ export function LiveDraftPanel({
   // `markdownToHtml` escapes every span of content before emitting markup —
   // the draft is model output and untrusted.
   const deferredText = useDeferredValue(text);
-  const html = useMemo(() => markdownToHtml(deferredText), [deferredText]);
+  const html = useMemo(
+    () => markdownToHtml(channel === "contract" ? hideArticleMarkers(deferredText) : deferredText),
+    [deferredText, channel],
+  );
 
   // Follow the writing: the newest words stay in view.
   useEffect(() => {
