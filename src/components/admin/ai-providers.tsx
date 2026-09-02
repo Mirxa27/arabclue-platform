@@ -1085,6 +1085,26 @@ function GuardrailToggle({
   );
 }
 
+/**
+ * What to type as API Base for the provider types whose root is not one fixed
+ * host: Azure is per resource, Bedrock per Region. The transport appends the
+ * vendor path (`/openai/v1`) itself, so the bare endpoint is enough.
+ */
+function apiBasePlaceholder(provider: string): string {
+  switch (provider) {
+    case "azure_openai":
+      return "https://RESOURCE.openai.azure.com";
+    case "aws_bedrock":
+      return "https://bedrock-runtime.REGION.amazonaws.com";
+    case "google":
+      return "https://generativelanguage.googleapis.com/v1beta/openai";
+    case "ollama":
+      return "http://127.0.0.1:11434/v1";
+    default:
+      return "https://openrouter.ai/api/v1";
+  }
+}
+
 function AddProviderForm({
   presets,
   engines,
@@ -1315,7 +1335,7 @@ function AddProviderForm({
         <Input
           value={form.apiBase}
           onChange={(e) => setForm({ ...form, apiBase: e.target.value })}
-          placeholder="https://openrouter.ai/api/v1"
+          placeholder={apiBasePlaceholder(form.provider)}
           className="h-8 text-xs mt-1 font-mono"
         />
       </div>
