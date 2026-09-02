@@ -182,6 +182,24 @@ describe("the hard guards still bite", () => {
     expect(r.reasons.some((x) => x.startsWith("confidence_"))).toBe(true);
   });
 
+  test("prose about Etimad is not a reference — a reference has a digit", () => {
+    // Production, third attempt: `refs_omitted_2, confidence_0.80_below_0.85`.
+    // The pattern was case-insensitive and took any 8+ characters after the
+    // word, so "Etimad platform" and "Etimad requirements" were redacted and
+    // counted as fabricated references. Reference numbers carry digits;
+    // words do not.
+    const r = applyOutputGuardrails(
+      `${faithfulJson.slice(0, -1)},"notes":"Submit through the Etimad platform; Etimad requirements apply. Project code ETM-MRXACKLE is the internal handle."}`,
+      productionProvider,
+      messages,
+      0.93,
+    );
+    expect(r.rejected, `reasons: ${r.reasons.join(",")}`).toBe(false);
+    expect(r.content).toContain("Etimad platform");
+    expect(r.content).toContain("ETM-MRXACKLE");
+    expect(r.reasons.some((x) => x.startsWith("refs_omitted_"))).toBe(false);
+  });
+
   test("pricing and empty output are rejected regardless of grounding", () => {
     const priced = applyOutputGuardrails(
       "Recommended price: SAR 4,200,000, with a margin of 12% on the base.",

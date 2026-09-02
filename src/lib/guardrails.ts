@@ -197,9 +197,12 @@ export function applyOutputGuardrails(
     let refsOmitted = 0;
     // Hyphenated on purpose: the product's own references look like
     // `ETM-EE794200-85E3-…`, which the previous `[A-Z0-9]{8,}` never matched,
-    // so a fabricated one in that shape sailed through unredacted.
+    // so a fabricated one in that shape sailed through unredacted. And a
+    // reference has a digit: case-insensitive, "Etimad platform" is eight
+    // letters after the word and was being redacted and counted as a
+    // fabrication (production: `refs_omitted_2`).
     out = out.replace(
-      /\b(?:ETM|ETIMAD|اعتماد)[-_\s]?[A-Z0-9][A-Z0-9-]{7,}\b/gi,
+      /\b(?:ETM|ETIMAD|اعتماد)[-_\s]?(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{7,}\b/gi,
       (match) => {
         if (ctx.includes(match.toLowerCase())) return match;
         refsOmitted += 1;
