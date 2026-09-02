@@ -204,7 +204,7 @@ export function createFakeClauseCatalogRepository(): FakeClauseCatalogRepository
         workspaceId: null,
         isCustom: false,
         isSystem: true,
-        isActive: true,
+        isActive: false,
         customizable: true,
         version: 1,
         category: input.category,
@@ -249,7 +249,7 @@ export function createFakeClauseCatalogRepository(): FakeClauseCatalogRepository
       row.counselReviewRequired = CLAUSE_COUNSEL_REVIEW_REQUIRED;
       row.sourceStatus = CLAUSE_SOURCE_STATUS;
       row.translationStatus = CLAUSE_TRANSLATION_STATUS;
-      row.isActive = true;
+      row.isActive = false;
       row.isSystem = true;
       row.isCustom = false;
       return { kind: "WRITTEN" };

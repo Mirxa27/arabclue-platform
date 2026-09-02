@@ -32,7 +32,11 @@ export async function GET(request: NextRequest) {
         // which answers HTTP 503 SCHEMA_MIGRATION_PENDING (requirement 16.2).
         const count = await db.standardClause.count({ where: { workspaceId: null } });
         if (count === 0) {
-          await seedStandardClausesWithPrisma().catch(() => {});
+          // Logged, not swallowed: an empty catalog failed here on every read
+          // for weeks against a check constraint, and nothing said so.
+          await seedStandardClausesWithPrisma().catch((err: unknown) => {
+            console.error("[clauses] catalog seed failed", err);
+          });
         }
 
         const result = await listClauses({

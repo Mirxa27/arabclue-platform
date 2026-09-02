@@ -75,6 +75,85 @@ export const CLAUSE_LIFECYCLE = "DRAFT";
 export const CLAUSE_LEGAL_REVIEW_STATUS = "UNREVIEWED";
 export const CLAUSE_TRANSLATION_STATUS = "DRAFT";
 export const CLAUSE_SOURCE_STATUS = "PENDING_OFFICIAL_SOURCE_REVIEW";
+
+/**
+ * Which rows the catalog shows. Lifecycle, not the approval flag: the safety
+ * migration (`StandardClause_review_state_check`) reserves `isActive` for a
+ * clause that is PUBLISHED, legally APPROVED and translation APPROVED, and
+ * nothing seeds such a row. Reading by `isActive` left the library empty.
+ */
+export const CLAUSE_CATALOG_VISIBLE_WHERE = {
+  lifecycle: { not: "RETIRED" },
+} as const;
+
+/**
+ * The database's own rule for a clause row, in code, so the two write paths
+ * can be tested against it without Postgres. Mirrors migration
+ * 20260724214500_contract_template_safety.
+ */
+export function satisfiesClauseReviewStateCheck(row: {
+  isActive: boolean;
+  lifecycle: string;
+  legalReviewStatus: string;
+  translationStatus: string;
+  canonicalHash: string | null;
+  provenanceJson: string | null;
+}): boolean {
+  const enums =
+    ["DRAFT", "PUBLISHED", "RETIRED"].includes(row.lifecycle) &&
+    ["UNREVIEWED", "IN_REVIEW", "APPROVED", "REJECTED"].includes(row.legalReviewStatus) &&
+    ["DRAFT", "REVIEWED", "APPROVED", "REJECTED"].includes(row.translationStatus);
+  if (!enums) return false;
+  if (!row.isActive) return true;
+  return (
+    row.lifecycle === "PUBLISHED" &&
+    row.legalReviewStatus === "APPROVED" &&
+    row.translationStatus === "APPROVED" &&
+    row.canonicalHash !== null &&
+    row.provenanceJson !== null
+  );
+}
+
+/** The row a workspace custom clause is created with. Inactive until reviewed. */
+export function customClauseCreateData(input: {
+  clauseKey: string;
+  workspaceId: string;
+  category: string;
+  nameEn: string;
+  nameAr: string;
+  contentEn: string;
+  contentAr: string;
+  mandatory: boolean;
+  order: number;
+  canonicalHash: string;
+  provenanceJson: string;
+}) {
+  return {
+    clauseKey: input.clauseKey,
+    workspaceId: input.workspaceId,
+    isCustom: true,
+    isSystem: false,
+    // `isActive` means approved for execution (see the check constraint); a
+    // freshly written clause is neither, and setting it here failed the insert.
+    isActive: false,
+    category: input.category,
+    nameEn: input.nameEn,
+    nameAr: input.nameAr,
+    contentEn: input.contentEn,
+    contentAr: input.contentAr,
+    mandatory: input.mandatory,
+    customizable: true,
+    order: input.order,
+    version: 1,
+    canonicalHash: input.canonicalHash,
+    lifecycle: CLAUSE_LIFECYCLE,
+    legalReviewStatus: CLAUSE_LEGAL_REVIEW_STATUS,
+    counselReviewRequired: CLAUSE_COUNSEL_REVIEW_REQUIRED,
+    sourceStatus: CLAUSE_SOURCE_STATUS,
+    translationStatus: CLAUSE_TRANSLATION_STATUS,
+    provenanceJson: input.provenanceJson,
+  };
+}
 export const CLAUSE_COUNSEL_REVIEW_REQUIRED = true;
 /** Prefix of a workspace custom clause key; the suffix is a cryptographic UUID. */
 export const CUSTOM_CLAUSE_KEY_PREFIX = "custom";
@@ -542,7 +621,7 @@ export async function listClauses(input: ListClausesInput) {
   const take = Math.min(Math.max(input.take ?? 25, 1), MAX_CLAUSE_LIST_TAKE);
 
   const whereBase: any = {
-    isActive: true,
+    ...CLAUSE_CATALOG_VISIBLE_WHERE,
   };
 
   if (input.category) whereBase.category = input.category;
@@ -615,7 +694,7 @@ export async function getClauseByIdentifier(identifier: string, workspaceId?: st
   if (!trimmed) throw new ApiError("Clause not found", 404, "CLAUSE_NOT_FOUND");
 
   const where: any = {
-    isActive: true,
+    ...CLAUSE_CATALOG_VISIBLE_WHERE,
     OR: [{ id: trimmed }, { clauseKey: trimmed }],
   };
 
@@ -636,7 +715,7 @@ export async function getClauseByIdentifier(identifier: string, workspaceId?: st
   } else {
     const row = await db.standardClause.findFirst({
       where: {
-        isActive: true,
+        ...CLAUSE_CATALOG_VISIBLE_WHERE,
         workspaceId: null,
         OR: [{ id: trimmed }, { clauseKey: trimmed }],
       },
@@ -663,7 +742,7 @@ export async function selectClausesForTemplate(input: SelectClausesInput) {
   const uniqueIds = [...new Set(input.clauseIds.map((s) => s.trim()).filter(Boolean))];
 
   const baseWhere: any = {
-    isActive: true,
+    ...CLAUSE_CATALOG_VISIBLE_WHERE,
   };
   if (input.workspaceId) {
     baseWhere.OR = [{ workspaceId: null }, { workspaceId: input.workspaceId }];
@@ -697,7 +776,7 @@ export async function selectClausesForTemplate(input: SelectClausesInput) {
   );
 
   const mandatoryWhere: any = {
-    isActive: true,
+    ...CLAUSE_CATALOG_VISIBLE_WHERE,
     mandatory: true,
   };
   if (input.workspaceId) {
@@ -833,29 +912,19 @@ export async function createCustomClause(
   });
 
   const created = await db.standardClause.create({
-    data: {
+    data: customClauseCreateData({
       clauseKey,
       workspaceId,
-      isCustom: true,
-      isSystem: false,
-      isActive: true,
       category,
       nameEn,
       nameAr,
       contentEn: englishText,
       contentAr: arabicText,
       mandatory,
-      customizable: true,
       order,
-      version: 1,
       canonicalHash,
-      lifecycle: CLAUSE_LIFECYCLE,
-      legalReviewStatus: CLAUSE_LEGAL_REVIEW_STATUS,
-      counselReviewRequired: CLAUSE_COUNSEL_REVIEW_REQUIRED,
-      sourceStatus: CLAUSE_SOURCE_STATUS,
-      translationStatus: CLAUSE_TRANSLATION_STATUS,
       provenanceJson,
-    },
+    }),
   });
 
   return created;

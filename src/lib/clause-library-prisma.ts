@@ -40,8 +40,13 @@ type PrismaClientLike = typeof db;
 
 const UNIQUE_CONSTRAINT_ERROR = "P2002";
 
-/** Fields written for both a create and a drift repair. */
-function catalogClauseWriteData(projection: CatalogClauseProjection) {
+/**
+ * Fields written for both a create and a drift repair. Inactive: the database
+ * reserves `isActive` for a PUBLISHED, APPROVED, translation-APPROVED row
+ * (`StandardClause_review_state_check`), and a seeded catalog row is none of
+ * those. Writing `true` here failed every insert in production, silently.
+ */
+export function catalogClauseWriteData(projection: CatalogClauseProjection) {
   return {
     category: projection.category,
     nameEn: projection.nameEn,
@@ -57,7 +62,7 @@ function catalogClauseWriteData(projection: CatalogClauseProjection) {
     counselReviewRequired: CLAUSE_COUNSEL_REVIEW_REQUIRED,
     sourceStatus: CLAUSE_SOURCE_STATUS,
     translationStatus: CLAUSE_TRANSLATION_STATUS,
-    isActive: true,
+    isActive: false,
     isSystem: true,
     isCustom: false,
   };

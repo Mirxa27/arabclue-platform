@@ -114,7 +114,7 @@ describe("catalog projection", () => {
 });
 
 describe("seedStandardClauses", () => {
-  test("creates one active, unreviewed row per catalog clause", async () => {
+  test("creates one inactive, unreviewed row per catalog clause", async () => {
     const repository = createFakeClauseCatalogRepository();
 
     const summary = await seedStandardClauses({ repository });
@@ -127,7 +127,9 @@ describe("seedStandardClauses", () => {
     const { catalog } = repository.snapshot();
     expect(catalog).toHaveLength(CONTRACT_CLAUSE_IDS.length);
     for (const row of catalog) {
-      expect(row.isActive).toBe(true);
+      // Inactive until legal review: the database's review-state check
+      // rejects an active UNREVIEWED row, which is why production had none.
+      expect(row.isActive).toBe(false);
       expect(row.workspaceId).toBeNull();
       expect(row.isCustom).toBe(false);
       expect(row.isSystem).toBe(true);

@@ -56,7 +56,9 @@ function listClausesInMemory(
   }
 ) {
   const take = Math.min(Math.max(input.take ?? 25, 1), MAX_CLAUSE_LIST_TAKE);
-  let filtered = rows.filter((row) => row.isActive);
+  // Mirrors `CLAUSE_CATALOG_VISIBLE_WHERE`: the catalog is read by lifecycle;
+  // `isActive` is the approval flag the database reserves for reviewed rows.
+  let filtered = rows.filter((row) => row.lifecycle !== "RETIRED");
 
   if (input.category) {
     filtered = filtered.filter((row) => row.category === input.category);
@@ -121,7 +123,7 @@ function selectClausesInMemory(
   const uniqueIds = [...new Set(input.clauseIds.map((id) => id.trim()).filter(Boolean))];
   const visible = rows.filter(
     (row) =>
-      row.isActive &&
+      row.lifecycle !== "RETIRED" &&
       (input.workspaceId
         ? row.workspaceId === null || row.workspaceId === input.workspaceId
         : row.workspaceId === null)
