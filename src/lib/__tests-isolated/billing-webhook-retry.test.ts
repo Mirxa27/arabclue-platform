@@ -22,6 +22,10 @@ type EventRow = {
 const eventRows: EventRow[] = [];
 let failChargeSuccess = false;
 let failChargeFailure = false;
+let checkoutResult: { ok: boolean; checkoutId?: string; error?: string; retryable?: boolean } = {
+  ok: true,
+  checkoutId: "chk-1",
+};
 
 function makeWebhookRequest(body: unknown): NextRequest {
   return new NextRequest("http://localhost:3000/api/billing/webhook", {
@@ -38,6 +42,16 @@ function recurringPayload(status: string) {
       Recurring: { Id: "rec-1", Status: status },
       Invoice: { Id: "inv-9", ExternalIdentifier: "workspace-1" },
       Transaction: { PaymentId: "pay-9", Status: "SUCCESS" },
+    },
+  };
+}
+
+function oneOffPaidPayload(n: number) {
+  return {
+    Event: { Name: "TRANSACTION_STATUS_CHANGED", Code: 2, Reference: `ref-oneoff-${n}` },
+    Data: {
+      Invoice: { Id: `inv-${n}`, Status: "Paid", ExternalIdentifier: "workspace-1" },
+      Transaction: { PaymentId: `pay-${n}`, Status: "SUCCESS" },
     },
   };
 }
@@ -90,6 +104,10 @@ beforeAll(async () => {
       (_payload: unknown, _signature: string | null) =>
         `fp-${eventRows.length + 1}`
     ),
+  }));
+
+  mock.module("@/lib/billing", () => ({
+    fulfillCheckout: mock(async () => checkoutResult),
   }));
 
   mock.module("@/lib/recurring-billing", () => ({
@@ -155,5 +173,40 @@ describe("billing webhook recurring-charge retry contract", () => {
     const row = eventRows[eventRows.length - 1]!;
     expect(row.processingStatus).toBe("PROCESSED");
     expect(row.disposition).toBe("recurring_charge_failure");
+  });
+});
+
+/**
+ * One-off checkout fulfilment shares the contract. The route answered 200
+ * whenever `fulfillCheckout` returned `ok:false` — including when the gateway
+ * status inquiry itself failed — so MyFatoorah considered the event delivered
+ * and a paid customer waited for the daily reconcile cron to be entitled.
+ */
+describe("billing webhook one-off checkout retry contract", () => {
+  test("a retryable fulfilment failure stays FAILED and answers 500 for redelivery", async () => {
+    checkoutResult = { ok: false, checkoutId: "chk-1", error: "status_inquiry_failed", retryable: true };
+    const res = await routePost(makeWebhookRequest(oneOffPaidPayload(1)));
+    expect(res.status).toBe(500);
+    const row = eventRows[eventRows.length - 1]!;
+    expect(row.processingStatus).toBe("FAILED");
+    expect(row.errorMessage).toBe("status_inquiry_failed");
+  });
+
+  test("a terminal fulfilment failure is acknowledged with 200 and recorded FAILED", async () => {
+    checkoutResult = { ok: false, checkoutId: "chk-1", error: "amount_currency_mismatch" };
+    const res = await routePost(makeWebhookRequest(oneOffPaidPayload(2)));
+    expect(res.status).toBe(200);
+    const row = eventRows[eventRows.length - 1]!;
+    expect(row.processingStatus).toBe("FAILED");
+    expect(row.disposition).toBe("amount_currency_mismatch");
+  });
+
+  test("a successful fulfilment settles PROCESSED with 200", async () => {
+    checkoutResult = { ok: true, checkoutId: "chk-1" };
+    const res = await routePost(makeWebhookRequest(oneOffPaidPayload(3)));
+    expect(res.status).toBe(200);
+    const row = eventRows[eventRows.length - 1]!;
+    expect(row.processingStatus).toBe("PROCESSED");
+    expect(row.disposition).toBe("fulfilled");
   });
 });

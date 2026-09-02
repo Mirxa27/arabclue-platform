@@ -341,6 +341,18 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      // Same contract as the recurring handlers above: a failure that may
+      // clear on its own answers 5xx so MyFatoorah redelivers. Answering 200
+      // here told the gateway the event was handled while the customer waited
+      // for the daily reconcile cron to be entitled.
+      if (!result.ok && result.retryable) {
+        return jsonError(
+          "Checkout fulfilment could not be completed; retry delivery",
+          500,
+          "CHECKOUT_FULFILMENT_RETRY"
+        );
+      }
+
       return jsonOk({ ...result, webhookEventId: eventRow.id });
     } catch (err) {
       await db.paymentWebhookEvent.update({

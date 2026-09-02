@@ -29,7 +29,18 @@ export async function fulfillCheckout(opts: {
   customerReference?: string;
   paymentId?: string | null;
   invoiceId?: string | null;
-}): Promise<{ ok: boolean; checkoutId?: string; error?: string }> {
+}): Promise<{
+  ok: boolean;
+  checkoutId?: string;
+  error?: string;
+  /**
+   * The failure may clear on its own: the gateway's status inquiry failed or
+   * still reports the payment as in progress. A webhook receiving this should
+   * answer 5xx so the provider redelivers; a terminal failure (unknown
+   * checkout, amount mismatch, payment failed) should be acknowledged.
+   */
+  retryable?: boolean;
+}> {
   let checkout = opts.checkoutId
     ? await db.paymentCheckout.findUnique({
         where: { id: opts.checkoutId },
@@ -108,7 +119,12 @@ export async function fulfillCheckout(opts: {
             });
           }
         }
-        return { ok: false, checkoutId: checkout.id, error: status.invoiceStatus };
+        return {
+          ok: false,
+          checkoutId: checkout.id,
+          error: status.invoiceStatus,
+          retryable: !status.isFailed,
+        };
       }
       assertAmount(status);
       paymentId = status.paymentId ?? opts.paymentId;
@@ -139,7 +155,12 @@ export async function fulfillCheckout(opts: {
             });
           }
         }
-        return { ok: false, checkoutId: checkout.id, error: status.invoiceStatus };
+        return {
+          ok: false,
+          checkoutId: checkout.id,
+          error: status.invoiceStatus,
+          retryable: !status.isFailed,
+        };
       }
       assertAmount(status);
       paymentId = status.paymentId ?? paymentId;
@@ -176,6 +197,8 @@ export async function fulfillCheckout(opts: {
       ok: false,
       checkoutId: checkout.id,
       error: msg,
+      // The gateway did not answer; the payment may well be fine.
+      retryable: true,
     };
   }
 
