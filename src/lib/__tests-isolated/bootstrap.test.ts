@@ -116,7 +116,12 @@ mock.module("../db", () => ({
   },
 }));
 
+// Only the seed inputs are controlled; every other export (isSecretEnvKey,
+// TENDER_TYPES, …) stays real, so this file runs standalone and does not hand
+// a hollowed-out `constants` module to later suites in the same process.
+const actualConstants = await import("../constants");
 mock.module("../constants", () => ({
+  ...actualConstants,
   COMPLIANCE_FRAMEWORKS: [],
   AI_PROVIDER_PRESETS: [
     { name: "OpenAI", provider: "openai", apiKeyEnvKey: "OPENAI_API_KEY", apiBase: "https://api.openai.com/v1", engine: "DEFAULT" },
