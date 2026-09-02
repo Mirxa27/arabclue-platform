@@ -51,6 +51,8 @@ const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "1" || process.env.STANDALONE === "true"
     ? { output: "standalone" as const }
     : {}),
+  // The framework banner buys nothing and narrows an attacker's guesswork.
+  poweredByHeader: false,
   // Keep Chromium/Playwright out of the webpack/turbopack bundle — load at runtime.
   // Externals are loaded from node_modules inside the function, so whatever they
   // open through computed paths has to be traced by hand (see

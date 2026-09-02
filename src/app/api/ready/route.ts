@@ -43,10 +43,10 @@ export async function GET() {
     await db.$queryRaw`SELECT 1`;
     checks.database = { ok: true };
   } catch (err) {
-    checks.database = {
-      ok: false,
-      detail: err instanceof Error ? err.message.slice(0, 120) : "unavailable",
-    };
+    // Public route: the driver's message can name a host, a table or a file
+    // path, so it goes to the log and the caller gets a fixed token.
+    console.error("[ready] database probe failed", err);
+    checks.database = { ok: false, detail: "database_unavailable" };
   }
 
   // Requirement 16.3/16.4/16.8 — declared migration set vs applied ledger.

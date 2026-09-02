@@ -7,6 +7,8 @@ import { adminAiProviderModelsSchema } from "@/lib/validation";
 import { parseModelsCache } from "@/lib/llm/model-catalog";
 import { fetchLiveProviderModels } from "@/lib/llm/fetch-models";
 import { providerConnectionGuardError } from "@/lib/llm/provider-connection-guard";
+import { checkAiRateLimit } from "@/lib/ai-rate-limit";
+import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,8 +33,18 @@ type FetchBody = {
  * Never returns a hardcoded model catalog.
  */
 export async function POST(req: NextRequest) {
-  return withAdmin(async () => {
+  return withAdmin(async (session) => {
     await getBootstrapContext();
+    // Each call spends a stored credential against an external provider; it
+    // was the one AI-adjacent route with no ceiling. Per admin, not per
+    // workspace: the models list is a platform-level action.
+    const limited = await checkAiRateLimit({
+      route: "admin.ai-providers.models",
+      identifier: session.user.id,
+      limit: 12,
+      windowMs: 60_000,
+    });
+    if (limited) return limited;
     const body = await parseJsonBody(req, adminAiProviderModelsSchema);
 
     // Same guard the provider write paths run. This answers a caller-supplied
@@ -48,7 +60,22 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      return await handleModelsPost(body);
+      const response = await handleModelsPost(body);
+      // The credential never appears here: provider name, base host and the
+      // row id are what an operator needs to trace a fetch.
+      await audit({
+        userId: session.user.id,
+        action: AUDIT_ACTIONS.AI_PROVIDER_MODELS_FETCH,
+        resource: "AIProviderConfig",
+        resourceId: body.providerId ?? undefined,
+        details: {
+          provider: body.provider ?? null,
+          apiBaseHost: body.apiBase ? safeHost(body.apiBase) : null,
+          apiKeyEnvKey: body.apiKeyEnvKey ?? null,
+          status: response.status,
+        },
+      });
+      return response;
     } catch (err) {
       // The thrown message can carry a provider URL, a driver error, or a
       // fragment of the credential that was rejected, so it is logged and not
@@ -208,5 +235,14 @@ async function handleModelsPost(body: FetchBody) {
       // Application/config errors — not an infrastructure gateway failure
       { status: missingKey ? 400 : 422 }
     );
+  }
+}
+
+/** Host of a URL for the audit trail; never the path or query, which can carry a key. */
+function safeHost(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
   }
 }
