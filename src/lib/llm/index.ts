@@ -236,7 +236,11 @@ export async function generateCompletion(
         engine,
         failureKind: "guardrail_rejected",
         attempts: meta.attempts,
-        guardrailReasons: guarded.reasons,
+        // An empty answer that hit the token cap is a budget problem, not a
+        // model problem; the reason list has to say which.
+        guardrailReasons: truncated
+          ? [...guarded.reasons, "truncated_by_max_tokens"]
+          : guarded.reasons,
       };
     }
     return {

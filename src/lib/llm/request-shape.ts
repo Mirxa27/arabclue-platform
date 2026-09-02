@@ -28,6 +28,16 @@ export type OpenAiCompatibleBody = {
 const OPENAI_FIRST_PARTY = new Set(["openai", "azure_openai"]);
 const OPENAI_REASONING_MODEL = /^(gpt-5|o\d)/i;
 
+/**
+ * Reasoning tokens are billed against `max_completion_tokens` alongside the
+ * visible answer (Azure OpenAI reasoning guide, read 2026-09-02). With the
+ * request accepted, the technical step still came back empty: GPT-5.6 spent
+ * the whole 2048 thinking and hit the cap. The caller's budget is for the
+ * answer; the reasoning gets its own headroom on top, and the effort is
+ * pinned low — these are structured steps, not open-ended analysis.
+ */
+export const REASONING_TOKEN_HEADROOM = 4096;
+
 export function openAiCompatibleRequestBody(opts: {
   provider: string;
   modelId: string;
@@ -41,7 +51,11 @@ export function openAiCompatibleRequestBody(opts: {
     // `max_completion_tokens` is accepted by every current OpenAI chat model;
     // temperature only by the non-reasoning ones.
     return OPENAI_REASONING_MODEL.test(opts.modelId)
-      ? { ...base, max_completion_tokens: opts.maxTokens }
+      ? {
+          ...base,
+          max_completion_tokens: opts.maxTokens + REASONING_TOKEN_HEADROOM,
+          reasoning_effort: "low",
+        }
       : { ...base, max_completion_tokens: opts.maxTokens, temperature: opts.temperature };
   }
   return {
