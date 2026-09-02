@@ -111,6 +111,18 @@ describe("library pages do not repeat their own page header", () => {
     expect(src).not.toMatch(/\{cl\.legalReviewStatus\}/);
   });
 
+  test("the clause list track cannot outgrow a phone", () => {
+    // Measured live at 375 px: the implicit `auto` grid track sized the cards
+    // to 434 px, so each row's "Select" button sat past the viewport edge.
+    // `grid-cols-1` is `minmax(0, 1fr)`, which pins the track to the container.
+    for (const file of [
+      "src/components/dashboard/clause-browser.tsx",
+      "src/components/dashboard/contracts-panel.tsx",
+    ]) {
+      expect(read(file), file).not.toMatch(/className="grid gap-3"/);
+    }
+  });
+
   test("the standard-clause count is the catalogue's, not a number typed into copy", () => {
     // describeCatalogClauses() had 33 entries on 2026-09-02 while the badge and
     // the subtitle both said "32 standard clauses".

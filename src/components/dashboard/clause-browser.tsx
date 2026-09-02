@@ -354,7 +354,7 @@ export function ClauseBrowser() {
         </Card>
       )}
 
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         {clauses.map((cl) => {
           const isSelected = selectedIds.includes(cl.id);
           return (

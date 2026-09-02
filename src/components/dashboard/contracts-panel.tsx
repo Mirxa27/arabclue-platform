@@ -259,7 +259,7 @@ export function ContractsPanel() {
               : `${contracts.length} — newest first · every draft awaits legal review`}
           </p>
         </div>
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {contracts.map((c) => {
             const canSubmit = ![
               "IN_REVIEW",
