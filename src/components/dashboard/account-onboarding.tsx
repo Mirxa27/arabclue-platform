@@ -318,6 +318,7 @@ export function AccountOnboarding() {
           queryKey="partnerships"
           titleEn="Partnerships"
           titleAr="الشراكات"
+          reviewable={false}
           fields={[
             { key: "name", label: "Name" },
             { key: "partnerType", label: "Type", options: ["JV", "SUBCONTRACTOR", "OTHER"] },
@@ -779,12 +780,18 @@ function SimpleCrudPanel({
   titleEn,
   titleAr,
   fields,
+  reviewable = true,
 }: {
   endpoint: string;
   queryKey: string;
   titleEn: string;
   titleAr: string;
   fields: { key: string; label: string; multiline?: boolean; options?: string[] }[];
+  /**
+   * Whether the endpoint's model carries review state and a PATCH to change
+   * it. Partnerships have neither; the buttons answered 405 in production.
+   */
+  reviewable?: boolean;
 }) {
   const { locale } = useLocale();
   const qc = useQueryClient();
@@ -947,12 +954,14 @@ function SimpleCrudPanel({
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>
-                <KnowledgeReviewControls
-                  endpoint={endpoint}
-                  resourceId={item.id}
-                  reviewStatus={item.reviewStatus ?? "UNREVIEWED"}
-                  queryKeys={[queryKey, "onboarding", "knowledge-pending"]}
-                />
+                {reviewable ? (
+                  <KnowledgeReviewControls
+                    endpoint={endpoint}
+                    resourceId={item.id}
+                    reviewStatus={item.reviewStatus ?? "UNREVIEWED"}
+                    queryKeys={[queryKey, "onboarding", "knowledge-pending"]}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>
