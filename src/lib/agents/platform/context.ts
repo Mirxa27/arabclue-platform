@@ -38,6 +38,18 @@ export function resolveCurrentView(value: unknown): DashboardView | null {
 }
 
 /**
+ * The language the user is looking at, as claimed by the client. Two values
+ * exist; anything else is the fallback (the profile language). It reaches the
+ * system prompt, so it is resolved, not trusted.
+ */
+export function resolveRequestLocale(
+  value: unknown,
+  fallback: "ar" | "en"
+): "ar" | "en" {
+  return value === "ar" || value === "en" ? value : fallback;
+}
+
+/**
  * The screens the agent may name. Re-exported from the canonical route table so
  * a new view is navigable the moment it is routable — a second hand-kept list
  * silently drifted and left four screens unreachable by `navigateToView`.

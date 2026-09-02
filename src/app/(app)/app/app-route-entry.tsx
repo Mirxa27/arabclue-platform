@@ -1,4 +1,3 @@
-import { AppShell } from "@/components/dashboard/app-shell";
 import { DashboardViews } from "@/components/dashboard/views";
 import { resolveAppRouteForRequest } from "@/lib/app-route-resolver";
 
@@ -17,15 +16,14 @@ export async function AppRouteEntry({
 }) {
   const route = await resolveAppRouteForRequest(segments);
 
+  // The shell wraps this from `(app)/app/layout.tsx`.
   return (
-    <AppShell>
-      <DashboardViews
-        initialView={route.view}
-        initialProjectId={route.projectId}
-        canonicalPath={route.canonicalPath}
-        initialNotice={route.notice}
-        projectContextMissing={route.projectContextMissing}
-      />
-    </AppShell>
+    <DashboardViews
+      initialView={route.view}
+      initialProjectId={route.projectId}
+      canonicalPath={route.canonicalPath}
+      initialNotice={route.notice}
+      projectContextMissing={route.projectContextMissing}
+    />
   );
 }

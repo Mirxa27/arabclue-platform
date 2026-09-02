@@ -29,12 +29,17 @@ export async function buildPlatformAgentContext(
     missionId?: string | null;
     activeProjectId?: string | null;
     currentView?: unknown;
+    /** The language on screen, already resolved by the route. */
+    locale?: "ar" | "en" | null;
   }
 ): Promise<PlatformAgentContext> {
   const tenant = await getTenantContext(session.user.id);
   const role = session.user.role;
   const isAdmin = role === "SUPER_ADMIN" || role === "ADMIN";
-  const locale = session.user.locale === "en" ? "en" : "ar";
+  // The UI's language wins over the profile's: the reply lands next to the
+  // screen the user is reading, and the two disagreed in production (Arabic
+  // shell, English agent) until the Settings page happened to be visited.
+  const locale = opts?.locale ?? (session.user.locale === "en" ? "en" : "ar");
 
   // `activeProjectId` is the only field on this context that can originate from
   // the client (chat body, realtime tool options, mission payload). Every other
@@ -70,6 +75,7 @@ export async function createPlatformAgent(
     missionId?: string | null;
     activeProjectId?: string | null;
     currentView?: unknown;
+    locale?: "ar" | "en" | null;
   }
 ) {
   const ctx = await buildPlatformAgentContext(session, opts);

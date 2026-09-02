@@ -201,7 +201,23 @@ export function DashboardTopbar() {
           // without changing the canonical route (Requirement 14.7).
           // Persistence + dir reflow are deferred inside useLocale.toggle
           // so this click stays within the INP budget.
+          const next = locale === "ar" ? "en" : "ar";
           toggle();
+          // The choice belongs to the account, not the browser: the shell
+          // applies the profile language at sign-in, so a toggle that stayed
+          // local would be undone on the next device.
+          void fetch("/api/auth/profile", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ locale: next }),
+          }).then(
+            (res) => {
+              if (!res.ok) {
+                console.error("[topbar] locale not saved to profile", res.status);
+              }
+            },
+            (err) => console.error("[topbar] locale not saved to profile", err)
+          );
         }}
         className="h-[40px] w-[40px] min-h-[44px] min-w-[44px] rounded-[10px] border-[var(--hairline)] bg-[var(--surface-2)] text-foreground/60 hover:text-foreground hover:bg-[var(--surface-3)] relative active:scale-[0.97]"
         aria-label={locale === "ar" ? "Switch to English" : "تبديل إلى العربية"}

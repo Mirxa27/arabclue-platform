@@ -148,9 +148,10 @@ export function PlatformAgentConsole() {
         body: {
           missionId,
           activeProjectId,
+          locale,
         },
       }),
-    [missionId, activeProjectId]
+    [missionId, activeProjectId, locale]
   );
 
   const { messages, sendMessage, status, stop, error, setMessages } =

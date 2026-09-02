@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createPageMetadata } from "@/lib/seo";
 import { LOCALE_COOKIE_NAME } from "@/lib/store";
+import { AppShell } from "@/components/dashboard/app-shell";
 
 export const metadata = createPageMetadata({
   title: "Workspace",
@@ -28,5 +29,9 @@ export default async function DashboardLayout({
   // The root layout owns the <html> tag; here we just validate the cookie
   // is readable on the server so the app shell is server-first consistent.
   void localeCookie;
-  return children;
+  // The shell is mounted here, not in the page entry, so it survives route
+  // changes under /app. Rendered by the page it remounted on every navigation
+  // and took the assistant dock's conversation with it — the agent's own
+  // `navigateToView` aborted the stream it was narrating.
+  return <AppShell>{children}</AppShell>;
 }

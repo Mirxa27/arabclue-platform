@@ -19,8 +19,11 @@ const AssistantDock = dynamic(
   { ssr: false }
 );
 
+/** Session-storage marker: the profile language has been applied for this user. */
+const LOCALE_APPLIED_KEY = "arabclue-locale-applied";
+
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { locale, dir } = useLocale();
+  const { locale, dir, setLocale } = useLocale();
   const { mobileNavOpen, setMobileNavOpen } = useUI();
   const router = useRouter();
   const { data: session } = useSession();
@@ -31,6 +34,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     html.lang = locale;
     html.dir = dir;
   }, [locale, dir]);
+
+  // The profile's language, applied once per browser session. Without this the
+  // shell came up in the store default (Arabic) for an English profile, while
+  // the agent — which reads the profile — answered in English. Once, so a
+  // toggle made later in the session is not undone on the next render; the
+  // toggle itself writes back to the profile.
+  useEffect(() => {
+    const profileLocale = session?.user?.locale;
+    const userId = session?.user?.id;
+    if (!userId || (profileLocale !== "ar" && profileLocale !== "en")) return;
+    if (window.sessionStorage.getItem(LOCALE_APPLIED_KEY) === userId) return;
+    window.sessionStorage.setItem(LOCALE_APPLIED_KEY, userId);
+    if (profileLocale !== useLocale.getState().locale) setLocale(profileLocale);
+  }, [session?.user?.id, session?.user?.locale, setLocale]);
 
   useEffect(() => {
     if (session?.user && !(session.user as any).emailVerified) {

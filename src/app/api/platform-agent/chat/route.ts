@@ -2,7 +2,10 @@ import { jsonApiFailure } from "@/lib/api-controller";
 import { createAgentUIStreamResponse } from "ai";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
-import { resolveCurrentView } from "@/lib/agents/platform/context";
+import {
+  resolveCurrentView,
+  resolveRequestLocale,
+} from "@/lib/agents/platform/context";
 import { detectPricingRequest } from "@/lib/guardrails";
 import { syncMissionTranscript } from "@/lib/agents/platform/mission-transcript";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
@@ -21,6 +24,7 @@ export async function POST(req: Request) {
     missionId?: string;
     activeProjectId?: string | null;
     currentView?: unknown;
+    locale?: unknown;
   };
   try {
     body = await req.json();
@@ -68,7 +72,11 @@ export async function POST(req: Request) {
     });
     if (blocked) return blocked;
 
-    const locale = session.user.locale === "en" ? "en" : "ar";
+    // The language on screen, falling back to the profile's.
+    const locale = resolveRequestLocale(
+      body.locale,
+      session.user.locale === "en" ? "en" : "ar"
+    );
     const mission = await getOrCreateMission({
       workspaceId: tenant.workspace.id,
       userId: session.user.id,
@@ -90,6 +98,7 @@ export async function POST(req: Request) {
       // this" needs a referent. Resolved against the route table before it can
       // reach the prompt.
       currentView: resolveCurrentView(body.currentView),
+      locale,
     });
 
     // Persist inbound user turn immediately so crashes mid-stream still leave a trail

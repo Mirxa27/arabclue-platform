@@ -78,9 +78,9 @@ export function AssistantDock() {
     () =>
       new DefaultChatTransport<PlatformAgentUIMessage>({
         api: "/api/platform-agent/chat",
-        body: { activeProjectId, currentView: view },
+        body: { activeProjectId, currentView: view, locale },
       }),
-    [activeProjectId, view]
+    [activeProjectId, view, locale]
   );
 
   const { messages, sendMessage, status, stop, error } =
