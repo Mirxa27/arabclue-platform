@@ -79,6 +79,20 @@ describe("the extension wizard", () => {
   });
 });
 
+describe("the shell never clips its own body", () => {
+  const SHELL = "src/components/dashboard/mission-control-shell.tsx";
+  test("the fixed height applies only to viewports tall enough for it", () => {
+    // Production screenshot: with the files panel open, the live-session strip
+    // and the transcript were cut to a sliver under it.
+    has(SHELL, "a height-gated max height", /lg:\[@media\(min-height:920px\)\]:max-h-\[calc\(100dvh-6\.5rem\)\]/);
+    lacks(SHELL, "the unconditional cap", /\slg:max-h-\[calc\(100dvh-6\.5rem\)\]/);
+    has(SHELL, "the files panel scrolls inside a cap", /max-h-\[38dvh\] overflow-y-auto/);
+  });
+  test("the panel subtitle no longer advertises the extension", () => {
+    lacks(SHELL, "extension in the subtitle", /upload · extension · live pulse/);
+  });
+});
+
 describe("the stage strip", () => {
   test("shows only while the agent is working", () => {
     has(BAR, "render gated on activity", /const shouldRender = performing \|\| activeStep >= 0;/);

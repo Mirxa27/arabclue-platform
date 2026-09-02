@@ -83,7 +83,11 @@ export function MissionControlShell({
         "bg-[radial-gradient(120%_120%_at_0%_0%,rgba(16,185,129,0.08),transparent_48%),radial-gradient(90%_80%_at_100%_0%,rgba(99,102,241,0.10),transparent_55%),radial-gradient(80%_60%_at_50%_100%,rgba(6,182,214,0.08),transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.86),rgba(255,255,255,0.78))] dark:bg-[radial-gradient(120%_120%_at_0%_0%,rgba(16,185,129,0.10),transparent_48%),radial-gradient(90%_80%_at_100%_0%,rgba(99,102,241,0.14),transparent_55%),linear-gradient(180deg,rgba(14,14,18,0.92),rgba(10,10,14,0.88))]",
         "border-white/[0.10] dark:border-white/[0.08] shadow-[0_1px_0_0_rgba(255,255,255,0.6)_inset,0_8px_32px_rgba(0,0,0,0.08),0_0_0_1px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_16px_48px_rgba(0,0,0,0.36),0_0_0_1px_rgba(255,255,255,0.04)_inset]",
         "transition-[border-color,box-shadow] duration-500 ease-out",
-        "min-h-[68dvh] sm:min-h-[72dvh] md:min-h-[76dvh] lg:min-h-[calc(100dvh-8rem)] max-h-[none] lg:max-h-[calc(100dvh-6.5rem)]",
+        // App-like fixed height only when the viewport is tall enough to hold
+        // header, files panel, transcript and composer; on shorter screens the
+        // shell grows and the page scrolls. With a fixed height the transcript
+        // and the live-session strip were clipped to a sliver behind the files.
+        "min-h-[68dvh] sm:min-h-[72dvh] md:min-h-[76dvh] lg:min-h-[calc(100dvh-8rem)] max-h-[none] lg:[@media(min-height:920px)]:max-h-[calc(100dvh-6.5rem)]",
         performing
           ? "border-teal-400/30 dark:border-teal-300/20 shadow-[0_1px_0_0_rgba(255,255,255,0.7)_inset,0_0_0_1px_rgba(20,184,166,0.16),0_0_48px_-8px_rgba(20,184,166,0.32),0_16px_48px_rgba(0,0,0,0.08)] dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_0_0_1px_rgba(20,184,166,0.22),0_0_64px_-12px_rgba(20,184,166,0.42),0_24px_64px_rgba(0,0,0,0.42)]"
           : ""
@@ -242,7 +246,7 @@ export function MissionControlShell({
             </span>
             <span className="truncate">{ar ? "ملفات المهمة" : "Mission files"}</span>
             <span className="hidden sm:inline text-[11px] font-normal text-zinc-500 dark:text-zinc-500">
-              {ar ? "رفع · امتداد · نبض النشاط" : "upload · extension · live pulse"}
+              {ar ? "رفع · رابط · مصادر أخرى" : "upload · link · other sources"}
             </span>
           </span>
           <span className="flex shrink-0 items-center gap-2">
@@ -272,7 +276,7 @@ export function MissionControlShell({
               transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
               className="overflow-hidden"
             >
-              <div className="border-t border-black/[0.06] dark:border-white/[0.06] px-3 py-3 sm:px-4 sm:py-3.5 space-y-3 bg-[radial-gradient(60%_100%_at_50%_0%,rgba(20,184,166,0.06),transparent)]">
+              <div className="max-h-[38dvh] overflow-y-auto overscroll-contain scrollbar-thin border-t border-black/[0.06] dark:border-white/[0.06] px-3 py-3 sm:px-4 sm:py-3.5 space-y-3 bg-[radial-gradient(60%_100%_at_50%_0%,rgba(20,184,166,0.06),transparent)]">
                 {kit}
               </div>
             </motion.div>
