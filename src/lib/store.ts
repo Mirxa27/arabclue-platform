@@ -254,10 +254,17 @@ export interface UIState {
   adminMode: boolean;
   tenderType: string;
   autopilot: boolean;
+  /**
+   * Whether the active project has a run RUNNING or QUEUED right now, as the
+   * dock's pulse last saw it. Session state, never persisted: the panels that
+   * poll for run-written data key their intervals off it.
+   */
+  activeRunLive: boolean;
   /** Notice raised by the last URL resolution, or null when the URL was honoured. */
   routeNotice: RouteNoticeCode | null;
   setView: (v: DashboardView) => void;
   setAutopilot: (on: boolean) => void;
+  setActiveRunLive: (live: boolean) => void;
   setActiveProjectId: (id: string | null) => void;
   toggleSidebar: () => void;
   setMobileNavOpen: (open: boolean) => void;
@@ -316,6 +323,7 @@ export const useUI = create<UIState>()(
       ...DEFAULT_UI_PREFERENCES,
       mobileNavOpen: false,
       adminMode: false,
+      activeRunLive: false,
       routeNotice: null,
       setView: (view) =>
         set({
@@ -329,6 +337,8 @@ export const useUI = create<UIState>()(
         }),
       setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
       setAutopilot: (autopilot) => set({ autopilot }),
+      setActiveRunLive: (activeRunLive) =>
+        set((s) => (s.activeRunLive === activeRunLive ? s : { activeRunLive })),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
       setAdminMode: (adminMode) => set({ adminMode }),

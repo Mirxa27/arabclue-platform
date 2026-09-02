@@ -4,6 +4,7 @@ import { startTransition } from "react";
 
 import { useState } from "react";
 import { useLocale, useUI } from "@/lib/store";
+import { liveDataPollMs } from "@/lib/agents/autopilot";
 import { tr } from "@/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -71,10 +72,13 @@ export function ProjectsList() {
   const [open, setOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  const activeRunLive = useUI((s) => s.activeRunLive);
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["projects"],
     queryFn: () => apiJson<{ projects: ProjectRow[] }>("/api/projects"),
-    refetchInterval: 6000,
+    // A project's status moves while its run writes; otherwise the user's own
+    // actions invalidate this query.
+    refetchInterval: liveDataPollMs(activeRunLive, 6000),
   });
 
   const deleteMutation = useMutation({

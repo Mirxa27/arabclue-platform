@@ -29,3 +29,13 @@ export function shouldAutopilotRun(input: {
 export function runPulseIntervalMs(status: string | null | undefined): number | null {
   return status === "RUNNING" || status === "QUEUED" ? 3000 : null;
 }
+
+/**
+ * A panel's refetch interval: the given cadence while a run is live for the
+ * active project, off otherwise. The data these panels show — project status,
+ * compliance rows, the stat counts — only changes while the agents write it;
+ * the user's own actions invalidate the queries directly.
+ */
+export function liveDataPollMs(activeRunLive: boolean, everyMs: number): number | false {
+  return activeRunLive ? everyMs : false;
+}

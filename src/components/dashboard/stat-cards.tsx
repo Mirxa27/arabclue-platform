@@ -1,6 +1,7 @@
 "use client";
 
-import { useLocale } from "@/lib/store";
+import { useLocale, useUI } from "@/lib/store";
+import { liveDataPollMs } from "@/lib/agents/autopilot";
 import { tr } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -23,6 +24,7 @@ import { useNavigateToView } from "@/components/dashboard/view-navigation";
 export function StatCards() {
   const { locale } = useLocale();
   const navigateToView = useNavigateToView();
+  const activeRunLive = useUI((s) => s.activeRunLive);
   const { data, isLoading, isError, refetch } = useQuery<StatsResponse>({
     queryKey: ["stats"],
     queryFn: async () => {
@@ -30,7 +32,7 @@ export function StatCards() {
       if (!res.ok) throw new Error(`stats ${res.status}`);
       return res.json();
     },
-    refetchInterval: 8000,
+    refetchInterval: liveDataPollMs(activeRunLive, 8000),
   });
 
   if (isError) {

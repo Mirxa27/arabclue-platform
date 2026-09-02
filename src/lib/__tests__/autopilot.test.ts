@@ -19,6 +19,7 @@ import { join } from "node:path";
 import {
   shouldAutopilotRun,
   runPulseIntervalMs,
+  liveDataPollMs,
   RUN_STARTED_EVENT,
 } from "../agents/autopilot";
 import {
@@ -106,5 +107,38 @@ describe("the wiring", () => {
     expect(/RUN_STARTED_EVENT/.test(src)).toBe(true);
     // Completion with the switch on hands the bidder the proposal.
     expect(/autopilot[\s\S]{0,400}setView\("proposals"\)/.test(src)).toBe(true);
+  });
+});
+
+describe("the dashboard polls only while a run is live", () => {
+  // Projects (6 s), compliance (4 s) and the stat cards (8 s) polled on every
+  // visit, run or no run: three requests every few seconds per open tab, for
+  // data that only changes while the agents are writing it. The dock's pulse
+  // already knows whether a run is live; the polls key off that.
+  test("liveDataPollMs is the interval while live and off otherwise", () => {
+    expect(liveDataPollMs(true, 6000)).toBe(6000);
+    expect(liveDataPollMs(false, 6000)).toBe(false);
+  });
+
+  test("the pulse publishes liveness and the three panels read it", () => {
+    const store = read("src/lib/store.ts");
+    expect(/activeRunLive:\s*boolean/.test(store)).toBe(true);
+    expect(/setActiveRunLive/.test(store)).toBe(true);
+    // Not a preference: a persisted "live" would poll forever after a reload.
+    expect(/partialize[\s\S]{0,400}activeRunLive/.test(store)).toBe(false);
+    const dock = read("src/components/dashboard/assistant-dock.tsx");
+    expect(/setActiveRunLive\(/.test(dock)).toBe(true);
+    // With the polls off after a run, the run's results still have to land on
+    // whatever page is open: the pulse refreshes them once at the transition.
+    expect(/wasLiveRef\.current && next === null[\s\S]{0,300}invalidateQueries/.test(dock)).toBe(true);
+    for (const file of [
+      "src/components/dashboard/projects-list.tsx",
+      "src/components/dashboard/compliance-monitor.tsx",
+      "src/components/dashboard/stat-cards.tsx",
+    ]) {
+      const src = read(file);
+      expect(/refetchInterval:\s*liveDataPollMs\(/.test(src), file).toBe(true);
+      expect(/refetchInterval:\s*\d/.test(src), `${file} still polls unconditionally`).toBe(false);
+    }
   });
 });

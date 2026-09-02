@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { viewLabel, tr } from "@/lib/i18n";
 import {
@@ -86,10 +87,14 @@ function RunPulse({
 }) {
   const [pulse, setPulse] = useState<PulseState | null>(null);
   const timerRef = useRef<number | null>(null);
+  const wasLiveRef = useRef(false);
+  const setActiveRunLive = useUI((s) => s.setActiveRunLive);
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (!projectId) {
       setPulse(null);
+      setActiveRunLive(false);
       return;
     }
     let cancelled = false;
@@ -116,6 +121,16 @@ function RunPulse({
           pct: Math.round(d.overallProgress ?? 0),
         });
         const next = runPulseIntervalMs(d.status);
+        // The panels that poll for run-written data follow this signal; when
+        // the run ends they stop polling, so the data they show is refreshed
+        // once here — the agents page does the same, but only while mounted.
+        setActiveRunLive(next !== null);
+        if (wasLiveRef.current && next === null) {
+          for (const key of ["projects", "stats", "compliance", "proposals", "agent-runs"]) {
+            void qc.invalidateQueries({ queryKey: [key] });
+          }
+        }
+        wasLiveRef.current = next !== null;
         if (next) timerRef.current = window.setTimeout(() => void tick(), next);
       } catch (err) {
         console.error("[run-pulse]", err);
@@ -132,7 +147,7 @@ function RunPulse({
       clear();
       window.removeEventListener(RUN_STARTED_EVENT, onStarted);
     };
-  }, [projectId]);
+  }, [projectId, setActiveRunLive, qc]);
 
   const live = pulse && (pulse.status === "RUNNING" || pulse.status === "QUEUED");
   if (!live) return null;

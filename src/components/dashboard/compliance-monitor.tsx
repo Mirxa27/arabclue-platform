@@ -3,6 +3,7 @@
 import { startTransition } from "react";
 
 import { useLocale, useUI } from "@/lib/store";
+import { liveDataPollMs } from "@/lib/agents/autopilot";
 import { tr } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -67,7 +68,7 @@ type ComplianceResponse = {
 
 export function ComplianceMonitor() {
   const { locale } = useLocale();
-  const { activeProjectId, setView } = useUI();
+  const { activeProjectId, setView, activeRunLive } = useUI();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["compliance", activeProjectId],
@@ -79,7 +80,8 @@ export function ComplianceMonitor() {
       if (!res.ok) throw new Error("compliance failed");
       return res.json() as Promise<ComplianceResponse>;
     },
-    refetchInterval: 4000,
+    // Compliance rows are written by the second agent; nothing else moves them.
+    refetchInterval: liveDataPollMs(activeRunLive, 4000),
   });
 
   const summary = data?.summary;
