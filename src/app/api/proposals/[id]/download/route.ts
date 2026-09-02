@@ -1,4 +1,4 @@
-import { apiFailure, redactSensitiveText } from "@/lib/api-failure";
+import { apiFailure } from "@/lib/api-failure";
 import {
   jsonApiFailure,
   jsonRateLimitFailure,
@@ -25,7 +25,6 @@ import {
   assertWorkspaceMatch,
 } from "@/lib/workspace-context";
 import {
-  assertExportAllowed,
   validateProposalOutput,
 } from "@/lib/validation-gate";
 import {
@@ -502,30 +501,21 @@ export async function GET(
     kind: isContract ? "contract" : "proposal",
   });
   if (!policyResult.allowed) {
+    // Bilingual refusals; the gate's findings ride alongside as data so the
+    // client can list the issue codes under the sentence.
     if (policyResult.code === "validation_blocked") {
-      try {
-        assertExportAllowed(gateReport);
-      } catch (err) {
-        return NextResponse.json(
-          {
-            error: redactSensitiveText(
-              err instanceof Error ? err.message : "validation_failed",
-            ),
-            code: policyResult.code,
-            validation: gateReport,
-          },
-          { status: 422 },
-        );
-      }
+      return NextResponse.json(
+        { ...apiFailure("EXPORT_VALIDATION_BLOCKED"), validation: gateReport },
+        { status: 422, headers: { "Cache-Control": "no-store" } },
+      );
     }
     return NextResponse.json(
       {
-        error: policyResult.error,
-        code: policyResult.code,
+        ...apiFailure("EXPORT_APPROVAL_REQUIRED"),
         validation: gateReport,
         status: proposal.status,
       },
-      { status: policyResult.status },
+      { status: policyResult.status, headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -1290,14 +1280,12 @@ export async function GET(
         headers: { "Cache-Control": "no-store" },
       });
     }
-    return NextResponse.json(
-      {
-        error: redactSensitiveText(
-          err instanceof Error ? err.message : "download failed",
-        ),
-      },
-      { status: 500 },
-    );
+    // The provider's or renderer's message stays in the log above; a reader
+    // gets a sentence in their language.
+    return NextResponse.json(apiFailure("DOWNLOAD_FAILED"), {
+      status: 500,
+      headers: { "Cache-Control": "no-store" },
+    });
   } finally {
     await exportPermit?.release();
   }

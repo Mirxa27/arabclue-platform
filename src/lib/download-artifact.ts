@@ -1,6 +1,7 @@
 "use client";
 
 import { z } from "zod";
+import { selectApiFailureMessage } from "@/lib/api-failure-message";
 
 export const downloadFormatSchema = z.enum([
   "pdf",
@@ -18,7 +19,14 @@ export type ArtifactDownloadFormat = z.infer<typeof downloadFormatSchema>;
 
 export type ArtifactDownloadResult =
   | { ok: true; blob: Blob; filename: string; contentType: string }
-  | { ok: false; status: number; error: string; code?: string };
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      code?: string;
+      /** Validation-gate issue codes, when the route attached its report. */
+      issues?: string[];
+    };
 
 /** Minimal artifact shape for format resolution (UI + tests). */
 export type ArtifactFormatInput = {
@@ -112,19 +120,30 @@ export async function downloadProposalArtifact(opts: {
     if (!res.ok) {
       let error = `Download failed (${res.status})`;
       let code: string | undefined;
+      let issues: string[] | undefined;
       if (contentType.includes("application/json")) {
         const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
+          error?: unknown;
           code?: string;
-          message?: string;
+          message?: unknown;
+          validation?: { issues?: Array<{ code?: string }> } | null;
         };
-        error = data.error || data.message || error;
+        // Bilingual bodies first; a legacy string body still reads.
+        error =
+          selectApiFailureMessage(data, opts.locale ?? "ar") ??
+          (typeof data.error === "string" ? data.error : null) ??
+          (typeof data.message === "string" ? data.message : null) ??
+          error;
         code = data.code;
+        const codes = (data.validation?.issues ?? [])
+          .map((i) => i?.code)
+          .filter((c): c is string => typeof c === "string");
+        if (codes.length) issues = [...new Set(codes)];
       } else {
         const text = await res.text().catch(() => "");
         if (text.trim()) error = text.slice(0, 280);
       }
-      return { ok: false, status: res.status, error, code };
+      return { ok: false, status: res.status, error, code, issues };
     }
 
     // Guard: some gateways return 200 with JSON error bodies

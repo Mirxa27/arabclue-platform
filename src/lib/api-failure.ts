@@ -190,6 +190,12 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // Chromium is not installed. Nothing about the request was wrong, and the
   // fix is on the server, so the caller is told to retry rather than to edit.
   PDF_UNAVAILABLE: 503,
+  // The suffix rule would read `_REQUIRED` as 403; the proposal is the
+  // caller's own and the request is understood — the state is wrong. 409.
+  EXPORT_APPROVAL_REQUIRED: 409,
+  // Refused after being fully understood, like PRICING_REFUSED.
+  EXPORT_VALIDATION_BLOCKED: 422,
+  DOWNLOAD_FAILED: 500,
   RECURRING_PROVIDER_ERROR: 502,
   XLSX_EXPORT_FAILED: 500,
   NOTIFICATION_DELIVERY_FAILED: 500,

@@ -2128,6 +2128,18 @@ export const localizationRegistry = {
     ar: "هوية العرض لا تطابق سجلات المستأجر الحالية",
     en: "The proposal identity does not match the current tenant records",
   },
+  EXPORT_APPROVAL_REQUIRED: {
+    ar: "التصدير النهائي يتطلب عطاءً معتمداً. أرسله للمراجعة وأكمل سلسلة الاعتماد",
+    en: "Final export requires an approved proposal. Submit it for review and complete the approval chain",
+  },
+  EXPORT_VALIDATION_BLOCKED: {
+    ar: "أوقفت بوابة التحقق هذا التصدير. عالج الملاحظات المرفقة ثم أعد المحاولة",
+    en: "The validation gate blocked this export. Resolve the attached findings, then try again",
+  },
+  DOWNLOAD_FAILED: {
+    ar: "تعذر إنشاء الملف. حاول مرة أخرى، وإن تكرر فراجع سجل التدقيق",
+    en: "The file could not be generated. Try again, and check the audit trail if it repeats",
+  },
   STRUCTURED_EVIDENCE_NOT_APPROVED: {
     ar: "تستشهد النسخة بأدلة غير معتمدة أو غير موثّقة",
     en: "The snapshot cites evidence that is not approved or not verified",
@@ -3021,6 +3033,9 @@ export const COMPLETION_ERROR_CONTRACTS = {
   STRUCTURED_SNAPSHOT_TYPE_MISMATCH: { actionKey: "error_action_save_proposal_snapshot", messageKey: "STRUCTURED_SNAPSHOT_TYPE_MISMATCH" },
   STRUCTURED_SNAPSHOT_REQUIRED_FOR_XLSX: { actionKey: "error_action_export_xlsx", messageKey: "STRUCTURED_SNAPSHOT_REQUIRED_FOR_XLSX" },
   STRUCTURED_EXPORT_BLOCKED: { actionKey: "error_action_download_proposal", messageKey: "STRUCTURED_EXPORT_BLOCKED" },
+  EXPORT_APPROVAL_REQUIRED: { actionKey: "error_action_download_proposal", messageKey: "EXPORT_APPROVAL_REQUIRED" },
+  EXPORT_VALIDATION_BLOCKED: { actionKey: "error_action_download_proposal", messageKey: "EXPORT_VALIDATION_BLOCKED" },
+  DOWNLOAD_FAILED: { actionKey: "error_action_download_proposal", messageKey: "DOWNLOAD_FAILED" },
   EXPORT_STATE_CHANGED: { actionKey: "error_action_download_proposal", messageKey: "EXPORT_STATE_CHANGED" },
   PDF_UNAVAILABLE: { actionKey: "error_action_download_proposal", messageKey: "PDF_UNAVAILABLE" },
   CONTRACT_RENDER_SNAPSHOT_REQUIRED: { actionKey: "error_action_download_proposal", messageKey: "CONTRACT_RENDER_SNAPSHOT_REQUIRED" },

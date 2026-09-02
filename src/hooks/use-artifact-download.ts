@@ -34,21 +34,12 @@ export function useArtifactDownload() {
           locale: opts.locale,
         });
         if (!result.ok) {
-          // Collapse repeated gate codes: "invented_nora_id, invented_nora_id, …"
-          const description = result.error
-            .replace(
-              /Export blocked by validation gate:\s*/i,
-              ar ? "بوابة التحقق منعت التصدير: " : "Export blocked: "
-            )
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-            .filter((v, i, a) => a.indexOf(v) === i)
-            .slice(0, 5)
-            .join(", ");
+          // The sentence is bilingual from the route; the gate's issue codes,
+          // when present, follow it so the writer knows what to fix.
+          const issueList = (result.issues ?? []).slice(0, 5).join(", ");
           toast({
             title: ar ? "فشل التنزيل" : "Download failed",
-            description: description || result.error,
+            description: issueList ? `${result.error} (${issueList})` : result.error,
             variant: "destructive",
           });
           return false;

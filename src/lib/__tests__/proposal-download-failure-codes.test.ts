@@ -51,6 +51,10 @@ const DOWNLOAD_FAILURE_CODES = [
   "CONTRACT_RENDER_SNAPSHOT_REVISION_MISMATCH",
   "CONTRACT_RENDER_SNAPSHOT_HASH_MISMATCH",
   "CONTRACT_RENDER_SNAPSHOT_TOO_LARGE",
+  // The three refusals the route used to hand-roll in English.
+  "EXPORT_APPROVAL_REQUIRED",
+  "EXPORT_VALIDATION_BLOCKED",
+  "DOWNLOAD_FAILED",
 ] as const satisfies readonly CompletionErrorCode[];
 
 function read(relative: string): string {
