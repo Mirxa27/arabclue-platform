@@ -130,6 +130,12 @@ export type ExportPolicyInput = {
   validation: ValidationReport;
   format: string;
   hasApprovalPolicy: boolean;
+  /**
+   * Proposals may be read as DRAFT-stamped PDF/DOCX/decks before approval;
+   * contracts may not — a contract is something people sign, and its legal
+   * review gate is the whole point. Defaults to proposal.
+   */
+  kind?: "proposal" | "contract";
 };
 
 export type ExportPolicyResult =
@@ -137,10 +143,19 @@ export type ExportPolicyResult =
   | { allowed: false; status: number; error: string; code: string };
 
 const PREFLIGHT_FORMATS = new Set(["html", "manifest"]);
+/**
+ * Readable renderings of the draft. Before approval the download route
+ * renders these with DRAFT chrome (`resolveProposalExportLifecycle` answers
+ * non-authoritative), so a bidder can read what the agents wrote without the
+ * artifact passing for a final one. The ZIP bid package and the matrices are
+ * the submission set and stay behind the approval chain.
+ */
+const DRAFT_PREVIEW_FORMATS = new Set(["pdf", "docx", "pptx", "slides"]);
 
 /**
  * Final package formats require validation pass and approval when policy exists.
  * HTML/manifest are preflight (validation errors returned but approval not required for html preview).
+ * PDF/DOCX/PPTX/slides render as drafts before approval; the ZIP package and the matrices do not.
  */
 export function evaluateExportPolicy(input: ExportPolicyInput): ExportPolicyResult {
   const format = input.format.toLowerCase();
@@ -159,6 +174,13 @@ export function evaluateExportPolicy(input: ExportPolicyInput): ExportPolicyResu
   }
 
   if (!preflight) {
+    if (
+      !finalStatus &&
+      (input.kind ?? "proposal") === "proposal" &&
+      DRAFT_PREVIEW_FORMATS.has(format)
+    ) {
+      return { allowed: true, markExported: false };
+    }
     if (!finalStatus) {
       return {
         allowed: false,

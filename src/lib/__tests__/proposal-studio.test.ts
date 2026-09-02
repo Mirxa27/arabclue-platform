@@ -76,15 +76,69 @@ describe("export policy", () => {
     if (!r.allowed) expect(r.code).toBe("validation_blocked");
   });
 
-  test("requires approval when policy exists", () => {
+  test("the bid package requires approval when policy exists", () => {
     const r = evaluateExportPolicy({
       proposalStatus: "GENERATED",
       validation: okValidation,
-      format: "pdf",
+      format: "zip",
       hasApprovalPolicy: true,
     });
     expect(r.allowed).toBe(false);
     if (!r.allowed) expect(r.code).toBe("approval_required");
+  });
+
+  test("a draft PDF, DOCX or deck renders before approval, never as exported", () => {
+    // The first real production run produced a 3,783-word proposal and the
+    // bidder could not download it: every binary format was approval-only.
+    // The renderer already stamps non-authoritative exports with DRAFT
+    // chrome, and the HTML preview with the same content was always
+    // allowed, so the gate made the draft harder to get, not safer.
+    for (const format of ["pdf", "docx", "pptx", "slides"]) {
+      const r = evaluateExportPolicy({
+        proposalStatus: "GENERATED",
+        validation: okValidation,
+        format,
+        hasApprovalPolicy: true,
+      });
+      expect(r.allowed, format).toBe(true);
+      if (r.allowed) expect(r.markExported, format).toBe(false);
+    }
+  });
+
+  test("the package and the matrices stay final-only", () => {
+    for (const format of ["zip", "xlsx", "xlsx-matrix", "xlsx-boq", "ea-matrix", "boq"]) {
+      const r = evaluateExportPolicy({
+        proposalStatus: "GENERATED",
+        validation: okValidation,
+        format,
+        hasApprovalPolicy: true,
+      });
+      expect(r.allowed, format).toBe(false);
+      if (!r.allowed) expect(r.code, format).toBe("approval_required");
+    }
+  });
+
+  test("a contract PDF stays behind legal approval", () => {
+    const r = evaluateExportPolicy({
+      proposalStatus: "REVIEW",
+      validation: okValidation,
+      format: "pdf",
+      hasApprovalPolicy: true,
+      kind: "contract",
+    });
+    expect(r.allowed).toBe(false);
+    if (!r.allowed) expect(r.code).toBe("approval_required");
+  });
+
+  test("a blocked validation still stops a draft PDF", () => {
+    const r = evaluateExportPolicy({
+      proposalStatus: "GENERATED",
+      validation: blockedValidation,
+      format: "pdf",
+      hasApprovalPolicy: true,
+    });
+    expect(r.allowed).toBe(false);
+    if (!r.allowed) expect(r.code).toBe("validation_blocked");
   });
 
   test("allows approved zip and marks exported", () => {

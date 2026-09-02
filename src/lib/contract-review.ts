@@ -49,6 +49,7 @@ export function getContractExportReadiness(opts: {
     validation,
     format: opts.format,
     hasApprovalPolicy: opts.hasApprovalPolicy,
+    kind: "contract",
   });
   return {
     validation,

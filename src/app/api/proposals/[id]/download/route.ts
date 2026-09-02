@@ -499,6 +499,7 @@ export async function GET(
     validation: gateReport,
     format,
     hasApprovalPolicy,
+    kind: isContract ? "contract" : "proposal",
   });
   if (!policyResult.allowed) {
     if (policyResult.code === "validation_blocked") {
