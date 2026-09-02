@@ -1,8 +1,21 @@
 import { db } from "../db";
+import { RetryableError } from "workflow";
 import { AGENTS, getTenderType } from "../constants";
 import { tr } from "../i18n";
 import type { AgentState, AgentId, IngestionEntities, ComplianceMatrixRow, FinancialExtract } from "../types";
-import { classifyRunFailure, type AgentRunFailureKind } from "./run-failure";
+import {
+  classifyRunFailure,
+  isTransientRunFailure,
+  transientRetryDelayMs,
+  type AgentRunFailureKind,
+} from "./run-failure";
+import {
+  PipelineCancelledError,
+  createRunRecorder,
+  parseAgentStates,
+  withHeartbeat,
+  type RunRecorder,
+} from "./run-recorder";
 import { extractTextFromStorage, parseTenderText, buildIngestionSummary, sanitizeText } from "./ingestion";
 import { engineNote } from "./run-presentation";
 import { evaluateCompliance } from "./compliance";
@@ -10,7 +23,7 @@ import { runTechnicalArchitect } from "./technical";
 import { runFinancialAgent } from "./financial";
 import { draftProposal } from "./drafting";
 import { draftLawContract, validateContractDraft } from "./law-contract";
-import { buildCoveragePlan } from "./coverage";
+import { buildCoveragePlan, type CoveragePlan } from "./coverage";
 import {
   enrichIngestionWithAi,
   enrichComplianceWithAi,
@@ -37,17 +50,41 @@ import {
   isPastProjectEligible,
 } from "../knowledge-eligibility";
 import type { Locale } from "../types";
-import { parseAgentRunConfig } from "../proposal-studio";
 import { STRUCTURED_SNAPSHOT_INVALIDATION } from "../proposal-snapshot-persistence";
 import { CONTRACT_RENDER_SNAPSHOT_INVALIDATION } from "../contract-render-snapshot";
 import { isProposalEditLocked } from "../proposal-status";
-import { createDecisionLogger, decision, truncateForLog } from "./decision-logger";
-import { createMetricsTracker } from "./agent-metrics";
+import {
+  createDecisionLogger,
+  decision,
+  truncateForLog,
+  type AgentDecisionEntry,
+} from "./decision-logger";
+import {
+  createMetricsTracker,
+  mergeMetricsSnapshots,
+  type MetricsSnapshot,
+} from "./agent-metrics";
 import { AGENT_CONFIG } from "./agent-config";
 import {
   analyticsBackgroundOrigin,
   recordAgentRunAnalyticsEvent,
 } from "../analytics-collector";
+
+/**
+ * The six-agent pipeline as four durable stages.
+ *
+ * Each exported stage runs inside its own workflow step (pipeline-workflow.ts)
+ * and therefore in its own function, with the plan's full duration. Stages
+ * hand each other plain data (`PreparedContext`) through the workflow's event
+ * log; nothing here holds state across a stage boundary in memory. Agents 1–4
+ * share the extracted corpus and stay together; drafting and the contract
+ * share no inputs and run at the same time; the finalise stage merges the two
+ * tails into the run record.
+ *
+ * ponytail: the prepared context travels as step arguments (twice, once per
+ * tail step), a few hundred KB per run at most. If runs multiply past the
+ * plan's included event-log volume, persist it on the run row and pass the id.
+ */
 
 export interface OrchestratorResult {
   agentStates: AgentState[];
@@ -57,12 +94,76 @@ export interface OrchestratorResult {
   proposalId?: string;
 }
 
-class PipelineCancelledError extends Error {
-  constructor() {
-    super("Agent pipeline cancelled");
-    this.name = "PipelineCancelledError";
-  }
+export interface PipelineInput {
+  runId: string;
+  projectId: string;
+  workspaceId: string;
+  userId: string;
+  locale?: Locale;
+  regenerateMode?: "version" | "fork";
+  targetProposalId?: string | null;
 }
+
+/** Which attempt of the step this is, so a stage knows when to stop retrying. */
+export interface StageAttempt {
+  attempt: number;
+  maxAttempts: number;
+}
+
+/** What agents 1–4 hand to the two tails and the finaliser. Plain JSON. */
+export interface PreparedContext {
+  runStartedAtIso: string;
+  states: AgentState[];
+  metrics: MetricsSnapshot;
+  decisions: AgentDecisionEntry[];
+  project: {
+    id: string;
+    title: string;
+    titleAr: string | null;
+    etimadRef: string | null;
+    category: string | null;
+    currency: string;
+    saudizationTarget: number | null;
+  };
+  entities: IngestionEntities;
+  rows: ComplianceMatrixRow[];
+  score: number;
+  technical: ReturnType<typeof runTechnicalArchitect>;
+  financial: ReturnType<typeof runFinancialAgent>;
+  coverage: CoveragePlan;
+  brand: { tagline: string | null; taglineAr: string | null; vision2030Alignment: string | null } | null;
+  workspaceIdentity: { name: string; nameAr: string | null } | null;
+  /** Active restriction texts, in the order the stages used to read them. */
+  restrictions: string[];
+  restrictionsText: string;
+  /** Approved evidence ids the validation gate checks citations against. */
+  evidenceDocIds: string[];
+  knowledgeFindings: string[];
+}
+
+/** A stage that ended the run itself has already written the row. */
+export type StageFailure = { ok: false; result: OrchestratorResult };
+/** A step whose function died without the stage getting to write anything. */
+export type StageCrash = { ok: false; crashed: string };
+
+export type PrepareOutcome = { ok: true; ctx: PreparedContext } | StageFailure;
+export type DraftingOutcome =
+  | { ok: true; proposalId: string; provider: string; metrics: MetricsSnapshot; decisions: AgentDecisionEntry[] }
+  | StageFailure;
+export type LawOutcome =
+  | {
+      ok: true;
+      contractId: string;
+      contractValidation: ReturnType<typeof validateContractDraft>;
+      researchedAt: string;
+      articles: number;
+      provider: string;
+      metrics: MetricsSnapshot;
+      decisions: AgentDecisionEntry[];
+    }
+  | StageFailure;
+
+const ALL_AGENT_IDS: ReadonlySet<AgentId> = new Set(AGENTS.map((a) => a.id));
 
 function agentLabel(id: AgentId, locale: "ar" | "en" = "en") {
   return {
@@ -87,105 +188,168 @@ function initStates(locale: Locale = "ar"): AgentState[] {
 }
 
 /**
- * Execute the full multi-agent pipeline for a project.
- * Progress advances only after each real agent completes.
+ * The pipeline is a background operation, so analytics provenance comes from
+ * the run's stored workspace and the member recorded as its initiator
+ * (requirement 4.5). Every terminal transition derives its elapsed time from
+ * the recorded start instant (requirement 4.2).
  */
-export async function runAgentPipeline(opts: {
-  runId: string;
-  projectId: string;
-  workspaceId: string;
-  userId: string;
-  locale?: Locale;
-  regenerateMode?: "version" | "fork";
-  targetProposalId?: string | null;
-}): Promise<OrchestratorResult> {
-  const locale: Locale = opts.locale === "en" ? "en" : "ar";
+function originOf(input: PipelineInput) {
+  return analyticsBackgroundOrigin({
+    subjectWorkspaceId: input.workspaceId,
+    initiatorUserId: input.userId,
+  });
+}
+
+function currentResult(
+  row: { status: string; agentStates: string | null; overallProgress?: number; errorMessage?: string | null },
+  fallbackStates: AgentState[],
+): OrchestratorResult {
+  const states = parseAgentStates(row.agentStates) ?? fallbackStates;
+  const status = row.status as OrchestratorResult["status"];
+  return {
+    agentStates: states,
+    overallProgress: row.overallProgress ?? Math.round(states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1)),
+    status: status === "RUNNING" || status === "COMPLETED" || status === "FAILED" || status === "CANCELLED" ? status : "FAILED",
+    errorMessage: row.errorMessage ?? undefined,
+  };
+}
+
+/**
+ * One failure path for every stage.
+ *
+ * Cancelled by the user: record it. Ended from outside (the stale check failed
+ * the row, or the other tail already failed it): write nothing, report the row.
+ * A provider that was busy, slow or briefly down, with attempts left: note it
+ * on the agent and let the workflow retry the whole stage after a delay.
+ * Anything else: fail the run with the classified reason, as before.
+ */
+async function settleStageFailure(
+  err: unknown,
+  opts: {
+    input: PipelineInput;
+    recorder: RunRecorder;
+    agentId?: AgentId;
+    attempt: StageAttempt;
+    runStartedAtIso: string;
+  },
+): Promise<StageFailure> {
+  const { input, recorder, attempt } = opts;
+  const origin = originOf(input);
+  if (err instanceof PipelineCancelledError) {
+    if (err.status !== "CANCELLED") {
+      // Terminal under our feet: the row already says what happened.
+      const row = await db.agentRun.findUnique({
+        where: { id: input.runId },
+        select: { status: true, agentStates: true, overallProgress: true, errorMessage: true },
+      });
+      return { ok: false, result: row ? currentResult(row, recorder.states) : currentResult({ status: err.status, agentStates: null }, recorder.states) };
+    }
+    const overall = await recorder.cancel();
+    await recordAgentRunAnalyticsEvent({
+      eventType: "agent_run_cancelled",
+      runId: input.runId,
+      origin,
+      startedAt: opts.runStartedAtIso,
+      metadata: {
+        projectId: input.projectId,
+        outcomeReason: "cancelled_by_user",
+        progressPercent: toProgressPercent(overall),
+      },
+    });
+    return {
+      ok: false,
+      result: { agentStates: recorder.states, overallProgress: overall, status: "CANCELLED", errorMessage: "Cancelled by user" },
+    };
+  }
+
+  const message = err instanceof Error ? err.message : "Agent pipeline failed";
+  const kind = classifyRunFailure(err);
+  console.error("[orchestrator]", err);
+
+  if (isTransientRunFailure(kind) && attempt.attempt < attempt.maxAttempts) {
+    if (opts.agentId) {
+      const state = recorder.states.find((s) => s.id === opts.agentId);
+      try {
+        await recorder.mark(opts.agentId, {
+          status: "running",
+          findings: [
+            ...(state?.findings ?? []),
+            `Provider ${kind.toLowerCase().replace(/_/g, " ")} — retrying (attempt ${attempt.attempt + 1} of ${attempt.maxAttempts})`,
+          ],
+        });
+      } catch (markErr) {
+        if (markErr instanceof PipelineCancelledError) return settleStageFailure(markErr, opts);
+        throw markErr;
+      }
+    }
+    throw new RetryableError(message, { retryAfter: transientRetryDelayMs(kind) });
+  }
+
+  try {
+    const overall = await recorder.persist("FAILED", message, kind);
+    // The provider message stays in the run record and the server log; the
+    // analytics payload carries only a closed outcome code (requirement 4.6).
+    await recordAgentRunAnalyticsEvent({
+      eventType: "agent_run_failed",
+      runId: input.runId,
+      origin,
+      startedAt: opts.runStartedAtIso,
+      metadata: {
+        projectId: input.projectId,
+        outcomeReason: "pipeline_error",
+        progressPercent: toProgressPercent(overall),
+      },
+    });
+    return { ok: false, result: { agentStates: recorder.states, overallProgress: overall, status: "FAILED", errorMessage: message } };
+  } catch (inner) {
+    if (inner instanceof PipelineCancelledError) return settleStageFailure(inner, opts);
+    throw inner;
+  }
+}
+
+/**
+ * Stage 1 — agents 1–4 (ingestion, compliance, technical, financial) and the
+ * coverage plan. They share the extracted corpus, so they stay in one step.
+ */
+export async function runPreparationStage(
+  input: PipelineInput,
+  attempt: StageAttempt,
+): Promise<PrepareOutcome> {
+  const locale: Locale = input.locale === "en" ? "en" : "ar";
   const states = initStates(locale);
   const logger = createDecisionLogger();
-  const metrics = createMetricsTracker(opts.runId, opts.projectId);
+  const metrics = createMetricsTracker(input.runId, input.projectId);
   const runStartedAtIso = new Date().toISOString();
-  /**
-   * The pipeline is a background operation, so analytics provenance comes from
-   * the run's stored workspace and the member recorded as its initiator
-   * (requirement 4.5). Every terminal transition derives its elapsed time from
-   * `runStartedAtIso`, the recorded start instant (requirement 4.2).
-   */
-  const analyticsOrigin = analyticsBackgroundOrigin({
-    subjectWorkspaceId: opts.workspaceId,
-    initiatorUserId: opts.userId,
-  });
+  const analyticsOrigin = originOf(input);
+  const recorder = createRunRecorder({ runId: input.runId, states, owned: ALL_AGENT_IDS });
+  const { mark, persist } = recorder;
 
   decision(logger, {
     agentId: "ORCHESTRATOR",
     ruleId: "orchestration-order",
     sourceCategory: "INTERNAL_RECOMMENDATION",
-    message: `Pipeline start for project ${opts.projectId} locale=${locale} mode=${opts.regenerateMode ?? "create"}`,
-    inputs: truncateForLog({ projectId: opts.projectId, workspaceId: opts.workspaceId, regenerateMode: opts.regenerateMode, docsCount: undefined }) as Record<string, unknown>,
-    runId: opts.runId,
+    message: `Pipeline start for project ${input.projectId} locale=${locale} mode=${input.regenerateMode ?? "create"} attempt=${attempt.attempt}`,
+    inputs: truncateForLog({ projectId: input.projectId, workspaceId: input.workspaceId, regenerateMode: input.regenerateMode, docsCount: undefined }) as Record<string, unknown>,
+    runId: input.runId,
   });
 
-  const assertNotCancelled = async () => {
-    const row = await db.agentRun.findUnique({
-      where: { id: opts.runId },
-      select: { status: true },
-    });
-    if (row?.status === "CANCELLED") {
-      throw new PipelineCancelledError();
-    }
-  };
-
-  const persist = async (
-    status: "RUNNING" | "COMPLETED" | "FAILED",
-    errorMessage?: string,
-    failureKind?: AgentRunFailureKind
-  ) => {
-    await assertNotCancelled();
-    const overall = Math.round(
-      states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1)
-    );
-    await db.agentRun.update({
-      where: { id: opts.runId },
-      data: {
-        status,
-        overallProgress: overall,
-        agentStates: JSON.stringify(states),
-        errorMessage: errorMessage ?? null,
-        // The stable kind the page speaks to; the message stays the operator's.
-        failureKind: status === "FAILED" ? (failureKind ?? "INTERNAL") : null,
-        ...(status === "COMPLETED" || status === "FAILED"
-          ? { completedAt: new Date() }
-          : {}),
-        ...(status === "RUNNING" ? { startedAt: new Date() } : {}),
-      },
-    });
-    return overall;
-  };
-
-  const mark = async (
-    id: AgentId,
-    patch: Partial<AgentState>
-  ) => {
-    await assertNotCancelled();
-    const idx = states.findIndex((s) => s.id === id);
-    if (idx >= 0) states[idx] = { ...states[idx], ...patch };
-    await persist("RUNNING");
-  };
-
   try {
+    return await withHeartbeat(recorder, async (): Promise<PrepareOutcome> => {
     await persist("RUNNING");
+
 
     // Tenant predicate is mandatory: the pipeline is reachable from callers that
     // accept a client-supplied project identifier, so ownership is re-asserted
     // here rather than trusted from the caller.
     const project = await db.tenderProject.findFirst({
-      where: { id: opts.projectId, workspaceId: opts.workspaceId },
+      where: { id: input.projectId, workspaceId: input.workspaceId },
     });
     if (!project) {
       throw new Error("Project not found");
     }
 
     const docs = await db.uploadedDocument.findMany({
-      where: { projectId: opts.projectId, workspaceId: opts.workspaceId },
+      where: { projectId: input.projectId, workspaceId: input.workspaceId },
       orderBy: { createdAt: "asc" },
     });
 
@@ -216,7 +380,7 @@ export async function runAgentPipeline(opts: {
                 message: `Extracted ${docItem.originalName} (${t?.length ?? 0} chars)`,
                 inputs: truncateForLog({ docId: docItem.id, category: docItem.docCategory, mime: docItem.mimeType }) as Record<string, unknown>,
                 output: `${t?.length ?? 0} chars`,
-                runId: opts.runId,
+                runId: input.runId,
               });
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
@@ -229,7 +393,7 @@ export async function runAgentPipeline(opts: {
                 level: "WARNING",
                 message: `Failed extraction ${docItem.originalName}`,
                 evidence: msg,
-                runId: opts.runId,
+                runId: input.runId,
               });
             }
           }
@@ -249,7 +413,7 @@ export async function runAgentPipeline(opts: {
       inputs: truncateForLog({ docsCount: docs.length, combinedLength: combined.length }) as Record<string, unknown>,
       output: `${texts.length} texts`,
       evidence: extractionErrors.length ? extractionErrors.join("; ") : undefined,
-      runId: opts.runId,
+      runId: input.runId,
     });
 
     if (!combined && docs.length === 0) {
@@ -266,15 +430,18 @@ export async function runAgentPipeline(opts: {
       const overall = await persist("FAILED", "No documents uploaded for ingestion", "INVALID_INPUT");
       await recordAgentRunAnalyticsEvent({
         eventType: "agent_run_failed",
-        runId: opts.runId,
+        runId: input.runId,
         origin: analyticsOrigin,
         startedAt: runStartedAtIso,
         metadata: {
-          projectId: opts.projectId,
+          projectId: input.projectId,
           outcomeReason: "no_documents",
         },
       });
-      return { agentStates: states, overallProgress: overall, status: "FAILED", errorMessage: "No documents uploaded" };
+      return {
+        ok: false,
+        result: { agentStates: states, overallProgress: overall, status: "FAILED", errorMessage: "No documents uploaded" },
+      };
     }
 
     let entities: IngestionEntities = parseTenderText(
@@ -379,7 +546,7 @@ export async function runAgentPipeline(opts: {
       sourceCategory: "EXPLICIT_TENDER",
       message: `Starting compliance evaluation with ${combined.length} chars corpus`,
       inputs: truncateForLog({ combinedLength: combined.length, frameworks: AGENT_CONFIG.COMPLIANCE.frameworks }) as Record<string, unknown>,
-      runId: opts.runId,
+      runId: input.runId,
     });
 
     let { rows, findings: cFindings, score } = evaluateCompliance({
@@ -429,7 +596,7 @@ export async function runAgentPipeline(opts: {
     // Upsert compliance checks from matrix
     for (const row of rows) {
       const existing = await db.complianceCheck.findFirst({
-        where: { projectId: opts.projectId, controlId: row.controlId },
+        where: { projectId: input.projectId, controlId: row.controlId },
       });
       if (existing) {
         await db.complianceCheck.update({
@@ -443,7 +610,7 @@ export async function runAgentPipeline(opts: {
       } else {
         await db.complianceCheck.create({
           data: {
-            projectId: opts.projectId,
+            projectId: input.projectId,
             framework: row.frameworkId,
             controlId: row.controlId,
             title: row.title,
@@ -466,7 +633,7 @@ export async function runAgentPipeline(opts: {
       message: `Compliance completed ${rows.length} controls, score ${score}% in ${complianceDuration}ms`,
       inputs: truncateForLog({ rowsCount: rows.length, score }) as Record<string, unknown>,
       output: `score ${score}%`,
-      runId: opts.runId,
+      runId: input.runId,
     });
 
     await mark("COMPLIANCE_REGULATORY", {
@@ -497,10 +664,10 @@ export async function runAgentPipeline(opts: {
     });
 
     const brand = await db.brandProfile.findFirst({
-      where: { workspaceId: opts.workspaceId },
+      where: { workspaceId: input.workspaceId },
     });
     const workspaceIdentity = await db.workspace.findUnique({
-      where: { id: opts.workspaceId },
+      where: { id: input.workspaceId },
       select: { name: true, nameAr: true },
     });
     const reviewedWhere = {
@@ -515,7 +682,7 @@ export async function runAgentPipeline(opts: {
     };
     const pastRows = await db.pastProject.findMany({
       where: {
-        workspaceId: opts.workspaceId,
+        workspaceId: input.workspaceId,
         ...reviewedWhere,
       },
     });
@@ -524,20 +691,20 @@ export async function runAgentPipeline(opts: {
       await Promise.all([
       db.contentLibraryItem.findMany({
         where: {
-          workspaceId: opts.workspaceId,
+          workspaceId: input.workspaceId,
           ...reviewedWhere,
           restricted: false,
         },
       }),
       db.methodologyAsset.findMany({
-        where: { workspaceId: opts.workspaceId, ...reviewedWhere },
+        where: { workspaceId: input.workspaceId, ...reviewedWhere },
       }),
       db.restriction.findMany({
-        where: { workspaceId: opts.workspaceId, active: true },
+        where: { workspaceId: input.workspaceId, active: true },
       }),
       db.certificate.findMany({
         where: {
-          workspaceId: opts.workspaceId,
+          workspaceId: input.workspaceId,
           ...reviewedWhere,
           OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
         },
@@ -656,7 +823,7 @@ export async function runAgentPipeline(opts: {
       )
     );
 
-    const tenderCorpus = await loadProjectTenderCorpus(opts.projectId);
+    const tenderCorpus = await loadProjectTenderCorpus(input.projectId);
 
     let technical = runTechnicalArchitect({
       entities,
@@ -746,7 +913,7 @@ export async function runAgentPipeline(opts: {
       message: `Technical completed with ${technical.matchedProjects.length} matches`,
       inputs: truncateForLog({ matchedProjects: technical.matchedProjects.length }) as Record<string, unknown>,
       output: `${technical.findings.length} findings`,
-      runId: opts.runId,
+      runId: input.runId,
     });
 
     // ─── Agent 4: FINANCIAL_QUALIFICATION ─────────────────────────────────
@@ -811,7 +978,7 @@ export async function runAgentPipeline(opts: {
       sourceCategory: "DETERMINISTIC_CALC",
       message: `Financial QLR ${financial.quickLiquidityRatio ?? "N/A"} BoQ ${financial.boqItems.length} lines in ${finDuration}ms`,
       inputs: truncateForLog({ boqLines: financial.boqItems.length, qlr: financial.quickLiquidityRatio }) as Record<string, unknown>,
-      runId: opts.runId,
+      runId: input.runId,
     });
 
     await mark("FINANCIAL_QUALIFICATION", {
@@ -847,19 +1014,76 @@ export async function runAgentPipeline(opts: {
 
     try {
       const { applyCoveragePlanToRequirements } = await import("../requirements");
-      await applyCoveragePlanToRequirements(opts.projectId, coverage);
+      await applyCoveragePlanToRequirements(input.projectId, coverage);
     } catch (err) {
       console.warn("[orchestrator] coverage sync failed", err);
     }
 
-    // ─── Agent 5: PROPOSAL_DRAFTING ───────────────────────────────────────
-    // Agents 5 and 6 share no inputs — the contract is drafted from the
-    // ingestion entities and the compliance rows, not from the proposal — so
-    // they run concurrently. In sequence they were the whole tail of the run,
-    // and on a 300 s function ceiling (Vercel Hobby) that tail did not fit.
-    // Each stage is a closure over the state gathered above; their bodies keep
-    // their original indentation to keep this diff reviewable.
-    const runDraftingStage = async () => {
+    return {
+      ok: true,
+      ctx: {
+        runStartedAtIso,
+        states,
+        metrics: metrics.snapshot(),
+        decisions: logger.getEntries(),
+        project: {
+          id: project.id,
+          title: project.title,
+          titleAr: project.titleAr,
+          etimadRef: project.etimadRef,
+          category: project.category,
+          currency: project.currency,
+          saudizationTarget: project.saudizationTarget,
+        },
+        entities,
+        rows: rows as ComplianceMatrixRow[],
+        score,
+        technical,
+        financial,
+        coverage,
+        brand: brand
+          ? { tagline: brand.tagline, taglineAr: brand.taglineAr, vision2030Alignment: brand.vision2030Alignment }
+          : null,
+        workspaceIdentity: workspaceIdentity
+          ? { name: workspaceIdentity.name, nameAr: workspaceIdentity.nameAr }
+          : null,
+        restrictions: restrictions.map((r) => r.text),
+        restrictionsText,
+        evidenceDocIds: ragDocs.map((d) => d.id),
+        knowledgeFindings,
+      },
+    };
+    });
+  } catch (err) {
+    return settleStageFailure(err, {
+      input,
+      recorder,
+      agentId: states.find((s) => s.status === "running")?.id ?? "INGESTION",
+      attempt,
+      runStartedAtIso,
+    });
+  }
+}
+
+/** Stage 2a — agent 5, the proposal. Runs beside the contract with its own window. */
+export async function runDraftingStage(
+  input: PipelineInput,
+  ctx: PreparedContext,
+  attempt: StageAttempt,
+): Promise<DraftingOutcome> {
+  const locale: Locale = input.locale === "en" ? "en" : "ar";
+  const states = ctx.states.map((s) => ({ ...s }));
+  const logger = createDecisionLogger(ctx.decisions);
+  const metrics = createMetricsTracker(input.runId, input.projectId, ctx.metrics);
+  const recorder = createRunRecorder({ runId: input.runId, states, owned: new Set<AgentId>(["PROPOSAL_DRAFTING"]) });
+  const { mark } = recorder;
+  const {
+    project, entities, rows, score, technical, financial, coverage, brand, workspaceIdentity,
+    restrictions, restrictionsText, evidenceDocIds, knowledgeFindings,
+  } = ctx;
+
+  try {
+    return await withHeartbeat(recorder, async (): Promise<DraftingOutcome> => {
     metrics.startAgent("PROPOSAL_DRAFTING");
     logger.startTimer("drafting");
     await mark("PROPOSAL_DRAFTING", {
@@ -900,8 +1124,8 @@ export async function runAgentPipeline(opts: {
       financial: financial as FinancialExtract,
       entities,
       complianceRows: rows as ComplianceMatrixRow[],
-      restrictions: restrictions.map((r) => r.text),
-      approvedEvidenceIds: ragDocs.map((d) => d.id),
+      restrictions,
+      approvedEvidenceIds: evidenceDocIds,
     });
 
     const artifacts = [
@@ -953,15 +1177,15 @@ export async function runAgentPipeline(opts: {
       artifactsJson: string | null;
     };
 
-    const targetId = opts.targetProposalId ?? null;
-    const mode = opts.regenerateMode;
+    const targetId = input.targetProposalId ?? null;
+    const mode = input.regenerateMode;
 
     if (mode === "version" && targetId) {
       const existing = await db.generatedProposal.findFirst({
         where: {
           id: targetId,
-          projectId: opts.projectId,
-          workspaceId: opts.workspaceId,
+          projectId: input.projectId,
+          workspaceId: input.workspaceId,
         },
       });
       if (!existing) {
@@ -977,8 +1201,8 @@ export async function runAgentPipeline(opts: {
         const write = await tx.generatedProposal.updateMany({
           where: {
             id: existing.id,
-            workspaceId: opts.workspaceId,
-            projectId: opts.projectId,
+            workspaceId: input.workspaceId,
+            projectId: input.projectId,
             status: existing.status,
             version: existing.version,
             updatedAt: existing.updatedAt,
@@ -1015,7 +1239,7 @@ export async function runAgentPipeline(opts: {
             contentMd: draft.contentMd,
             changeLog: "AI regenerate (new version)",
             locale,
-            createdBy: opts.userId,
+            createdBy: input.userId,
           },
         });
         return tx.generatedProposal.findUniqueOrThrow({
@@ -1029,8 +1253,8 @@ export async function runAgentPipeline(opts: {
         const parent = await db.generatedProposal.findFirst({
           where: {
             id: parentProposalId,
-            projectId: opts.projectId,
-            workspaceId: opts.workspaceId,
+            projectId: input.projectId,
+            workspaceId: input.workspaceId,
           },
         });
         if (!parent) {
@@ -1039,9 +1263,9 @@ export async function runAgentPipeline(opts: {
       }
       proposal = await db.generatedProposal.create({
         data: {
-          workspaceId: opts.workspaceId,
-          projectId: opts.projectId,
-          createdById: opts.userId,
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          createdById: input.userId,
           parentProposalId,
           title: titleEn,
           titleAr,
@@ -1066,7 +1290,7 @@ export async function runAgentPipeline(opts: {
             ? `Forked from ${parentProposalId}`
             : "Initial AI generation",
           locale,
-          createdBy: opts.userId,
+          createdBy: input.userId,
         },
       });
     }
@@ -1084,7 +1308,7 @@ export async function runAgentPipeline(opts: {
 
     // Store BoQ on agent run finalArtifact for download generators
     await db.agentRun.update({
-      where: { id: opts.runId },
+      where: { id: input.runId },
       data: {
         finalArtifact: JSON.stringify({
           proposalId: proposal.id,
@@ -1134,12 +1358,12 @@ export async function runAgentPipeline(opts: {
     });
 
     await db.tenderProject.update({
-      where: { id: opts.projectId },
+      where: { id: input.projectId },
       data: { status: "REVIEW" },
     });
 
     // Usage tracking
-    const sub = await db.subscription.findUnique({ where: { userId: opts.userId } });
+    const sub = await db.subscription.findUnique({ where: { userId: input.userId } });
     if (sub) {
       await db.subscription.update({
         where: { id: sub.id },
@@ -1160,7 +1384,7 @@ export async function runAgentPipeline(opts: {
       inputs: truncateForLog({ coveragePercent: coverage.coveragePercent, compliant: score, tokens: draft.tokensUsed }) as Record<string, unknown>,
       output: draft.provider,
       blocking: validationReport.blocking,
-      runId: opts.runId,
+      runId: input.runId,
     });
     if (validationReport.blocking) metrics.blockExport();
 
@@ -1196,11 +1420,30 @@ export async function runAgentPipeline(opts: {
       provider: draft.provider,
       tokensUsed: draft.tokensUsed,
     });
-    return { draft, proposal };
-    };
 
-    // ─── Agent 6: LAW_CONTRACT (research then bilingual draft) ────────────
-    const runLawStage = async () => {
+    return { ok: true, proposalId: proposal.id, provider: draft.provider, metrics: metrics.snapshot(), decisions: logger.getEntries() };
+    });
+  } catch (err) {
+    return settleStageFailure(err, { input, recorder, agentId: "PROPOSAL_DRAFTING", attempt, runStartedAtIso: ctx.runStartedAtIso });
+  }
+}
+
+/** Stage 2b — agent 6, the bilingual contract. Independent of the proposal. */
+export async function runLawStage(
+  input: PipelineInput,
+  ctx: PreparedContext,
+  attempt: StageAttempt,
+): Promise<LawOutcome> {
+  const locale: Locale = input.locale === "en" ? "en" : "ar";
+  const states = ctx.states.map((s) => ({ ...s }));
+  const logger = createDecisionLogger(ctx.decisions);
+  const metrics = createMetricsTracker(input.runId, input.projectId, ctx.metrics);
+  const recorder = createRunRecorder({ runId: input.runId, states, owned: new Set<AgentId>(["LAW_CONTRACT"]) });
+  const { mark } = recorder;
+  const { project, entities, rows, score, workspaceIdentity, restrictions } = ctx;
+
+  try {
+    return await withHeartbeat(recorder, async (): Promise<LawOutcome> => {
     metrics.startAgent("LAW_CONTRACT");
     logger.startTimer("law_contract");
     await mark("LAW_CONTRACT", {
@@ -1210,20 +1453,16 @@ export async function runAgentPipeline(opts: {
       findings: ["Researching Saudi regulatory registry and tender anchors…"],
     });
 
-    const workspace = await db.workspace.findUnique({
-      where: { id: opts.workspaceId },
-    });
-
     const lawDraft = await draftLawContract({
       projectTitle: project.title,
       etimadRef: project.etimadRef,
       entities,
       complianceRows: rows as ComplianceMatrixRow[],
-      brandName: workspace?.name,
-      brandNameAr: workspace?.nameAr,
+      brandName: workspaceIdentity?.name,
+      brandNameAr: workspaceIdentity?.nameAr,
       clientName: "Client (procuring entity — complete from tender)",
       clientNameAr: "العميل (الجهة الطارحة — يُستكمل من الكراسة)",
-      restrictions: restrictions.map((r) => r.text),
+      restrictions,
       locale,
     });
 
@@ -1264,9 +1503,9 @@ export async function runAgentPipeline(opts: {
 
     const contract = await db.generatedProposal.create({
       data: {
-        workspaceId: opts.workspaceId,
-        projectId: opts.projectId,
-        createdById: opts.userId,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        createdById: input.userId,
         title: `Draft Contract — ${project.title}`,
         titleAr: `مسودة عقد — ${project.titleAr ?? project.title}`,
         type: "CONTRACT",
@@ -1287,7 +1526,7 @@ export async function runAgentPipeline(opts: {
         contentMd: lawDraft.contentMd,
         changeLog: "Law agent: Saudi registry research + bilingual draft",
         locale: "ar",
-        createdBy: opts.userId,
+        createdBy: input.userId,
       },
     });
 
@@ -1314,7 +1553,7 @@ export async function runAgentPipeline(opts: {
       inputs: truncateForLog({ articles: lawDraft.articles.length, sources: lawDraft.research.sources.length }) as Record<string, unknown>,
       output: `${lawDraft.articles.length} articles`,
       blocking: contractValidation.blocking,
-      runId: opts.runId,
+      runId: input.runId,
     });
     if (contractValidation.blocking) metrics.blockExport();
 
@@ -1345,45 +1584,95 @@ export async function runAgentPipeline(opts: {
       provider: lawDraft.provider,
       tokensUsed: lawDraft.tokensUsed,
     });
-    return { lawDraft, contract, contractValidation };
+
+    return {
+      ok: true,
+      contractId: contract.id,
+      contractValidation,
+      researchedAt: lawDraft.research.researchedAt,
+      articles: lawDraft.articles.length,
+      provider: lawDraft.provider,
+      metrics: metrics.snapshot(),
+      decisions: logger.getEntries(),
     };
-
-    // `allSettled`, not `all`: a rejection in one stage while the other is
-    // mid-write would leave a proposal row behind for a run about to be marked
-    // FAILED. Both finish, then the first failure is raised.
-    const [draftingOutcome, lawOutcome] = await Promise.allSettled([
-      runDraftingStage(),
-      runLawStage(),
-    ]);
-    if (draftingOutcome.status === "rejected") throw draftingOutcome.reason;
-    if (lawOutcome.status === "rejected") throw lawOutcome.reason;
-    const { draft, proposal } = draftingOutcome.value;
-    const { lawDraft, contract, contractValidation } = lawOutcome.value;
-
-
-    // Augment final artifact with contract id
-    const priorArtifact = await db.agentRun.findUnique({
-      where: { id: opts.runId },
-      select: { finalArtifact: true },
     });
+  } catch (err) {
+    return settleStageFailure(err, { input, recorder, agentId: "LAW_CONTRACT", attempt, runStartedAtIso: ctx.runStartedAtIso });
+  }
+}
+
+/**
+ * Stage 3 — merge the two tails into the run record and complete it.
+ *
+ * A tail that ended the run itself (`StageFailure`) has written the row: its
+ * result is returned untouched. A tail whose function died before it could
+ * write (`StageCrash`) is failed here with the reason the engine reported.
+ */
+export async function runFinalizeStage(
+  input: PipelineInput,
+  ctx: PreparedContext,
+  drafting: DraftingOutcome | StageCrash,
+  law: LawOutcome | StageCrash,
+  attempt: StageAttempt,
+): Promise<OrchestratorResult> {
+  const row = await db.agentRun.findUnique({
+    where: { id: input.runId },
+    select: { status: true, agentStates: true, overallProgress: true, errorMessage: true, finalArtifact: true },
+  });
+  const states = parseAgentStates(row?.agentStates) ?? ctx.states.map((s) => ({ ...s }));
+  const recorder = createRunRecorder({ runId: input.runId, states, owned: new Set<AgentId>() });
+
+  for (const tail of [drafting, law]) {
+    if (tail.ok) continue;
+    if ("result" in tail) return tail.result;
+  }
+  const crashed = [drafting, law].filter((t): t is StageCrash => !t.ok && "crashed" in t);
+  if (crashed.length > 0) {
+    const message = crashed.map((c) => c.crashed).join("; ");
+    return (
+      await settleStageFailure(new Error(message), {
+        input,
+        recorder,
+        attempt: { attempt: attempt.maxAttempts, maxAttempts: attempt.maxAttempts },
+        runStartedAtIso: ctx.runStartedAtIso,
+      })
+    ).result;
+  }
+  if (!drafting.ok || !law.ok) throw new Error("unreachable: both tails succeeded");
+
+  const metrics = createMetricsTracker(
+    input.runId,
+    input.projectId,
+    mergeMetricsSnapshots(ctx.metrics, drafting.metrics, law.metrics),
+  );
+  const logger = createDecisionLogger([
+    ...ctx.decisions,
+    ...drafting.decisions.slice(ctx.decisions.length),
+    ...law.decisions.slice(ctx.decisions.length),
+  ]);
+  const { persist } = recorder;
+  const analyticsOrigin = originOf(input);
+  const runStartedAtIso = ctx.runStartedAtIso;
+  const score = ctx.score;
+
+  try {
+    // Augment final artifact with contract id
     let artifactObj: Record<string, unknown> = {};
     try {
-      artifactObj = priorArtifact?.finalArtifact
-        ? JSON.parse(priorArtifact.finalArtifact)
-        : {};
+      artifactObj = row?.finalArtifact ? JSON.parse(row.finalArtifact) : {};
     } catch {
       artifactObj = {};
     }
     const finalMetrics = metrics.build("COMPLETED", 100);
-    const decisionLog = logger.toLog(opts.runId, opts.projectId, runStartedAtIso);
+    const decisionLog = logger.toLog(input.runId, input.projectId, runStartedAtIso);
     await db.agentRun.update({
-      where: { id: opts.runId },
+      where: { id: input.runId },
       data: {
         finalArtifact: JSON.stringify({
           ...artifactObj,
-          contractId: contract.id,
-          contractValidation,
-          contractResearchAt: lawDraft.research.researchedAt,
+          contractId: law.contractId,
+          contractValidation: law.contractValidation,
+          contractResearchAt: law.researchedAt,
           metrics: finalMetrics,
           decisionLog: {
             entries: decisionLog.entries.slice(-100),
@@ -1395,37 +1684,37 @@ export async function runAgentPipeline(opts: {
     });
 
     await audit({
-      userId: opts.userId,
+      userId: input.userId,
       action: AUDIT_ACTIONS.PROPOSAL_GENERATE,
       resource: "GeneratedProposal",
-      resourceId: contract.id,
+      resourceId: law.contractId,
       severity: "INFO",
       details: {
-        projectId: opts.projectId,
+        projectId: input.projectId,
         type: "CONTRACT",
-        provider: lawDraft.provider,
-        articles: lawDraft.articles.length,
+        provider: law.provider,
+        articles: law.articles,
       },
     });
 
     await audit({
-      userId: opts.userId,
+      userId: input.userId,
       action: AUDIT_ACTIONS.PROPOSAL_GENERATE,
       resource: "GeneratedProposal",
-      resourceId: proposal.id,
+      resourceId: drafting.proposalId,
       severity: "INFO",
-      details: { projectId: opts.projectId, score, provider: draft.provider },
+      details: { projectId: input.projectId, score, provider: drafting.provider },
     });
 
     const overall = await persist("COMPLETED");
     await recordAgentRunAnalyticsEvent({
       eventType: "agent_run_completed",
-      runId: opts.runId,
+      runId: input.runId,
       origin: analyticsOrigin,
       startedAt: runStartedAtIso,
       metadata: {
-        projectId: opts.projectId,
-        proposalId: proposal.id,
+        projectId: input.projectId,
+        proposalId: drafting.proposalId,
         progressPercent: toProgressPercent(overall),
       },
     });
@@ -1434,116 +1723,26 @@ export async function runAgentPipeline(opts: {
       agentStates: states,
       overallProgress: overall,
       status: "COMPLETED",
-      proposalId: proposal.id,
+      proposalId: drafting.proposalId,
     };
   } catch (err) {
-    if (err instanceof PipelineCancelledError) {
-      const overall =
-        states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1);
-      await db.agentRun.update({
-        where: { id: opts.runId },
-        data: {
-          status: "CANCELLED",
-          overallProgress: overall,
-          agentStates: JSON.stringify(states),
-          errorMessage: "Cancelled by user",
-          completedAt: new Date(),
-        },
-      });
-      await recordAgentRunAnalyticsEvent({
-        eventType: "agent_run_cancelled",
-        runId: opts.runId,
-        origin: analyticsOrigin,
-        startedAt: runStartedAtIso,
-        metadata: {
-          projectId: opts.projectId,
-          outcomeReason: "cancelled_by_user",
-          progressPercent: toProgressPercent(overall),
-        },
-      });
-      return {
-        agentStates: states,
-        overallProgress: overall,
-        status: "CANCELLED",
-        errorMessage: "Cancelled by user",
-      };
-    }
-    const message = err instanceof Error ? err.message : "Agent pipeline failed";
-    console.error("[orchestrator]", err);
-    try {
-      const overall = await persist("FAILED", message, classifyRunFailure(err));
-      // The provider message stays in the run record and the server log; the
-      // analytics payload carries only a closed outcome code (requirement 4.6).
-      await recordAgentRunAnalyticsEvent({
-        eventType: "agent_run_failed",
-        runId: opts.runId,
-        origin: analyticsOrigin,
-        startedAt: runStartedAtIso,
-        metadata: {
-          projectId: opts.projectId,
-          outcomeReason: "pipeline_error",
-          progressPercent: toProgressPercent(overall),
-        },
-      });
-      return {
-        agentStates: states,
-        overallProgress: overall,
-        status: "FAILED",
-        errorMessage: message,
-      };
-    } catch (inner) {
-      if (inner instanceof PipelineCancelledError) {
-        return {
-          agentStates: states,
-          overallProgress: Math.round(
-            states.reduce((s, a) => s + a.progress, 0) / Math.max(states.length, 1)
-          ),
-          status: "CANCELLED",
-          errorMessage: "Cancelled by user",
-        };
-      }
-      throw inner;
-    }
+    return (await settleStageFailure(err, { input, recorder, attempt, runStartedAtIso })).result;
   }
 }
 
-/** Advance one step if run is QUEUED/RUNNING — used by status polling to execute pipeline once */
-export async function ensurePipelineStarted(runId: string): Promise<OrchestratorResult | null> {
-  const run = await db.agentRun.findUnique({ where: { id: runId } });
-  if (!run) return null;
-  if (run.status === "COMPLETED" || run.status === "FAILED") {
-    return {
-      agentStates: run.agentStates ? JSON.parse(run.agentStates) : [],
-      overallProgress: run.overallProgress,
-      status: run.status as "COMPLETED" | "FAILED",
-      errorMessage: run.errorMessage ?? undefined,
-    };
-  }
-
-  // If still QUEUED, kick off pipeline (async-safe: mark RUNNING first)
-  if (run.status === "QUEUED") {
-    await db.agentRun.update({
-      where: { id: runId },
-      data: { status: "RUNNING", startedAt: new Date() },
-    });
-    const project = await db.tenderProject.findUnique({ where: { id: run.projectId } });
-    if (!project) return null;
-    const cfg = parseAgentRunConfig(run.configJson);
-    return runAgentPipeline({
-      runId,
-      projectId: run.projectId,
-      workspaceId: project.workspaceId,
-      userId: run.triggeredById,
-      locale: cfg?.locale,
-      regenerateMode: cfg?.regenerateMode,
-      targetProposalId: cfg?.targetProposalId,
-    });
-  }
-
-  // Already RUNNING — return current states (pipeline may be in-process)
-  return {
-    agentStates: run.agentStates ? JSON.parse(run.agentStates) : initStates(),
-    overallProgress: run.overallProgress,
-    status: "RUNNING",
-  };
+/** A step died before its stage could write anything: fail the run with the engine's reason. */
+export async function failRunAfterCrash(input: PipelineInput, message: string): Promise<OrchestratorResult> {
+  const row = await db.agentRun.findUnique({
+    where: { id: input.runId },
+    select: { status: true, agentStates: true, overallProgress: true, errorMessage: true },
+  });
+  const states = parseAgentStates(row?.agentStates) ?? initStates(input.locale === "en" ? "en" : "ar");
+  const recorder = createRunRecorder({ runId: input.runId, states, owned: new Set<AgentId>() });
+  const settled = await settleStageFailure(new Error(message), {
+    input,
+    recorder,
+    attempt: { attempt: 1, maxAttempts: 1 },
+    runStartedAtIso: new Date().toISOString(),
+  });
+  return settled.result;
 }

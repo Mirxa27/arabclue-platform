@@ -20,10 +20,10 @@
  * quick-exit method."
  * https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html
  *
- * Asynchronous is the option this repo already owns. `schedule-pipeline.ts`
- * hands post-response work to `after()` from `next/server`, which forwards it
- * to the platform's `waitUntil`. Put the token, the send and the audit behind
- * that and both branches cost exactly one lookup.
+ * Asynchronous is the option this repo already owns: `after()` from
+ * `next/server` hands post-response work to the platform's `waitUntil` (the
+ * agent pipeline used it before it became a durable workflow). Put the token,
+ * the send and the audit behind that and both branches cost exactly one lookup.
  *
  * These tests never measure elapsed time. A stopwatch assertion on a shared
  * runner is a flake generator, and worse, it would go green for a fix that

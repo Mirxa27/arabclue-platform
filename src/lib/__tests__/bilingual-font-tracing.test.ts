@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import nextConfig, {
+// The default export is the Workflow DevKit wrapper (an async config function);
+// the plain object the tests read is the named export.
+import {
+  nextConfig,
   bilingualFontTraceIncludes,
   pdfRuntimeTraceIncludes,
 } from "../../../next.config";

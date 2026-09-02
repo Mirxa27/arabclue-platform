@@ -17,7 +17,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import nextConfig from "../../../next.config";
+// The default export is the Workflow DevKit wrapper (an async config function);
+// the plain object the tests read is the named export.
+import { nextConfig } from "../../../next.config";
 
 async function connectSrc(): Promise<string> {
   const headers = await nextConfig.headers!();

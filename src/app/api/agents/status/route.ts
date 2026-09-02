@@ -3,28 +3,19 @@ import { db } from "@/lib/db";
 import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
-import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
-import {
-  isAgentRunStale,
-  parseAgentRunConfig,
-} from "@/lib/proposal-studio";
-import { checkAiRateLimit } from "@/lib/ai-rate-limit";
+import { isAgentRunStale } from "@/lib/proposal-studio";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
-// A resumed pipeline runs inside this invocation's `after()`. At 60 s it was
-// killed before its third agent, every time.
-export const maxDuration = 300;
 
 /**
- * A stale run is restarted from zero at most this many times. Each restart
- * spends provider tokens on the same first agents; a run that cannot fit the
- * platform's execution window twice is failed with a reason instead.
+ * A run that has gone quiet past the heartbeat window is failed here with a
+ * reason. It is never restarted from this route: the pipeline runs as a
+ * durable workflow whose engine owns retries, and a second `start()` for the
+ * same row would execute the agents twice.
  */
-const MAX_STALE_RESUMES = 1;
-
-// In-memory resume locks to avoid double-resume in same instance
-const resumeLocks = new Set<string>();
+const STALE_RUN_MESSAGE =
+  "Agent run stopped reporting progress (stale). Start a new run.";
 
 // GET /api/agents/status?runId=... — poll real agent pipeline progress; resume stale runs
 export async function GET(req: NextRequest) {
@@ -37,7 +28,7 @@ export async function GET(req: NextRequest) {
     const runIdParam = req.nextUrl.searchParams.get("runId");
     const projectId = req.nextUrl.searchParams.get("projectId");
     // A pure read. The dock's run pulse polls from every page; it must never
-    // trigger the stale-run resume below, which spends provider tokens.
+    // fail a quiet run on the page's behalf — only the agents page does that.
     const observeOnly = req.nextUrl.searchParams.get("observe") === "1";
 
     let run =
@@ -83,7 +74,6 @@ export async function GET(req: NextRequest) {
 
     const runId = run.id;
 
-    let resumed = false;
     if (
       !observeOnly &&
       (run.status === "QUEUED" || run.status === "RUNNING") &&
@@ -95,109 +85,34 @@ export async function GET(req: NextRequest) {
         overallProgress: run.overallProgress,
       })
     ) {
-      const cfg = parseAgentRunConfig(run.configJson);
-      if (cfg && cfg.resumeCount >= MAX_STALE_RESUMES) {
-        // Second time this run has gone quiet past the heartbeat window. The
-        // message is internal English by design (it is mapped to bilingual
-        // copy where it is shown); the record has to say what happened.
-        await db.agentRun.updateMany({
-          where: { id: runId, status: { in: ["QUEUED", "RUNNING"] } },
-          data: {
-            status: "FAILED",
-            errorMessage:
-              "Agent run exceeded the execution window twice (stale after resume). Start a new run.",
-            failureKind: "TIMEOUT",
-            completedAt: new Date(),
-          },
-        });
-        return NextResponse.json({
-          runId: run.id,
+      // Guarded on the live statuses so a concurrent poll, or the workflow
+      // itself finishing this instant, is not overwritten.
+      const failed = await db.agentRun.updateMany({
+        where: { id: runId, status: { in: ["QUEUED", "RUNNING"] } },
+        data: {
           status: "FAILED",
-          overallProgress: run.overallProgress,
-          agentStates: run.agentStates ? JSON.parse(run.agentStates) : [],
-          finalArtifact: null,
-          errorMessage:
-            "Agent run exceeded the execution window twice (stale after resume). Start a new run.",
+          errorMessage: STALE_RUN_MESSAGE,
           failureKind: "TIMEOUT",
-          resumed: false,
-          resumeExhausted: true,
-        });
-      }
-      if (cfg && !resumeLocks.has(runId)) {
-        // Resume is a real side-effect that spends LLM tokens. Bound how
-        // often a workspace can trigger it — real polling only needs 1 or
-        // 2 resumes per run, but a stuck tab could hammer this.
-        const blocked = await checkAiRateLimit({
-          route: "agents.status.resume",
-          identifier: workspace.id,
-          limit: 10,
-          windowMs: 60_000,
-        });
-        if (blocked) {
-          // Fall through to a plain read below — we still return current state.
-          return NextResponse.json({
-            runId: run.id,
-            status: run.status,
-            overallProgress: run.overallProgress,
-            agentStates: run.agentStates ? JSON.parse(run.agentStates) : [],
-            finalArtifact: run.finalArtifact
-              ? JSON.parse(run.finalArtifact)
-              : null,
-            errorMessage: run.errorMessage,
-            failureKind: run.failureKind,
-            resumed: false,
-            rateLimited: true,
-          });
-        }
-        resumeLocks.add(runId);
-        resumed = true;
-        // Touch updatedAt so concurrent polls don't stampede
-        await db.agentRun.update({
-          where: { id: runId },
-          data: {
-            status: "QUEUED",
-            errorMessage: null,
-            overallProgress: 0,
-            configJson: JSON.stringify({
-              ...cfg,
-              resumeCount: cfg.resumeCount + 1,
-            }),
-          },
-        });
-        scheduleAgentPipeline({
-          runId,
-          projectId: cfg.projectId,
-          workspaceId: cfg.workspaceId,
-          userId: cfg.userId,
-          locale: cfg.locale,
-          regenerateMode: cfg.regenerateMode,
-          targetProposalId: cfg.targetProposalId,
-          logLabel: "[agents/status resume]",
-        });
-        // Audit the resume so operators can trace phantom pipeline restarts.
+          completedAt: new Date(),
+        },
+      });
+      if (failed.count === 1) {
         try {
           await audit({
             userId: session.user.id,
             action: AUDIT_ACTIONS.AGENT_RUN,
             resource: "AgentRun",
             resourceId: runId,
-            details: {
-              via: "agents/status GET",
-              reason: "stale run auto-resume",
-            },
+            details: { via: "agents/status GET", reason: "stale run auto-failed" },
           });
         } catch (auditErr) {
           console.warn("[agents/status] audit failed", auditErr);
         }
-        // Clear lock after a short delay so concurrent polls don't double-resume
-        // while after() is still scheduling the same run.
-        setTimeout(() => resumeLocks.delete(runId), 5_000);
-
-        run = await db.agentRun.findUnique({
-          where: { id: runId },
-          include: { project: { select: { workspaceId: true } } },
-        });
       }
+      run = await db.agentRun.findUnique({
+        where: { id: runId },
+        include: { project: { select: { workspaceId: true } } },
+      });
     }
 
     if (!run) {
@@ -216,7 +131,6 @@ export async function GET(req: NextRequest) {
       finalArtifact,
       errorMessage: run.errorMessage,
       failureKind: run.failureKind,
-      resumed,
       proposalId: finalArtifact?.proposalId ?? null,
       contractId: finalArtifact?.contractId ?? null,
       coveragePercent: finalArtifact?.coverage?.coveragePercent ?? null,

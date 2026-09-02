@@ -343,7 +343,7 @@ export async function draftLawContract(opts: {
         temperature: 0.15,
         maxTokens: 8192,
         // Same reasoning as the proposal draft: one long attempt.
-        timeoutMs: 200_000,
+        timeoutMs: 270_000,
         maxAttempts: 1,
       }
     );

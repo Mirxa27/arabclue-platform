@@ -219,5 +219,7 @@ export default withAuth(
 
 export const config = {
   // NOTE: Do NOT exclude uploads — file access must go through /api/files with tenant scoping
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  // `.well-known/workflow/` is the Workflow DevKit's own queue-driven surface;
+  // routing it through the proxy breaks step execution (getting-started/next.mdx).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.well-known/workflow/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

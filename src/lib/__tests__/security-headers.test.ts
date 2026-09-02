@@ -6,7 +6,9 @@
  * escaping. It was absent entirely.
  */
 import { describe, expect, test } from "bun:test";
-import nextConfig from "../../../next.config";
+// The default export is the Workflow DevKit wrapper (an async config function);
+// the plain object the tests read is the named export.
+import { nextConfig } from "../../../next.config";
 
 async function headerMap(source: string) {
   const groups = await nextConfig.headers!();

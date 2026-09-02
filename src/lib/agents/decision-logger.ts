@@ -46,8 +46,12 @@ export interface AgentDecisionLog {
 }
 
 class DecisionLogger {
-  private entries: AgentDecisionEntry[] = [];
+  private entries: AgentDecisionEntry[];
   private timers = new Map<string, number>();
+
+  constructor(seed: readonly AgentDecisionEntry[] = []) {
+    this.entries = [...seed];
+  }
 
   startTimer(key: string) {
     this.timers.set(key, Date.now());
@@ -101,8 +105,9 @@ class DecisionLogger {
   }
 }
 
-export function createDecisionLogger(): DecisionLogger {
-  return new DecisionLogger();
+/** A stage running in its own function seeds its logger with the entries so far. */
+export function createDecisionLogger(seed: readonly AgentDecisionEntry[] = []): DecisionLogger {
+  return new DecisionLogger(seed);
 }
 
 export type { DecisionLogger };

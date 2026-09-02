@@ -255,7 +255,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    scheduleAgentPipeline({
+    await scheduleAgentPipeline({
       runId: run.run.id,
       projectId: project.id,
       workspaceId: workspace.id,

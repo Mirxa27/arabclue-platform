@@ -14,7 +14,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import nextConfig from "../../../next.config";
+// The default export is the Workflow DevKit wrapper (an async config function);
+// the plain object the tests read is the named export.
+import { nextConfig } from "../../../next.config";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
 function read(path: string): string {

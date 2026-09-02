@@ -43,15 +43,61 @@ export interface AgentRunMetrics {
   readonly totalDurationMs: number;
 }
 
-export function createMetricsTracker(runId: string, projectId: string) {
-  const started = Date.now();
-  const timing: Record<string, AgentTiming> = {};
-  const quality: Record<string, AgentQualityMetrics> = {};
-  const retries: Record<string, number> = {};
-  const errors: Record<string, string[]> = {};
-  let blockedExports = 0;
+/**
+ * Everything the tracker knows, as plain data. A pipeline stage running in its
+ * own function hands this to the next stage, which seeds a new tracker with it.
+ */
+export interface MetricsSnapshot {
+  readonly startedAtMs: number;
+  readonly timing: Record<string, AgentTiming>;
+  readonly quality: Record<string, AgentQualityMetrics>;
+  readonly retries: Record<string, number>;
+  readonly errors: Record<string, string[]>;
+  readonly blockedExports: number;
+}
+
+/**
+ * Two stages that ran in parallel from the same seed each carry the seed plus
+ * their own agent. The merge keeps the seed's clock, unions the per-agent maps
+ * (each agent is written by exactly one stage) and adds the export blocks the
+ * two stages raised on top of the seed's.
+ */
+export function mergeMetricsSnapshots(
+  seed: MetricsSnapshot,
+  ...stages: MetricsSnapshot[]
+): MetricsSnapshot {
+  return stages.reduce<MetricsSnapshot>(
+    (acc, stage) => ({
+      startedAtMs: seed.startedAtMs,
+      timing: { ...acc.timing, ...stage.timing },
+      quality: { ...acc.quality, ...stage.quality },
+      retries: { ...acc.retries, ...stage.retries },
+      errors: { ...acc.errors, ...stage.errors },
+      blockedExports: acc.blockedExports + Math.max(0, stage.blockedExports - seed.blockedExports),
+    }),
+    seed,
+  );
+}
+
+export function createMetricsTracker(runId: string, projectId: string, seed?: MetricsSnapshot) {
+  const started = seed?.startedAtMs ?? Date.now();
+  const timing: Record<string, AgentTiming> = { ...(seed?.timing ?? {}) };
+  const quality: Record<string, AgentQualityMetrics> = { ...(seed?.quality ?? {}) };
+  const retries: Record<string, number> = { ...(seed?.retries ?? {}) };
+  const errors: Record<string, string[]> = { ...(seed?.errors ?? {}) };
+  let blockedExports = seed?.blockedExports ?? 0;
 
   return {
+    snapshot(): MetricsSnapshot {
+      return {
+        startedAtMs: started,
+        timing: { ...timing },
+        quality: { ...quality },
+        retries: { ...retries },
+        errors: { ...errors },
+        blockedExports,
+      };
+    },
     startAgent(agentId: string) {
       timing[agentId] = { startedAt: new Date().toISOString() };
     },

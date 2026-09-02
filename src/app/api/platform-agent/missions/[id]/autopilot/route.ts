@@ -236,7 +236,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     details: { via: "extension-autopilot", projectId, tenderRef },
   });
 
-  scheduleAgentPipeline({
+  await scheduleAgentPipeline({
     runId: run.id,
     projectId,
     workspaceId: tenant.workspace.id,

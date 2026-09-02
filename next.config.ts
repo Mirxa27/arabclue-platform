@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import path from "path";
+import { withWorkflow } from "workflow/next";
 
 const notoTraceWeights = Object.freeze([300, 400, 500, 600, 700]);
 const plexTraceWeights = Object.freeze([
@@ -44,7 +45,12 @@ export const pdfRuntimeTraceIncludes = Object.freeze([
   "./node_modules/@sparticuz/chromium/bin/**/*",
 ]);
 
-const nextConfig: NextConfig = {
+/**
+ * Exported plain so the header/CSP tests can read it; the default export is
+ * the same object wrapped by the Workflow DevKit, which turns it into the
+ * async config function Next.js accepts (api-reference/workflow-next).
+ */
+export const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
   reactStrictMode: true,
   // Enable for self-host `bun run build:standalone` / Docker. Harmless on Vercel.
@@ -153,4 +159,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Enables the "use workflow" / "use step" directives (src/lib/agents/pipeline-workflow.ts)
+// and emits the queue-triggered step and flow functions under /.well-known/workflow/v1.
+export default withWorkflow(nextConfig);

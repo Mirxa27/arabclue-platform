@@ -8,9 +8,11 @@
  * and the pipeline that was supposed to fill it may never have got past its
  * first await. The user sees a QUEUED run that never moves.
  *
- * `scheduleAgentPipeline` already solves this with `after()`, which hands the
- * work to `waitUntil`. This locks every caller onto it, because the failure is
- * invisible in every local run: `void` works fine on a long-lived Node server.
+ * `scheduleAgentPipeline` solves this by starting the durable workflow
+ * (`start()` from workflow/api): the run executes in the workflow's own
+ * functions, not in the request's. This locks every caller onto it, because
+ * the failure is invisible in every local run: `void` works fine on a
+ * long-lived Node server.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -20,9 +22,9 @@ import { join } from "node:path";
 const REPO_ROOT = process.cwd();
 const SRC = join(REPO_ROOT, "src");
 
-/** The definition and the scheduler itself, which must call it directly. */
+/** The workflow module (the steps call the stages) and the scheduler (which starts it). */
 const ALLOWED = new Set([
-  join(SRC, "lib", "agents", "orchestrator.ts"),
+  join(SRC, "lib", "agents", "pipeline-workflow.ts"),
   join(SRC, "lib", "agents", "schedule-pipeline.ts"),
 ]);
 
@@ -50,22 +52,21 @@ const rel = (f: string) => f.slice(REPO_ROOT.length + 1);
  */
 function startsPipelineDirectly(file: string): boolean {
   const src = readFileSync(file, "utf8");
-  return /(?:^|[^.\w])(?:void\s+|await\s+|return\s+)?runAgentPipeline\s*\(/m.test(
+  return /(?:^|[^.\w])(?<!function\s)(?:void\s+|await\s+|return\s+)?(?:run(?:Preparation|Drafting|Law|Finalize)Stage|start\(\s*agentPipelineWorkflow)\s*[,(]/m.test(
     src
   );
 }
 
 describe("agent pipeline scheduling", () => {
-  test("the scheduler exists and hands the work to after()", () => {
-    // Anti-vacuous: if this file ever stopped calling `after`, the rule below
+  test("the scheduler exists and starts the durable workflow", () => {
+    // Anti-vacuous: if this file ever stopped calling `start`, the rule below
     // would still pass while every caller went back to being fire-and-forget.
     const src = readFileSync(
       join(SRC, "lib", "agents", "schedule-pipeline.ts"),
       "utf8"
     );
-    expect(src).toContain('from "next/server"');
-    expect(src).toMatch(/\bafter\(/);
-    expect(src).toMatch(/runAgentPipeline\s*\(/);
+    expect(src).toContain('from "workflow/api"');
+    expect(src).toMatch(/start\(\s*agentPipelineWorkflow,/);
   });
 
   test("the scan finds the modules that do start it", () => {
@@ -73,7 +74,7 @@ describe("agent pipeline scheduling", () => {
     // real assertion trivially true.
     const starters = FILES.filter(startsPipelineDirectly).map(rel);
     expect(starters).toContain("src/lib/agents/schedule-pipeline.ts");
-    expect(starters).toContain("src/lib/agents/orchestrator.ts");
+    expect(starters).toContain("src/lib/agents/pipeline-workflow.ts");
   });
 
   test("no other module starts the pipeline itself", () => {

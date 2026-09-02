@@ -305,7 +305,7 @@ export async function maybeAutopilotAfterIngest(opts: {
     details: { projectId, via: "mission-autopilot" },
   });
 
-  scheduleAgentPipeline({
+  await scheduleAgentPipeline({
     runId: run.id,
     projectId,
     workspaceId: opts.workspaceId,

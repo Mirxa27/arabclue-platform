@@ -116,9 +116,10 @@ export async function draftProposal(opts: {
       maxTokens: 8192,
       temperature: 0.28,
       engine: "DRAFTING",
-      // Minutes of generation, once. The row's 60 s is an enrichment budget,
-      // and a retry of a timed-out draft only times out again.
-      timeoutMs: 200_000,
+      // Minutes of generation, once, inside the drafting step's own 300 s
+      // function. The row's 60 s is an enrichment budget; a timed-out draft is
+      // retried by the workflow as a whole stage, not by the transport.
+      timeoutMs: 270_000,
       maxAttempts: 1,
     }
   );

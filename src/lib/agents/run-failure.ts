@@ -54,3 +54,24 @@ export function runFailureCopyKey(kind: string | null | undefined): string {
     RUN_FAILURE_COPY_KEYS.INTERNAL
   );
 }
+
+/**
+ * Kinds that a durable stage retries after a delay instead of failing the run:
+ * the provider was busy, slow, or briefly down, and nothing about the tender
+ * changed. Bad input and our own bugs are not helped by waiting.
+ */
+export function isTransientRunFailure(kind: AgentRunFailureKind): boolean {
+  return kind === "RATE_LIMIT" || kind === "TIMEOUT" || kind === "PROVIDER_UNAVAILABLE";
+}
+
+/** How long a stage waits before its next attempt, by what it hit. */
+export function transientRetryDelayMs(kind: AgentRunFailureKind): number {
+  switch (kind) {
+    case "RATE_LIMIT":
+      return 60_000;
+    case "PROVIDER_UNAVAILABLE":
+      return 20_000;
+    default:
+      return 5_000;
+  }
+}

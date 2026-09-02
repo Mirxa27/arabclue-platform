@@ -190,7 +190,7 @@ async function launchProjectPipeline(
     details: { projectId: project.id, source: "platform-agent" },
   });
 
-  scheduleAgentPipeline({
+  await scheduleAgentPipeline({
     runId: run.run.id,
     projectId: project.id,
     workspaceId: ctx.workspace.id,
