@@ -2284,6 +2284,88 @@ export const localizationRegistry = {
     ar: "لا توجد مسودة مباشرة لهذا التشغيل",
     en: "This run has no live draft to replay",
   },
+  AI_PROVIDER_NOT_FOUND: {
+    ar: "لم يتم العثور على مزوّد الذكاء الاصطناعي",
+    en: "The AI provider was not found",
+  },
+  AI_PROVIDER_MODELS_FETCH_FAILED: {
+    ar: "لم تستجب نقطة نهاية النماذج لدى المزوّد",
+    en: "The provider's models endpoint did not answer",
+  },
+  SUPER_ADMIN_REQUIRED: {
+    ar: "هذا الإجراء متاح لمشرف النظام الأعلى فقط",
+    en: "Only a super admin can do this",
+  },
+  ENV_KEY_PROTECTED: {
+    ar: "لا يمكن تغيير هذا المفتاح عبر الواجهة البرمجية في بيئة الإنتاج",
+    en: "This key cannot be changed through the API in production",
+  },
+  USER_NOT_FOUND: {
+    ar: "لم يتم العثور على المستخدم",
+    en: "The user was not found",
+  },
+  ROLE_GRANT_FORBIDDEN: {
+    ar: "لا يمكنك منح هذا الدور",
+    en: "You cannot grant this role",
+  },
+  CHECKOUT_NOT_FOUND: {
+    ar: "لم يتم العثور على عملية الدفع",
+    en: "The checkout was not found",
+  },
+  NO_INVOICE_ID: {
+    ar: "عملية الدفع بلا معرّف فاتورة للتحقق منه",
+    en: "The checkout has no invoice id to verify",
+  },
+  PROVIDER_UNREACHABLE: {
+    ar: "تعذر التحقق من حالة الدفع لدى مزوّد الدفع",
+    en: "Could not verify the payment state with the payment provider",
+  },
+  PAYMENT_CANCELLED_OR_FAILED: {
+    ar: "أُلغيت عملية الدفع أو لم تكتمل",
+    en: "The payment was cancelled or did not complete",
+  },
+  PAYMENT_REFERENCE_MISSING: {
+    ar: "لا يوجد مرجع دفع في رابط العودة",
+    en: "The return link carries no payment reference",
+  },
+  CONTRACT_TEMPLATE_REQUEST_TOO_LARGE: {
+    ar: "طلب قالب العقد أكبر من الحد المسموح",
+    en: "The contract template request is too large",
+  },
+  CONTRACT_TEMPLATE_REQUEST_INVALID: {
+    ar: "طلب قالب العقد غير صالح",
+    en: "The contract template request is invalid",
+  },
+  CONTRACT_TEMPLATE_FORMAT_INVALID: {
+    ar: "الصيغة المطلوبة يجب أن تكون html أو pdf",
+    en: "The format must be html or pdf",
+  },
+  CRON_SECRET_UNCONFIGURED: {
+    ar: "سر المهام المجدولة غير مضبوط (16 حرفاً على الأقل)",
+    en: "The scheduler secret is not configured (at least 16 characters)",
+  },
+  // Admin-console contracts. The lowercase codes predate the registry and are
+  // what the console and its tests compare; the message is what became bilingual.
+  model_required: {
+    ar: "لا يمكن تفعيل الاتصال دون نموذج محدد. اجلب النماذج واختر واحداً أولاً",
+    en: "Cannot activate a connection without a selected model. Fetch models and choose one first.",
+  },
+  AI_PROVIDER_STILL_ACTIVE: {
+    ar: "لا يمكن حذف مزوّد نشط. فعّل مزوّداً آخر لهذا المحرك أولاً",
+    en: "Cannot delete an active provider. Activate another for this engine first.",
+  },
+  ENV_SECRECY_REQUIRED: {
+    ar: "يجب أن يبقى هذا المفتاح مخفياً؛ لا تُعرض بنص صريح إلا المفاتيح المدرجة في قائمة غير السرية",
+    en: "This key must remain masked. Only keys on the non-secret allowlist can be displayed in plaintext.",
+  },
+  api_key_env_not_allowed: {
+    ar: "يجب أن يسمّي apiKeyEnvKey متغيّر بيانات اعتماد مزوّد (مثل OPENAI_API_KEY أو OPENAI_API_KEY_TEAM_B)",
+    en: "apiKeyEnvKey must name a provider credential variable (for example OPENAI_API_KEY or OPENAI_API_KEY_TEAM_B).",
+  },
+  api_base_not_allowed: {
+    ar: "عنوان API الأساسي غير مسموح به لبيانات الاعتماد هذه",
+    en: "The API base URL is not allowed for this credential",
+  },
   // `_MISSING`, not `_REQUIRED`: resolveFailureStatus maps a `_REQUIRED`
   // suffix to 403, and this is a malformed query, not a permission problem.
   AGENT_RUN_SELECTOR_MISSING: {
@@ -3083,6 +3165,27 @@ export const COMPLETION_ERROR_CONTRACTS = {
   PROJECT_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "PROJECT_NOT_FOUND" },
   AGENT_RUN_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AGENT_RUN_NOT_FOUND" },
   AGENT_RUN_STREAM_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AGENT_RUN_STREAM_NOT_FOUND" },
+  AI_PROVIDER_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AI_PROVIDER_NOT_FOUND" },
+  AI_PROVIDER_MODELS_FETCH_FAILED: { actionKey: "error_action_complete_request", messageKey: "AI_PROVIDER_MODELS_FETCH_FAILED" },
+  SUPER_ADMIN_REQUIRED: { actionKey: "error_action_access_resource", messageKey: "SUPER_ADMIN_REQUIRED" },
+  ENV_KEY_PROTECTED: { actionKey: "error_action_complete_request", messageKey: "ENV_KEY_PROTECTED" },
+  USER_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "USER_NOT_FOUND" },
+  ROLE_GRANT_FORBIDDEN: { actionKey: "error_action_access_resource", messageKey: "ROLE_GRANT_FORBIDDEN" },
+  CHECKOUT_NOT_FOUND: { actionKey: "error_action_complete_request", messageKey: "CHECKOUT_NOT_FOUND" },
+  NO_INVOICE_ID: { actionKey: "error_action_complete_request", messageKey: "NO_INVOICE_ID" },
+  PROVIDER_UNREACHABLE: { actionKey: "error_action_complete_request", messageKey: "PROVIDER_UNREACHABLE" },
+  PAYMENT_CANCELLED_OR_FAILED: { actionKey: "error_action_complete_request", messageKey: "PAYMENT_CANCELLED_OR_FAILED" },
+  PAYMENT_REFERENCE_MISSING: { actionKey: "error_action_complete_request", messageKey: "PAYMENT_REFERENCE_MISSING" },
+  CONTRACT_REVISION_INVALID: { actionKey: "error_action_load_version_history", messageKey: "CONTRACT_REVISION_INVALID" },
+  CONTRACT_TEMPLATE_REQUEST_TOO_LARGE: { actionKey: "error_action_manage_template", messageKey: "CONTRACT_TEMPLATE_REQUEST_TOO_LARGE" },
+  CONTRACT_TEMPLATE_REQUEST_INVALID: { actionKey: "error_action_manage_template", messageKey: "CONTRACT_TEMPLATE_REQUEST_INVALID" },
+  CONTRACT_TEMPLATE_FORMAT_INVALID: { actionKey: "error_action_manage_template", messageKey: "CONTRACT_TEMPLATE_FORMAT_INVALID" },
+  CRON_SECRET_UNCONFIGURED: { actionKey: "error_action_complete_request", messageKey: "CRON_SECRET_UNCONFIGURED" },
+  model_required: { actionKey: "error_action_complete_request", messageKey: "model_required" },
+  AI_PROVIDER_STILL_ACTIVE: { actionKey: "error_action_complete_request", messageKey: "AI_PROVIDER_STILL_ACTIVE" },
+  ENV_SECRECY_REQUIRED: { actionKey: "error_action_complete_request", messageKey: "ENV_SECRECY_REQUIRED" },
+  api_key_env_not_allowed: { actionKey: "error_action_complete_request", messageKey: "api_key_env_not_allowed" },
+  api_base_not_allowed: { actionKey: "error_action_complete_request", messageKey: "api_base_not_allowed" },
   AGENT_RUN_SELECTOR_MISSING: { actionKey: "error_action_run_agent", messageKey: "AGENT_RUN_SELECTOR_MISSING" },
   CONTRACT_DRAFT_BODY_TOO_LARGE: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_BODY_TOO_LARGE" },
   CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED: { actionKey: "error_action_manage_contract_draft", messageKey: "CONTRACT_DRAFT_CONTENT_TYPE_UNSUPPORTED" },

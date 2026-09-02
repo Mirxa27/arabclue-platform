@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
+import { withTenant, jsonOk, apiFailure, ApiError } from "@/lib/api-controller";
 import { fulfillCheckout } from "@/lib/billing";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -25,11 +25,11 @@ export async function GET(req: NextRequest) {
     // payment reference, so cancellation has to be read here or the user who
     // backed out is told their reference is missing instead.
     if (params.get("status") === "error" && !paymentId) {
-      return jsonOk({ ok: false, error: "payment_cancelled_or_failed" });
+      return jsonOk(apiFailure("PAYMENT_CANCELLED_OR_FAILED"));
     }
 
     if (!ref && !paymentId) {
-      return jsonOk({ ok: false, error: "missing_payment_reference" });
+      return jsonOk(apiFailure("PAYMENT_REFERENCE_MISSING"));
     }
 
     // Status inquiries hit MyFatoorah; cap probing the same way checkout does.
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
       });
     }
     if (!checkout || checkout.userId !== session.user.id) {
-      return jsonOk({ ok: false, error: "checkout_not_found" });
+      return jsonOk(apiFailure("CHECKOUT_NOT_FOUND"));
     }
 
     const result = await fulfillCheckout({

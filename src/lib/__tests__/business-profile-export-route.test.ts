@@ -182,7 +182,12 @@ describe("business-profile export route", () => {
     );
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: "Unauthorized" });
+    // Bilingual since the register sweep: the code is the contract, the
+    // message pair is what a reader sees.
+    const body = (await response.json()) as { ok: boolean; code: string; error: { ar: string; en: string } };
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe("UNAUTHORIZED");
+    expect(body.error.ar.length).toBeGreaterThan(0);
     expect(state.profileLoadCount).toBe(0);
     expect(state.audits).toHaveLength(0);
   });

@@ -2,7 +2,7 @@ import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { parseJsonBody, withAdmin } from "@/lib/api-controller";
+import { apiFailure, jsonApiFailure, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { adminAiProviderModelsSchema } from "@/lib/validation";
 import { parseModelsCache } from "@/lib/llm/model-catalog";
 import { fetchLiveProviderModels } from "@/lib/llm/fetch-models";
@@ -83,12 +83,8 @@ export async function POST(req: NextRequest) {
       // bilingual failure mapper.
       console.error("[admin/ai-providers/models]", err);
       return NextResponse.json(
-        {
-          error: "Models endpoint failed",
-          models: [],
-          code: "INTERNAL",
-        },
-        { status: 500 }
+        { ...apiFailure("AI_PROVIDER_MODELS_FETCH_FAILED"), models: [] },
+        { status: 502, headers: { "Cache-Control": "no-store" } }
       );
     }
   }, "admin/ai-providers/models");
@@ -163,7 +159,7 @@ async function handleModelsPost(body: FetchBody) {
       where: { id: providerId },
     });
     if (!row) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+      return jsonApiFailure("AI_PROVIDER_NOT_FOUND", { status: 404 });
     }
     provider = row.provider.toLowerCase();
     apiBase = body.apiBase ?? row.apiBase;

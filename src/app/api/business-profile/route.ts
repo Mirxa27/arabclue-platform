@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import {
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const session = await requireSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("UNAUTHORIZED", { status: 401 });
   }
   const { workspace } = await getTenantContext(session.user.id);
   const profile = await loadBusinessProfile(workspace.id);

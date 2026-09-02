@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiFailure } from "@/lib/api-failure";
 import {
   assertProviderCredentialOrigin,
   defaultApiBase,
@@ -32,14 +33,10 @@ export function providerConnectionGuardError(input: {
   const envKey = (input.apiKeyEnvKey ?? "").trim();
 
   if (envKey !== "" && !isAllowedProviderApiKeyEnv(envKey)) {
-    return NextResponse.json(
-      {
-        error:
-          "apiKeyEnvKey must name a provider credential variable (for example OPENAI_API_KEY or OPENAI_API_KEY_TEAM_B).",
-        code: "api_key_env_not_allowed",
-      },
-      { status: 400 }
-    );
+    return NextResponse.json(apiFailure("api_key_env_not_allowed"), {
+      status: 400,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 
   try {
@@ -53,11 +50,12 @@ export function providerConnectionGuardError(input: {
   } catch (err) {
     return NextResponse.json(
       {
-        error:
-          err instanceof Error ? err.message : "API Base URL is not allowed.",
-        code: "api_base_not_allowed",
+        ...apiFailure("api_base_not_allowed"),
+        // The origin check's own words name the credential and the host it is
+        // pinned to — what the admin needs, kept beside the bilingual message.
+        detail: err instanceof Error ? err.message : "API Base URL is not allowed.",
       },
-      { status: 400 }
+      { status: 400, headers: { "Cache-Control": "no-store" } }
     );
   }
 

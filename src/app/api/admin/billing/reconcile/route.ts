@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
-import { withAdmin, jsonOk, jsonError } from "@/lib/api-controller";
+import { withAdmin, jsonOk, jsonError, jsonApiFailure } from "@/lib/api-controller";
+
+/** Why one checkout could not be verified against the gateway; the admin console maps these. */
+type ReconcileVerifyReason = "CHECKOUT_NOT_FOUND" | "NO_INVOICE_ID" | "PROVIDER_UNREACHABLE";
 import { moneyNumber } from "@/lib/money";
 import {
   getReconciliationReport,
@@ -239,14 +242,14 @@ export async function GET(req: NextRequest) {
  */
 async function verifyProviderResults(checkoutIds: readonly string[]): Promise<{
   resolved: Array<{ checkoutId: string; providerResult: ReconcileProviderResult }>;
-  errors: Array<{ checkoutId: string; error: string }>;
+  errors: Array<{ checkoutId: string; reason: ReconcileVerifyReason }>;
 }> {
   const unique = [...new Set(checkoutIds.filter(Boolean))];
   const resolved: Array<{
     checkoutId: string;
     providerResult: ReconcileProviderResult;
   }> = [];
-  const errors: Array<{ checkoutId: string; error: string }> = [];
+  const errors: Array<{ checkoutId: string; reason: ReconcileVerifyReason }> = [];
 
   const rows = await db.paymentCheckout.findMany({
     where: { id: { in: unique } },
@@ -255,7 +258,7 @@ async function verifyProviderResults(checkoutIds: readonly string[]): Promise<{
   const invoiceByCheckout = new Map(rows.map((r) => [r.id, r.invoiceId]));
 
   type VerifyOutcome =
-    | { kind: "error"; checkoutId: string; error: string }
+    | { kind: "error"; checkoutId: string; reason: ReconcileVerifyReason }
     | {
         kind: "ok";
         checkoutId: string;
@@ -268,10 +271,10 @@ async function verifyProviderResults(checkoutIds: readonly string[]): Promise<{
       batch.map(async (checkoutId): Promise<VerifyOutcome> => {
         const invoiceId = invoiceByCheckout.get(checkoutId);
         if (invoiceId === undefined) {
-          return { kind: "error", checkoutId, error: "CHECKOUT_NOT_FOUND" };
+          return { kind: "error", checkoutId, reason: "CHECKOUT_NOT_FOUND" };
         }
         if (!invoiceId) {
-          return { kind: "error", checkoutId, error: "NO_INVOICE_ID" };
+          return { kind: "error", checkoutId, reason: "NO_INVOICE_ID" };
         }
         try {
           const status = await withProviderDeadline(
@@ -297,14 +300,14 @@ async function verifyProviderResults(checkoutIds: readonly string[]): Promise<{
             `[reconcile] provider verification failed for ${checkoutId}:`,
             err instanceof Error ? err.message : err
           );
-          return { kind: "error", checkoutId, error: "PROVIDER_UNREACHABLE" };
+          return { kind: "error", checkoutId, reason: "PROVIDER_UNREACHABLE" };
         }
       })
     );
 
     for (const entry of settled) {
       if (entry.kind === "error") {
-        errors.push({ checkoutId: entry.checkoutId, error: entry.error });
+        errors.push({ checkoutId: entry.checkoutId, reason: entry.reason });
       } else {
         resolved.push({
           checkoutId: entry.checkoutId,
@@ -406,7 +409,11 @@ export async function POST(req: NextRequest) {
         items: verifiedItems.resolved,
         adminUserId: session.user.id,
       });
-      result.errors.push(...verifiedItems.errors);
+      // The bulk result's `error` field carries operator text from the apply
+      // step; a checkout that could not even be verified reports its reason there.
+      result.errors.push(
+        ...verifiedItems.errors.map((e) => ({ checkoutId: e.checkoutId, error: e.reason }))
+      );
 
       await audit({
         userId: session.user.id,
@@ -433,15 +440,8 @@ export async function POST(req: NextRequest) {
       const entry = verified.resolved[0];
       if (!entry) {
         const failure = verified.errors[0];
-        return jsonError(
-          failure?.error === "CHECKOUT_NOT_FOUND"
-            ? "Checkout not found"
-            : failure?.error === "NO_INVOICE_ID"
-              ? "Checkout has no invoiceId to verify"
-              : "Could not verify payment state with the provider",
-          failure?.error === "CHECKOUT_NOT_FOUND" ? 404 : 502,
-          failure?.error ?? "PROVIDER_UNREACHABLE"
-        );
+        // The admin console maps `code`; the message is bilingual for anyone else.
+        return jsonApiFailure(failure?.reason ?? "PROVIDER_UNREACHABLE");
       }
 
       const result = await applyReconciliation({

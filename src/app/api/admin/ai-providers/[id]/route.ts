@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { parseJsonBody, withAdmin } from "@/lib/api-controller";
+import { jsonApiFailure, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import {
   adminAiProviderWriteSchema,
@@ -64,7 +64,7 @@ export async function PATCH(
 
   const existing = await db.aIProviderConfig.findUnique({ where: { id } });
   if (!existing) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return jsonApiFailure("AI_PROVIDER_NOT_FOUND", { status: 404 });
   }
 
   // Validated against the merged result, not the patch: changing only the base
@@ -121,14 +121,7 @@ export async function PATCH(
 
   // Active connections must always have a selected model from live fetch
   if (willBeActive && !nextModelId) {
-    return NextResponse.json(
-      {
-        error:
-          "Cannot activate or keep active without a selected model. Fetch models and choose one first.",
-        code: "model_required",
-      },
-      { status: 400 }
-    );
+    return jsonApiFailure("model_required", { status: 400 });
   }
 
   // Activation / engine change: only one active provider per served engine
@@ -180,13 +173,7 @@ export async function DELETE(
   await getBootstrapContext();
   const existing = await db.aIProviderConfig.findUnique({ where: { id } });
   if (existing?.isActive) {
-    return NextResponse.json(
-      {
-        error:
-          "Cannot delete an active provider. Activate another for this engine first.",
-      },
-      { status: 400 }
-    );
+    return jsonApiFailure("AI_PROVIDER_STILL_ACTIVE", { status: 400 });
   }
   await db.aIProviderConfig.delete({ where: { id } });
   await audit({

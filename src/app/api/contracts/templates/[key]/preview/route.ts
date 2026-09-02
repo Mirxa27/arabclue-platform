@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiFailure, jsonApiFailure } from "@/lib/api-controller";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -133,20 +134,14 @@ async function parseRequestBody(
   ) {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: "Contract template request is too large." },
-        { status: 413 }
-      ),
+      response: jsonApiFailure("CONTRACT_TEMPLATE_REQUEST_TOO_LARGE", { status: 413 }),
     };
   }
   const raw = await request.text();
   if (Buffer.byteLength(raw, "utf8") > MAX_TEMPLATE_REQUEST_BYTES) {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: "Contract template request is too large." },
-        { status: 413 }
-      ),
+      response: jsonApiFailure("CONTRACT_TEMPLATE_REQUEST_TOO_LARGE", { status: 413 }),
     };
   }
   let value: unknown;
@@ -155,20 +150,17 @@ async function parseRequestBody(
   } catch {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: "Invalid JSON request body." },
-        { status: 400 }
-      ),
+      response: jsonApiFailure("CONTRACT_TEMPLATE_REQUEST_INVALID", { status: 400 }),
     };
   }
   const parsed = requestSchema.safeParse(value);
   if (!parsed.success) {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: "Invalid contract template request." },
-        { status: 400 }
-      ),
+      response: jsonApiFailure("CONTRACT_TEMPLATE_REQUEST_INVALID", {
+        status: 400,
+        fieldPaths: parsed.error.issues.map((issue) => issue.path.join(".")).filter(Boolean),
+      }),
     };
   }
   return {
@@ -185,14 +177,11 @@ export async function handleContractTemplatePreview(
 ): Promise<NextResponse> {
   const session = await dependencies.getSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("UNAUTHORIZED", { status: 401 });
   }
   const format = resolveFormat(request.nextUrl.searchParams.get("format"));
   if (!format) {
-    return NextResponse.json(
-      { error: "format must be html or pdf" },
-      { status: 400 }
-    );
+    return jsonApiFailure("CONTRACT_TEMPLATE_FORMAT_INVALID", { status: 400, fieldPaths: ["format"] });
   }
   const parsed = await parseRequestBody(request);
   if (!parsed.ok) return parsed.response;
@@ -205,13 +194,12 @@ export async function handleContractTemplatePreview(
   if (compilation.status === "BLOCKED" || compilation.document === null) {
     return NextResponse.json(
       {
-        error: "Contract template rendering is blocked.",
-        code: "CONTRACT_TEMPLATE_BLOCKED",
+        ...apiFailure("CONTRACT_TEMPLATE_BLOCKED"),
         lifecycle: "DRAFT",
         legalReviewStatus: "UNREVIEWED",
         diagnostics: compilation.diagnostics,
       },
-      { status: 422 }
+      { status: 422, headers: { "Cache-Control": "no-store" } }
     );
   }
 

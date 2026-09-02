@@ -88,29 +88,37 @@ export default function BillingCallbackPage() {
         {state === "loading" && (
           <>
             <Loader2 className="size-10 animate-spin mx-auto text-primary" />
-            <h1 className="text-lg font-semibold">Confirming payment…</h1>
+            <h1 className="text-lg font-semibold">
+              {locale === "ar" ? "جارٍ تأكيد الدفع…" : "Confirming payment…"}
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Verifying MyFatoorah invoice status
+              {locale === "ar"
+                ? "يتم التحقق من حالة فاتورة MyFatoorah"
+                : "Verifying MyFatoorah invoice status"}
             </p>
           </>
         )}
         {state === "ok" && (
           <>
             <CheckCircle2 className="size-10 mx-auto text-emerald-600" />
-            <h1 className="text-lg font-semibold">Payment successful</h1>
+            <h1 className="text-lg font-semibold">
+              {locale === "ar" ? "تم الدفع بنجاح" : "Payment successful"}
+            </h1>
             <p className="text-sm text-muted-foreground">{message}</p>
             <Button asChild>
-              <Link href="/app?view=billing">Open billing</Link>
+              <Link href="/app?view=billing">{locale === "ar" ? "فتح الفوترة" : "Open billing"}</Link>
             </Button>
           </>
         )}
         {state === "fail" && (
           <>
             <XCircle className="size-10 mx-auto text-destructive" />
-            <h1 className="text-lg font-semibold">Payment not completed</h1>
+            <h1 className="text-lg font-semibold">
+              {locale === "ar" ? "لم تكتمل عملية الدفع" : "Payment not completed"}
+            </h1>
             <p className="text-sm text-muted-foreground">{message}</p>
             <Button asChild variant="outline">
-              <Link href="/app?view=billing">Back to billing</Link>
+              <Link href="/app?view=billing">{locale === "ar" ? "الرجوع إلى الفوترة" : "Back to billing"}</Link>
             </Button>
           </>
         )}

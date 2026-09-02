@@ -159,6 +159,20 @@ export function validationFailureOptions(
 
 const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   AUTHENTICATION_REQUIRED: 401,
+  // Register sweep 2026-09-02: codes whose suffix would say the wrong thing.
+  AI_PROVIDER_MODELS_FETCH_FAILED: 502,
+  ENV_KEY_PROTECTED: 403,
+  NO_INVOICE_ID: 422,
+  PROVIDER_UNREACHABLE: 502,
+  CONTRACT_TEMPLATE_REQUEST_TOO_LARGE: 413,
+  CONTRACT_TEMPLATE_REQUEST_INVALID: 400,
+  CONTRACT_TEMPLATE_FORMAT_INVALID: 400,
+  // `_REQUIRED` would read 403; this is a malformed write, not a permission.
+  ENV_SECRECY_REQUIRED: 400,
+  model_required: 400,
+  api_key_env_not_allowed: 400,
+  api_base_not_allowed: 400,
+  CONTRACT_TEMPLATE_BLOCKED: 422,
   REQUEST_VALIDATION_FAILED: 400,
   EMAIL_VERIFICATION_REQUIRED: 403,
   WORKSPACE_ROLE_FORBIDDEN: 403,

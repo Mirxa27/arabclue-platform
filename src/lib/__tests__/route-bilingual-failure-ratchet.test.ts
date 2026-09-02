@@ -40,29 +40,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 /** Routes still returning at least one untranslated `error:` string literal. */
-const REMAINING: readonly string[] = [
-  "src/app/api/admin/ai-providers/[id]/route.ts",
-  "src/app/api/admin/ai-providers/models/route.ts",
-  "src/app/api/admin/ai-providers/route.ts",
-  "src/app/api/admin/billing/reconcile/route.ts",
-  "src/app/api/admin/env/[key]/route.ts",
-  "src/app/api/admin/env/route.ts",
-  "src/app/api/admin/users/[id]/route.ts",
-  "src/app/api/billing/callback/route.ts",
-  "src/app/api/business-profile/export/route.ts",
-  "src/app/api/business-profile/route.ts",
-  "src/app/api/contracts/instances/[id]/versions/[revision]/route.ts",
-  "src/app/api/contracts/templates/[key]/preview/route.ts",
-  "src/app/api/contracts/templates/route.ts",
-  // Neither of these answers a bidder, which is why they are listed rather than
-  // converted. `cron-auth` replies to Vercel's scheduler, and
-  // `provider-connection-guard` rejects a malformed credential name typed by an
-  // admin into the provider console. Both are still English literals in a
-  // failure body, so they stay on the register — but translating them buys a
-  // reader neither one has.
-  "src/lib/cron-auth.ts",
-  "src/lib/llm/provider-connection-guard.ts",
-];
+// Emptied 2026-09-02. Every route and shared builder answers through the
+// bilingual failure mapper; a new literal anywhere fails the test below.
+const REMAINING: readonly string[] = [];
 
 const ROOT = process.cwd();
 

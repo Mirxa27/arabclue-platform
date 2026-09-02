@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { parseJsonBody, withAdmin } from "@/lib/api-controller";
+import { jsonApiFailure, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { decryptValue, maskSecret, rotateEncryption } from "@/lib/crypto";
 import { isSecretEnvKey } from "@/lib/constants";
@@ -20,7 +20,7 @@ export async function PATCH(
   const body = await parseJsonBody(req, adminEnvPatchSchema);
 
   const existing = await db.envSetting.findUnique({ where: { key } });
-  if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!existing) return jsonApiFailure("RESOURCE_NOT_FOUND", { status: 404 });
 
   if (body.rotate) {
     // Re-encrypt with a fresh IV
@@ -54,14 +54,7 @@ export async function PATCH(
       : requestedSecret || isSecretEnvKey(key);
 
   if (requestedSecret === false && nextSecret === true) {
-    return NextResponse.json(
-      {
-        error:
-          "This key must remain masked. Only keys on the non-secret allowlist can be displayed in plaintext.",
-        code: "ENV_SECRECY_REQUIRED",
-      },
-      { status: 400 }
-    );
+    return jsonApiFailure("ENV_SECRECY_REQUIRED", { status: 400 });
   }
 
   const updated = await db.envSetting.update({

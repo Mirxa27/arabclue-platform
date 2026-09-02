@@ -23,7 +23,7 @@ export async function PATCH(
     select: { role: true, active: true, email: true, mfaSecret: true, mfaEnabled: true },
   });
   if (!before) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    return jsonApiFailure("USER_NOT_FOUND", { status: 404 });
   }
 
   // Applies to ANY mutation of a SUPER_ADMIN, not just a role change.
@@ -33,19 +33,13 @@ export async function PATCH(
   // SUPER_ADMIN or strip their MFA — neutralising the only role that outranks
   // them. Hoisted so the target's rank is checked before any field is written.
   if (before.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
-    return NextResponse.json(
-      { error: "Only SUPER_ADMIN can modify SUPER_ADMIN accounts" },
-      { status: 403 }
-    );
+    return jsonApiFailure("SUPER_ADMIN_REQUIRED", { status: 403 });
   }
 
   if (body.role) {
     const targetRole = body.role;
     if (!canGrantRole(session.user.role, targetRole)) {
-      return NextResponse.json(
-        { error: "Insufficient privileges to grant this role" },
-        { status: 403 }
-      );
+      return jsonApiFailure("ROLE_GRANT_FORBIDDEN", { status: 403 });
     }
   }
 
@@ -125,13 +119,10 @@ export async function DELETE(
 
   const target = await db.user.findUnique({ where: { id }, select: { role: true, email: true } });
   if (!target) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    return jsonApiFailure("USER_NOT_FOUND", { status: 404 });
   }
   if (target.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
-    return NextResponse.json(
-      { error: "Only SUPER_ADMIN can deactivate SUPER_ADMIN accounts" },
-      { status: 403 }
-    );
+    return jsonApiFailure("SUPER_ADMIN_REQUIRED", { status: 403 });
   }
   if (id === session.user.id) {
     return jsonApiFailure("CANNOT_DEACTIVATE_OWN_ACCOUNT", { status: 400 });

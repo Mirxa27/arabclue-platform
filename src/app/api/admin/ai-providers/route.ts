@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { parseJsonBody, withAdmin } from "@/lib/api-controller";
+import { jsonApiFailure, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import {
   adminAiProviderWriteSchema,
@@ -107,14 +107,7 @@ export async function POST(req: NextRequest) {
   const { engines, primary: engine, enginesJson } = enginesPayloadFromBody(body);
   const activate = body.isActive === true;
   if (activate && !modelId) {
-    return NextResponse.json(
-      {
-        error:
-          "Cannot activate a connection without a model. Fetch models and select one first.",
-        code: "model_required",
-      },
-      { status: 400 }
-    );
+    return jsonApiFailure("model_required", { status: 400 });
   }
 
   const guardError = providerConnectionGuardError({

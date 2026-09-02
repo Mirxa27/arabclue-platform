@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
+import { withTenant, jsonOk, jsonApiFailure, ApiError } from "@/lib/api-controller";
 import {
   ContractVersioningError,
   getContractVersion,
@@ -17,10 +17,7 @@ export async function GET(
   const revision = parseInt(revisionStr, 10);
 
   if (!Number.isFinite(revision) || revision < 1) {
-    return NextResponse.json(
-      { error: "Invalid revision number.", code: "CONTRACT_REVISION_INVALID" },
-      { status: 400 }
-    );
+    return jsonApiFailure("CONTRACT_REVISION_INVALID", { status: 400 });
   }
 
   return withTenant(

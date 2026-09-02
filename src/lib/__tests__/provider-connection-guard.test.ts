@@ -62,9 +62,12 @@ describe("providerConnectionGuardError", () => {
 
     expect(res).not.toBeNull();
     expect(res!.status).toBe(400);
-    const body = (await res!.json()) as { code: string; error: string };
+    // `error` is the bilingual pair since the register sweep; the origin
+    // check's own words, which name the credential, travel in `detail`.
+    const body = (await res!.json()) as { code: string; error: { ar: string; en: string }; detail: string };
     expect(body.code).toBe("api_base_not_allowed");
-    expect(body.error).toMatch(/OPENAI_API_KEY/);
+    expect(body.error.ar).toBeTruthy();
+    expect(body.detail).toMatch(/OPENAI_API_KEY/);
   });
 
   test("rejects a private-network base for a gateway credential", async () => {

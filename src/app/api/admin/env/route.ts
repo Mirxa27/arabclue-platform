@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBootstrapContext } from "@/lib/bootstrap";
-import { parseJsonBody, parseSearchParams, withAdmin } from "@/lib/api-controller";
+import { jsonApiFailure, parseJsonBody, parseSearchParams, withAdmin } from "@/lib/api-controller";
 import { adminEnvUpsertSchema } from "@/lib/validation";
 import { z } from "zod";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -23,10 +23,7 @@ export async function GET(req: NextRequest) {
   const reveal = revealFlag === "1";
   if (reveal) {
     if (session.user.role !== "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only SUPER_ADMIN can reveal secret values" },
-        { status: 403 }
-      );
+      return jsonApiFailure("SUPER_ADMIN_REQUIRED", { status: 403 });
     }
   }
   const settings = await db.envSetting.findMany({
@@ -93,15 +90,12 @@ export async function POST(req: NextRequest) {
 
   // Secret / critical writes require SUPER_ADMIN
   if ((secret || CRITICAL_ENV_KEYS.has(key)) && session.user.role !== "SUPER_ADMIN") {
-    return NextResponse.json(
-      { error: "Only SUPER_ADMIN can modify secret or critical env keys" },
-      { status: 403 }
-    );
+    return jsonApiFailure("SUPER_ADMIN_REQUIRED", { status: 403 });
   }
 
   // Extra guard: prevent DATABASE_URL overwrite via API in production (breaks all connections)
   if (key === "DATABASE_URL" && process.env.NODE_ENV === "production" && process.env.VERCEL) {
-    return NextResponse.json({ error: "DATABASE_URL cannot be changed via API in production" }, { status: 403 });
+    return jsonApiFailure("ENV_KEY_PROTECTED", { status: 403 });
   }
 
   await getBootstrapContext();

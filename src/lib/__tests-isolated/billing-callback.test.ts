@@ -149,14 +149,17 @@ describe("billing callback confirmation contract", () => {
     });
 
     const res = await routeGet(makeCallbackRequest("?ref=ref-2&paymentId=pay-2"));
-    const body = (await res.json()) as { ok: boolean; error?: string };
+    // The refusal is a registered bilingual failure now: the page reads `error`
+    // as `{ar, en}` and callers compare `code` (register sweep 2026-09-02).
+    const body = (await res.json()) as { ok: boolean; code?: string; error?: { ar: string; en: string } };
 
     expect(body.ok).toBe(false);
-    expect(body.error).toBe("checkout_not_found");
+    expect(body.code).toBe("CHECKOUT_NOT_FOUND");
+    expect(body.error?.ar).toBeTruthy();
     expect(fulfillCalls).toHaveLength(0);
   });
 
-  // The uniform "checkout_not_found" answer is what the caller sees; it must not
+  // The uniform CHECKOUT_NOT_FOUND answer is what the caller sees; it must not
   // also make a cross-tenant probe invisible to the operator.
   test("reaching for another user's checkout is recorded as a WARN audit", async () => {
     checkoutRows.push({
@@ -189,11 +192,12 @@ describe("billing callback confirmation contract", () => {
   // missing-reference branch or the user is told the wrong thing.
   test("a cancelled payment reports cancellation, not a missing reference", async () => {
     const res = await routeGet(makeCallbackRequest("?status=error"));
-    const body = (await res.json()) as { ok: boolean; error?: string };
+    const body = (await res.json()) as { ok: boolean; code?: string; error?: { ar: string; en: string } };
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(false);
-    expect(body.error).toBe("payment_cancelled_or_failed");
+    expect(body.code).toBe("PAYMENT_CANCELLED_OR_FAILED");
+    expect(body.error?.en).toMatch(/cancelled/i);
     expect(fulfillCalls).toHaveLength(0);
   });
 
@@ -217,10 +221,11 @@ describe("billing callback confirmation contract", () => {
 
   test("missing ref and paymentId short-circuits without gateway calls", async () => {
     const res = await routeGet(makeCallbackRequest("?status=success"));
-    const body = (await res.json()) as { ok: boolean; error?: string };
+    const body = (await res.json()) as { ok: boolean; code?: string; error?: { ar: string; en: string } };
 
     expect(body.ok).toBe(false);
-    expect(body.error).toBe("missing_payment_reference");
+    expect(body.code).toBe("PAYMENT_REFERENCE_MISSING");
+    expect(body.error?.ar).toBeTruthy();
     expect(fulfillCalls).toHaveLength(0);
   });
 

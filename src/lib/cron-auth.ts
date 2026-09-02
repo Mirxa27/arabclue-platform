@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
+import { apiFailure } from "@/lib/api-failure";
 
 /**
  * Constant-time comparison of two secrets.
@@ -39,13 +40,10 @@ function secretsMatch(candidate: string, expected: string): boolean {
 export function authorizeCron(req: NextRequest): NextResponse | null {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret || secret.length < 16) {
-    return NextResponse.json(
-      {
-        error: "CRON_SECRET not configured (min 16 chars)",
-        code: "CRON_NOT_CONFIGURED",
-      },
-      { status: 503 }
-    );
+    return NextResponse.json(apiFailure("CRON_SECRET_UNCONFIGURED"), {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 
   const auth = req.headers.get("authorization") ?? "";
@@ -67,5 +65,8 @@ export function authorizeCron(req: NextRequest): NextResponse | null {
     );
   }
 
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return NextResponse.json(apiFailure("UNAUTHORIZED"), {
+    status: 401,
+    headers: { "Cache-Control": "no-store" },
+  });
 }

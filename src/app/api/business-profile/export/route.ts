@@ -1,5 +1,6 @@
 import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -222,13 +223,12 @@ export async function handleBusinessProfileExport(
 ): Promise<NextResponse> {
   const session = await dependencies.getSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("UNAUTHORIZED", { status: 401 });
   }
   if (!resolveEmailVerifiedClaim(session.emailVerified)) {
-    return NextResponse.json(
-      { error: "EMAIL_VERIFICATION_REQUIRED" },
-      { status: 403, headers: { "Cache-Control": "no-store" } }
-    );
+    const refused = jsonApiFailure("EMAIL_VERIFICATION_REQUIRED", { status: 403 });
+    refused.headers.set("Cache-Control", "no-store");
+    return refused;
   }
 
   const workspace = await dependencies.getWorkspace(session.userId);
