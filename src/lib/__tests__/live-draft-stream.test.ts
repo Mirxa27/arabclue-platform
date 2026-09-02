@@ -139,6 +139,26 @@ describe("createDraftStreamSink", () => {
     await sink.close();
   });
 
+  test("release() leaves the stream open for the next attempt; close() ends it", async () => {
+    // Run cmtjokzcz0007l204too32891 (2026-09-02): attempt 1 hit a provider 503,
+    // its `finally` closed the stream, and attempts 2 and 3 were refused with
+    // HTTP 409 on every write. Only a finished draft closes the stream.
+    const first = collectingWritable();
+    const sink = createDraftStreamSink(first.writable, { flushEveryMs: 5, flushAtChars: 1000 });
+    sink.reset(1);
+    sink.push("half a ");
+    await sink.release();
+    expect(first.isClosed()).toBe(false);
+    expect(first.chunks).toEqual([{ kind: "reset", attempt: 1 }, { kind: "delta", text: "half a " }]);
+    // The stream is unlocked again: a second sink on the same writable can go on.
+    const second = createDraftStreamSink(first.writable, { flushEveryMs: 5, flushAtChars: 1000 });
+    second.reset(2);
+    await second.done(false);
+    await second.close();
+    expect(first.isClosed()).toBe(true);
+    expect(first.chunks.slice(2)).toEqual([{ kind: "reset", attempt: 2 }, { kind: "done", truncated: false }]);
+  });
+
   test("a broken stream never breaks the draft", async () => {
     const writable = new WritableStream<DraftStreamChunk>({
       write() {
@@ -176,7 +196,9 @@ describe("the wiring", () => {
     has("src/lib/agents/pipeline-workflow.ts", "the stream opened in the step", /getWritable<DraftStreamChunk>\(\{\s*namespace:\s*DRAFT_STREAM_NAMESPACE\s*\}\)/);
     has("src/lib/agents/orchestrator.ts", "reset at the start of an attempt", /sink\?\.reset\(attempt\.attempt\)/);
     has("src/lib/agents/orchestrator.ts", "done with the truncation flag", /sink\?\.done\(draft\.truncated\)|sink\.done\(draft\.truncated\)/);
-    has("src/lib/agents/orchestrator.ts", "the stream closed however the stage ends", /finally\s*\{[\s\S]{0,120}sink\?\.close\(\)/);
+    // Closed only after a finished draft; a failed attempt releases the writer
+    // so the retry can keep writing to the same stream.
+    has("src/lib/agents/orchestrator.ts", "close after done, release otherwise", /finally\s*\{[\s\S]{0,200}draftStreamed\s*\?\s*sink\.close\(\)\s*:\s*sink\.release\(\)/);
   });
 
   test("the stream route reads the run's draft namespace, resumes from Last-Event-ID, and can be cancelled", () => {

@@ -20,7 +20,10 @@ export interface DraftStreamSink {
   reset(attempt: number): void;
   push(text: string): void;
   done(truncated: boolean): Promise<void>;
+  /** Ends the stream. Only after a finished draft: a closed stream refuses every later write (HTTP 409). */
   close(): Promise<void>;
+  /** Flushes and unlocks the writer, leaving the stream open for a retried attempt. */
+  release(): Promise<void>;
   readonly failed: boolean;
 }
 
@@ -85,6 +88,17 @@ export function createDraftStreamSink(
       flush();
       write({ kind: "done", truncated });
       await queue;
+    },
+    async release() {
+      flush();
+      await queue;
+      if (closed) return;
+      closed = true;
+      try {
+        writer.releaseLock();
+      } catch {
+        // already released
+      }
     },
     async close() {
       flush();

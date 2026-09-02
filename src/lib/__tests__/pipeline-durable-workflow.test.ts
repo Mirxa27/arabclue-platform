@@ -161,6 +161,20 @@ describe("the orchestrator is four stages that hand each other plain data", () =
   });
 });
 
+describe("what a failed or retried stage leaves on the row", () => {
+  test("the agent that failed is marked failed, not left running", () => {
+    // Run cmtjokzcz0007l204too32891: FAILED at 88 % with the drafting card
+    // still "running 25" — the states were persisted as they stood.
+    has(ORCH, "the owning agent marked failed before the FAILED write", /status:\s*"failed",[\s\S]{0,160}recorder\.persist\("FAILED"/);
+  });
+
+  test("a retried tail attempt keeps the retry note the previous attempt left", () => {
+    // Attempt 2 starts from the prepared context, whose drafting state has no
+    // findings, and its first mark wiped "Provider … — retrying (attempt 2 of 3)".
+    has(ORCH, "findings carried from the row on a retry", /carryRetryFindings\(/);
+  });
+});
+
 describe("transient failures retry, the rest fail the run", () => {
   test("classification", () => {
     expect(isTransientRunFailure("RATE_LIMIT")).toBe(true);

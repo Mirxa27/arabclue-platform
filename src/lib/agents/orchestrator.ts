@@ -216,6 +216,21 @@ function currentResult(
 }
 
 /**
+ * A retried attempt starts from the prepared context, whose copy of the agent
+ * has no findings; the note the previous attempt left on the row ("Provider …
+ * — retrying (attempt 2 of 3)") would vanish at its first mark. Carry it.
+ */
+async function carryRetryFindings(recorder: RunRecorder, agentId: AgentId, attempt: StageAttempt): Promise<void> {
+  if (attempt.attempt <= 1) return;
+  const row = await recorder.readRow();
+  const previous = parseAgentStates(row.agentStates)?.find((s) => s.id === agentId);
+  const idx = recorder.states.findIndex((s) => s.id === agentId);
+  if (previous?.findings?.length && idx >= 0) {
+    recorder.states[idx] = { ...recorder.states[idx], findings: previous.findings };
+  }
+}
+
+/**
  * One failure path for every stage.
  *
  * Cancelled by the user: record it. Ended from outside (the stale check failed
@@ -287,6 +302,17 @@ async function settleStageFailure(
   }
 
   try {
+    if (opts.agentId) {
+      // The card that was "running" when the run failed says so.
+      const idx = recorder.states.findIndex((s) => s.id === opts.agentId);
+      if (idx >= 0) {
+        recorder.states[idx] = {
+          ...recorder.states[idx],
+          status: "failed",
+          completedAt: new Date().toISOString(),
+        };
+      }
+    }
     const overall = await recorder.persist("FAILED", message, kind);
     // The provider message stays in the run record and the server log; the
     // analytics payload carries only a closed outcome code (requirement 4.6).
@@ -1088,8 +1114,10 @@ export async function runDraftingStage(
   // A retried attempt appends to the same stream; the page starts over on `reset`.
   sink?.reset(attempt.attempt);
   let streamedChars = 0;
+  let draftStreamed = false;
 
   try {
+    await carryRetryFindings(recorder, "PROPOSAL_DRAFTING", attempt);
     return await withHeartbeat(recorder, async (): Promise<DraftingOutcome> => {
     metrics.startAgent("PROPOSAL_DRAFTING");
     logger.startTimer("drafting");
@@ -1133,6 +1161,7 @@ export async function runDraftingStage(
     // once; the page still gets to show it.
     if (sink && streamedChars === 0 && draft.contentMd) sink.push(draft.contentMd);
     await sink?.done(draft.truncated);
+    draftStreamed = true;
 
     // Mandatory validation gate (blocks marking export-ready)
     const { validateProposalOutput } = await import("../validation-gate");
@@ -1443,7 +1472,9 @@ export async function runDraftingStage(
   } catch (err) {
     return settleStageFailure(err, { input, recorder, agentId: "PROPOSAL_DRAFTING", attempt, runStartedAtIso: ctx.runStartedAtIso });
   } finally {
-    await sink?.close();
+    // Closed only once the draft finished: a failed attempt leaves the stream
+    // open so the retry can keep writing to it (a closed stream answers 409).
+    if (sink) await (draftStreamed ? sink.close() : sink.release());
   }
 }
 
@@ -1462,6 +1493,7 @@ export async function runLawStage(
   const { project, entities, rows, score, workspaceIdentity, restrictions } = ctx;
 
   try {
+    await carryRetryFindings(recorder, "LAW_CONTRACT", attempt);
     return await withHeartbeat(recorder, async (): Promise<LawOutcome> => {
     metrics.startAgent("LAW_CONTRACT");
     logger.startTimer("law_contract");
