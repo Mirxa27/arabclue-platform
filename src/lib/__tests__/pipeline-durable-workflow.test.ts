@@ -26,11 +26,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   isTransientRunFailure,
+  retryFindingLine,
   transientRetryDelayMs,
 } from "../agents/run-failure";
 import { createMetricsTracker, mergeMetricsSnapshots } from "../agents/agent-metrics";
 import { createDecisionLogger } from "../agents/decision-logger";
-import { mergeOwnedAgentStates } from "../agents/run-recorder";
+import { interruptedAgentStates, mergeOwnedAgentStates } from "../agents/run-recorder";
 import { DRAFTING_MAX_TOKENS } from "../agents/drafting";
 import { parseAgentRunConfig } from "../proposal-studio";
 import type { AgentState } from "../types";
@@ -168,6 +169,10 @@ describe("what a failed or retried stage leaves on the row", () => {
     has(ORCH, "the owning agent marked failed before the FAILED write", /status:\s*"failed",[\s\S]{0,160}recorder\.persist\("FAILED"/);
   });
 
+  test("a stage that finds the run already over marks its own card interrupted", () => {
+    has(ORCH, "the external-terminal branch writes the interruption", /err\.status !== "CANCELLED"[\s\S]{0,400}recorder\.markInterrupted\(/);
+  });
+
   test("a retried tail attempt keeps the retry note the previous attempt left", () => {
     // Attempt 2 starts from the prepared context, whose drafting state has no
     // findings, and its first mark wiped "Provider … — retrying (attempt 2 of 3)".
@@ -183,6 +188,13 @@ describe("transient failures retry, the rest fail the run", () => {
     expect(isTransientRunFailure("INVALID_INPUT")).toBe(false);
     expect(isTransientRunFailure("INTERNAL")).toBe(false);
     expect(isTransientRunFailure("USER_CANCELLED")).toBe(false);
+  });
+
+  test("the retry note reads as a sentence", () => {
+    // Run cmtjp80xk0007l204nvuff4ba showed "Provider provider unavailable — retrying".
+    expect(retryFindingLine("PROVIDER_UNAVAILABLE", 2, 3)).toBe("Provider unavailable — retrying (attempt 2 of 3)");
+    expect(retryFindingLine("RATE_LIMIT", 3, 3)).toBe("Rate limit — retrying (attempt 3 of 3)");
+    expect(retryFindingLine("TIMEOUT", 2, 3)).toBe("Timeout — retrying (attempt 2 of 3)");
   });
 
   test("a rate limit waits longest, a timeout barely waits", () => {
@@ -217,6 +229,25 @@ describe("state that crosses a step boundary", () => {
     expect(merged.find((s) => s.id === "PROPOSAL_DRAFTING")?.progress).toBe(100);
     expect(merged.find((s) => s.id === "LAW_CONTRACT")?.progress).toBe(70);
     expect(merged.find((s) => s.id === "INGESTION")?.progress).toBe(100);
+  });
+
+  test("an agent still running when the run ended from outside is shown as failed, others untouched", () => {
+    // Same run: drafting failed the run while the contract was mid-draft; the
+    // contract card stayed "running 15" on a FAILED run.
+    const row = [
+      state("PROPOSAL_DRAFTING", { status: "failed", progress: 25 }),
+      state("LAW_CONTRACT", { status: "running", progress: 15, findings: ["Researching…"] }),
+      state("INGESTION", { status: "completed", progress: 100 }),
+    ];
+    const out = interruptedAgentStates(row, "LAW_CONTRACT");
+    const law = out?.find((s) => s.id === "LAW_CONTRACT");
+    expect(law?.status).toBe("failed");
+    expect(law?.completedAt).toBeDefined();
+    expect(law?.findings?.at(-1)).toMatch(/run ended/i);
+    expect(out?.find((s) => s.id === "INGESTION")?.status).toBe("completed");
+    // Nothing to do when the agent already reached a terminal state.
+    expect(interruptedAgentStates(row, "INGESTION")).toBeNull();
+    expect(interruptedAgentStates(row, "PROPOSAL_DRAFTING")).toBeNull();
   });
 
   test("with nothing in the row yet, the stage's own states are written whole", () => {

@@ -75,3 +75,10 @@ export function transientRetryDelayMs(kind: AgentRunFailureKind): number {
       return 5_000;
   }
 }
+
+/** The note a stage leaves on its agent's card before the workflow retries it. */
+export function retryFindingLine(kind: AgentRunFailureKind, attempt: number, maxAttempts: number): string {
+  const words = kind.toLowerCase().replace(/_/g, " ");
+  const label = words.charAt(0).toUpperCase() + words.slice(1);
+  return `${label} — retrying (attempt ${attempt} of ${maxAttempts})`;
+}

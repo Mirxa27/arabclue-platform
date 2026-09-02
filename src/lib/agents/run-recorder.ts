@@ -50,6 +50,30 @@ export function mergeOwnedAgentStates(
   return current.map((s) => (owned.has(s.id) ? (mine.find((m) => m.id === s.id) ?? s) : s));
 }
 
+export const RUN_ENDED_FINDING = "Run ended before this agent finished";
+
+/**
+ * The row's states with `agentId` shown as failed if it was still running when
+ * the run ended from outside (the other tail failed it, or the stale check
+ * did). Null when there is nothing to change: the agent had already finished.
+ */
+export function interruptedAgentStates(
+  current: readonly AgentState[],
+  agentId: AgentId,
+): AgentState[] | null {
+  const idx = current.findIndex((s) => s.id === agentId);
+  if (idx < 0) return null;
+  const mine = current[idx];
+  if (mine.status !== "running" && mine.status !== "pending") return null;
+  const next: AgentState = {
+    ...mine,
+    status: "failed",
+    completedAt: new Date().toISOString(),
+    findings: [...(mine.findings ?? []), RUN_ENDED_FINDING],
+  };
+  return current.map((s, i) => (i === idx ? next : s));
+}
+
 export function overallProgressOf(states: readonly AgentState[]): number {
   return Math.round(states.reduce((sum, a) => sum + a.progress, 0) / Math.max(states.length, 1));
 }
@@ -119,6 +143,26 @@ export function createRunRecorder(opts: {
   };
 
   /**
+   * The run reached a terminal status while this stage's agent was still
+   * running: record the interruption on the agent alone. Guarded on the very
+   * status that was read so a concurrent transition is never overwritten;
+   * the run's status, message and kind stay exactly as the other writer left
+   * them.
+   */
+  const markInterrupted = async (agentId: AgentId) => {
+    const row = await readRow();
+    if (row.status !== "CANCELLED" && row.status !== "FAILED" && row.status !== "COMPLETED") return;
+    const current = parseAgentStates(row.agentStates);
+    if (!current) return;
+    const next = interruptedAgentStates(current, agentId);
+    if (!next) return;
+    await db.agentRun.updateMany({
+      where: { id: runId, status: row.status },
+      data: { agentStates: JSON.stringify(next) },
+    });
+  };
+
+  /**
    * Touch `updatedAt` so the staleness check (180 s without a write) does not
    * fail a run whose stage is inside one long, healthy provider call. Guarded
    * on RUNNING so it can never revive a row that was cancelled or failed.
@@ -130,7 +174,7 @@ export function createRunRecorder(opts: {
     });
   };
 
-  return { states, persist, mark, cancel, heartbeat, readRow };
+  return { states, persist, mark, cancel, heartbeat, readRow, markInterrupted };
 }
 
 export type RunRecorder = ReturnType<typeof createRunRecorder>;

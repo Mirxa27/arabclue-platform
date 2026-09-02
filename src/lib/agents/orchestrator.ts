@@ -6,6 +6,7 @@ import type { AgentState, AgentId, IngestionEntities, ComplianceMatrixRow, Finan
 import {
   classifyRunFailure,
   isTransientRunFailure,
+  retryFindingLine,
   transientRetryDelayMs,
   type AgentRunFailureKind,
 } from "./run-failure";
@@ -253,7 +254,15 @@ async function settleStageFailure(
   const origin = originOf(input);
   if (err instanceof PipelineCancelledError) {
     if (err.status !== "CANCELLED") {
-      // Terminal under our feet: the row already says what happened.
+      // Terminal under our feet: the row already says what happened; only this
+      // stage's own card is told the run ended while it was still working.
+      if (opts.agentId) {
+        try {
+          await recorder.markInterrupted(opts.agentId);
+        } catch (markErr) {
+          console.warn("[orchestrator] could not mark the interrupted agent", markErr);
+        }
+      }
       const row = await db.agentRun.findUnique({
         where: { id: input.runId },
         select: { status: true, agentStates: true, overallProgress: true, errorMessage: true },
@@ -290,7 +299,7 @@ async function settleStageFailure(
           status: "running",
           findings: [
             ...(state?.findings ?? []),
-            `Provider ${kind.toLowerCase().replace(/_/g, " ")} — retrying (attempt ${attempt.attempt + 1} of ${attempt.maxAttempts})`,
+            retryFindingLine(kind, attempt.attempt + 1, attempt.maxAttempts),
           ],
         });
       } catch (markErr) {
