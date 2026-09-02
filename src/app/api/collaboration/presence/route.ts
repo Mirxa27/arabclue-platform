@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { toErrorResponse } from "@/lib/api-controller";
+import { toErrorResponse, jsonApiFailure } from "@/lib/api-controller";
 import {
   PRESENCE_STALE_THRESHOLD_MS,
   PRESENCE_VIEWER_CAP,
@@ -77,7 +77,7 @@ function snapshotResponse(viewers: PresenceViewer[], total: number) {
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("UNAUTHORIZED");
   }
 
   const { searchParams } = new URL(request.url);
@@ -85,14 +85,13 @@ export async function GET(request: NextRequest) {
   const workspaceId = searchParams.get("workspaceId");
 
   if (!proposalId || !workspaceId) {
-    return NextResponse.json(
-      { error: "Missing proposalId or workspaceId" },
-      { status: 400 }
-    );
+    return jsonApiFailure("REQUEST_VALIDATION_FAILED", {
+      fieldPaths: [!proposalId ? "proposalId" : "workspaceId"],
+    });
   }
 
   if (workspaceId !== session.user.workspaceId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return jsonApiFailure("TENANT_ACCESS_FORBIDDEN");
   }
 
   try {
@@ -102,7 +101,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!proposal || proposal.workspaceId !== workspaceId) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return jsonApiFailure("RESOURCE_NOT_FOUND");
     }
 
     await cleanupStalePresence(proposalId);
@@ -120,7 +119,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonApiFailure("UNAUTHORIZED");
   }
 
   try {
@@ -137,19 +136,18 @@ export async function POST(request: NextRequest) {
       body = null;
     }
     if (!body || typeof body !== "object") {
-      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+      return jsonApiFailure("REQUEST_VALIDATION_FAILED", { fieldPaths: ["body"] });
     }
     const { proposalId, type, sectionKey } = body;
 
     if (!proposalId || !type) {
-      return NextResponse.json(
-        { error: "Missing proposalId or type" },
-        { status: 400 }
-      );
+      return jsonApiFailure("REQUEST_VALIDATION_FAILED", {
+        fieldPaths: [!proposalId ? "proposalId" : "type"],
+      });
     }
 
     if (!["join", "heartbeat", "leave"].includes(type)) {
-      return NextResponse.json({ error: "Invalid type" }, { status: 400 });
+      return jsonApiFailure("REQUEST_VALIDATION_FAILED", { fieldPaths: ["type"] });
     }
 
     const proposal = await db.generatedProposal.findUnique({
@@ -158,7 +156,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (!proposal || proposal.workspaceId !== session.user.workspaceId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      // One answer for "not yours" and "not there": the id must not be a probe.
+      return jsonApiFailure("RESOURCE_NOT_FOUND");
     }
 
     const user = await db.user.findUnique({
@@ -167,7 +166,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return jsonApiFailure("RESOURCE_NOT_FOUND");
     }
 
     await cleanupStalePresence(proposalId);

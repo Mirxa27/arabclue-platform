@@ -51,7 +51,6 @@ const REMAINING: readonly string[] = [
   "src/app/api/billing/callback/route.ts",
   "src/app/api/business-profile/export/route.ts",
   "src/app/api/business-profile/route.ts",
-  "src/app/api/collaboration/presence/route.ts",
   "src/app/api/contracts/instances/[id]/versions/[revision]/route.ts",
   "src/app/api/contracts/templates/[key]/preview/route.ts",
   "src/app/api/contracts/templates/route.ts",
