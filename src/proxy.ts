@@ -165,10 +165,7 @@ export default withAuth(
     // Force password change before any app/API use
     if (token?.mustChangePassword && !isPasswordChangeAllowed(path)) {
       if (path.startsWith("/api/")) {
-        return jsonRefusal(
-          { error: "Password change required", code: "MUST_CHANGE_PASSWORD" },
-          403
-        );
+        return jsonRefusal(bilingualFailureBody("MUST_CHANGE_PASSWORD"), 403);
       }
       const url = req.nextUrl.clone();
       url.pathname = "/login";
@@ -196,7 +193,7 @@ export default withAuth(
     if (path.startsWith("/api/admin")) {
       const role = token?.role as string | undefined;
       if (role !== "SUPER_ADMIN" && role !== "ADMIN") {
-        return jsonRefusal({ error: "Forbidden" }, 403);
+        return jsonRefusal(bilingualFailureBody("FORBIDDEN"), 403);
       }
     }
 

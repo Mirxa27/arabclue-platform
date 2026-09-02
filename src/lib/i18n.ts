@@ -2128,6 +2128,10 @@ export const localizationRegistry = {
     ar: "هوية العرض لا تطابق سجلات المستأجر الحالية",
     en: "The proposal identity does not match the current tenant records",
   },
+  MUST_CHANGE_PASSWORD: {
+    ar: "يجب تغيير كلمة المرور قبل المتابعة",
+    en: "Your password must be changed before you continue",
+  },
   EXPORT_APPROVAL_REQUIRED: {
     ar: "التصدير النهائي يتطلب عطاءً معتمداً. أرسله للمراجعة وأكمل سلسلة الاعتماد",
     en: "Final export requires an approved proposal. Submit it for review and complete the approval chain",
@@ -2887,6 +2891,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   INVITATION_RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_manage_invitation", messageKey: "INVITATION_RATE_LIMIT_UNAVAILABLE" },
   RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_complete_request", messageKey: "RATE_LIMIT_UNAVAILABLE" },
   INVALID_CREDENTIALS: { actionKey: "error_action_sign_in", messageKey: "INVALID_CREDENTIALS" },
+  MUST_CHANGE_PASSWORD: { actionKey: "error_action_sign_in", messageKey: "MUST_CHANGE_PASSWORD" },
   LOGIN_RATE_LIMITED: { actionKey: "error_action_sign_in", messageKey: "LOGIN_RATE_LIMITED" },
   PASSWORD_CHANGE_RATE_LIMITED: { actionKey: "error_action_change_password", messageKey: "PASSWORD_CHANGE_RATE_LIMITED" },
   MFA_SETUP_RATE_LIMITED: { actionKey: "error_action_manage_mfa", messageKey: "MFA_SETUP_RATE_LIMITED" },

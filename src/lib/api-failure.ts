@@ -193,6 +193,8 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // The suffix rule would read `_REQUIRED` as 403; the proposal is the
   // caller's own and the request is understood — the state is wrong. 409.
   EXPORT_APPROVAL_REQUIRED: 409,
+  // The session is real; the account is not allowed to proceed yet.
+  MUST_CHANGE_PASSWORD: 403,
   // Refused after being fully understood, like PRICING_REFUSED.
   EXPORT_VALIDATION_BLOCKED: 422,
   DOWNLOAD_FAILED: 500,

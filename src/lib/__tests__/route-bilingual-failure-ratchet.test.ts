@@ -63,7 +63,6 @@ const REMAINING: readonly string[] = [
   // reader neither one has.
   "src/lib/cron-auth.ts",
   "src/lib/llm/provider-connection-guard.ts",
-  "src/proxy.ts",
 ];
 
 const ROOT = process.cwd();
