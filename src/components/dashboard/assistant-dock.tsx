@@ -14,6 +14,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
+import { cn } from "@/lib/utils";
 import { viewLabel, tr } from "@/lib/i18n";
 import {
   Sheet,
@@ -80,10 +81,13 @@ function RunPulse({
   projectId,
   locale,
   onOpen,
+  raised = true,
 }: {
   projectId: string | null;
   locale: "ar" | "en";
   onOpen: () => void;
+  /** Sits above the launcher; on the Agent page, where there is none, at the bottom. */
+  raised?: boolean;
 }) {
   const [pulse, setPulse] = useState<PulseState | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -164,7 +168,10 @@ function RunPulse({
       type="button"
       onClick={onOpen}
       aria-label={locale === "ar" ? "افتح تقدم الوكلاء" : "Open the agents' progress"}
-      className="fixed bottom-[4.25rem] end-4 z-40 flex items-center gap-2 rounded-full border bg-background/95 backdrop-blur px-3 py-1.5 shadow-lg text-xs hover:bg-muted transition-colors"
+      className={cn(
+        "fixed end-4 z-40 flex items-center gap-2 rounded-full border bg-background/95 backdrop-blur px-3 py-1.5 shadow-lg text-xs hover:bg-muted transition-colors",
+        raised ? "bottom-[4.25rem]" : "bottom-4",
+      )}
     >
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden className="shrink-0 -rotate-90">
         <circle cx="12" cy="12" r={r} fill="none" strokeWidth="3" className="stroke-muted" />
@@ -271,23 +278,31 @@ export function AssistantDock() {
         "Run the team on my active project",
       ];
 
+  // The Agent page is the agent: a second "Ask the agent" launcher floating
+  // over its own composer (it covered the voice and style selects on a phone)
+  // is noise. The run pulse still shows there.
+  const onAgentPage = view === "overview";
+
   return (
     <>
-      <Button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label={ar ? "افتح المساعد" : "Open the assistant"}
-        className="fixed bottom-4 end-4 z-40 h-11 rounded-full shadow-lg gap-2 px-4"
-      >
-        <Sparkles className="size-4" />
-        <span className="text-xs font-semibold">
-          {ar ? "اسأل الوكيل" : "Ask the agent"}
-        </span>
-      </Button>
+      {onAgentPage ? null : (
+        <Button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={ar ? "افتح المساعد" : "Open the assistant"}
+          className="fixed bottom-4 end-4 z-40 h-11 rounded-full shadow-lg gap-2 px-4"
+        >
+          <Sparkles className="size-4" />
+          <span className="text-xs font-semibold">
+            {ar ? "اسأل الوكيل" : "Ask the agent"}
+          </span>
+        </Button>
+      )}
 
       <RunPulse
         projectId={activeProjectId}
         locale={locale}
+        raised={!onAgentPage}
         onOpen={() => startTransition(() => setView("agents"))}
       />
 

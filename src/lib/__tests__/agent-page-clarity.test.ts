@@ -98,3 +98,28 @@ describe("the stage strip", () => {
     has(BAR, "render gated on activity", /const shouldRender = performing \|\| activeStep >= 0;/);
   });
 });
+
+describe("the proposals list after a run", () => {
+  const LIST = "src/components/dashboard/proposals-list.tsx";
+  test("grows with the page instead of scrolling inside 24rem", () => {
+    // Production screenshot: the second proposal cut in half above a screen of
+    // empty space.
+    lacks(LIST, "the inner scroll cap", /ScrollArea className="max-h-96"/);
+  });
+  test("explains the draft state instead of repeating the page title", () => {
+    lacks(LIST, "the duplicate subtitle", /"Generated proposals"/);
+    has(LIST, "why rows are drafts", /stays a draft until you review and approve it/);
+    lacks(LIST, "an unexplained badge", /"Not ready"/);
+    has(LIST, "the labelled score", /"Compliance"\} \{formatPercent\(p\.complianceScore\)\}%/);
+  });
+});
+
+describe("the floating launcher", () => {
+  test("stays off the Agent page, where the console is the agent", () => {
+    // On a phone it sat over the console's voice and style selects.
+    const dock = read("src/components/dashboard/assistant-dock.tsx");
+    expect(/const onAgentPage = view === "overview";/.test(dock)).toBe(true);
+    expect(/\{onAgentPage \? null : \(\s*<Button/.test(dock)).toBe(true);
+    expect(/raised=\{!onAgentPage\}/.test(dock)).toBe(true);
+  });
+});

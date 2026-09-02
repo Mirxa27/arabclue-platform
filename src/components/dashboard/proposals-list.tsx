@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Panel, EmptyState, QueryState } from "@/components/patterns";
 import { ProposalStudio } from "./proposal-editor";
 import { DocumentPreviewFrame } from "./document-preview-frame";
@@ -151,9 +150,13 @@ export function ProposalsList() {
       <Panel
         icon={FileCheck2}
         tone="success"
-        title={tr("nav_proposals", locale)}
+        // The page header above already names the page; this strip explains
+        // what the list is and why most rows read "Draft".
+        title={locale === "ar" ? "الأحدث أولاً" : "Newest first"}
         subtitle={
-          locale === "ar" ? "العطاءات المُنشأة" : "Generated proposals"
+          locale === "ar"
+            ? "كل عطاء يبقى مسودة حتى تراجعه وتعتمده"
+            : "Every proposal stays a draft until you review and approve it"
         }
         actions={
           <Badge variant="outline" className="text-[10px] font-mono tabular-nums">
@@ -161,7 +164,9 @@ export function ProposalsList() {
           </Badge>
         }
       >
-        <ScrollArea className="max-h-96">
+        {/* The list grows with the page: a 24rem inner scroll left a second
+            proposal cut in half above a screen of empty space. */}
+        <div>
           <QueryState
             isLoading={isLoading}
             isError={isError}
@@ -246,7 +251,7 @@ export function ProposalsList() {
                             variant="outline"
                             className="text-[9px] text-muted-foreground"
                           >
-                            {locale === "ar" ? "مسودة" : "Not ready"}
+                            {locale === "ar" ? "مسودة" : "Draft"}
                           </Badge>
                         )}
                         {p.complianceScore != null && (
@@ -254,7 +259,7 @@ export function ProposalsList() {
                             variant="outline"
                             className="text-[9px] font-mono tabular-nums"
                           >
-                            {formatPercent(p.complianceScore)}%
+                            {locale === "ar" ? "الامتثال" : "Compliance"} {formatPercent(p.complianceScore)}%
                           </Badge>
                         )}
                       </div>
@@ -360,7 +365,7 @@ export function ProposalsList() {
               })}
             </div>
           </QueryState>
-        </ScrollArea>
+        </div>
       </Panel>
 
       <Dialog
