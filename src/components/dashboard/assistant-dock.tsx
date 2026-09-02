@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
-import { viewLabel } from "@/lib/i18n";
+import { viewLabel, tr } from "@/lib/i18n";
 import {
   Sheet,
   SheetContent,
@@ -38,6 +38,8 @@ import {
   isToolRunning,
 } from "@/lib/agents/platform/mission-tool-parts";
 import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
+import { runPulseIntervalMs, RUN_STARTED_EVENT } from "@/lib/agents/autopilot";
+import { AGENTS } from "@/lib/constants";
 
 type ToolPart = {
   type: string;
@@ -60,6 +62,117 @@ function textOf(message: PlatformAgentUIMessage): string {
 
 function toolPartsOf(message: PlatformAgentUIMessage): ToolPart[] {
   return message.parts.filter(isToolPart) as unknown as ToolPart[];
+}
+
+type PulseState = {
+  status: string | null;
+  agentId: string | null;
+  pct: number;
+};
+
+/**
+ * The run's heartbeat, on every page. A pure observer of the status route
+ * (`observe=1`, so it never triggers the stale-run resume). Polls only while a
+ * run is live; wakes on the run-started event; renders nothing otherwise.
+ */
+function RunPulse({
+  projectId,
+  locale,
+  onOpen,
+}: {
+  projectId: string | null;
+  locale: "ar" | "en";
+  onOpen: () => void;
+}) {
+  const [pulse, setPulse] = useState<PulseState | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!projectId) {
+      setPulse(null);
+      return;
+    }
+    let cancelled = false;
+    const clear = () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    };
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `/api/agents/status?projectId=${encodeURIComponent(projectId)}&observe=1`
+        );
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const d = (await res.json()) as {
+          status?: string | null;
+          overallProgress?: number;
+          agentStates?: Array<{ id?: string; status?: string }>;
+        };
+        if (cancelled) return;
+        const running = (d.agentStates ?? []).find((a) => a.status === "running");
+        setPulse({
+          status: d.status ?? null,
+          agentId: running?.id ?? null,
+          pct: Math.round(d.overallProgress ?? 0),
+        });
+        const next = runPulseIntervalMs(d.status);
+        if (next) timerRef.current = window.setTimeout(() => void tick(), next);
+      } catch (err) {
+        console.error("[run-pulse]", err);
+      }
+    };
+    const onStarted = () => {
+      clear();
+      void tick();
+    };
+    window.addEventListener(RUN_STARTED_EVENT, onStarted);
+    void tick();
+    return () => {
+      cancelled = true;
+      clear();
+      window.removeEventListener(RUN_STARTED_EVENT, onStarted);
+    };
+  }, [projectId]);
+
+  const live = pulse && (pulse.status === "RUNNING" || pulse.status === "QUEUED");
+  if (!live) return null;
+  const agent = AGENTS.find((a) => a.id === pulse.agentId);
+  const agentLabel = agent
+    ? tr(`agent_${agent.id}_name`, locale)
+    : locale === "ar"
+      ? "في الانتظار"
+      : "Queued";
+  const r = 9;
+  const c = 2 * Math.PI * r;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={locale === "ar" ? "افتح تقدم الوكلاء" : "Open the agents' progress"}
+      className="fixed bottom-[4.25rem] end-4 z-40 flex items-center gap-2 rounded-full border bg-background/95 backdrop-blur px-3 py-1.5 shadow-lg text-xs hover:bg-muted transition-colors"
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden className="shrink-0 -rotate-90">
+        <circle cx="12" cy="12" r={r} fill="none" strokeWidth="3" className="stroke-muted" />
+        <circle
+          cx="12"
+          cy="12"
+          r={r}
+          fill="none"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - pulse.pct / 100)}
+          className="stroke-primary transition-[stroke-dashoffset] duration-700 ease-out"
+        />
+      </svg>
+      <span className="relative flex size-2 shrink-0">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+        <span className="relative inline-flex size-2 rounded-full bg-primary" />
+      </span>
+      <span className="font-medium truncate max-w-[10rem]">{agentLabel}</span>
+      <span className="font-mono tabular-nums text-muted-foreground">{pulse.pct}%</span>
+    </button>
+  );
 }
 
 export function AssistantDock() {
@@ -156,6 +269,12 @@ export function AssistantDock() {
           {ar ? "اسأل الوكيل" : "Ask the agent"}
         </span>
       </Button>
+
+      <RunPulse
+        projectId={activeProjectId}
+        locale={locale}
+        onOpen={() => startTransition(() => setView("agents"))}
+      />
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent

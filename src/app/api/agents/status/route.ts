@@ -36,6 +36,9 @@ export async function GET(req: NextRequest) {
     const { workspace } = await getTenantContext(session.user.id);
     const runIdParam = req.nextUrl.searchParams.get("runId");
     const projectId = req.nextUrl.searchParams.get("projectId");
+    // A pure read. The dock's run pulse polls from every page; it must never
+    // trigger the stale-run resume below, which spends provider tokens.
+    const observeOnly = req.nextUrl.searchParams.get("observe") === "1";
 
     let run =
       runIdParam != null
@@ -82,6 +85,7 @@ export async function GET(req: NextRequest) {
 
     let resumed = false;
     if (
+      !observeOnly &&
       (run.status === "QUEUED" || run.status === "RUNNING") &&
       isAgentRunStale({
         status: run.status,

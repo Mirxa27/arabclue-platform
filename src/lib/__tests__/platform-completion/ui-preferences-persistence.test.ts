@@ -76,6 +76,7 @@ describe("persisted UI preferences", () => {
     expect(UI_PERSIST_OPTIONS.version).toBe(UI_PREFERENCES_VERSION);
     expect(Object.keys(persisted ?? {}).sort()).toEqual([
       "activeProjectId",
+      "autopilot",
       "sidebarCollapsed",
       "tenderType",
     ]);
@@ -108,6 +109,7 @@ describe("persisted UI preferences", () => {
 
     expect(Object.keys(migrated).sort()).toEqual([
       "activeProjectId",
+      "autopilot",
       "sidebarCollapsed",
       "tenderType",
     ]);

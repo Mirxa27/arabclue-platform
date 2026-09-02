@@ -8,6 +8,8 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocale, useUI } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { runFailureCopyKey } from "@/lib/agents/run-failure";
+import { RUN_STARTED_EVENT } from "@/lib/agents/autopilot";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -115,7 +117,9 @@ function normalizeStatus(s: string | undefined): AgentState["status"] {
 
 export function AgentWorkflow() {
   const { locale } = useLocale();
-  const { tenderType, activeProjectId, setActiveProjectId, setView } = useUI();
+  const { tenderType, activeProjectId, setActiveProjectId, setView, autopilot } = useUI();
+  const reduceMotion = useReducedMotion();
+  const autopilotOpenRef = useRef<number | null>(null);
   // Shares the `["projects"]` query `app-shell` already runs, so this costs no
   // request. It is only here to tell two states apart that the page used to
   // report as one: no project selected, and no project to select.
@@ -291,6 +295,12 @@ export function AgentWorkflow() {
     }
   }
 
+  useEffect(() => {
+    return () => {
+      if (autopilotOpenRef.current) window.clearTimeout(autopilotOpenRef.current);
+    };
+  }, []);
+
   async function selectHistoryRun(run: AgentRunHistoryItem) {
     if (pollRef.current) clearTimeout(pollRef.current);
     setActiveProjectId(run.projectId);
@@ -411,6 +421,10 @@ export function AgentWorkflow() {
     },
     onSuccess: (data) => {
       setRunId(data.runId);
+      // The dock's pulse listens for this on every page.
+      window.dispatchEvent(
+        new CustomEvent(RUN_STARTED_EVENT, { detail: { runId: data.runId } })
+      );
       setCompleted(false);
       setOverall(0);
       setRunStatus("RUNNING");
@@ -536,6 +550,15 @@ export function AgentWorkflow() {
           qc.invalidateQueries({ queryKey: ["proposals"] });
           qc.invalidateQueries({ queryKey: ["compliance"] });
           qc.invalidateQueries({ queryKey: ["agent-runs"] });
+          // Autopilot: the bidder sat back and watched; hand them the result.
+          // A beat first, so the six completed gauges register before the
+          // screen changes.
+          const producedProposal = data.proposalId ?? data.finalArtifact?.proposalId;
+          if (autopilot && producedProposal) {
+            autopilotOpenRef.current = window.setTimeout(() => {
+              startTransition(() => setView("proposals"));
+            }, 2500);
+          }
           return;
         }
         if (data.status === "FAILED" || data.status === "CANCELLED") {
@@ -971,10 +994,23 @@ export function AgentWorkflow() {
             const pct = isDone ? 100 : Math.round(a.progress || 0);
 
             return (
-              <div
+              <motion.div
                 key={a.id}
+                layout={!reduceMotion}
+                // Driven by the real state: the running card breathes, a
+                // finished card settles, nothing moves on a timer alone.
+                animate={
+                  isRunning && !reduceMotion
+                    ? { scale: [1, 1.012, 1], opacity: 1 }
+                    : { scale: 1, opacity: isPending ? 0.72 : 1 }
+                }
+                transition={
+                  isRunning && !reduceMotion
+                    ? { duration: 2.2, repeat: Infinity, ease: "easeInOut" }
+                    : { duration: 0.35, ease: "easeOut" }
+                }
                 className={cn(
-                  "rounded-xl border p-3.5 transition-all",
+                  "rounded-xl border p-3.5 transition-colors",
                   isRunning &&
                     "border-violet-500/50 bg-violet-500/8 shadow-[0_0_0_1px_rgba(139,92,246,0.12)]",
                   isDone && "border-emerald-500/35 bg-emerald-500/6",
@@ -1062,9 +1098,13 @@ export function AgentWorkflow() {
 
                     {(isRunning || isDone || isFailed) && a.findings && a.findings.length > 0 && (
                       <ul className="mt-2 space-y-1 border-t border-border/50 pt-2">
+                        <AnimatePresence initial={false}>
                         {a.findings.slice(0, isDone ? 3 : 2).map((f, i) => (
-                          <li
-                            key={i}
+                          <motion.li
+                            key={`${i}:${f}`}
+                            initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
                             className={cn(
                               "flex items-start gap-1.5 text-[10px]",
                               isFailed ? "text-destructive/90" : "text-foreground/70"
@@ -1077,8 +1117,9 @@ export function AgentWorkflow() {
                               )}
                             />
                             <span className="leading-relaxed">{f}</span>
-                          </li>
+                          </motion.li>
                         ))}
+                        </AnimatePresence>
                       </ul>
                     )}
 
@@ -1095,7 +1136,7 @@ export function AgentWorkflow() {
                     )}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>

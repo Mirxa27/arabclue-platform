@@ -30,6 +30,8 @@ import type { ApiDocument } from "@/lib/api-types";
 import { ListSkeleton } from "./loading-skeletons";
 import { DocumentFileViewer } from "./document-file-viewer";
 import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
+import { Switch } from "@/components/ui/switch";
+import { shouldAutopilotRun, RUN_STARTED_EVENT } from "@/lib/agents/autopilot";
 
 interface UploadedFile {
   id: string;
@@ -78,7 +80,10 @@ function formatBytes(bytes: number): string {
 
 export function FileIngestion() {
   const { locale } = useLocale();
-  const { activeProjectId, setActiveProjectId, setView } = useUI();
+  const { activeProjectId, setActiveProjectId, setView, autopilot, setAutopilot, tenderType } =
+    useUI();
+  // One autopilot run per upload batch, however many files it holds.
+  const autopilotKickedRef = useRef(false);
   const { projects, active } = useEnsureActiveProject();
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -144,6 +149,50 @@ export function FileIngestion() {
     [setView]
   );
 
+  const startAutopilotRun = useCallback(
+    async (projectId: string | null) => {
+      if (!projectId) return;
+      try {
+        const res = await fetch("/api/agents/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, tenderType, locale }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          runId?: string;
+          code?: string;
+        };
+        if (!res.ok) {
+          toast({
+            title: locale === "ar" ? "لم يبدأ الطيار الآلي" : "Autopilot did not start",
+            description: apiErrorText(body, locale),
+            variant: body.code === "AGENT_RUN_IN_PROGRESS" ? "default" : "destructive",
+          });
+          return;
+        }
+        window.dispatchEvent(
+          new CustomEvent(RUN_STARTED_EVENT, { detail: { runId: body.runId, projectId } })
+        );
+        toast({
+          title: locale === "ar" ? "شغّل الطيار الآلي الوكلاء" : "Autopilot started the agents",
+          description:
+            locale === "ar"
+              ? "اجلس وتابع — سيُفتح العطاء عند الانتهاء."
+              : "Sit back and watch — the proposal opens when they finish.",
+        });
+        startTransition(() => setView("agents"));
+      } catch (err) {
+        console.error("[autopilot] run request failed", err);
+        toast({
+          title: locale === "ar" ? "لم يبدأ الطيار الآلي" : "Autopilot did not start",
+          description: err instanceof Error ? err.message : "error",
+          variant: "destructive",
+        });
+      }
+    },
+    [locale, setView, tenderType, toast]
+  );
+
   const handleFiles = useCallback(
     async (fileList: FileList | File[]) => {
       if (!activeProjectId) {
@@ -159,6 +208,7 @@ export function FileIngestion() {
         return;
       }
       const arr = Array.from(fileList);
+      autopilotKickedRef.current = false;
       for (const file of arr) {
         const id = `upload-${crypto.randomUUID()}`;
         const category = selectedCategory || guessCategory(file.name);
@@ -210,6 +260,20 @@ export function FileIngestion() {
             title: locale === "ar" ? "تم الرفع" : "Uploaded",
             description: file.name,
           });
+          // Autopilot: a tender document landed, so the agents start on it.
+          // The run route refuses a second live run itself; that answer is
+          // shown, not swallowed.
+          if (
+            !autopilotKickedRef.current &&
+            shouldAutopilotRun({
+              autopilot,
+              docCategory: result.document.docCategory,
+              activeRunStatus: null,
+            })
+          ) {
+            autopilotKickedRef.current = true;
+            void startAutopilotRun(result.document.projectId ?? activeProjectId);
+          }
         } catch (err) {
           setFiles((prev) =>
             prev.map((f) => (f.id === id ? { ...f, status: "error", progress: 100 } : f))
@@ -231,6 +295,8 @@ export function FileIngestion() {
       qc,
       toast,
       locale,
+      autopilot,
+      startAutopilotRun,
     ]
   );
 
@@ -260,13 +326,28 @@ export function FileIngestion() {
             </p>
           </div>
         </div>
-        <Badge variant="outline" className="bg-background text-[10px] max-w-[10rem] truncate">
-          {active
-            ? active.title
-            : locale === "ar"
-              ? "اختر مشروعاً"
-              : "Select project"}
-        </Badge>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <span className="text-[11px] font-medium text-foreground/80">
+              {locale === "ar" ? "الطيار الآلي" : "Autopilot"}
+              <span className="hidden sm:inline text-muted-foreground font-normal">
+                {locale === "ar" ? " — شغّل الوكلاء بعد الرفع" : " — run the agents after upload"}
+              </span>
+            </span>
+            <Switch
+              checked={autopilot}
+              onCheckedChange={setAutopilot}
+              aria-label={locale === "ar" ? "الطيار الآلي" : "Autopilot"}
+            />
+          </label>
+          <Badge variant="outline" className="bg-background text-[10px] max-w-[10rem] truncate">
+            {active
+              ? active.title
+              : locale === "ar"
+                ? "اختر مشروعاً"
+                : "Select project"}
+          </Badge>
+        </div>
       </div>
 
       <div className="mx-5 mt-4 space-y-2">

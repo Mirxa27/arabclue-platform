@@ -198,6 +198,8 @@ export interface PersistedUIPreferences {
   activeProjectId: string | null;
   tenderType: string;
   sidebarCollapsed: boolean;
+  /** Run the agents when a tender document is uploaded, and open the result. */
+  autopilot: boolean;
 }
 
 /** Bumped when the persisted preference shape changes. */
@@ -207,6 +209,7 @@ export const DEFAULT_UI_PREFERENCES: PersistedUIPreferences = Object.freeze({
   activeProjectId: null,
   tenderType: "IT",
   sidebarCollapsed: false,
+  autopilot: true,
 });
 
 /**
@@ -236,6 +239,10 @@ export function sanitizePersistedUI(
     preferences.sidebarCollapsed = stored.sidebarCollapsed;
   }
 
+  if (typeof stored.autopilot === "boolean") {
+    preferences.autopilot = stored.autopilot;
+  }
+
   return preferences;
 }
 
@@ -246,9 +253,11 @@ export interface UIState {
   mobileNavOpen: boolean;
   adminMode: boolean;
   tenderType: string;
+  autopilot: boolean;
   /** Notice raised by the last URL resolution, or null when the URL was honoured. */
   routeNotice: RouteNoticeCode | null;
   setView: (v: DashboardView) => void;
+  setAutopilot: (on: boolean) => void;
   setActiveProjectId: (id: string | null) => void;
   toggleSidebar: () => void;
   setMobileNavOpen: (open: boolean) => void;
@@ -288,6 +297,7 @@ export const UI_PERSIST_OPTIONS: PersistOptions<UIState, PersistedUIPreferences>
       activeProjectId: state.activeProjectId,
       tenderType: state.tenderType,
       sidebarCollapsed: state.sidebarCollapsed,
+      autopilot: state.autopilot,
     }),
     migrate: (persisted) => ({
       ...DEFAULT_UI_PREFERENCES,
@@ -318,6 +328,7 @@ export const useUI = create<UIState>()(
           routeNotice: null,
         }),
       setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
+      setAutopilot: (autopilot) => set({ autopilot }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setMobileNavOpen: (mobileNavOpen) => set({ mobileNavOpen }),
       setAdminMode: (adminMode) => set({ adminMode }),
