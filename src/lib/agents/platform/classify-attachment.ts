@@ -347,7 +347,7 @@ export async function classifyAttachmentWithAi(
   try {
     const result = await generateCompletion(
       buildClassificationMessages(input, prior),
-      { engine: "INGESTION", temperature: 0.1, maxTokens: 512 }
+      { engine: "INGESTION", temperature: 0.1, maxTokens: 512, promptOrigin: "system" }
     );
 
     if (result.fallback || !result.content) {

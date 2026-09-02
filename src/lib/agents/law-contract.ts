@@ -345,6 +345,7 @@ export async function draftLawContract(opts: {
         // Same reasoning as the proposal draft: one long attempt.
         timeoutMs: 270_000,
         maxAttempts: 1,
+        promptOrigin: "system",
       }
     );
 

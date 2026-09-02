@@ -10,6 +10,7 @@ import {
   applyInputPiiFilter,
   applyOutputGuardrails,
   applyPricingInputGuardrails,
+  type PromptOrigin,
   PRICING_REFUSAL_MESSAGE,
   type LLMMessage,
 } from "../guardrails";
@@ -131,6 +132,13 @@ export async function generateCompletion(
      * guardrails run on the assembled text.
      */
     onDelta?: (text: string) => void;
+    /**
+     * "system" when the app composed the prompt around tender data (the agent
+     * pipeline); the pricing *input* refusal then steps aside, since the text
+     * is describing a tender, not asking for a price. Default: a person's
+     * request, guarded. The output guard applies either way.
+     */
+    promptOrigin?: PromptOrigin;
   }
 ): Promise<LLMResult> {
   const engine = opts?.engine ?? "DEFAULT";
@@ -211,7 +219,7 @@ export async function generateCompletion(
 
   const filteredMessages = applyInputPiiFilter(messages, provider.piiFilter);
 
-  const pricingGate = applyPricingInputGuardrails(filteredMessages);
+  const pricingGate = applyPricingInputGuardrails(filteredMessages, opts?.promptOrigin);
   if (!pricingGate.allowed) {
     return {
       content: pricingGate.message,

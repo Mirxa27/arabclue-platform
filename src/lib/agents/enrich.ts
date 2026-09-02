@@ -41,7 +41,7 @@ async function enrichJson(
       { role: "system", content: system },
       { role: "user", content: enrichUserPrompt(kind, payload) },
     ],
-    { maxTokens: 2048, temperature: 0.2, engine }
+    { maxTokens: 2048, temperature: 0.2, engine, promptOrigin: "system" }
   );
   if (result.fallback || !result.content) {
     guardOrThrow(result, `enrich:${kind}`);

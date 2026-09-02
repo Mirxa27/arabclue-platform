@@ -131,8 +131,16 @@ export async function draftProposal(opts: {
       timeoutMs: 270_000,
       maxAttempts: 1,
       onDelta: opts.onDelta,
+      promptOrigin: "system",
     }
   );
+  if (result.failureKind === "pricing_refusal") {
+    // The refusal sentence is not a proposal. Once it was saved as one
+    // (2026-09-02); the run fails with the reason instead.
+    throw new Error(
+      "drafting:generateProposal refused: the composed prompt tripped the pricing guard"
+    );
+  }
 
   let contentMd = result.content?.trim() ?? "";
   if (contentMd.startsWith("```")) {

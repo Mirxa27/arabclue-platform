@@ -88,11 +88,21 @@ export function redactPii(text: string): string {
 }
 
 /**
+ * Who wrote the prompt. A person's request ("user") is refused when it asks
+ * for pricing; a prompt the system composed around tender data ("system") is
+ * not — an RFP that tells bidders to "calculate the unit price" is describing,
+ * not asking. The output guard applies to both.
+ */
+export type PromptOrigin = "user" | "system";
+
+/**
  * Refuse pricing-related user prompts before model call.
  */
 export function applyPricingInputGuardrails(
-  messages: LLMMessage[]
+  messages: LLMMessage[],
+  origin: PromptOrigin = "user"
 ): { allowed: true } | { allowed: false; message: string } {
+  if (origin === "system") return { allowed: true };
   const userText = messages
     .filter((m) => m.role === "user")
     .map((m) => m.content)
