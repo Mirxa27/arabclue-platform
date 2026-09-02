@@ -1,4 +1,5 @@
 import ZAI from "z-ai-web-dev-sdk";
+import { glmThinkingParams } from "./glm-thinking";
 import { db } from "../db";
 import type { AIProviderConfig } from "@prisma/client";
 import { resolveProviderApiKey } from "../env-settings";
@@ -290,7 +291,7 @@ export async function generateCompletion(
               role: m.role === "system" ? "assistant" : m.role,
               content: m.content,
             })),
-            thinking: { type: "disabled" },
+            ...glmThinkingParams(model),
           }),
       });
       const content = completion.choices[0]?.message?.content ?? "";
@@ -409,6 +410,10 @@ async function callOpenAiCompatible(
     messages,
     temperature,
     max_tokens: maxTokens,
+    // GLM reasons by default and spends `max_tokens` on `reasoning_content`
+    // first; at 2048 that returned `content: ""` and failed the production
+    // ingestion step. See glm-thinking.ts for the per-model rule.
+    ...glmThinkingParams(provider.modelId),
   };
   if (provider.supportsJsonMode && /gpt|o\d|mistral|deepseek|qwen|llama/i.test(provider.modelId)) {
     // Only request json_object when caller messages likely want it — avoid breaking freeform drafting
