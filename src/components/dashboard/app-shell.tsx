@@ -10,6 +10,7 @@ import { DashboardTopbar } from "./topbar";
 import { DashboardFooter } from "./footer";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
+import { TrialBanner } from "./trial-banner";
 
 // Mounted here rather than in the view map so the agent is reachable from the
 // page you need help with, instead of being a screen you leave for. Its own
@@ -84,7 +85,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
             {/* The dock floats over the bottom-end corner on every page; the column
                 ends with enough clearance that the last content can scroll past it. */}
-            <div className="mx-auto w-full max-w-[1600px] px-3 pt-3 pb-24 sm:px-4 sm:pt-4 lg:px-6 lg:pt-6 2xl:px-8 2xl:pt-8">{children}</div>
+            <div className="mx-auto w-full max-w-[1600px] px-3 pt-3 pb-24 sm:px-4 sm:pt-4 lg:px-6 lg:pt-6 2xl:px-8 2xl:pt-8">
+              <TrialBanner />
+              {children}
+            </div>
           </main>
           <DashboardFooter />
         </div>
