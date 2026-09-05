@@ -14,6 +14,7 @@ import {
 } from "@/lib/recovery-service";
 import { createPrismaRecoveryService } from "@/lib/recovery-service-prisma";
 import { tr } from "@/lib/i18n";
+import { extractClientIp } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,7 @@ export async function handleForgotPassword(
           )
         : "unknown";
 
-    const sourceAddress = getClientIp(req);
+    const sourceAddress = extractClientIp(req.headers);
 
     // Two axes, because they bound different attacks: the address bucket stops
     // one mailbox being flooded, the source bucket stops one origin asking once
@@ -87,11 +88,6 @@ export async function POST(req: NextRequest) {
   return handleForgotPassword(req);
 }
 
-function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip")?.trim() ?? "unknown";
-}
 
 async function readJsonBodyOrNull(req: NextRequest): Promise<unknown> {
   try {

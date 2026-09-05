@@ -11,6 +11,7 @@ import {
 } from "@/lib/recovery-service";
 import { createPrismaRecoveryService } from "@/lib/recovery-service-prisma";
 import { tr } from "@/lib/i18n";
+import { extractClientIp } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export async function handleResetPassword(
   const service = dependencies?.service ?? createPrismaRecoveryService();
   return withPublicRoute("auth/reset-password", async () => {
     const payload = await readJsonBodyOrNull(req);
-    const sourceAddress = getClientIp(req);
+    const sourceAddress = extractClientIp(req.headers);
 
     const rl = await rateLimitAsync({
       key: `recovery:reset:${sourceAddress}`,
@@ -77,11 +78,6 @@ export async function POST(req: NextRequest) {
   return handleResetPassword(req);
 }
 
-function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip")?.trim() ?? "unknown";
-}
 
 async function readJsonBodyOrNull(req: NextRequest): Promise<unknown> {
   try {

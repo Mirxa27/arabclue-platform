@@ -30,8 +30,16 @@ export async function register() {
       try {
         const { ensureDatabaseReady } = await import("./lib/ensure-db");
         await ensureDatabaseReady();
-        const { getBootstrapContext } = await import("./lib/bootstrap");
-        await getBootstrapContext();
+        // Seeding is only needed the first time a database is used. Every
+        // route that depends on the seed calls getBootstrapContext() itself,
+        // so a cold start on an already-seeded database pays one COUNT rather
+        // than the full bootstrap (a dozen queries plus the identity sweep).
+        const { db } = await import("./lib/db");
+        const seeded = (await db.workspace.count({ take: 1 })) > 0;
+        if (!seeded) {
+          const { getBootstrapContext } = await import("./lib/bootstrap");
+          await getBootstrapContext();
+        }
       } catch (err) {
         console.error("[instrumentation] DB bootstrap failed", err);
       }

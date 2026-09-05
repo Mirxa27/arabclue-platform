@@ -102,18 +102,21 @@ async function runBootstrap() {
     include: { brandProfiles: true },
   });
 
+  // scrypt is deliberately slow (~100 ms+ of CPU). The hash is only needed
+  // when the admin row is created or a legacy demo hash is replaced, so it is
+  // computed at those points rather than on every cold start's bootstrap.
   const bootstrapPassword = getBootstrapAdminPassword();
-  let passwordHash: string | null = null;
-  if (bootstrapPassword) {
-    passwordHash = await hashPassword(bootstrapPassword);
-  }
+  let passwordHashPromise: Promise<string> | null = null;
+  const requireBootstrapPasswordHash = (why: string): Promise<string> => {
+    if (!bootstrapPassword) throw new Error(why);
+    passwordHashPromise ??= hashPassword(bootstrapPassword);
+    return passwordHashPromise;
+  };
 
   if (!workspace) {
-    if (!passwordHash) {
-      throw new Error(
-        "BOOTSTRAP_ADMIN_PASSWORD is required to seed the initial workspace (min 10 chars)"
-      );
-    }
+    const passwordHash = await requireBootstrapPasswordHash(
+      "BOOTSTRAP_ADMIN_PASSWORD is required to seed the initial workspace (min 10 chars)"
+    );
     const user = await db.user.upsert({
       where: { email: USER_EMAIL },
       update: {},
@@ -172,11 +175,9 @@ async function runBootstrap() {
 
   let user = await db.user.findUnique({ where: { email: USER_EMAIL } });
   if (!user) {
-    if (!passwordHash) {
-      throw new Error(
-        "BOOTSTRAP_ADMIN_PASSWORD is required to create the bootstrap admin user"
-      );
-    }
+    const passwordHash = await requireBootstrapPasswordHash(
+      "BOOTSTRAP_ADMIN_PASSWORD is required to create the bootstrap admin user"
+    );
     user = await db.user.create({
       data: {
         email: USER_EMAIL,
@@ -192,11 +193,9 @@ async function runBootstrap() {
     user.passwordHash.startsWith("$argon2id$demo$") ||
     user.passwordHash.includes("placeholder")
   ) {
-    if (!passwordHash) {
-      throw new Error(
-        "Legacy demo password detected — set BOOTSTRAP_ADMIN_PASSWORD to migrate"
-      );
-    }
+    const passwordHash = await requireBootstrapPasswordHash(
+      "Legacy demo password detected — set BOOTSTRAP_ADMIN_PASSWORD to migrate"
+    );
     user = await db.user.update({
       where: { id: user.id },
       data: { passwordHash, mfaEnabled: false, mustChangePassword: true },

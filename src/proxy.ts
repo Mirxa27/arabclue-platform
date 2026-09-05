@@ -119,10 +119,13 @@ const VERIFICATION_ALLOWED: string[] = [
 ];
 
 function isVerificationAllowedPath(path: string): boolean {
+  // Exact path or a sub-path of it. `includes` matched any pathname that
+  // merely contained an allowed segment ("/api/proposals/verify-email").
   const lower = path.toLowerCase();
-  return VERIFICATION_ALLOWED.some((allowed) =>
-    lower.includes(allowed.toLowerCase())
-  );
+  return VERIFICATION_ALLOWED.some((allowed) => {
+    const candidate = allowed.toLowerCase();
+    return lower === candidate || lower.startsWith(`${candidate}/`);
+  });
 }
 
 export default withAuth(
@@ -221,5 +224,10 @@ export const config = {
   // NOTE: Do NOT exclude uploads — file access must go through /api/files with tenant scoping
   // `.well-known/workflow/` is the Workflow DevKit's own queue-driven surface;
   // routing it through the proxy breaks step execution (getting-started/next.mdx).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.well-known/workflow/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  // The image-extension skip applies to static assets only: `(?!api/)` keeps
+  // every /api/* path (e.g. /api/files/<id>/logo.png) inside the proxy, where
+  // the session and tenant checks run.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.well-known/workflow/|(?!api/).*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };

@@ -15,6 +15,8 @@ export async function GET() {
   await getBootstrapContext();
   const users = await db.user.findMany({
     orderBy: { createdAt: "desc" },
+    // Bounded: the admin table has no pager yet; 200 newest accounts.
+    take: 200,
     select: {
       id: true,
       email: true,

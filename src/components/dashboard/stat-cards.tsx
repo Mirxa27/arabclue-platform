@@ -53,11 +53,15 @@ export function StatCards() {
   }
 
   const k = data?.kpis;
+  // null = no compliance checks yet; render "—" instead of a fabricated 100%.
+  const hasComplianceSample = k?.avgCompliance != null;
 
   const cards: {
     key: string;
     value: number | string;
     suffix?: string;
+    /** Explains a placeholder value (e.g. "—" when there is no sample yet). */
+    valueTooltip?: string;
     icon: LucideIcon;
     trend: number | null;
     color: string;
@@ -87,8 +91,11 @@ export function StatCards() {
     },
     {
       key: "stat_compliance_score",
-      value: k?.avgCompliance ?? 0,
-      suffix: "%",
+      value: k?.avgCompliance ?? "\u2014",
+      suffix: hasComplianceSample ? "%" : undefined,
+      valueTooltip: hasComplianceSample
+        ? undefined
+        : tr("stat_compliance_no_checks", locale),
       icon: ShieldCheck,
       trend: resolveTrend(data?.trends?.compliance),
       color: "text-emerald-600 dark:text-emerald-400",
@@ -150,6 +157,19 @@ export function StatCards() {
               <div className="text-2xl lg:text-3xl font-bold tracking-tight tabular-nums">
                 {isLoading ? (
                   <span className="inline-block h-8 w-16 rounded shimmer align-bottom" />
+                ) : c.valueTooltip ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="cursor-help"
+                        aria-label={c.valueTooltip}
+                      >
+                        {c.value}
+                        {c.suffix}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{c.valueTooltip}</TooltipContent>
+                  </Tooltip>
                 ) : (
                   <>
                     {c.value}

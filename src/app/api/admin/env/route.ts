@@ -7,7 +7,7 @@ import { z } from "zod";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { encryptValue, maskSecret } from "@/lib/crypto";
 import { viewEnvSettingValue } from "@/lib/env-setting-view";
-import { ENV_CATALOG, isSecretEnvKey } from "@/lib/constants";
+import { CRITICAL_ENV_KEYS, ENV_CATALOG, isSecretEnvKey } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +71,6 @@ export async function GET(req: NextRequest) {
 }
 
 // CRITICAL env keys that must never be overwritten via API without SUPER_ADMIN + extra caution
-const CRITICAL_ENV_KEYS = new Set(["ARABCLUE_ENC_KEY", "NEXTAUTH_SECRET", "DATABASE_URL"]);
 
 // POST /api/admin/env — create or update a setting (encrypts the value)
 export async function POST(req: NextRequest) {

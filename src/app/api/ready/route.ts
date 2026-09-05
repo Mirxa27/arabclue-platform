@@ -1,5 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireSession } from "@/lib/auth";
+import {
+  READINESS_TOKEN_HEADER,
+  publicReadinessBody,
+  readinessTokenAuthorizes,
+  roleMayViewReadinessDetails,
+} from "@/lib/readiness-detail-gate";
 import { getMyFatoorahPublicConfig } from "@/lib/myfatoorah";
 import { productionInfrastructureReadiness } from "@/lib/production-readiness";
 import {
@@ -28,6 +35,94 @@ import { selectEmailTransport } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
+type ReadinessCheck = { ok: boolean; detail?: string };
+
+type ReadinessReport = Readonly<{
+  ready: boolean;
+  code: string | null;
+  service: "arabclue";
+  checks: Record<string, ReadinessCheck>;
+  schema: Readonly<{
+    ok: boolean;
+    code: string | null;
+    declaredMigrations: number;
+    appliedMigrations: number;
+    unappliedMigrations: readonly string[];
+    affectedCapabilities: readonly string[];
+    durationMs: number;
+  }>;
+  storage: "vercel_blob" | "ephemeral" | "local";
+  rateLimit: "redis" | "memory" | "unavailable";
+  time: string;
+}>;
+
+/**
+ * Facets reported for operators but excluded from the `ready` boolean. They
+ * describe configuration state (which AI engine holds a credential, whether a
+ * mail transport is set, which real-AI policy is live), not whether this
+ * instance can serve traffic. A rotated ARABCLUE_ENC_KEY used to 503 the whole
+ * deployment through `aiEngines`/`aiCredential`; a site that cannot reach a
+ * model still serves every signed-in page.
+ */
+const NON_GATING_CHECKS: ReadonlySet<string> = new Set([
+  "llmProviders",
+  "aiEngines",
+  "aiCredential",
+  "realAi",
+  "email",
+]);
+
+/**
+ * The full report costs ~8 database round-trips plus a Redis probe. A load
+ * balancer polls every few seconds and the admin overview every minute, so
+ * one build per five seconds serves every caller in that window; concurrent
+ * callers share the in-flight build.
+ */
+const REPORT_CACHE_TTL_MS = 5_000;
+let cachedReport: { readonly builtAt: number; readonly report: ReadinessReport } | null =
+  null;
+let inflightReport: Promise<ReadinessReport> | null = null;
+
+async function cachedReadinessReport(): Promise<ReadinessReport> {
+  const now = Date.now();
+  if (cachedReport && now - cachedReport.builtAt < REPORT_CACHE_TTL_MS) {
+    return cachedReport.report;
+  }
+  if (!inflightReport) {
+    inflightReport = buildReadinessReport()
+      .then((report) => {
+        cachedReport = { builtAt: Date.now(), report };
+        return report;
+      })
+      .finally(() => {
+        inflightReport = null;
+      });
+  }
+  return inflightReport;
+}
+
+/**
+ * Detail is for a caller holding CRON_SECRET (`x-readiness-token`) or a
+ * signed-in platform administrator; everyone else gets the boolean.
+ */
+async function callerMayViewDetails(req: NextRequest): Promise<boolean> {
+  if (
+    readinessTokenAuthorizes(
+      req.headers.get(READINESS_TOKEN_HEADER),
+      process.env.CRON_SECRET
+    )
+  ) {
+    return true;
+  }
+  try {
+    const session = await requireSession();
+    return roleMayViewReadinessDetails(session?.user?.role);
+  } catch {
+    // An unverified or otherwise refused session is simply not an admin here.
+    return false;
+  }
+}
+
 /**
  * GET /api/ready — readiness probe for load balancers.
  *
@@ -35,9 +130,24 @@ export const dynamic = "force-dynamic";
  * liveness result served by `/api/health`, and reports a not-ready state while
  * any declared migration is absent from the `_prisma_migrations` ledger
  * (Requirement 16.4). Issues no data-definition statement.
+ *
+ * Anonymous callers receive `{ ready, service, time }` only; the per-facet
+ * report (migration names, credential map, backends) requires
+ * `x-readiness-token: <CRON_SECRET>` or an ADMIN session.
  */
-export async function GET() {
-  const checks: Record<string, { ok: boolean; detail?: string }> = {};
+export async function GET(req: NextRequest) {
+  const [report, detailed] = await Promise.all([
+    cachedReadinessReport(),
+    callerMayViewDetails(req),
+  ]);
+  return NextResponse.json(detailed ? report : publicReadinessBody(report), {
+    status: report.ready ? 200 : 503,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function buildReadinessReport(): Promise<ReadinessReport> {
+  const checks: Record<string, ReadinessCheck> = {};
 
   try {
     await db.$queryRaw`SELECT 1`;
@@ -92,12 +202,11 @@ export async function GET() {
     const activeProviders = await db.aIProviderConfig.count({
       where: { isActive: true },
     });
+    // Non-gating (see NON_GATING_CHECKS), but honest: zero active providers
+    // is not "ok", it is a deployment that cannot produce model output.
     checks.llmProviders = {
-      ok: true,
-      detail:
-        activeProviders > 0
-          ? `active:${activeProviders}`
-          : "none_active_deterministic_fallback",
+      ok: activeProviders > 0,
+      detail: activeProviders > 0 ? `active:${activeProviders}` : "none_active",
     };
   } catch {
     checks.llmProviders = { ok: false, detail: "provider_query_failed" };
@@ -217,46 +326,50 @@ export async function GET() {
   // Resolved through the same pure selector the sender uses, so this can never
   // report a transport that `sendEmail` would not actually pick. Never gates
   // readiness: a site that cannot send mail still serves every signed-in page.
+  // In production a missing transport is still reported as not ok so the admin
+  // overview lists it as needing attention (verification and invite mail
+  // silently go nowhere otherwise).
   const emailTransport = selectEmailTransport(process.env);
   checks.email = {
-    ok: true,
+    ok:
+      emailTransport.kind !== "none" ||
+      process.env.NODE_ENV !== "production",
     detail:
       emailTransport.kind === "none"
         ? `degraded_${emailTransport.reason}`
         : emailTransport.kind,
   };
 
-  const ready = Object.values(checks).every((c) => c.ok);
+  const ready = Object.entries(checks).every(
+    ([name, check]) => check.ok || NON_GATING_CHECKS.has(name)
+  );
   const blobConfigured = Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
   const onVercel = Boolean(process.env.VERCEL);
-  return NextResponse.json(
-    {
-      ready,
-      code: ready ? null : (migrations.code ?? "READINESS_CHECK_FAILED"),
-      service: "arabclue",
-      checks,
-      // Requirement 16.3 — reported separately from liveness, never truncated.
-      schema: {
-        ok: migrations.ok,
-        code: migrations.code,
-        declaredMigrations: migrations.declaredCount,
-        appliedMigrations: migrations.appliedCount,
-        unappliedMigrations: migrations.unapplied,
-        affectedCapabilities: migrations.capabilities,
-        durationMs: migrations.durationMs,
-      },
-      storage: blobConfigured
-        ? "vercel_blob"
-        : onVercel
-          ? "ephemeral"
-          : "local",
-      rateLimit: checks.rateLimit.ok
-        ? process.env.REDIS_URL?.trim()
-          ? "redis"
-          : "memory"
-        : "unavailable",
-      time: new Date().toISOString(),
-    },
-    { status: ready ? 200 : 503 }
-  );
+  return Object.freeze({
+    ready,
+    code: ready ? null : (migrations.code ?? "READINESS_CHECK_FAILED"),
+    service: "arabclue" as const,
+    checks,
+    // Requirement 16.3 — reported separately from liveness, never truncated.
+    schema: Object.freeze({
+      ok: migrations.ok,
+      code: migrations.code,
+      declaredMigrations: migrations.declaredCount,
+      appliedMigrations: migrations.appliedCount,
+      unappliedMigrations: migrations.unapplied,
+      affectedCapabilities: migrations.capabilities,
+      durationMs: migrations.durationMs,
+    }),
+    storage: blobConfigured
+      ? ("vercel_blob" as const)
+      : onVercel
+        ? ("ephemeral" as const)
+        : ("local" as const),
+    rateLimit: checks.rateLimit.ok
+      ? process.env.REDIS_URL?.trim()
+        ? ("redis" as const)
+        : ("memory" as const)
+      : ("unavailable" as const),
+    time: new Date().toISOString(),
+  });
 }

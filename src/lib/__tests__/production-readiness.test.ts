@@ -2,14 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { productionInfrastructureReadiness } from "../production-readiness";
 
 describe("production infrastructure readiness", () => {
-  test("fails closed when production cron or Vercel Blob is absent", () => {
+  test("fails closed when production cron, Redis, or Vercel Blob is absent on Vercel", () => {
     const checks = productionInfrastructureReadiness({
       NODE_ENV: "production",
       VERCEL: "1",
     });
     expect(checks.storage.ok).toBe(false);
-    expect(checks.rateLimit.ok).toBe(true);
-    expect(checks.rateLimit.detail).toBe("memory_vercel");
+    // Per-instance memory counters are not a rate limit on Vercel.
+    expect(checks.rateLimit.ok).toBe(false);
+    expect(checks.rateLimit.detail).toBe("REDIS_URL_missing_on_vercel");
     expect(checks.cron.ok).toBe(false);
   });
 

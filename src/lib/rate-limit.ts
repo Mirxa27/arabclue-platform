@@ -9,6 +9,29 @@ type Bucket = { timestamps: number[] };
 
 const buckets = new Map<string, Bucket>();
 
+/** Idle buckets older than this are dropped by the lazy sweep. */
+const MEMORY_SWEEP_RETENTION_MS = 60 * 60 * 1000;
+/** Minimum gap between two sweeps of the in-memory buckets. */
+const MEMORY_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+let lastMemorySweepAt = 0;
+
+/**
+ * Drop stale in-memory buckets. Runs at most every five minutes and only when
+ * the memory limiter is actually used, so importing this module never
+ * schedules a timer (a module-level setInterval kept every serverless
+ * invocation and every test process alive for nothing).
+ */
+function sweepMemoryBuckets(now: number): void {
+  if (now - lastMemorySweepAt < MEMORY_SWEEP_INTERVAL_MS) return;
+  lastMemorySweepAt = now;
+  for (const [key, bucket] of buckets) {
+    bucket.timestamps = bucket.timestamps.filter(
+      (t) => now - t < MEMORY_SWEEP_RETENTION_MS
+    );
+    if (bucket.timestamps.length === 0) buckets.delete(key);
+  }
+}
+
 export function requiresDistributedRateLimit(
   requested: boolean | undefined,
   env: {
@@ -255,6 +278,7 @@ function memoryRateLimit(opts: {
   windowMs: number;
 }): { ok: boolean; remaining: number; retryAfterMs: number } {
   const now = Date.now();
+  sweepMemoryBuckets(now);
   const bucket = buckets.get(opts.key) ?? { timestamps: [] };
   bucket.timestamps = bucket.timestamps.filter((t) => now - t < opts.windowMs);
   if (bucket.timestamps.length >= opts.limit) {
@@ -339,22 +363,6 @@ async function redisRateLimit(opts: {
     remaining: Math.max(0, opts.limit - count),
     retryAfterMs: 0,
   };
-}
-
-/** Sync API used by auth routes — prefers Redis when available. */
-export function rateLimit(opts: {
-  key: string;
-  limit: number;
-  windowMs: number;
-}): { ok: boolean; remaining: number; retryAfterMs: number } {
-  // Kick off Redis connect in background; sync path uses memory until ready.
-  void getRedis();
-  if (redisClient?.isReady) {
-    // Fire-and-forget async path cannot return Promise from sync callers —
-    // use memory for sync, and expose rateLimitAsync for new code.
-    return memoryRateLimit(opts);
-  }
-  return memoryRateLimit(opts);
 }
 
 /** Preferred async limiter — Redis when REDIS_URL is configured. */
@@ -551,12 +559,3 @@ export async function releaseDistributedLease(options: {
     console.warn("[rate-limit] distributed lease release failed", error);
   }
 }
-
-/** Periodic cleanup to avoid unbounded memory */
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, b] of buckets) {
-    b.timestamps = b.timestamps.filter((t) => now - t < 60 * 60 * 1000);
-    if (b.timestamps.length === 0) buckets.delete(k);
-  }
-}, 5 * 60 * 1000).unref?.();

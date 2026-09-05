@@ -58,6 +58,8 @@ export async function GET(request: NextRequest) {
     const comments = await db.collaborationComment.findMany({
       where,
       orderBy: { createdAt: "asc" },
+      // Bounded thread list; replies stay nested under their parent.
+      take: 200,
       include: {
         creator: { select: { id: true, name: true, avatarUrl: true } },
         replies: {

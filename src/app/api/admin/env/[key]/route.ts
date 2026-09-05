@@ -4,7 +4,7 @@ import { getBootstrapContext } from "@/lib/bootstrap";
 import { jsonApiFailure, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { decryptValue, maskSecret, rotateEncryption } from "@/lib/crypto";
-import { isSecretEnvKey } from "@/lib/constants";
+import { CRITICAL_ENV_KEYS, isSecretEnvKey } from "@/lib/constants";
 import { adminEnvPatchSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +96,17 @@ export async function DELETE(
   return withAdmin(async (session) => {
   const { key } = await params;
   await getBootstrapContext();
+  // Same gate as the POST that writes these keys: an ADMIN could not set a
+  // credential or a critical key, but could delete one and take the platform
+  // down (or clear a payment key) without SUPER_ADMIN.
+  const existing = await db.envSetting.findUnique({ where: { key } });
+  if (!existing) return jsonApiFailure("RESOURCE_NOT_FOUND", { status: 404 });
+  if (
+    (isSecretEnvKey(key) || existing.isSecret || CRITICAL_ENV_KEYS.has(key)) &&
+    session.user.role !== "SUPER_ADMIN"
+  ) {
+    return jsonApiFailure("SUPER_ADMIN_REQUIRED", { status: 403 });
+  }
   await db.envSetting.delete({ where: { key } });
   await audit({
     userId: session.user.id,

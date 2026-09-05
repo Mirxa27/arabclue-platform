@@ -43,14 +43,15 @@ export function productionInfrastructureReadiness(
           : "local_uploads",
     },
     rateLimit: {
-      // Prefer Redis when configured. Memory is acceptable on single-node
-      // hosts and Vercel Hobby (no Redis). Multi-instance Redis remains recommended.
-      ok: true,
+      // Redis when configured. Memory is acceptable on a single-node host and
+      // in development. On Vercel every function instance has its own memory,
+      // so a per-instance counter is not a rate limit: fail closed there.
+      ok: redisConfigured || !(production && onVercel),
       detail: redisConfigured
         ? "redis"
         : production
           ? onVercel
-            ? "memory_vercel"
+            ? "REDIS_URL_missing_on_vercel"
             : "memory_single_instance"
           : "memory_development",
     },

@@ -239,6 +239,8 @@ model TenderProject {
 
   @@index([workspaceId])
   @@index([status])
+  @@index([workspaceId, updatedAt])
+  @@index([workspaceId, status])
 }
 
 // ─── Uploaded Documents (versioned) ──────────────────────────────────────────
@@ -272,6 +274,7 @@ model UploadedDocument {
   @@index([workspaceId])
   @@index([projectId])
   @@index([docCategory])
+  @@index([workspaceId, createdAt])
 }
 
 // ─── Voice Mission Control (durable Copilot sessions) ────────────────────────
@@ -509,6 +512,7 @@ model AgentRun {
 
   @@index([projectId])
   @@index([status])
+  @@index([projectId, createdAt])
 }
 
 // ─── Compliance Checks (NCA / PDPL / EA) ────────────────────────────────────
@@ -587,6 +591,8 @@ model GeneratedProposal {
   @@index([parentProposalId])
   @@index([workspaceId, structuredSnapshotHash])
   @@index([workspaceId, contractRenderSnapshotHash])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, status])
 }
 
 model ProposalVersion {

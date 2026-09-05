@@ -16,7 +16,9 @@ import {
 } from "@/lib/document-export-guard";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// The Chromium pipeline can take ~70s on a cold Lambda (html-to-pdf.ts budgets
+// launch + render + retry); 60 cut the function off mid-render.
+export const maxDuration = 120;
 
 const MAX_TEMPLATE_REQUEST_BYTES = 256 * 1_024;
 
@@ -247,16 +249,11 @@ export async function handleContractTemplatePreview(
       },
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? `Contract template rendering failed: ${error.message}`
-            : "Contract template rendering failed.",
-        code: "CONTRACT_TEMPLATE_RENDER_FAILED",
-      },
-      { status: 503 }
-    );
+    // The renderer's message can name a file path, a font, or a Chromium
+    // launch argument; it goes to the log and the caller gets the fixed
+    // bilingual failure the download route already uses.
+    console.error("[contract-template preview] rendering failed", error);
+    return jsonApiFailure("PDF_UNAVAILABLE");
   } finally {
     await permit?.release();
   }

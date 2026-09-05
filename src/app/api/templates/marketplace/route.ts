@@ -8,7 +8,9 @@ import {
   jsonOk,
   parseJsonBody,
   parseSearchParams,
+  requireWorkspaceRole,
   ApiError,
+  WORKSPACE_MANAGER_ROLES,
   type TenantHandlerContext,
 } from "@/lib/api-controller";
 import type { TemplateMarketplaceItem } from "@/lib/proposal-builder-types";
@@ -155,6 +157,14 @@ export async function POST(request: NextRequest) {
 
     if (!isTemplateCategory(body.category)) {
       throw new ApiError("Invalid category", 400, "MARKETPLACE_INVALID_CATEGORY");
+    }
+
+    // A public entry is listed to every other tenant. Publishing on the
+    // workspace's behalf is a workspace-management act, not something any
+    // writer may do; a private (workspace-only) template needs no more than
+    // the writer role withTenant already enforced.
+    if (body.isPublic) {
+      requireWorkspaceRole(ctx, WORKSPACE_MANAGER_ROLES);
     }
 
     const existing = await db.templateMarketplaceEntry.findUnique({

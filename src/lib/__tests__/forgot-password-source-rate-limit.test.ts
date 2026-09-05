@@ -48,6 +48,17 @@ function uniqueSuffix(): string {
   return `${nonce}-${process.pid}`;
 }
 
+/**
+ * The route now resolves the caller through the shared `extractClientIp`,
+ * which keeps only a well-formed IPv4/IPv6 token (anything else collapses to
+ * "unknown"). Sources therefore have to be real addresses, made unique per
+ * test with a per-process lane and the test nonce rather than a text suffix.
+ */
+const lane = (process.pid % 200) + 10;
+function sourceIp(host: number): string {
+  return `10.${lane}.${nonce % 256}.${host}`;
+}
+
 /** Counts what actually reached the service, which is what "refused" means. */
 function countingService(): RecoveryService & { readonly calls: string[] } {
   const calls: string[] = [];
@@ -90,7 +101,7 @@ async function post(
 describe("forgot-password limits the source, not just the target", () => {
   test("one origin cannot fan out across unlimited addresses", async () => {
     const suffix = uniqueSuffix();
-    const source = `203.0.113.${(nonce % 250) + 1}-fanout-${suffix}`;
+    const source = sourceIp(1);
     const service = countingService();
 
     // Each address is distinct, so the per-email bucket sits at 1 of 5 for all
@@ -124,7 +135,7 @@ describe("forgot-password limits the source, not just the target", () => {
     // recovery down for the whole platform. OWASP Top 10:2025 A07 asks for the
     // limit "while avoiding a denial-of-service scenario"; this is that clause.
     const suffix = uniqueSuffix();
-    const exhausted = `198.51.100.7-exhausted-${suffix}`;
+    const exhausted = sourceIp(7);
     const service = countingService();
 
     for (let i = 0; i <= RECOVERY_SOURCE_RATE_LIMIT.limit; i += 1) {
@@ -139,7 +150,7 @@ describe("forgot-password limits the source, not just the target", () => {
 
     const bystander = await post(
       `bystander-${suffix}@example.com`,
-      `198.51.100.8-bystander-${suffix}`,
+      sourceIp(8),
       service,
     );
     expect(bystander.status).toBe(202);
@@ -156,19 +167,11 @@ describe("forgot-password limits the source, not just the target", () => {
     // A distinct source each time, so the source bucket stays at 1 and only the
     // per-address axis can be what refuses.
     for (let i = 0; i < RECOVERY_REQUEST_RATE_LIMIT.limit; i += 1) {
-      const { status } = await post(
-        target,
-        `192.0.2.${i + 1}-spread-${suffix}`,
-        service,
-      );
+      const { status } = await post(target, sourceIp(20 + i), service);
       expect(status).toBe(202);
     }
 
-    const overflow = await post(
-      target,
-      `192.0.2.99-spread-${suffix}`,
-      service,
-    );
+    const overflow = await post(target, sourceIp(99), service);
     expect(overflow.status).toBe(429);
     expect(service.calls).toHaveLength(RECOVERY_REQUEST_RATE_LIMIT.limit);
   });
@@ -181,7 +184,7 @@ describe("forgot-password limits the source, not just the target", () => {
     const suffix = uniqueSuffix();
     const service = countingService();
 
-    const sourceCapped = `sourcecap-${suffix}`;
+    const sourceCapped = sourceIp(100);
     for (let i = 0; i < RECOVERY_SOURCE_RATE_LIMIT.limit; i += 1) {
       await post(`sc-${i}-${suffix}@example.com`, sourceCapped, service);
     }
@@ -192,10 +195,10 @@ describe("forgot-password limits the source, not just the target", () => {
 
     const addressCapped = `addrcap-${suffix}@example.com`;
     for (let i = 0; i < RECOVERY_REQUEST_RATE_LIMIT.limit; i += 1) {
-      await post(addressCapped, `addrcap-${i}-${suffix}`, service);
+      await post(addressCapped, sourceIp(120 + i), service);
     }
     const byAddress = await handleForgotPassword(
-      request(addressCapped, `addrcap-final-${suffix}`),
+      request(addressCapped, sourceIp(199)),
       { service },
     );
 

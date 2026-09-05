@@ -115,13 +115,31 @@ export function rotateEncryption(ciphertext: string): string {
   return encryptValue(openSealed(ciphertext));
 }
 
-/** Fail fast at boot when required secrets missing in production */
-export function assertProductionSecrets(): void {
-  if (process.env.NODE_ENV !== "production") return;
+/**
+ * Fail fast at boot when required secrets are missing in production.
+ *
+ * `NEXTAUTH_URL` is part of the set: session cookies are `Secure` and every
+ * verification, invitation and payment callback is built from it as an
+ * absolute URL, so an unset or `http://` value silently breaks sign-in and
+ * mail links rather than failing loudly. Vercel preview deployments are the
+ * one exception — NextAuth derives the URL from `VERCEL_URL` there.
+ */
+export function assertProductionSecrets(
+  env: Record<string, string | undefined> = process.env
+): void {
+  if (env.NODE_ENV !== "production") return;
   const missing: string[] = [];
-  if (!process.env.NEXTAUTH_SECRET?.trim()) missing.push("NEXTAUTH_SECRET");
-  if (!process.env.ARABCLUE_ENC_KEY?.trim()) missing.push("ARABCLUE_ENC_KEY");
+  if (!env.NEXTAUTH_SECRET?.trim()) missing.push("NEXTAUTH_SECRET");
+  if (!env.ARABCLUE_ENC_KEY?.trim()) missing.push("ARABCLUE_ENC_KEY");
+  const authUrl = env.NEXTAUTH_URL?.trim() ?? "";
+  const vercelPreview = env.VERCEL_ENV === "preview";
+  if (!authUrl && !vercelPreview) missing.push("NEXTAUTH_URL");
   if (missing.length) {
     throw new Error(`Missing required production secrets: ${missing.join(", ")}`);
+  }
+  if (authUrl && !authUrl.startsWith("https://")) {
+    throw new Error(
+      "NEXTAUTH_URL must start with https:// in production (Secure session cookies and absolute callback links depend on it)"
+    );
   }
 }

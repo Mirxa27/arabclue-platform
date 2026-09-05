@@ -75,10 +75,10 @@ describe("invitation acceptance is throttled per source address", () => {
   });
 
   test("callers without a forwarded address are still bucketed", () => {
-    // clientAddress() returns null behind a proxy that strips the header.
+    // The shared resolver returns null behind a proxy that strips the header.
     // Falling back to a shared bucket keeps those callers limited together
     // rather than exempting them, which would be the whole hole again.
-    expect(source).toMatch(/clientAddress\(req\) \?\? "/);
+    expect(source).toMatch(/extractClientIpOrNull\(req\.headers\) \?\? "/);
   });
 
   test("the configured policy actually denies a flood from one address", () => {

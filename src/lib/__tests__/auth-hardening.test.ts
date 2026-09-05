@@ -98,7 +98,9 @@ describe("login rate-limit keys", () => {
     });
   });
 
-  test("reads the first X-Forwarded-For hop and sanitizes the key", () => {
+  test("reads the hop the trusted proxy appended and sanitizes the key", () => {
+    // One trusted proxy (the default): the rightmost entry is the address it
+    // saw; the leftmost is whatever the client chose to send.
     expect(
       extractClientIp({
         get: (name: string) =>
@@ -106,6 +108,18 @@ describe("login rate-limit keys", () => {
             ? "203.0.113.10, 10.0.0.1"
             : null,
       })
+    ).toBe("10.0.0.1");
+    // Two trusted proxies (Cloudflare -> nginx): one entry further left.
+    expect(
+      extractClientIp(
+        {
+          get: (name: string) =>
+            name.toLowerCase() === "x-forwarded-for"
+              ? "203.0.113.10, 10.0.0.1"
+              : null,
+        },
+        2
+      )
     ).toBe("203.0.113.10");
     expect(sanitizeClientIp("203.0.113.10\nlogin:email:victim")).toBe(
       "203.0.113.10"

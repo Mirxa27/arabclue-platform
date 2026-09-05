@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { rateLimitAsync as rateLimit } from "./rate-limit";
 
 export const LOGIN_EMAIL_LIMIT = 10;
@@ -36,11 +37,80 @@ export function sanitizeClientIp(raw: string | null | undefined): string {
   return "unknown";
 }
 
-export function extractClientIp(headers: HeaderBag): string {
-  const forwarded = readHeader(headers, "x-forwarded-for");
-  const firstHop = forwarded?.split(",")[0]?.trim();
-  const real = readHeader(headers, "x-real-ip")?.trim();
-  return sanitizeClientIp(firstHop || real || "unknown");
+/**
+ * Number of reverse proxies between the client and this process that append
+ * to `X-Forwarded-For`. Vercel replaces the header with the single true
+ * client address, so 1 is right there; a standalone deployment behind nginx
+ * is also 1, behind Cloudflare and nginx it is 2, and 0 means no proxy is
+ * trusted and the forwarded headers are ignored entirely (they would be
+ * client-controlled). Invalid values fall back to the default.
+ */
+export const DEFAULT_TRUSTED_PROXY_HOPS = 1;
+
+export function trustedProxyHops(
+  env: Record<string, string | undefined> = process.env
+): number {
+  const raw = env.TRUSTED_PROXY_HOPS?.trim();
+  if (!raw) return DEFAULT_TRUSTED_PROXY_HOPS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 16) {
+    return DEFAULT_TRUSTED_PROXY_HOPS;
+  }
+  return parsed;
+}
+
+/**
+ * The client address from a forwarded chain. Each trusted proxy appended the
+ * address of the peer it received from, so the rightmost `trustedHops` entries
+ * are proxy-written and the client is the entry just before them. Taking the
+ * leftmost entry trusts whatever the client sent.
+ */
+export function clientIpFromForwardedFor(
+  forwarded: string | null | undefined,
+  trustedHops: number
+): string | undefined {
+  if (trustedHops <= 0) return undefined;
+  const hops = (forwarded ?? "")
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter(Boolean);
+  if (hops.length === 0) return undefined;
+  return hops[Math.max(0, hops.length - trustedHops)];
+}
+
+/**
+ * Single source of the caller's address for rate-limit keys and audit rows.
+ * `X-Real-IP` is only meaningful when exactly one trusted proxy set it.
+ */
+export function extractClientIp(
+  headers: HeaderBag,
+  trustedHops: number = trustedProxyHops()
+): string {
+  const forwarded = clientIpFromForwardedFor(
+    readHeader(headers, "x-forwarded-for"),
+    trustedHops
+  );
+  const real =
+    trustedHops === 1 ? readHeader(headers, "x-real-ip")?.trim() : undefined;
+  return sanitizeClientIp(forwarded || real || "unknown");
+}
+
+/** `extractClientIp`, with `null` instead of the "unknown" token for audit rows. */
+export function extractClientIpOrNull(headers: HeaderBag): string | null {
+  const ip = extractClientIp(headers);
+  return ip === "unknown" ? null : ip;
+}
+
+/**
+ * Short, stable digest of an address for server logs. Log lines are shipped
+ * to third parties and kept longer than the account; the digest still lets an
+ * operator correlate repeated failures for one account without writing the
+ * address itself.
+ */
+export function emailLogDigest(email: string | null | undefined): string {
+  const normalized = (email ?? "").trim().toLowerCase();
+  if (!normalized) return "email:none";
+  return `email:${createHash("sha256").update(normalized).digest("hex").slice(0, 12)}`;
 }
 
 export function loginRateLimitKeys(email: string, ip: string): LoginRateLimitKeys {

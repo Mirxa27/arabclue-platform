@@ -20,6 +20,7 @@ import {
   type ContractDraftWriteInput,
   type PreparedContractDraft,
 } from "@/lib/contract-template-persistence";
+import { extractClientIpOrNull } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -230,8 +231,7 @@ function requestMetadata(request: Request): {
   readonly ipAddress?: string;
   readonly userAgent?: string;
 } {
-  const forwarded = request.headers.get("x-forwarded-for");
-  const ipAddress = forwarded?.split(",", 1)[0]?.trim();
+  const ipAddress = extractClientIpOrNull(request.headers) ?? undefined;
   const userAgent = request.headers.get("user-agent")?.trim();
   return {
     ...(ipAddress ? { ipAddress } : {}),

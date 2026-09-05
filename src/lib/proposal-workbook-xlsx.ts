@@ -6,7 +6,10 @@
  * emits formulas, or invents translations.
  */
 
-import ExcelJS from "exceljs";
+// Type-only: ExcelJS (~1 MB of CJS) is loaded on demand inside the two
+// functions that build a workbook, so the proposal GET/PATCH routes and the
+// Workflow steps that import this module transitively stay light at cold start.
+import type ExcelJS from "exceljs";
 import type {
   ProposalWorkbookAttribute,
   ProposalWorkbookBlockSheet,
@@ -231,7 +234,8 @@ export async function serializeProposalWorkbook(
     );
   }
 
-  const wb = new ExcelJS.Workbook();
+  const { Workbook } = (await import("exceljs")).default;
+  const wb = new Workbook();
   wb.creator = "Arabclue Structured Export";
   wb.created = new Date(plan.generatedAt);
 
@@ -268,7 +272,8 @@ export async function serializeProposalWorkbook(
 export async function workbookContainsNoFormulas(
   buffer: Buffer
 ): Promise<boolean> {
-  const wb = new ExcelJS.Workbook();
+  const { Workbook } = (await import("exceljs")).default;
+  const wb = new Workbook();
   await wb.xlsx.load(buffer as never);
   for (const sheet of wb.worksheets) {
     let foundFormula = false;

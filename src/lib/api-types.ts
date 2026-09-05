@@ -123,7 +123,8 @@ export type StatsResponse = {
     activeProjects: number;
     totalProjects: number;
     proposalsGenerated: number;
-    avgCompliance: number;
+    /** null when the workspace has no compliance checks yet. */
+    avgCompliance: number | null;
     documentsProcessed: number;
     pastProjects: number;
     runningAgents: number;

@@ -1,6 +1,10 @@
 import { db } from "@/lib/db";
 import { withTenant, jsonOk } from "@/lib/api-controller";
 import { trendPct } from "@/lib/stats-trends";
+import {
+  complianceScoreFromGroups,
+  countForStatus,
+} from "@/lib/stats-compliance";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +37,17 @@ export async function GET() {
       db.tenderProject.count({ where: { workspaceId: wid } }),
       db.uploadedDocument.count({ where: { workspaceId: wid } }),
       db.generatedProposal.count({ where: { workspaceId: wid } }),
-      db.agentRun.findMany({
+      // One aggregate row per status instead of every AgentRun/ComplianceCheck
+      // row shipped to the function to be counted in JS.
+      db.agentRun.groupBy({
+        by: ["status"],
         where: { project: { workspaceId: wid } },
-        select: { status: true, overallProgress: true },
+        _count: true,
       }),
-      db.complianceCheck.findMany({
+      db.complianceCheck.groupBy({
+        by: ["status"],
         where: { project: { workspaceId: wid } },
-        select: { status: true, complianceLevel: true },
+        _count: true,
       }),
       db.pastProject.count({ where: { workspaceId: wid } }),
       db.tenderProject.count({
@@ -69,19 +77,21 @@ export async function GET() {
           createdAt: { gte: prior7dStart, lt: last7dStart },
         },
       }),
-      db.complianceCheck.findMany({
+      db.complianceCheck.groupBy({
+        by: ["status"],
         where: {
           project: { workspaceId: wid },
           createdAt: { gte: last7dStart, lte: now },
         },
-        select: { status: true },
+        _count: true,
       }),
-      db.complianceCheck.findMany({
+      db.complianceCheck.groupBy({
+        by: ["status"],
         where: {
           project: { workspaceId: wid },
           createdAt: { gte: prior7dStart, lt: last7dStart },
         },
-        select: { status: true },
+        _count: true,
       }),
     ]);
 
@@ -92,18 +102,15 @@ export async function GET() {
       },
     });
 
-    const runningAgents = agentRuns.filter((a) => a.status === "RUNNING").length;
-    const completedAgents = agentRuns.filter(
-      (a) => a.status === "COMPLETED"
-    ).length;
+    const runningAgents = countForStatus(agentRuns, "RUNNING");
+    const completedAgents = countForStatus(agentRuns, "COMPLETED");
 
-    const compliant = compliance.filter((c) => c.status === "COMPLIANT").length;
-    const avgCompliance =
-      compliance.length > 0
-        ? Math.round((compliant / compliance.length) * 100)
-        : 100;
-    const last7dComplianceScore = complianceScore(last7dCompliance);
-    const prior7dComplianceScore = complianceScore(prior7dCompliance);
+    // null (not 100) when the workspace has no checks yet; the card shows "—".
+    const avgCompliance = complianceScoreFromGroups(compliance);
+    const last7dComplianceScore =
+      complianceScoreFromGroups(last7dCompliance) ?? 0;
+    const prior7dComplianceScore =
+      complianceScoreFromGroups(prior7dCompliance) ?? 0;
 
     const statusBreakdown = await db.tenderProject.groupBy({
       by: ["status"],
@@ -152,10 +159,4 @@ export async function GET() {
       },
     });
   }, "stats GET");
-}
-
-function complianceScore(checks: Array<{ status: string }>) {
-  if (checks.length === 0) return 0;
-  const compliant = checks.filter((c) => c.status === "COMPLIANT").length;
-  return Math.round((compliant / checks.length) * 100);
 }

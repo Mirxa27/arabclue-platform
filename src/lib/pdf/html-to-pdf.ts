@@ -512,7 +512,7 @@ export async function htmlToPdf(
     if (err instanceof PdfGenerationError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     const hint = shouldUseServerlessChromium()
-      ? "Ensure @sparticuz/chromium is deployed and AWS_LAMBDA_JS_RUNTIME=nodejs22.x on Vercel."
+      ? "Ensure @sparticuz/chromium and playwright-core are deployed with the function (see pdfRuntimeTraceIncludes in next.config.ts)."
       : "Run `bun run setup:pdf` (playwright install chromium) locally.";
     throw new PdfGenerationError(
       `PDF generation failed (Playwright/Chromium unavailable): ${message}. ${hint}`,

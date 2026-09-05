@@ -2,13 +2,26 @@
 
 Domain: **arabclue.com** (primary), www.arabclue.com → redirect to apex.
 
-> **DEPLOYMENT BLOCKED:** `.env` is now gitignored, but it remains present in
-> earlier public commits. Do not deploy until every exposed credential has been
-> rotated, the Git history remediation has been completed and verified from a
-> clean clone, and `bun run deploy:safety` passes. Keep replacement secrets only
-> in Vercel Project → Settings → Environment Variables. See
-> [`docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md`](docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md)
-> for history remediation if secrets were exposed in older commits.
+> **Status (2026-09-05):** the "DEPLOYMENT BLOCKED" banner that stood here is
+> stale — `.env` is gitignored, the tracked-secret and history checks run in CI
+> (`deploy:safety:repo` on every PR; the full `deploy:safety` gate on pushes to
+> `main` when the `VERCEL_TOKEN` secret is configured), and the production
+> project is live on Vercel. What still needs an operator, not a commit:
+>
+> 1. Confirm every credential that was ever committed has been rotated in
+>    Vercel Project → Settings → Environment Variables (Neon, Redis, Blob,
+>    `NEXTAUTH_SECRET`, `ARABCLUE_ENC_KEY`, `CRON_SECRET`, provider keys).
+> 2. Apply pending migrations with `bun run db:migrate:deploy` against the
+>    **unpooled** Neon URL as a separate release step (see `.env.example`),
+>    then confirm `/api/ready` (with `x-readiness-token: $CRON_SECRET`) shows
+>    `unappliedMigrations: []`.
+> 3. Set `REDIS_URL` in production — readiness now fails closed on Vercel
+>    without it (per-instance memory counters are not a rate limit).
+> 4. Set a mail transport (`RESEND_API_KEY` or SMTP) — `/api/ready` reports
+>    `email` as not ok in production until one is set (non-gating).
+>
+> History remediation guidance lives in
+> [`docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md`](docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md).
 
 ## 1. Vercel project setup
 
@@ -24,7 +37,6 @@ vercel env add BOOTSTRAP_ADMIN_PASSWORD
 vercel env add REDIS_URL
 vercel env add BLOB_READ_WRITE_TOKEN
 vercel env add CRON_SECRET
-vercel env add AWS_LAMBDA_JS_RUNTIME
 ```
 
 ### Required env vars (Production)
@@ -40,7 +52,6 @@ BOOTSTRAP_ADMIN_PASSWORD=<strong 16+ chars, rotate after first login>
 REDIS_URL=rediss://<production-redis>
 BLOB_READ_WRITE_TOKEN=<vercel-blob-token>
 CRON_SECRET=<openssl rand -base64 32>
-AWS_LAMBDA_JS_RUNTIME=nodejs22.x
 # Optional LLM
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
@@ -135,6 +146,10 @@ Auth checks:
 ```bash
 curl https://arabclue.com/api/health
 # → { ok: true, service: "arabclue" }
+curl https://arabclue.com/api/ready
+# → { ready: true, service: "arabclue", time } (anonymous: boolean only)
+curl -H "x-readiness-token: $CRON_SECRET" https://arabclue.com/api/ready
+# → full per-facet report incl. schema.unappliedMigrations (operators / ADMIN session)
 
 # Login as superadmin@arabclue.com
 # → forced password change
@@ -151,12 +166,13 @@ curl https://arabclue.com/api/health
 - **Postgres:** Neon Postgres via `DATABASE_URL` (not SQLite)
 - **Cron (hybrid):** Primary schedules run from **Hostinger account crons** (no Hobby daily cap) via `curl` + `Authorization: Bearer $CRON_SECRET` against `https://arabclue.com/api/cron/*`. Vercel Cron entries in `vercel.json` remain as a secondary path (Hobby: ≤1 run/day per job). Keep the same `CRON_SECRET` in Vercel Project → Environment Variables and in the Hostinger cron commands. `/api/cron/*` is excluded from session auth in `proxy.ts` and authorized only by `CRON_SECRET`.
 - **Email:** Resend via `RESEND_API_KEY` + optional `EMAIL_FROM`. Without the key, expiry cron logs + writes `ExpiryNotificationLog` but does not send mail (in-app cert notifications still work).
-- **PDF on Vercel:** `@sparticuz/chromium` + `playwright-core`. Set `AWS_LAMBDA_JS_RUNTIME=nodejs22.x` in the Vercel project env.
+- **PDF on Vercel:** `@sparticuz/chromium` + `playwright-core`. No runtime env var is needed: `@sparticuz/chromium` 149 selects its binary from the running Node version (Node ≥ 20), and `next.config.ts` traces `browsers.json` and the brotli archives into the three PDF functions. The PDF routes run with `maxDuration = 120`.
 - **Hosting note:** Full Next.js hosting on Hostinger was attempted; Node builds succeeded but the managed runtime did not stay healthy. Production DNS stays on Vercel (`ns1/ns2.vercel-dns.com`). Hostinger is used for cron triggers only until a clean Node.js Web App recreate is validated.
 
 **Required production infrastructure:**
 - `BLOB_READ_WRITE_TOKEN` — without it `/api/ready` reports storage degraded (`ephemeral_/tmp`) and readiness fails on Vercel.
-- `REDIS_URL` (optional but recommended, e.g. Upstash) — when unset, rate limiting uses in-memory (fine on Vercel Hobby / single-node). When set, limits are Redis-backed and fail closed if Redis is unreachable.
+- `REDIS_URL` (required on Vercel, e.g. Upstash) — every Vercel function instance has its own memory, so without Redis the auth and export limits are per-instance counters; `/api/ready` reports `rateLimit` as `REDIS_URL_missing_on_vercel` and readiness fails. On a single-node self-host the in-memory limiter is accepted. When set, limits are Redis-backed and fail closed if Redis is unreachable.
+- `TRUSTED_PROXY_HOPS` (default `1`) — how many reverse proxies append to `X-Forwarded-For` before the app. Vercel writes the single true client address, so leave it at 1 there; set 2 for Cloudflare → nginx → app, 0 to ignore forwarded headers entirely.
 - `CRON_SECRET` (minimum 16 characters) — scheduled billing and expiry jobs fail authentication without it, and production readiness returns `503`.
 
 **Still deferred (product):**

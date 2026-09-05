@@ -326,7 +326,7 @@ describe("business-profile export route", () => {
     ]);
   });
 
-  test("returns the existing stable 503 shape for bilingual PDF failures", async () => {
+  test("returns the bilingual PDF_UNAVAILABLE failure without echoing the renderer error", async () => {
     const { dependencies } = routeHarness();
     const failingDependencies: BusinessProfileExportDependencies = {
       ...dependencies,
@@ -341,10 +341,15 @@ describe("business-profile export route", () => {
     );
 
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      error: "PDF generation failed: Chromium unavailable",
-      code: "PDF_UNAVAILABLE",
-    });
+    const body = (await response.json()) as {
+      code: string;
+      error: { ar: string; en: string };
+    };
+    expect(body.code).toBe("PDF_UNAVAILABLE");
+    expect(body.error.ar.length).toBeGreaterThan(0);
+    expect(body.error.en.length).toBeGreaterThan(0);
+    // The renderer's message is logged, never echoed to the caller.
+    expect(JSON.stringify(body)).not.toContain("Chromium unavailable");
   });
 
   test("returns 429 before starting a PDF renderer when admission is denied", async () => {
@@ -375,7 +380,7 @@ describe("business-profile export route", () => {
     expect(state.audits).toHaveLength(0);
   });
 
-  test("preserves the stable 503 shape for legacy PDF failures", async () => {
+  test("returns PDF_UNAVAILABLE for legacy PDF failures without echoing the renderer error", async () => {
     const { dependencies } = routeHarness();
     const failingDependencies: BusinessProfileExportDependencies = {
       ...dependencies,
@@ -390,9 +395,12 @@ describe("business-profile export route", () => {
     );
 
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      error: "PDF generation failed: Legacy renderer unavailable",
-      code: "PDF_UNAVAILABLE",
-    });
+    const body = (await response.json()) as {
+      code: string;
+      error: { ar: string; en: string };
+    };
+    expect(body.code).toBe("PDF_UNAVAILABLE");
+    expect(body.error.en.length).toBeGreaterThan(0);
+    expect(JSON.stringify(body)).not.toContain("Legacy renderer unavailable");
   });
 });

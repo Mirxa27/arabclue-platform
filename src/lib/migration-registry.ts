@@ -331,8 +331,22 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
       'ALTER TABLE "SubscriptionPlan" DROP COLUMN "priceMonthlyDecimal"; ALTER TABLE "SubscriptionPlan" DROP COLUMN "priceYearlyDecimal"; ALTER TABLE "BillingRecord" DROP COLUMN "amountDecimal"; ALTER TABLE "PaymentCheckout" DROP COLUMN "amountDecimal";',
   },
   {
-    id: "20261126000000_autonomy_slice_1",
+    id: "20260905120000_hot_path_indexes",
     position: 25,
+    capabilities: [
+      "tender projects",
+      "document ingestion",
+      "proposal generation",
+      "agent runs",
+      "dashboard KPIs",
+    ],
+    createsTables: [],
+    reverse:
+      'DROP INDEX IF EXISTS "AgentRun_projectId_createdAt_idx"; DROP INDEX IF EXISTS "GeneratedProposal_workspaceId_status_idx"; DROP INDEX IF EXISTS "GeneratedProposal_workspaceId_createdAt_idx"; DROP INDEX IF EXISTS "UploadedDocument_workspaceId_createdAt_idx"; DROP INDEX IF EXISTS "TenderProject_workspaceId_status_idx"; DROP INDEX IF EXISTS "TenderProject_workspaceId_updatedAt_idx";',
+  },
+  {
+    id: "20261126000000_autonomy_slice_1",
+    position: 26,
     capabilities: [
       "autonomy shell",
       "company profile Markdown",

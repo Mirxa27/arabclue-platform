@@ -1,6 +1,5 @@
-import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
-import { jsonApiFailure } from "@/lib/api-controller";
+import { handleRoute, jsonApiFailure } from "@/lib/api-controller";
 import { requireSession } from "@/lib/auth";
 import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
 import { getTenantContext } from "@/lib/workspace-context";
@@ -22,7 +21,9 @@ import {
 } from "@/lib/document-export-guard";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// The Chromium pipeline can take ~70s on a cold Lambda (html-to-pdf.ts budgets
+// launch + render + retry); 60 cut the function off mid-render.
+export const maxDuration = 120;
 
 export const BILINGUAL_CAPABILITY_EXPORT_BLOCKED_CODE =
   "BILINGUAL_CAPABILITY_EXPORT_BLOCKED" as const;
@@ -221,6 +222,24 @@ export async function handleBusinessProfileExport(
   req: NextRequest,
   dependencies: BusinessProfileExportDependencies = productionDependencies
 ): Promise<NextResponse> {
+  // Anything thrown outside the PDF try/catch below (session, tenant, profile
+  // load) becomes a mapped bilingual JSON failure instead of the framework's
+  // HTML 500 page.
+  return handleRoute("business-profile export", () =>
+    exportBusinessProfile(req, dependencies)
+  );
+}
+
+/** A PDF renderer failure: the cause goes to the log, the caller gets a fixed code. */
+function pdfUnavailable(context: string, error: unknown): NextResponse {
+  console.error(`[business-profile export] ${context} PDF failed`, error);
+  return jsonApiFailure("PDF_UNAVAILABLE");
+}
+
+async function exportBusinessProfile(
+  req: NextRequest,
+  dependencies: BusinessProfileExportDependencies
+): Promise<NextResponse> {
   const session = await dependencies.getSession();
   if (!session) {
     return jsonApiFailure("UNAUTHORIZED", { status: 401 });
@@ -286,17 +305,7 @@ export async function handleBusinessProfileExport(
         `${slug}-capability-statement-bilingual.pdf`
       );
     } catch (error) {
-      const message =
-        redactSensitiveText(
-          error instanceof Error ? error.message : String(error)
-        );
-      return NextResponse.json(
-        {
-          error: `PDF generation failed: ${message}`,
-          code: "PDF_UNAVAILABLE",
-        },
-        { status: 503 }
-      );
+      return pdfUnavailable("bilingual", error);
     } finally {
       await admission.permit.release();
     }
@@ -329,16 +338,7 @@ export async function handleBusinessProfileExport(
     });
     return pdfResponse(pdf, `${slug}-business-profile-${locale}.pdf`);
   } catch (error) {
-    const message = redactSensitiveText(
-      error instanceof Error ? error.message : String(error)
-    );
-    return NextResponse.json(
-      {
-        error: `PDF generation failed: ${message}`,
-        code: "PDF_UNAVAILABLE",
-      },
-      { status: 503 }
-    );
+    return pdfUnavailable("legacy", error);
   } finally {
     await admission.permit.release();
   }

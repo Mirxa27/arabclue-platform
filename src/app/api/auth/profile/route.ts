@@ -12,8 +12,21 @@ import {
   jsonApiFailure,
   jsonRateLimitFailure,
 } from "@/lib/api-controller";
+import { createPrismaAccountService } from "@/lib/account-service-prisma";
+import type { VerificationEmailDelivery } from "@/lib/account-service";
+import { extractClientIp } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
+
+const UNIQUE_CONSTRAINT_ERROR = "P2002";
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === UNIQUE_CONSTRAINT_ERROR
+  );
+}
 
 /** GET /api/auth/profile — current user profile (DB source of truth) */
 export async function GET() {
@@ -45,7 +58,12 @@ export async function GET() {
 
 /**
  * PATCH /api/auth/profile — update name, locale, and/or email.
- * Email change requires currentPassword and uniqueness check.
+ *
+ * An email change requires the current password and puts the account back
+ * into the unverified state: `emailVerified` is cleared, every other session
+ * is revoked, and a fresh verification link is mailed to the new address
+ * through the same account service registration uses. Previously the new,
+ * unproven address inherited the old address's verified flag.
  */
 export async function PATCH(req: NextRequest) {
   try {
@@ -84,6 +102,7 @@ export async function PATCH(req: NextRequest) {
     if (name !== undefined) data.name = name;
     if (locale !== undefined) data.locale = locale;
 
+    let emailChanged = false;
     if (email !== undefined) {
       const nextEmail = email.trim().toLowerCase();
       if (nextEmail !== existing.email) {
@@ -91,11 +110,8 @@ export async function PATCH(req: NextRequest) {
         if (!ok) {
           return jsonApiFailure("PASSWORD_INCORRECT", { status: 400 });
         }
-        const taken = await db.user.findUnique({ where: { email: nextEmail } });
-        if (taken && taken.id !== existing.id) {
-          return jsonApiFailure("EMAIL_ALREADY_IN_USE", { status: 409 });
-        }
         data.email = nextEmail;
+        emailChanged = true;
       }
     }
 
@@ -113,29 +129,88 @@ export async function PATCH(req: NextRequest) {
       });
     }
 
-    const updated = await db.user.update({
-      where: { id: existing.id },
-      data,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        locale: true,
-        avatarUrl: true,
-        mfaEnabled: true,
-      },
-    });
+    const userSelect = {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      locale: true,
+      avatarUrl: true,
+      mfaEnabled: true,
+    } as const;
+
+    let updated: {
+      id: string;
+      email: string;
+      name: string | null;
+      role: string;
+      locale: string;
+      avatarUrl: string | null;
+      mfaEnabled: boolean;
+    };
+    let emailDelivery: VerificationEmailDelivery | null = null;
+
+    if (emailChanged) {
+      // One transaction: the new address, the cleared verification, and the
+      // revocation of every other session commit together or not at all. The
+      // unique index on User.email is the only arbiter of collisions — no
+      // read-then-write race.
+      try {
+        [updated] = await db.$transaction([
+          db.user.update({
+            where: { id: existing.id },
+            data: { ...data, emailVerified: false, emailVerifiedAt: null },
+            select: userSelect,
+          }),
+          db.userSession.deleteMany({
+            where: session.sessionToken
+              ? { userId: existing.id, NOT: { token: session.sessionToken } }
+              : { userId: existing.id },
+          }),
+        ]);
+      } catch (err) {
+        if (isUniqueConstraintError(err)) {
+          return jsonApiFailure("EMAIL_ALREADY_IN_USE", { status: 409 });
+        }
+        throw err;
+      }
+
+      // Same issuance path as registration and the resend route: replaces any
+      // outstanding token and mails the new address. Its own limiter (3 per
+      // hour per address/IP) applies; a throttled send is reported, not fatal —
+      // the account is already unverified and the resend route can reissue.
+      const reissue = await createPrismaAccountService().resendVerificationEmail({
+        email: updated.email,
+        sourceAddress: extractClientIp(req.headers),
+      });
+      emailDelivery = reissue.ok ? reissue.emailDelivery : null;
+    } else {
+      updated = await db.user.update({
+        where: { id: existing.id },
+        data,
+        select: userSelect,
+      });
+    }
 
     await audit({
       userId: existing.id,
       action: "PROFILE_UPDATE",
       resource: "User",
       resourceId: existing.id,
-      details: { fields: Object.keys(data) },
+      details: {
+        fields: Object.keys(data),
+        ...(emailChanged
+          ? { emailVerificationReset: true, emailDelivery }
+          : {}),
+      },
     });
 
-    return NextResponse.json({ user: updated });
+    return NextResponse.json({
+      user: updated,
+      ...(emailChanged
+        ? { emailVerification: { required: true, emailDelivery } }
+        : {}),
+    });
   } catch (err) {
     console.error("[auth/profile PATCH]", err);
     return jsonApiFailure("INTERNAL_ERROR", { status: 500 });

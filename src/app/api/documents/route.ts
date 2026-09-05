@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
-import type { DocCategory } from "@/lib/types";
+import { docCategorySchema } from "@/lib/validation";
 import { requireSession, requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { assertWithinQuota } from "@/lib/quotas";
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
 
     const originalName = file.name;
     const mimeType = file.type || "application/octet-stream";
-    const docCategory = String(form.get("docCategory") || "OTHER") as DocCategory;
+    const docCategory = docCategorySchema.parse(form.get("docCategory"));
     const projectId = form.get("projectId")
       ? String(form.get("projectId"))
       : undefined;

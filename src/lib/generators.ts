@@ -1,5 +1,3 @@
-import ExcelJS from "exceljs";
-import JSZip from "jszip";
 import { COMPLIANCE_FRAMEWORKS, EXECUTION_METHODOLOGY, getTenderType } from "./constants";
 import type { GeneratedProposal, TenderProject, BrandProfile } from "@prisma/client";
 import { LEGAL_DISCLAIMER } from "./procurement-rules";
@@ -333,7 +331,11 @@ export async function generateComplianceMatrixXLSX(
   company?: ProposalCompanyLetterhead | null,
   locale?: PdfLocale
 ): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook();
+  // ExcelJS is loaded on demand: this module is statically imported by the
+  // download route and structured-bid-package, and the workbook is only
+  // needed for the XLSX/ZIP channels.
+  const { Workbook } = (await import("exceljs")).default;
+  const wb = new Workbook();
   const companyName = exportCompanyName(brand, company, locale ?? "ar");
   const primaryArgb = brandArgb(brand?.primaryColor ?? "#1E3A8A");
   wb.creator = companyName;
@@ -427,7 +429,8 @@ export async function generateBoQXLSX(
   company?: ProposalCompanyLetterhead | null,
   locale?: PdfLocale
 ): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook();
+  const { Workbook } = (await import("exceljs")).default;
+  const wb = new Workbook();
   const companyName = exportCompanyName(brand, company, locale ?? "ar");
   const primaryArgb = brandArgb(brand?.primaryColor ?? "#1E3A8A");
   wb.creator = companyName;
@@ -970,6 +973,7 @@ export async function generateBidPackageZIP(
     locale?: PdfLocale;
   }
 ): Promise<Buffer> {
+  const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
   const tenderType = getTenderType(project.category);
   const locale = resolveLocale(proposal, opts?.locale);

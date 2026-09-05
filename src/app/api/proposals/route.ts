@@ -8,13 +8,17 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   return withTenant("session", async ({ workspace }) => {
     const projectId = req.nextUrl.searchParams.get("projectId");
+    // List view only: bounded, newest-touched first, and without the
+    // Markdown body (the detail route serves contentMd for one proposal).
     const proposals = await db.generatedProposal.findMany({
       where: {
         workspaceId: workspace.id,
         ...(projectId ? { projectId } : {}),
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { updatedAt: "desc" },
+      take: 100,
       omit: {
+        contentMd: true,
         structuredSnapshot: true,
         contractRenderSnapshot: true,
       },

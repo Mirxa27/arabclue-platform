@@ -4,7 +4,11 @@ import { getServerSession } from "next-auth";
 import { db } from "./db";
 import { passwordNeedsRehash, hashPassword, verifyPassword } from "./password";
 import { consumeMfaChallenge } from "./mfa-challenge";
-import { consumeLoginRateLimits, extractClientIp } from "./login-rate-limit";
+import {
+  consumeLoginRateLimits,
+  emailLogDigest,
+  extractClientIp,
+} from "./login-rate-limit";
 import { audit, AUDIT_ACTIONS } from "./audit";
 import type { Role } from "./types";
 import { isProductionBlockedDevelopmentIdentity } from "./production-identities";
@@ -77,8 +81,13 @@ export const VERIFICATION_ALLOWLIST = [
 
 export function isVerificationAllowedPath(path: string): boolean {
   if (!path) return false;
+  // Exact path or a sub-path of it. `includes` let "/app?next=/verify-email"
+  // or "/api/anything/verify-email" through.
   const lower = path.toLowerCase();
-  return VERIFICATION_ALLOWLIST.some((allowed) => lower.includes(allowed.toLowerCase()));
+  return VERIFICATION_ALLOWLIST.some((allowed) => {
+    const candidate = allowed.toLowerCase();
+    return lower === candidate || lower.startsWith(`${candidate}/`);
+  });
 }
 
 export function getRequestPathForVerificationCheck(): string {
@@ -115,7 +124,7 @@ export const authOptions: NextAuthOptions = {
               ? "rate_limit_service_unavailable"
               : "rate_limited";
           console.warn(`[auth] authorize rejected: ${reason}`, {
-            email,
+            email: emailLogDigest(email),
             dimension: rl.dimension,
           });
           await audit({
@@ -127,7 +136,9 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
         if (isProductionBlockedDevelopmentIdentity(email)) {
-          console.warn("[auth] authorize rejected: reserved_development_identity", { email });
+          console.warn("[auth] authorize rejected: reserved_development_identity", {
+            email: emailLogDigest(email),
+          });
           await audit({
             action: AUDIT_ACTIONS.LOGIN_FAILED,
             details: { reason: "reserved_development_identity" },
@@ -152,7 +163,10 @@ export const authOptions: NextAuthOptions = {
 
         const user = await db.user.findUnique({ where: { email } });
         if (!user || !user.active) {
-          console.warn("[auth] authorize rejected: not_found_or_inactive", { email, active: user?.active });
+          console.warn("[auth] authorize rejected: not_found_or_inactive", {
+            email: emailLogDigest(email),
+            active: user?.active,
+          });
           await audit({
             action: AUDIT_ACTIONS.LOGIN_FAILED,
             details: { email, reason: "not_found_or_inactive" },
@@ -164,7 +178,9 @@ export const authOptions: NextAuthOptions = {
 
         const ok = await verifyPassword(password, user.passwordHash);
         if (!ok) {
-          console.warn("[auth] authorize rejected: bad_password", { email });
+          console.warn("[auth] authorize rejected: bad_password", {
+            email: emailLogDigest(email),
+          });
           await audit({
             userId: user.id,
             action: AUDIT_ACTIONS.LOGIN_FAILED,
@@ -185,7 +201,7 @@ export const authOptions: NextAuthOptions = {
           });
           if (!challenge.ok) {
             console.warn("[auth] authorize rejected: mfa_failed", {
-              email,
+              email: emailLogDigest(email),
               hasSecret: !!user.mfaSecret,
               hasToken: !!mfaToken,
               reason: challenge.reason,

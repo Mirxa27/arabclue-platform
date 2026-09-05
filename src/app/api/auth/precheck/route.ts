@@ -8,10 +8,11 @@ import {
   jsonRateLimitFailure,
   withPublicRoute,
 } from "@/lib/api-controller";
+import { describeRateLimitDenial } from "@/lib/rate-limit";
 import {
-  describeRateLimitDenial,
-  rateLimitAsync as rateLimit,
-} from "@/lib/rate-limit";
+  consumeLoginRateLimits,
+  extractClientIp,
+} from "@/lib/login-rate-limit";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { isProductionBlockedDevelopmentIdentity } from "@/lib/production-identities";
 import { hashPassword } from "@/lib/password";
@@ -50,14 +51,12 @@ export async function POST(req: NextRequest) {
     const email = parsed.data.email.trim().toLowerCase();
     const password = parsed.data.password;
 
-    // This endpoint verifies a password, so it is a second front door and is
-    // limited on the same terms as the credentials provider (10 per 15 minutes)
-    // rather than the looser 20 it used to allow.
-    const rl = await rateLimit({
-      key: `precheck:${email}`,
-      limit: 10,
-      windowMs: 15 * 60 * 1000,
-    });
+    // This endpoint verifies a password, so it is a second front door and
+    // draws on the same email and IP buckets as the credentials provider
+    // (10 per email, 40 per address, per 15 minutes). A private per-email
+    // bucket left the address dimension unlimited here: one IP could spray a
+    // password across every account and never trip a limit.
+    const rl = await consumeLoginRateLimits(email, extractClientIp(req.headers));
     if (!rl.ok) {
       return jsonRateLimitFailure(
         describeRateLimitDenial(rl),

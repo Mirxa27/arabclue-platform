@@ -10,7 +10,7 @@ import { apiFailure } from "@/lib/api-failure";
  * equal-length padding scheme: compare byte buffers of the max length, with the
  * length difference folded into the result.
  */
-function secretsMatch(candidate: string, expected: string): boolean {
+export function secretsMatch(candidate: string, expected: string): boolean {
   const a = Buffer.from(candidate, "utf8");
   const b = Buffer.from(expected, "utf8");
   const width = Math.max(a.length, b.length, 1);

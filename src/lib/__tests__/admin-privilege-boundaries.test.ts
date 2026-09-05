@@ -103,7 +103,8 @@ describe("precheck is not a silent credential oracle", () => {
     expect(source).not.toContain("name: user.name");
   });
 
-  test("the limit matches the credentials provider", () => {
-    expect(source).toMatch(/limit: 10,/);
+  test("the limit is the credentials provider's own email and IP buckets", () => {
+    expect(source).toContain("consumeLoginRateLimits(email, extractClientIp(req.headers))");
+    expect(source).not.toMatch(/key:\s*`precheck:/);
   });
 });

@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { toErrorResponse, jsonApiFailure } from "@/lib/api-controller";
+import { jsonApiFailure, withTenant } from "@/lib/api-controller";
 import {
   PRESENCE_STALE_THRESHOLD_MS,
   PRESENCE_VIEWER_CAP,
   capPresenceViewers,
+  presenceEventSchema,
 } from "@/lib/collaboration-presence";
 
 /** Presence rows older than this are pruned on every read/write. */
@@ -75,41 +74,39 @@ function snapshotResponse(viewers: PresenceViewer[], total: number) {
  * multi-instance deployments share one Prisma-backed source of truth.
  */
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return jsonApiFailure("UNAUTHORIZED");
-  }
+  // The tenant is resolved server-side from the session's membership, not
+  // read off the JWT claim: the claim is refreshed lazily and a stale or
+  // forged workspaceId must never pick the tenant a presence row is read from.
+  return withTenant("session", async ({ workspace }) => {
+    const { searchParams } = new URL(request.url);
+    const proposalId = searchParams.get("proposalId");
+    const workspaceId = searchParams.get("workspaceId");
 
-  const { searchParams } = new URL(request.url);
-  const proposalId = searchParams.get("proposalId");
-  const workspaceId = searchParams.get("workspaceId");
+    if (!proposalId || !workspaceId) {
+      return jsonApiFailure("REQUEST_VALIDATION_FAILED", {
+        fieldPaths: [!proposalId ? "proposalId" : "workspaceId"],
+      });
+    }
 
-  if (!proposalId || !workspaceId) {
-    return jsonApiFailure("REQUEST_VALIDATION_FAILED", {
-      fieldPaths: [!proposalId ? "proposalId" : "workspaceId"],
-    });
-  }
+    // The client echoes the workspace it believes it is in; a mismatch is a
+    // stale tab, refused rather than silently served from the real tenant.
+    if (workspaceId !== workspace.id) {
+      return jsonApiFailure("TENANT_ACCESS_FORBIDDEN");
+    }
 
-  if (workspaceId !== session.user.workspaceId) {
-    return jsonApiFailure("TENANT_ACCESS_FORBIDDEN");
-  }
-
-  try {
     const proposal = await db.generatedProposal.findUnique({
       where: { id: proposalId },
       select: { id: true, workspaceId: true },
     });
 
-    if (!proposal || proposal.workspaceId !== workspaceId) {
+    if (!proposal || proposal.workspaceId !== workspace.id) {
       return jsonApiFailure("RESOURCE_NOT_FOUND");
     }
 
     await cleanupStalePresence(proposalId);
     const { viewers, total } = await loadViewers(proposalId);
     return snapshotResponse(viewers, total);
-  } catch (error) {
-    return toErrorResponse(error, "collaboration:presence:get");
-  }
+  }, "collaboration:presence:get");
 }
 
 /**
@@ -117,51 +114,38 @@ export async function GET(request: NextRequest) {
  * to ~30s; every write also prunes stale rows.
  */
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return jsonApiFailure("UNAUTHORIZED");
-  }
-
-  try {
+  return withTenant("session", async ({ workspace, userId }) => {
     // sendBeacon may post as text/plain; accept JSON string bodies too.
     const raw = await request.text();
-    let body: {
-      proposalId?: string;
-      type?: string;
-      sectionKey?: string | null;
-    } | null = null;
+    let json: unknown = null;
     try {
-      body = raw ? (JSON.parse(raw) as typeof body) : null;
+      json = raw ? JSON.parse(raw) : null;
     } catch {
-      body = null;
+      json = null;
     }
-    if (!body || typeof body !== "object") {
-      return jsonApiFailure("REQUEST_VALIDATION_FAILED", { fieldPaths: ["body"] });
-    }
-    const { proposalId, type, sectionKey } = body;
-
-    if (!proposalId || !type) {
+    const parsed = presenceEventSchema.safeParse(json);
+    if (!parsed.success) {
+      const fieldPaths = parsed.error.issues.map((issue) =>
+        issue.path.length > 0 ? issue.path.join(".") : "body"
+      );
       return jsonApiFailure("REQUEST_VALIDATION_FAILED", {
-        fieldPaths: [!proposalId ? "proposalId" : "type"],
+        fieldPaths: fieldPaths.length > 0 ? fieldPaths : ["body"],
       });
     }
-
-    if (!["join", "heartbeat", "leave"].includes(type)) {
-      return jsonApiFailure("REQUEST_VALIDATION_FAILED", { fieldPaths: ["type"] });
-    }
+    const { proposalId, type, sectionKey } = parsed.data;
 
     const proposal = await db.generatedProposal.findUnique({
       where: { id: proposalId },
       select: { workspaceId: true },
     });
 
-    if (!proposal || proposal.workspaceId !== session.user.workspaceId) {
+    if (!proposal || proposal.workspaceId !== workspace.id) {
       // One answer for "not yours" and "not there": the id must not be a probe.
       return jsonApiFailure("RESOURCE_NOT_FOUND");
     }
 
     const user = await db.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: userId },
       select: { id: true, name: true, avatarUrl: true },
     });
 
@@ -177,7 +161,7 @@ export async function POST(request: NextRequest) {
           where: {
             proposalId_userId: {
               proposalId,
-              userId: session.user.id,
+              userId,
             },
           },
         })
@@ -196,13 +180,13 @@ export async function POST(request: NextRequest) {
       where: {
         proposalId_userId: {
           proposalId,
-          userId: session.user.id,
+          userId,
         },
       },
       create: {
         proposalId,
-        userId: session.user.id,
-        workspaceId: session.user.workspaceId,
+        userId,
+        workspaceId: workspace.id,
         sectionKey: sectionKey ?? null,
         lastSeenAt: new Date(),
       },
@@ -219,7 +203,5 @@ export async function POST(request: NextRequest) {
       viewers: snapshot.viewers,
       total: snapshot.total,
     });
-  } catch (error) {
-    return toErrorResponse(error, "collaboration:presence:post");
-  }
+  }, "collaboration:presence:post");
 }

@@ -4,8 +4,28 @@
  * deterministic prune/cap/hash rules only.
  */
 
+import { z } from "zod";
+
 export const PRESENCE_STALE_THRESHOLD_MS = 60_000;
 export const PRESENCE_VIEWER_CAP = 50;
+
+/** Longest section key a presence row may carry (stored verbatim, echoed to peers). */
+export const PRESENCE_SECTION_KEY_MAX_LENGTH = 120;
+
+/**
+ * Body of a presence POST. `sectionKey` is tri-state: absent leaves the stored
+ * section untouched, `null` clears it, a string replaces it. Unknown keys are
+ * rejected so a client cannot smuggle `workspaceId` or `userId` past the route.
+ */
+export const presenceEventSchema = z
+  .object({
+    proposalId: z.string().trim().min(1).max(64),
+    type: z.enum(["join", "heartbeat", "leave"]),
+    sectionKey: z.string().max(PRESENCE_SECTION_KEY_MAX_LENGTH).nullable().optional(),
+  })
+  .strict();
+
+export type PresenceEvent = z.infer<typeof presenceEventSchema>;
 
 export type PresenceRowLike = Readonly<{
   userId: string;
