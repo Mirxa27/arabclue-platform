@@ -18,13 +18,15 @@ Six parallel audits (billing, security, UX, AI, activation/analytics, deployment
 - Platform agent answered a generic 500 when the default provider key did not resolve — 503 `AI_PROVIDER_UNAVAILABLE` with failover to the next usable provider; privileged tools require approval; document text fenced as untrusted.
 - Admin Create User failed by default; autopilot failed silently on incomplete onboarding; `/robots.txt` answered 500.
 
+**Second round (same day)**: billing describes the workspace owner's governing subscription and refuses teammate purchases (`BILLING_OWNER_ONLY`); mid-cycle downgrades answer `DOWNGRADE_AT_RENEWAL` with the date; one "Upgrade plan" toast action on upload/run/download plan limits; shell-level trial banner (last 7 days + after lapse); idle-draft nudge riding the daily deadline cron; admin overview activation funnel (30 days, distinct workspaces) and admin billing "trials to follow up"; contract studio waits for the detail row; phone header no longer clips the wordmark; active-project reconciler only overrules against a fresh list.
+
 **Also**: readiness detail gated behind the cron secret/admin session, ExcelJS/JSZip lazy-loaded, list queries bounded, six composite indexes (migration `20260905120000_hot_path_indexes`, applied to the dev database), security hardening (precheck limiter, env delete gate, email-change re-verification, presence tenant scoping, proxy matcher), pricing → `/register?plan=` handoff with the plan preselected in Billing, deadline reminders and trial-ending emails, activation funnel analytics.
 
 ### Verification
 ```bash
 bunx tsc --noEmit            # pass
 bun run lint                 # 0 errors (2 warnings in generated .well-known/workflow files)
-bun run test                 # 6076 pass, 0 fail, 13 intentional skips
+bun run test                 # 6095 pass, 0 fail, 13 intentional skips
 bun run build                # pass; pdf.worker.mjs and tesseract core traced into ingesting routes
 ```
 
