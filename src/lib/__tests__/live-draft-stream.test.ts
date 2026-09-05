@@ -205,7 +205,9 @@ describe("the wiring", () => {
   test("the drafting step owns the run's draft stream and the stage writes to it", () => {
     has("src/lib/agents/pipeline-workflow.ts", "the stream opened in the step", /getWritable<DraftStreamChunk>\(\{\s*namespace:\s*DRAFT_STREAM_NAMESPACE\s*\}\)/);
     has("src/lib/agents/orchestrator.ts", "reset at the start of an attempt", /sink\?\.reset\(attempt\.attempt\)/);
-    has("src/lib/agents/orchestrator.ts", "done with the truncation flag", /sink\?\.done\(draft\.truncated,/);
+    // A sectioned draft gives a cut-off section its own continuation, so the
+    // whole-document continuation is queued only for a single-shot draft.
+    has("src/lib/agents/orchestrator.ts", "done with the truncation flag", /sink\?\.done\(needsWholeDocContinuation,/);
     // Closed only after a finished, whole draft; a failed attempt releases the
     // writer so the retry can keep writing, and a truncated draft releases it
     // for the continuation step (see draft-continuation.test.ts).

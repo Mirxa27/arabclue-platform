@@ -198,6 +198,11 @@ export const TOOL_META: Record<
     ar: "السجل التنظيمي",
     kind: "compliance",
   },
+  searchWeb: {
+    en: "Live web search",
+    ar: "بحث حي على الويب",
+    kind: "search",
+  },
 };
 
 export function toolDisplayName(name: string, ar: boolean): string {

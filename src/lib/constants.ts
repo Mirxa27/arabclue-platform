@@ -416,6 +416,7 @@ export const ENV_CATALOG = [
   { key: "JWT_SECRET", category: "SECURITY", description: "JWT signing secret", isRequired: true },
   { key: "NEXTAUTH_SECRET", category: "SECURITY", description: "NextAuth session secret", isRequired: true },
   { key: "NEXTAUTH_URL", category: "SECURITY", description: "Canonical app URL for NextAuth callbacks", isRequired: true },
+  { key: "TAVILY_API_KEY", category: "INTEGRATION", description: "Tavily search key — enables dated, source-linked live web research in the compliance, drafting and contract agents and the platform agent's searchWeb tool. Without it the agents use the reviewed regulatory registry only", isRequired: false },
   { key: "MYFATOORAH_API_KEY", category: "BILLING", description: "MyFatoorah API token (Bearer)", isRequired: false },
   { key: "MYFATOORAH_API_URL", category: "BILLING", description: "MyFatoorah API base URL (apitest.myfatoorah.com or api-sa.myfatoorah.com)", isRequired: false },
   { key: "MYFATOORAH_WEBHOOK_SECRET", category: "BILLING", description: "MyFatoorah webhook HMAC secret", isRequired: false },

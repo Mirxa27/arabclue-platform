@@ -653,7 +653,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
 
     researchSaudiLaw: platformTool({
       description:
-        "Synthesize a real-time Saudi regulatory research brief (GTPL/PDPL/NCA/NORA registry + tender anchors) for a project. Draft-grade only — never 100% legal certainty.",
+        "Registry-backed Saudi regulatory brief (GTPL/PDPL/NCA/NORA policy registry + tender anchors) for a project, plus dated live web sources when a search key is configured. Draft-grade only — never 100% legal certainty.",
       inputSchema: z.object({
         projectId: z.string().optional(),
       }),
@@ -715,6 +715,15 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           });
         }
 
+        // Live, dated sources on top of the registry — labelled as such so the
+        // brief never reads as a gazette check it did not perform.
+        const { researchTenderContext } = await import("../../ai/web-research");
+        const live = await researchTenderContext({
+          tenderTitle: project.title,
+          tenderType: project.category,
+          budgetMs: 10_000,
+        }).catch(() => null);
+
         return {
           ok: true as const,
           projectId: result.projectId,
@@ -723,12 +732,72 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
           research: result.research,
           findings: result.research.findings,
           sources: result.research.sources.slice(0, 12),
+          liveSources: live?.sources ?? [],
+          liveResearchStatus: live
+            ? live.sources.length > 0
+              ? ("live" as const)
+              : (`unavailable:${live.unavailableReason ?? "unknown"}` as const)
+            : ("unavailable:error" as const),
           disclaimerEn: result.research.disclaimerEn,
           disclaimerAr: result.research.disclaimerAr,
           certaintyNote:
-            "REGISTRY_BACKED / TENDER_EXPLICIT / REQUIRES_COUNSEL — never 100% legal certainty.",
+            "REGISTRY_BACKED / TENDER_EXPLICIT / REQUIRES_COUNSEL — never 100% legal certainty. Live sources are dated web passages, not verified statute text.",
           uiAction: "navigate" as const,
           view: "documents" as const,
+        };
+      },
+    }),
+
+    searchWeb: platformTool({
+      description:
+        "Live web search (dated, source-linked) for regulatory, market or buyer context — e.g. the current NCA ECC version, a ministry's digital strategy, an Etimad announcement. Returns titles, URLs and snippets to cite as [Sn]. Read-only. Never use it to look up or suggest bid prices, margins or competitor pricing. Unavailable until an administrator configures a search key.",
+      inputSchema: z.object({
+        query: z.string().min(3).max(300),
+        recent: z
+          .enum(["week", "month", "year"])
+          .optional()
+          .describe("Restrict to recently published pages"),
+      }),
+      execute: async ({ query, recent }) => {
+        if (/\b(price|pricing|margin|discount|quote|سعر|أسعار|هامش|خصم|تسعير)\b/i.test(query)) {
+          return {
+            ok: false as const,
+            error:
+              "Web search is not used for pricing or commercial strategy; the commercial team enters amounts in the financial forms.",
+          };
+        }
+        const { searchWeb: runSearch, AUTHORITATIVE_SA_DOMAINS } = await import(
+          "../../ai/web-research"
+        );
+        const outcome = await runSearch({
+          query,
+          maxResults: 6,
+          preferDomains: AUTHORITATIVE_SA_DOMAINS,
+          timeRange: recent,
+          country: "saudi arabia",
+          includeAnswer: true,
+        });
+        if (!outcome.ok) {
+          return {
+            ok: false as const,
+            error:
+              outcome.reason === "not_configured"
+                ? "Live web search is not configured. Ask an administrator to add TAVILY_API_KEY under Admin → Environment."
+                : `Web search failed (${outcome.reason}).`,
+          };
+        }
+        return {
+          ok: true as const,
+          query: outcome.query,
+          retrievedAt: outcome.retrievedAt,
+          answer: outcome.answer,
+          results: outcome.results.map((r, i) => ({
+            ref: `S${i + 1}`,
+            title: r.title,
+            url: r.url,
+            snippet: r.snippet,
+          })),
+          note: "Dated web passages, not verified statute text; cite the URL and the retrieval date.",
         };
       },
     }),

@@ -19,6 +19,7 @@ import {
   type RunRecorder,
 } from "./run-recorder";
 import { extractTextFromStorage, parseTenderText, buildIngestionSummary, sanitizeText } from "./ingestion";
+import { frameworksMentionedIn, researchTenderContext, type LiveResearchBrief } from "../ai/web-research";
 import { engineNote } from "./run-presentation";
 import { evaluateCompliance } from "./compliance";
 import { runTechnicalArchitect } from "./technical";
@@ -150,6 +151,8 @@ export interface PreparedContext {
   /** Approved evidence ids the validation gate checks citations against. */
   evidenceDocIds: string[];
   knowledgeFindings: string[];
+  /** Live web research (prompt block + sources); empty when no search key is configured. */
+  liveResearch: LiveResearchBrief;
 }
 
 /** A stage that ended the run itself has already written the row. */
@@ -254,6 +257,7 @@ function draftingInputsFrom(ctx: PreparedContext, locale: Locale): Omit<DraftPro
     locale,
     restrictions: ctx.restrictionsText,
     sectors: ctx.sectors,
+    liveResearch: ctx.liveResearch.block || undefined,
   };
 }
 
@@ -539,6 +543,16 @@ export async function runPreparationStage(
       project.category
     );
 
+    // Live web research (dated, source-linked) runs beside the ingestion
+    // enrichment; compliance, drafting and the contract agent all read the
+    // same brief. Empty when no search key is configured — nothing pretends.
+    const liveResearchPromise: Promise<LiveResearchBrief> = researchTenderContext({
+      tenderTitle: project.title,
+      tenderType: project.category,
+      frameworksMentioned: frameworksMentionedIn(combined),
+      budgetMs: 12_000,
+    }).catch(() => ({ block: "", sources: [], queries: [], unavailableReason: "error" }));
+
     // AI skill: refine ingestion narrative / evidence (numbers stay from deterministic parse)
     const ingestionAi = await enrichIngestionWithAi({
       deterministic: entities,
@@ -650,11 +664,25 @@ export async function runPreparationStage(
       localContentTarget: project.localContentTarget,
     });
 
+    const liveResearch = await liveResearchPromise;
+    if (liveResearch.sources.length > 0) {
+      decision(logger, {
+        agentId: "COMPLIANCE_REGULATORY",
+        ruleId: "live-regulatory-research",
+        sourceCategory: "REGULATORY_CANDIDATE",
+        message: `Live research: ${liveResearch.sources.length} dated sources from ${liveResearch.queries.length} queries`,
+        inputs: truncateForLog({ urls: liveResearch.sources.map((src) => src.url) }) as Record<string, unknown>,
+        runId: input.runId,
+      });
+    }
     const complianceAi = await enrichComplianceWithAi({
       rows: rows.slice(0, 30),
       findings: cFindings,
       score,
       tenderExcerpt: combined.slice(0, 4000),
+      // Dated, source-linked passages the model may cite as [Sn]; still
+      // REGULATORY_CANDIDATE — counsel verifies before anything is COMPLIANT.
+      liveRegulatoryResearch: liveResearch.block ? liveResearch.block.slice(0, 4000) : undefined,
     });
     if (complianceAi.data) {
       const updates = (complianceAi.data.rowUpdates as Array<{
@@ -1156,6 +1184,7 @@ export async function runPreparationStage(
         restrictionsText,
         evidenceDocIds: ragDocs.map((d) => d.id),
         knowledgeFindings,
+        liveResearch,
       },
     };
     });
@@ -1218,10 +1247,14 @@ export async function runDraftingStage(
     // A transport that cannot stream (SDK paths) delivers the whole draft at
     // once; the page still gets to show it.
     if (sink && streamedChars === 0 && draft.contentMd) sink.push(draft.contentMd);
-    // A cut-off draft is continued by the next step on this same stream.
-    await sink?.done(draft.truncated, draft.truncated ? { continues: true } : undefined);
+    // A cut-off single-shot draft is continued by the next step on this same
+    // stream. A sectioned draft already gave any cut-off section its own
+    // continuation; the whole-document continuation prompt ("finish the
+    // remaining sections") has nothing to finish there, so it is not queued.
+    const needsWholeDocContinuation = draft.truncated && draft.sections <= 1;
+    await sink?.done(needsWholeDocContinuation, needsWholeDocContinuation ? { continues: true } : undefined);
     draftStreamed = true;
-    draftTruncated = draft.truncated;
+    draftTruncated = needsWholeDocContinuation;
 
     // Mandatory validation gate (blocks marking export-ready)
     const { validateProposalOutput } = await import("../validation-gate");
@@ -1447,8 +1480,25 @@ export async function runDraftingStage(
           // template, plus a flag when the completion hit the token ceiling.
           failureKind: draft.failureKind ?? null,
           truncated: draft.truncated,
+          // Sectioned drafting: how the document was written and what it
+          // could not do, so the run report can say so.
+          sections: draft.sections,
+          sectionFallbacks: draft.sectionFallbacks,
+          uncoveredRequirementIds: draft.uncoveredRequirementIds,
           validation: validationReport,
           knowledgeFindings,
+          // What the draft could cite beyond the registry: dated web sources
+          // (empty with the reason when no search key is configured).
+          liveResearch: {
+            sources: ctx.liveResearch.sources.map((src) => ({
+              n: src.n,
+              title: src.title,
+              url: src.url,
+              retrievedAt: src.retrievedAt,
+            })),
+            queries: ctx.liveResearch.queries,
+            unavailableReason: ctx.liveResearch.unavailableReason,
+          },
           exportReady: !validationReport.blocking,
           slidesMetrics: {
             quickLiquidityRatio: financial.quickLiquidityRatio,
@@ -1531,7 +1581,8 @@ export async function runDraftingStage(
       ok: true,
       proposalId: proposal.id,
       provider: draft.provider,
-      truncated: draft.truncated,
+      // Drives the whole-document continuation step; see needsWholeDocContinuation.
+      truncated: draftTruncated,
       metrics: metrics.snapshot(),
       decisions: logger.getEntries(),
     };
@@ -1721,6 +1772,7 @@ export async function runLawStage(
       clientNameAr: "العميل (الجهة الطارحة — يُستكمل من الكراسة)",
       restrictions,
       locale,
+      liveResearch: ctx.liveResearch.block || undefined,
       onDelta: sink
         ? (text) => {
             streamedText += text;
@@ -1891,6 +1943,85 @@ export async function runLawStage(
  * result is returned untouched. A tail whose function died before it could
  * write (`StageCrash`) is failed here with the reason the engine reported.
  */
+/** Wall-clock cap for the post-draft review; the run never waits longer. */
+const AI_REVIEW_BUDGET_MS = 75_000;
+
+export type AiReviewSummary = {
+  overall: number;
+  coverage: number;
+  compliance: number;
+  clarity: number;
+  competitiveness: number;
+  notes: Array<{ metric: string; metricAr: string; score: number; notesEn: string; notesAr: string }>;
+  suggestions: Array<{
+    sectionId: string;
+    requirementId: string | null;
+    suggestionEn: string;
+    suggestionAr: string;
+    priority: "HIGH" | "MEDIUM" | "LOW";
+  }>;
+  provider: string;
+  fallback: boolean;
+  at: string;
+};
+
+/**
+ * A second pair of eyes on the finished draft: the scoring engine and the
+ * improvement advisor read the proposal against the coverage plan and the
+ * compliance matrix and hand back a rubric plus concrete suggestions with
+ * requirement IDs. Best effort — no provider, a timeout or a parse failure
+ * leaves the run exactly as it was; the reader simply sees no review card.
+ */
+async function reviewFinishedDraft(input: {
+  proposalId: string;
+  ctx: PreparedContext;
+  locale: Locale;
+}): Promise<AiReviewSummary | null> {
+  const proposal = await db.generatedProposal.findUnique({
+    where: { id: input.proposalId },
+    select: { contentMd: true },
+  });
+  if (!proposal?.contentMd?.trim()) return null;
+  const { scoreProposal, generateImprovementSuggestions } = await import("../ai/proposal-optimizer");
+  const optimizerInput = {
+    contentMd: proposal.contentMd,
+    entities: input.ctx.entities,
+    complianceRows: input.ctx.rows,
+    coverage: input.ctx.coverage,
+    locale: input.locale,
+    workspaceId: input.ctx.project.id,
+  };
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), AI_REVIEW_BUDGET_MS));
+  const work = Promise.all([scoreProposal(optimizerInput), generateImprovementSuggestions(optimizerInput)]);
+  const settled = await Promise.race([work, timeout]);
+  if (!settled) return null;
+  const [score, suggestions] = settled;
+  return {
+    overall: score.overall,
+    coverage: score.coverage,
+    compliance: score.compliance,
+    clarity: score.clarity,
+    competitiveness: score.competitiveness,
+    notes: score.breakdown.slice(0, 5).map((b) => ({
+      metric: b.metric,
+      metricAr: b.metricAr,
+      score: b.score,
+      notesEn: b.notesEn,
+      notesAr: b.notesAr,
+    })),
+    suggestions: suggestions.slice(0, 5).map((sg) => ({
+      sectionId: sg.sectionId,
+      requirementId: sg.requirementId ?? null,
+      suggestionEn: sg.suggestionEn,
+      suggestionAr: sg.suggestionAr,
+      priority: sg.priority,
+    })),
+    provider: score.provenance.provider,
+    fallback: score.provenance.fallback,
+    at: new Date().toISOString(),
+  };
+}
+
 export async function runFinalizeStage(
   input: PipelineInput,
   ctx: PreparedContext,
@@ -1937,6 +2068,7 @@ export async function runFinalizeStage(
   const analyticsOrigin = originOf(input);
   const runStartedAtIso = ctx.runStartedAtIso;
   const score = ctx.score;
+  const locale: Locale = input.locale === "en" ? "en" : "ar";
 
   try {
     // Augment final artifact with contract id
@@ -1946,6 +2078,25 @@ export async function runFinalizeStage(
     } catch {
       artifactObj = {};
     }
+    // Post-draft AI review (bounded, best effort). A refused or unavailable
+    // provider is not a run failure: the draft is already saved.
+    let aiReview: AiReviewSummary | null = null;
+    try {
+      aiReview = await reviewFinishedDraft({ proposalId: drafting.proposalId, ctx, locale });
+      if (aiReview) {
+        decision(logger, {
+          agentId: "PROPOSAL_DRAFTING",
+          ruleId: "post-draft-review",
+          sourceCategory: "INTERNAL_RECOMMENDATION",
+          message: `AI review: overall ${aiReview.overall}/100 (coverage ${aiReview.coverage}, compliance ${aiReview.compliance}, clarity ${aiReview.clarity}); ${aiReview.suggestions.length} suggestions`,
+          inputs: truncateForLog({ provider: aiReview.provider, fallback: aiReview.fallback }) as Record<string, unknown>,
+          runId: input.runId,
+        });
+      }
+    } catch (err) {
+      console.warn("[orchestrator] post-draft review skipped", err instanceof Error ? err.message : err);
+    }
+
     const finalMetrics = metrics.build("COMPLETED", 100);
     const decisionLog = logger.toLog(input.runId, input.projectId, runStartedAtIso);
     await db.agentRun.update({
@@ -1953,6 +2104,7 @@ export async function runFinalizeStage(
       data: {
         finalArtifact: JSON.stringify({
           ...artifactObj,
+          ...(aiReview ? { aiReview } : {}),
           contractId: law.contractId,
           contractValidation: law.contractValidation,
           contractResearchAt: law.researchedAt,

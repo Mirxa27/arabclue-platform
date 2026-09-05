@@ -32,6 +32,7 @@ import {
 import { resolveProviderApiKey } from "@/lib/env-settings";
 import { isRealAiOnlyStrict } from "@/lib/real-ai-only";
 import { selectEmailTransport } from "@/lib/email";
+import { webResearchAvailable } from "@/lib/ai/web-research";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,7 @@ const NON_GATING_CHECKS: ReadonlySet<string> = new Set([
   "aiCredential",
   "realAi",
   "email",
+  "webResearch",
 ]);
 
 /**
@@ -329,6 +331,13 @@ async function buildReadinessReport(): Promise<ReadinessReport> {
   // In production a missing transport is still reported as not ok so the admin
   // overview lists it as needing attention (verification and invite mail
   // silently go nowhere otherwise).
+  // Optional capability, reported so an operator can see why the agents cite
+  // the registry alone: live web research needs a search key.
+  checks.webResearch = {
+    ok: true,
+    detail: (await webResearchAvailable()) ? "configured" : "not_configured",
+  };
+
   const emailTransport = selectEmailTransport(process.env);
   checks.email = {
     ok:
