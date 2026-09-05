@@ -12,6 +12,8 @@
  * either leaves the URL stale again or starts a push/reconcile loop.
  */
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { resolveStoreDrivenPush } from "@/hooks/use-view-router";
 import { getPathForView } from "@/lib/dashboard-routes";
 
@@ -113,5 +115,23 @@ describe("resolveStoreDrivenPush", () => {
       ownedPath: first,
     });
     expect(second).toBeNull();
+  });
+});
+
+describe("the store-driven push reads the live store, not the render closure", () => {
+  test("the effect computes its target from useUI.getState()", () => {
+    // Regression: after a soft navigation from /login or /register with an
+    // already-authenticated session, the hydrating commit pushed the stale
+    // closure view ("overview") over the URL's view, and /app and
+    // /app/billing then alternated until one reconciler won.
+    const source = readFileSync(
+      join(process.cwd(), "src/hooks/use-view-router.ts"),
+      "utf8"
+    );
+    const effectStart = source.indexOf("const live = useUI.getState();");
+    expect(effectStart).toBeGreaterThan(0);
+    const effect = source.slice(effectStart, effectStart + 400);
+    expect(effect).toContain("view: live.view");
+    expect(effect).toContain("activeProjectId: live.activeProjectId");
   });
 });

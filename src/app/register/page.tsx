@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { getSession, signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Loader2, Sparkles, Globe, ShieldCheck, FileText, Lock, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,10 +15,53 @@ import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
 import { selectApiFailureMessage } from "@/lib/api-failure-message";
 import { readRegistrationOutcome } from "@/lib/registration-outcome";
+import { MARKETING_PLANS, type MarketingPlan } from "@/lib/marketing-plans";
+
+/**
+ * Hand-off from the pricing page. The billing panel reads and clears this key
+ * to preselect the plan the prospect chose, so the choice survives sign-up.
+ * (Not exported: a Next.js page module may only export route fields.)
+ */
+const INTENDED_PLAN_STORAGE_KEY = "arabclue-intended-plan";
+
+type IntendedPlan = {
+  plan: MarketingPlan["code"];
+  cycle: "monthly" | "yearly";
+};
+
+function readIntendedPlan(plan: string | null, cycle: string | null): IntendedPlan | null {
+  const match = MARKETING_PLANS.find((p) => p.code === plan);
+  if (!match) return null;
+  return { plan: match.code, cycle: cycle === "yearly" ? "yearly" : "monthly" };
+}
 
 function RegisterFormInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { locale, toggle } = useLocale();
+  const planParam = searchParams.get("plan");
+  const cycleParam = searchParams.get("cycle");
+  const intendedPlan = useMemo(
+    () => readIntendedPlan(planParam, cycleParam),
+    [planParam, cycleParam]
+  );
+  const intendedPlanName = intendedPlan
+    ? MARKETING_PLANS.find((p) => p.code === intendedPlan.plan)?.[
+        locale === "ar" ? "nameAr" : "nameEn"
+      ] ?? intendedPlan.plan
+    : null;
+
+  useEffect(() => {
+    if (!intendedPlan) return;
+    try {
+      window.localStorage.setItem(
+        INTENDED_PLAN_STORAGE_KEY,
+        JSON.stringify({ ...intendedPlan, at: new Date().toISOString() })
+      );
+    } catch {
+      /* private mode: Billing simply shows its default */
+    }
+  }, [intendedPlan]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -73,15 +117,36 @@ function RegisterFormInner() {
             ? tr("auth_register_check_email", locale)
             : tr("account_registration_success", locale))
       );
-      setTimeout(
-        () =>
-          router.replace(
-            outcome === "verify_email"
-              ? "/verify-email?email=" + encodeURIComponent(email.trim())
-              : "/login"
-          ),
-        1500
-      );
+      if (outcome === "verify_email") {
+        setTimeout(
+          () =>
+            router.replace(
+              "/verify-email?email=" + encodeURIComponent(email.trim())
+            ),
+          1500
+        );
+        return;
+      }
+      // Already verified (no verification gate): the person just typed these
+      // credentials, so asking for them again on /login is a lost step. A
+      // fresh account has no MFA and no forced password change to intercept.
+      const signedIn = await signIn("credentials", {
+        redirect: false,
+        email: email.trim(),
+        password,
+        mfaToken: "",
+      });
+      // The SessionProvider still holds the null session it read while this
+      // page mounted; navigating before it refreshes made the shell bounce to
+      // /login, which sent the user to the default view and lost the plan
+      // intent. getSession() refetches and broadcasts the new session first.
+      if (signedIn?.ok) await getSession();
+      // A prospect who arrived from a plan card lands on Billing, where the
+      // stored intent preselects that plan.
+      // No router.refresh() here: refreshing while the replace is still in
+      // flight re-renders the outgoing route as well, and two dashboard shells
+      // then fight over the URL (/app <-> /app/billing) until one wins.
+      router.replace(signedIn?.ok ? (intendedPlan ? "/app/billing" : "/app") : "/login");
     } catch {
       setError(tr("auth_network_error", locale));
       setLoading(false);
@@ -112,7 +177,7 @@ function RegisterFormInner() {
             {[
               { icon: FileText, title: ar ? "مصفوفة متطلبات حية" : "Live requirements matrix", desc: ar ? "كل بند RFP قابل للتتبع" : "Every RFP clause tracked" },
               { icon: ShieldCheck, title: ar ? "ضوابط تراعي NCA/PDPL" : "NCA/PDPL-aware controls", desc: ar ? "مع أدلة قابلة للتدقيق" : "With auditable evidence" },
-              { icon: Building2, title: ar ? "مساحة عمل فورية" : "Instant workspace", desc: ar ? "مالك تلقائي + باقة STARTER" : "Owner auto + STARTER plan" },
+              { icon: Building2, title: ar ? "مساحة عمل فورية" : "Instant workspace", desc: ar ? "مالك تلقائي + تجربة مجانية 30 يوماً" : "Owner auto + 30-day free trial" },
             ].map((f, i) => (
               <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 + i * 0.07 }} className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
                 <div className="size-9 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center shrink-0"><f.icon className="size-4 text-white/80" /></div>
@@ -148,7 +213,12 @@ function RegisterFormInner() {
               <div className="mb-8">
                 <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] font-semibold text-primary"><Sparkles className="size-3.5" />{tr("auth_register_title", locale)}</div>
                 <h1 className={cn("mt-4 text-[26px] font-bold tracking-tight leading-tight", ar ? "font-[family-name:var(--font-ibm-arabic)]" : "")}>{tr("auth_register_subtitle", locale)}</h1>
-                <p className="mt-2 text-[13px] text-muted-foreground">{tr("auth_register_verify_hint", locale)}</p>
+                <p className="mt-2 text-[13px] text-muted-foreground">{tr("auth_register_trial_hint", locale)}</p>
+                {intendedPlanName ? (
+                  <p className="mt-2 text-[12px] text-primary" data-testid="intended-plan-hint">
+                    {tr("auth_register_intended_plan", locale, { plan: intendedPlanName })}
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-[20px] border border-border bg-card/90 backdrop-blur-xl p-6 shadow-[0_16px_40px_-24px_oklch(0.2_0.02_260/0.2)]">
                 <form onSubmit={onSubmit} className="space-y-4">

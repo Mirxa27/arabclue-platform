@@ -151,6 +151,12 @@ async function runAccountTransaction(
   client: PrismaClientLike,
   input: CreateAccountRecordsInput
 ): Promise<CreatedAccountRecords> {
+  // Static catalogue read; keeping it outside the transaction is one fewer
+  // round trip while the Serializable snapshot is held.
+  const starterPlan = await client.subscriptionPlan.findFirst({
+    where: { name: STARTER_PLAN_NAME, isActive: true },
+    select: { id: true },
+  });
   try {
     return await client.$transaction(
       async (tx) => {
@@ -193,21 +199,21 @@ async function runAccountTransaction(
           data: { activeWorkspaceId: workspace.id },
         });
 
-        const starterPlan = await tx.subscriptionPlan.findFirst({
-          where: { name: STARTER_PLAN_NAME, isActive: true },
-          select: { id: true },
-        });
         if (starterPlan) {
+          // A signup is a trial, not a paid period: `TRIALING` with an end
+          // date, so `resolveEntitlementState` can close it when it lapses.
+          const trialEndsAt = new Date(
+            input.createdAt.getTime() + STARTER_PERIOD_DAYS * DAY_MS
+          );
           await tx.subscription.create({
             data: {
               userId: user.id,
               planId: starterPlan.id,
-              status: "ACTIVE",
+              status: "TRIALING",
               billingCycle: "MONTHLY",
               currentPeriodStart: input.createdAt,
-              currentPeriodEnd: new Date(
-                input.createdAt.getTime() + STARTER_PERIOD_DAYS * DAY_MS
-              ),
+              currentPeriodEnd: trialEndsAt,
+              trialEndsAt,
             },
           });
         }

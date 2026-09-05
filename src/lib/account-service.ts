@@ -108,11 +108,15 @@ export const VERIFICATION_RESEND_RATE_LIMIT = Object.freeze({
 export const VERIFICATION_EMAIL_DEADLINE_MS = 30_000;
 
 /**
- * Bounds for the committed-records phase so the 201 contract in criterion 1.1
- * stays inside five seconds even when the database is slow to answer.
+ * Bounds for the committed-records phase. Five seconds is the target in
+ * criterion 1.1, not a cliff: the transaction issues six sequential statements
+ * under Serializable isolation, and a Neon compute resuming from auto-suspend
+ * answers the first of them seconds late. With a 4 s ceiling that resume
+ * surfaced as "Transaction not found" and a 500 on the signup form. A slow
+ * signup is recoverable; a failed one loses the customer.
  */
-export const REGISTRATION_TRANSACTION_MAX_WAIT_MS = 1_500;
-export const REGISTRATION_TRANSACTION_TIMEOUT_MS = 4_000;
+export const REGISTRATION_TRANSACTION_MAX_WAIT_MS = 5_000;
+export const REGISTRATION_TRANSACTION_TIMEOUT_MS = 20_000;
 
 const DEFAULT_LOCALE: Locale = "ar";
 const SUPPORTED_LOCALES: readonly Locale[] = ["ar", "en"];
@@ -578,16 +582,27 @@ export type ResendVerificationCommand = Readonly<{
 }>;
 
 /**
- * Uniform acceptance. The accepted body is identical for an unverified account,
- * an already-verified account, an address that was never registered, and a
- * delivery that failed — so the endpoint reveals nothing about who has an
- * account here. Delivery outcomes are observable in the audit trail instead.
+ * Uniform acceptance with an honest delivery outcome.
+ *
+ * Status and code are identical for an unverified account, an already-verified
+ * account, and an address that was never registered. `emailDelivery` reports
+ * whether a message actually left the server, because "check your inbox" for a
+ * message nothing sent is a permanent lockout for the reader:
+ *
+ * - UNCONFIGURED is a platform-wide state and is reported for every address, so
+ *   it reveals nothing about which addresses are registered.
+ * - SENT is reported for a delivered message and, non-committally, for an
+ *   address with nothing to resend (unknown or already verified).
+ * - FAILED is reported only when a send was attempted and the provider refused
+ *   it; that is observable only while the provider is failing, which is the
+ *   trade accepted so the reader learns who can fix it.
  */
 export type ResendVerificationResult =
   | Readonly<{
       ok: true;
       status: 202;
       code: "VERIFICATION_EMAIL_RESEND_ACCEPTED";
+      emailDelivery: VerificationEmailDelivery;
     }>
   | Readonly<{ ok: false; status: 400; code: "VERIFICATION_RESEND_INVALID" }>
   | Readonly<{
@@ -979,7 +994,13 @@ export function createAccountService(
 
     const snapshot =
       await repository.findUnverifiedAccountByNormalizedEmail(email);
-    if (!snapshot) return resendAccepted();
+    // Nothing to resend. An unconfigured transport is still reported: it is
+    // true for every address, so saying so reveals nothing about this one.
+    if (!snapshot) {
+      return resendAccepted(
+        emailProvider.isConfigured() ? "SENT" : "UNCONFIGURED"
+      );
+    }
 
     const issued = createTokenDigest({ randomness });
     const createdAt = utcNow(clock);
@@ -1018,7 +1039,7 @@ export function createAccountService(
       });
     }
 
-    return resendAccepted();
+    return resendAccepted(delivery);
   }
 
   return Object.freeze({ register, verifyEmail, resendVerificationEmail });
@@ -1032,8 +1053,15 @@ function invalidVerificationToken(): VerificationResult {
   return { ok: false, status: 400, code: "VERIFICATION_TOKEN_INVALID" };
 }
 
-function resendAccepted(): ResendVerificationResult {
-  return { ok: true, status: 202, code: "VERIFICATION_EMAIL_RESEND_ACCEPTED" };
+function resendAccepted(
+  emailDelivery: VerificationEmailDelivery
+): ResendVerificationResult {
+  return {
+    ok: true,
+    status: 202,
+    code: "VERIFICATION_EMAIL_RESEND_ACCEPTED",
+    emailDelivery,
+  };
 }
 
 function resendRateLimited(retryAfterSeconds: number): ResendVerificationResult {

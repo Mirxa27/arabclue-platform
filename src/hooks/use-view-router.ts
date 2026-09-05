@@ -330,13 +330,20 @@ export function useViewRouter(init: ViewRouterInit) {
    * and this must stay out of its way.
    */
   useEffect(() => {
+    // Read the store directly rather than the render closure: in the commit
+    // that hydrates the shell, the init effect above has already applied the
+    // URL's view, but this effect's `view` is still the pre-hydration value.
+    // With the session already authenticated (a soft navigation from /login or
+    // /register) that stale value pushed the default view's path and the two
+    // reconcilers then fought over /app <-> /app/billing.
+    const live = useUI.getState();
     const target = resolveStoreDrivenPush({
       hydrated: hydrated.current,
       sessionLoading: status === "loading",
       ownedPath: ownedPath.current,
       pathname,
-      view,
-      activeProjectId,
+      view: live.view,
+      activeProjectId: live.activeProjectId,
     });
     if (!target) return;
 
