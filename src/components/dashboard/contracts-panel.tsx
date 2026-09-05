@@ -533,6 +533,14 @@ export function ContractsPanel() {
                 value="studio"
                 className="flex-1 min-h-0 overflow-auto px-0 pb-0 mt-0 data-[state=inactive]:hidden"
               >
+                {/* The list omits contentMd (bounded /api/proposals); mount the
+                    studio only once the detail row is here, or it opens empty
+                    for a moment and then resyncs. */}
+                {!activeData?.proposal ? (
+                  <div className="flex items-center justify-center py-16 text-xs text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                  </div>
+                ) : (
                 <BilingualContractStudio
                   title={active.title}
                   titleAr={active.titleAr}
@@ -551,6 +559,7 @@ export function ContractsPanel() {
                     void refetchValidation();
                   }}
                 />
+                )}
               </TabsContent>
               <TabsContent
                 value="export"

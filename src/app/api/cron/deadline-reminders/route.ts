@@ -49,6 +49,137 @@ export function reminderResourceId(
   return `${projectId}:${deadline.toISOString().slice(0, 10)}:${threshold}d`;
 }
 
+/** A draft nobody touched for this long gets one nudge per idle stretch. */
+export const IDLE_DRAFT_DAYS = 7;
+const IDLE_DRAFT_BATCH = 200;
+const UNFINISHED_PROPOSAL_STATUSES = ["DRAFT", "GENERATED"] as const;
+
+/** Whole idle days, floored: 7 means "a week without an edit". */
+export function idleDays(updatedAt: Date, now: Date): number {
+  return Math.floor((now.getTime() - updatedAt.getTime()) / DAY_MS);
+}
+
+/**
+ * Dedup key: one nudge per proposal per idle stretch. An edit moves updatedAt
+ * and so opens a new stretch; a draft left alone forever is nudged once.
+ */
+export function idleDraftResourceId(proposalId: string, updatedAt: Date): string {
+  return `${proposalId}:${updatedAt.toISOString().slice(0, 10)}`;
+}
+
+/**
+ * Second phase of the daily run, sharing its budget: drafts nobody edited for
+ * IDLE_DRAFT_DAYS get one nudge to the person who created them. Folded in
+ * here rather than a sixth cron entry.
+ */
+async function nudgeIdleDrafts(input: {
+  now: Date;
+  startedAt: number;
+  budgetMs: number;
+}): Promise<{
+  scanned: number;
+  notified: number;
+  skipped: number;
+  budgetExhausted: boolean;
+  errors: string[];
+}> {
+  const out = { scanned: 0, notified: 0, skipped: 0, budgetExhausted: false, errors: [] as string[] };
+  const idleBefore = new Date(input.now.getTime() - IDLE_DRAFT_DAYS * DAY_MS);
+
+  const drafts = await db.generatedProposal.findMany({
+    where: {
+      status: { in: [...UNFINISHED_PROPOSAL_STATUSES] },
+      updatedAt: { lt: idleBefore },
+      project: { status: { notIn: ["SUBMITTED", "ARCHIVED"] } },
+    },
+    select: {
+      id: true,
+      workspaceId: true,
+      projectId: true,
+      title: true,
+      titleAr: true,
+      updatedAt: true,
+      createdById: true,
+    },
+    orderBy: { updatedAt: "asc" },
+    take: IDLE_DRAFT_BATCH,
+  });
+  out.scanned = drafts.length;
+  if (drafts.length === 0) return out;
+
+  const [logged, creators] = await Promise.all([
+    db.expiryNotificationLog.findMany({
+      where: {
+        kind: "DRAFT_IDLE",
+        channel: "notification",
+        resourceId: { in: drafts.map((d) => idleDraftResourceId(d.id, d.updatedAt)) },
+      },
+      select: { workspaceId: true, resourceId: true },
+    }),
+    db.user.findMany({
+      where: { id: { in: [...new Set(drafts.map((d) => d.createdById))] } },
+      select: { id: true, email: true, locale: true, active: true },
+    }),
+  ]);
+  const loggedKeys = new Set(logged.map((l) => `${l.workspaceId}:${l.resourceId}`));
+  const creatorById = new Map(creators.map((u) => [u.id, u]));
+
+  for (const draft of drafts) {
+    if (Date.now() - input.startedAt >= input.budgetMs) {
+      out.budgetExhausted = true;
+      break;
+    }
+    const resourceId = idleDraftResourceId(draft.id, draft.updatedAt);
+    const creator = creatorById.get(draft.createdById);
+    if (loggedKeys.has(`${draft.workspaceId}:${resourceId}`) || !creator?.active) {
+      out.skipped += 1;
+      continue;
+    }
+    try {
+      const days = idleDays(draft.updatedAt, input.now);
+      const result = await sendTransactionalNotification({
+        eventId: `draft_idle_${resourceId}`,
+        recipients: [
+          {
+            userId: creator.id,
+            email: creator.email,
+            locale: (creator.locale as Locale) || "ar",
+          },
+        ],
+        type: "DRAFT_IDLE",
+        subjectKey: "notification_draft_idle_subject",
+        bodyKey: "notification_draft_idle_body",
+        bodyParams: {
+          projectTitle: draft.titleAr || draft.title,
+          days: String(days),
+        },
+        href: getPathForView("proposals", draft.projectId),
+        workspaceId: draft.workspaceId,
+      });
+      await db.expiryNotificationLog.create({
+        data: {
+          workspaceId: draft.workspaceId,
+          kind: "DRAFT_IDLE",
+          resourceId,
+          channel: "notification",
+          metaJson: JSON.stringify({
+            idleDays: days,
+            deliveries: result.deliveries.map((d) => `${d.channel}:${d.status}`),
+          }),
+        },
+      });
+      out.notified += 1;
+    } catch (err) {
+      out.errors.push(
+        `proposal ${draft.id}: ${redactSensitiveText(
+          err instanceof Error ? err.message : String(err)
+        )}`
+      );
+    }
+  }
+  return out;
+}
+
 /**
  * POST /api/cron/deadline-reminders
  *
@@ -206,12 +337,33 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Idle drafts share whatever budget the deadlines left.
+  let idleDrafts: Awaited<ReturnType<typeof nudgeIdleDrafts>> | null = null;
+  if (!budgetExhausted) {
+    try {
+      idleDrafts = await nudgeIdleDrafts({
+        now,
+        startedAt,
+        budgetMs: DEADLINE_REMINDER_BUDGET_MS,
+      });
+      errors.push(...idleDrafts.errors);
+      budgetExhausted = idleDrafts.budgetExhausted;
+    } catch (err) {
+      errors.push(
+        `idle drafts: ${redactSensitiveText(err instanceof Error ? err.message : String(err))}`
+      );
+    }
+  }
+
   return NextResponse.json({
     ok: errors.length === 0,
     scanned,
     notified,
     skipped,
     budgetExhausted,
+    idleDrafts: idleDrafts
+      ? { scanned: idleDrafts.scanned, notified: idleDrafts.notified, skipped: idleDrafts.skipped }
+      : null,
     errors,
     time: new Date().toISOString(),
   });

@@ -251,6 +251,10 @@ export type AdminOverviewResponse = {
     totalAuditLogs?: number;
     recentAudit24h?: number;
   };
+  funnel?: {
+    windowDays: number;
+    stages: { key: string; eventType: string; count: number; conversion: number | null }[];
+  } | null;
   charts?: {
     usersByRole?: RoleCount[];
     auditByAction?: ActionCount[];

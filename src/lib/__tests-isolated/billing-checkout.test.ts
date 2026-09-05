@@ -23,7 +23,7 @@ const checkoutUpdates: Row[] = [];
 const billingRecordUpdates: Row[] = [];
 const analyticsEvents: Row[] = [];
 let recurringFailure: Error | null = null;
-let existingSubscription: Row | null = { id: "sub-1" };
+let existingSubscription: Row | null = { id: "sub-1", userId: "user-1" };
 
 const PLAN = {
   id: "plan-pro",
@@ -50,6 +50,7 @@ beforeAll(async () => {
     db: {
       subscriptionPlan: { findFirst: mock(async () => PLAN) },
       billingRecord: {
+        count: mock(async () => 1),
         create: mock(async ({ data }: { data: Row }) => ({ id: "rec-1", ...data })),
         update: mock(async (args: Row) => {
           billingRecordUpdates.push(args);
@@ -57,6 +58,7 @@ beforeAll(async () => {
         }),
       },
       paymentCheckout: {
+        count: mock(async () => 0),
         create: mock(async ({ data }: { data: Row }) => ({ id: "chk-1", ...data })),
         update: mock(async (args: Row) => {
           checkoutUpdates.push(args);
@@ -66,6 +68,14 @@ beforeAll(async () => {
       subscription: {
         findUnique: mock(async () => existingSubscription),
         create: mock(async () => ({ id: "sub-new" })),
+      },
+      // The owner-only guard resolves the governing subscription: the acting
+      // user owns their workspace here, so their own row governs.
+      user: {
+        findUnique: mock(async () => ({ role: "BIDDER", activeWorkspaceId: "ws-1" })),
+      },
+      workspaceMember: {
+        findFirst: mock(async () => ({ userId: "user-1" })),
       },
       auditLog: { create: mock(async ({ data }: { data: Row }) => data) },
     },
@@ -153,7 +163,7 @@ beforeEach(() => {
   billingRecordUpdates.length = 0;
   analyticsEvents.length = 0;
   recurringFailure = null;
-  existingSubscription = { id: "sub-1" };
+  existingSubscription = { id: "sub-1", userId: "user-1" };
 });
 
 describe("POST /api/billing/checkout creates one invoice", () => {
@@ -277,5 +287,30 @@ describe("POST /api/billing/checkout creates one invoice", () => {
         locale: "ar",
       },
     });
+  });
+
+  test("a paid Enterprise owner buying Pro mid-cycle is told the downgrade waits for renewal", async () => {
+    // Arrange: a settled, still-running, pricier plan.
+    const periodEnd = new Date(Date.now() + 12 * 24 * 60 * 60 * 1000);
+    existingSubscription = {
+      id: "sub-1",
+      userId: "user-1",
+      status: "ACTIVE",
+      currentPeriodEnd: periodEnd,
+      plan: { id: "plan-ent", name: "ENTERPRISE", priceMonthly: 2999 },
+    };
+
+    // Act
+    const res = await routePost(
+      post({ planId: PLAN.id, billingCycle: "MONTHLY", billingMode: "single", locale: "en" })
+    );
+    const body = (await res.json()) as Row;
+
+    // Assert: refused with the renewal date, no invoice raised.
+    expect(res.status).toBe(409);
+    expect(body.code).toBe("DOWNGRADE_AT_RENEWAL");
+    expect(String((body.message as Row).en)).toContain(periodEnd.toISOString().slice(0, 10));
+    expect(sendPaymentCalls).toHaveLength(0);
+    expect(startRecurringCalls).toHaveLength(0);
   });
 });

@@ -18,7 +18,7 @@ type ProjectRow = {
  */
 export function useEnsureActiveProject() {
   const { activeProjectId, setActiveProjectId } = useUI();
-  const { data, isSuccess } = useQuery({
+  const { data, isSuccess, isFetching, isStale } = useQuery({
     queryKey: ["projects"],
     queryFn: () => apiJson<{ projects: ProjectRow[] }>("/api/projects"),
     staleTime: 5_000,
@@ -34,6 +34,11 @@ export function useEnsureActiveProject() {
     // projects" cleared the persisted selection on every page load and then
     // replaced it with projects[0] when the data arrived.
     if (!isSuccess) return;
+    // Only a fresh list may overrule the selection. A project created a
+    // moment ago is absent from the cached list until the invalidation
+    // refetch lands; judging the new id against that stale list replaced it
+    // with projects[0] (or null in a new workspace) and bounced the router.
+    if (isFetching || isStale) return;
 
     if (projects.length === 0) {
       if (activeProjectId) setActiveProjectId(null);
@@ -45,7 +50,7 @@ export function useEnsureActiveProject() {
     if (!stillExists) {
       setActiveProjectId(projects[0].id);
     }
-  }, [isSuccess, projects, activeProjectId, setActiveProjectId]);
+  }, [isSuccess, isFetching, isStale, projects, activeProjectId, setActiveProjectId]);
 
   const active =
     projects.find((p) => p.id === activeProjectId) ?? projects[0] ?? null;

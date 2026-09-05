@@ -30,6 +30,7 @@ export type NotificationType =
   | "SUBSCRIPTION_FAILED"
   | "TRIAL_ENDING"
   | "DEADLINE_REMINDER"
+  | "DRAFT_IDLE"
   | "AGENT_RUN_COMPLETED"
   | "AGENT_RUN_FAILED";
 

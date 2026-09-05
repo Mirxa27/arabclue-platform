@@ -32,6 +32,8 @@ import { DocumentFileViewer } from "./document-file-viewer";
 import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 import { Switch } from "@/components/ui/switch";
 import { ToastAction } from "@/components/ui/toast";
+import { UpgradeToastAction } from "@/components/ui/upgrade-toast-action";
+import { isPlanLimitCode } from "@/lib/plan-limit-failure";
 import { shouldAutopilotRun, RUN_STARTED_EVENT } from "@/lib/agents/autopilot";
 import { ONBOARDING_STEPS } from "@/lib/onboarding-steps";
 
@@ -168,8 +170,12 @@ export function FileIngestion() {
         body: form,
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(apiErrorText(err, locale));
+        const err = (await res.json().catch(() => ({}))) as { code?: string };
+        const failure = new Error(apiErrorText(err, locale)) as Error & {
+          code?: string;
+        };
+        failure.code = err.code;
+        throw failure;
       }
       return res.json() as Promise<{ document: ApiDocument }>;
     },
@@ -336,10 +342,19 @@ export function FileIngestion() {
           setFiles((prev) =>
             prev.map((f) => (f.id === id ? { ...f, status: "error", progress: 100 } : f))
           );
+          const code = (err as { code?: string } | null)?.code;
+          const planLimit = isPlanLimitCode(code);
           toast({
-            title: locale === "ar" ? "فشل الرفع" : "Upload failed",
+            title: planLimit
+              ? locale === "ar"
+                ? "بلغت حد باقتك"
+                : "Plan limit reached"
+              : locale === "ar"
+                ? "فشل الرفع"
+                : "Upload failed",
             description: err instanceof Error ? err.message : "error",
-            variant: "destructive",
+            variant: planLimit ? "default" : "destructive",
+            ...(planLimit ? { action: <UpgradeToastAction locale={locale} /> } : {}),
           });
         }
       }

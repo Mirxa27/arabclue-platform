@@ -1,6 +1,7 @@
 import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
+import { hasSettledPayment, resolveGoverningSubscription } from "@/lib/quotas";
 import {
   withTenant,
   jsonOk,
@@ -73,10 +74,44 @@ export async function POST(req: NextRequest) {
     if (!parsed.ok) return parsed.response;
     const { planId, billingCycle, billingMode, locale } = parsed.data;
 
+    // A teammate's purchase would create a subscription row the quotas never
+    // read (they follow the workspace owner's), so refuse it up front.
+    const governing = await resolveGoverningSubscription(session.user.id);
+    if (!governing.isOwnRow) {
+      throw new ApiError(
+        "Billing for this workspace is managed by its owner",
+        403,
+        "BILLING_OWNER_ONLY"
+      );
+    }
+
     const plan = await db.subscriptionPlan.findFirst({
       where: { id: planId, isActive: true, isPublic: true },
     });
     if (!plan) throw new ApiError("Plan not found", 404);
+
+    // A cheaper plan bought mid-cycle would charge full price now, start a
+    // fresh period, and forfeit the paid days of the current one. Until
+    // scheduled plan changes exist, the honest answer is "at renewal".
+    const current = governing.sub;
+    if (
+      current &&
+      current.status === "ACTIVE" &&
+      current.currentPeriodEnd > new Date() &&
+      Number(plan.priceMonthly) < Number(current.plan.priceMonthly) &&
+      (await hasSettledPayment(current.userId))
+    ) {
+      throw new ApiError(
+        "Downgrades take effect at renewal",
+        409,
+        "DOWNGRADE_AT_RENEWAL",
+        {
+          values: {
+            date: current.currentPeriodEnd.toISOString().slice(0, 10),
+          },
+        }
+      );
+    }
 
     const amount =
       billingCycle === "YEARLY" ? plan.priceYearly : plan.priceMonthly;

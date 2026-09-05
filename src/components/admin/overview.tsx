@@ -54,6 +54,7 @@ export function AdminOverview() {
   const charts = data?.charts;
   const usersByRole: RoleCount[] = charts?.usersByRole ?? [];
   const auditByAction: ActionCount[] = charts?.auditByAction ?? [];
+  const funnel = data?.funnel ?? null;
 
   if (isError) {
     return (
@@ -170,6 +171,42 @@ export function AdminOverview() {
         </Card>
       </div>
 
+      {/* Activation funnel — distinct workspaces per stage over the window.
+          Signups that never verify, never upload, or never run the agents
+          are the operator's leading indicator for conversion. */}
+      {funnel && (
+        <Card className="p-0 overflow-hidden border-border/60">
+          <div className="px-5 py-3.5 border-b border-border/60 bg-muted/30 flex items-center gap-2">
+            <div className="size-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+              <TrendingUp className="size-3.5 text-emerald-600" />
+            </div>
+            <span className="text-xs font-semibold">
+              {locale === "ar"
+                ? `قمع التفعيل — آخر ${funnel.windowDays} يوماً`
+                : `Activation funnel — last ${funnel.windowDays} days`}
+            </span>
+            <span className="ms-auto text-[10px] text-muted-foreground">
+              {locale === "ar" ? "مساحات عمل لكل مرحلة" : "workspaces per stage"}
+            </span>
+          </div>
+          <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {funnel.stages.map((stage) => (
+              <div key={stage.key} className="rounded-lg border border-border/50 p-3">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {FUNNEL_LABELS[stage.key]?.[locale === "ar" ? "ar" : "en"] ?? stage.key}
+                </div>
+                <div className="mt-1 text-lg font-semibold tabular-nums">{stage.count}</div>
+                <div className="text-[10px] text-muted-foreground tabular-nums">
+                  {stage.conversion === null
+                    ? "—"
+                    : `${Math.round(stage.conversion * 100)}%`}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Platform readiness — measured via /api/ready, not asserted.
           This card previously rendered a fixed green security-and-regulatory
           assurance banner with no data behind it. A compliance claim the
@@ -178,6 +215,15 @@ export function AdminOverview() {
     </div>
   );
 }
+
+const FUNNEL_LABELS: Record<string, { ar: string; en: string }> = {
+  registered: { ar: "سجّلوا", en: "Registered" },
+  verified: { ar: "أكّدوا البريد", en: "Verified" },
+  first_project: { ar: "أنشأوا مناقصة", en: "First project" },
+  first_document: { ar: "رفعوا مستنداً", en: "First document" },
+  first_run: { ar: "شغّلوا الوكلاء", en: "First run" },
+  first_export: { ar: "صدّروا عرضاً", en: "First export" },
+};
 
 /** Human labels for the facets `/api/ready` reports. */
 const READINESS_LABELS: Record<string, { ar: string; en: string }> = {

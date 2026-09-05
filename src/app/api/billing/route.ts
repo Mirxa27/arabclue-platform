@@ -6,22 +6,27 @@ import {
   PLAN_MONEY_KEYS,
   withPublicMoney,
 } from "@/lib/money";
-import { hasSettledPayment, resolveEntitlementState } from "@/lib/quotas";
+import {
+  hasSettledPayment,
+  resolveEntitlementState,
+  resolveGoverningSubscription,
+} from "@/lib/quotas";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/billing — plans + current subscription + usage + history
 export async function GET() {
   return withTenant("session", async ({ session }) => {
-    const [plans, subscription, records, pendingCheckouts, mfKey, hasPaid] =
+    // The subscription that governs this user's quotas: the workspace
+    // owner's inside someone else's workspace. A teammate sees the plan they
+    // actually work under, not a personal row nothing reads.
+    const governing = await resolveGoverningSubscription(session.user.id);
+    const subscription = governing.sub;
+    const [plans, records, pendingCheckouts, mfKey, hasPaid, billingOwner] =
       await Promise.all([
         db.subscriptionPlan.findMany({
           where: { isActive: true, isPublic: true },
           orderBy: { priceMonthly: "asc" },
-        }),
-        db.subscription.findUnique({
-          where: { userId: session.user.id },
-          include: { plan: true },
         }),
         db.billingRecord.findMany({
           where: { userId: session.user.id },
@@ -38,7 +43,13 @@ export async function GET() {
           include: { plan: { select: { name: true, nameAr: true } } },
         }),
         getDecryptedEnv("MYFATOORAH_API_KEY"),
-        hasSettledPayment(session.user.id),
+        hasSettledPayment(governing.governedByUserId),
+        governing.isOwnRow
+          ? Promise.resolve(null)
+          : db.user.findUnique({
+              where: { id: governing.governedByUserId },
+              select: { name: true, email: true },
+            }),
       ]);
 
     const entitlement = resolveEntitlementState(
@@ -59,6 +70,12 @@ export async function GET() {
       /** Read-time classification of `subscription`; see resolveEntitlementState. */
       entitlement: entitlement.kind,
       trial,
+      /** Who can buy: the owner of the row above. Teammates see it read-only. */
+      billingOwner: {
+        isSelf: governing.isOwnRow,
+        name: billingOwner?.name ?? null,
+        email: billingOwner?.email ?? null,
+      },
       plans: plans.map((plan) => withPublicMoney({ ...plan }, PLAN_MONEY_KEYS)),
       subscription: subscription
         ? {

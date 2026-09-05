@@ -111,6 +111,7 @@ type BillingPayload = {
     createdAt: string;
   }>;
   myfatoorahConfigured?: boolean;
+  billingOwner?: { isSelf: boolean; name: string | null; email: string | null };
 };
 
 type CheckoutInput = {
@@ -263,6 +264,8 @@ export function BillingPanel() {
       Number(plan.priceMonthly) > 0 || data?.subscription?.plan?.id === plan.id
   );
   const sub = data?.subscription;
+  /** Teammates see the owner's plan read-only; only the owner can buy. */
+  const canManageBilling = data?.billingOwner?.isSelf !== false;
   const records = data?.records ?? [];
   const recurringProfiles = recurringData?.profiles ?? [];
   const entitlement: Entitlement = data?.entitlement ?? (sub ? "ACTIVE" : "INACTIVE");
@@ -543,7 +546,14 @@ export function BillingPanel() {
               </div>
             ) : null}
 
-            {!data?.myfatoorahConfigured && (
+            {!canManageBilling && (
+              <p className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-[12px] text-muted-foreground">
+                {locale === "ar"
+                  ? `يدير ${data?.billingOwner?.name || data?.billingOwner?.email || "مالك مساحة العمل"} الفوترة والاشتراك لهذه المساحة — تظهر لك الباقة والاستخدام للاطلاع فقط.`
+                  : `${data?.billingOwner?.name || data?.billingOwner?.email || "The workspace owner"} manages billing for this workspace — the plan and usage below are read-only for you.`}
+              </p>
+            )}
+            {canManageBilling && !data?.myfatoorahConfigured && (
               <p className="text-[11px] text-muted-foreground">
                 {isPlatformAdmin
                   ? locale === "ar"
@@ -647,7 +657,8 @@ export function BillingPanel() {
                         disabled={
                           isPaidCurrent ||
                           checkout.isPending ||
-                          !data?.myfatoorahConfigured
+                          !data?.myfatoorahConfigured ||
+                          !canManageBilling
                         }
                         onClick={() =>
                           checkout.mutate({

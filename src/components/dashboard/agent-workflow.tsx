@@ -13,6 +13,8 @@ import { RUN_STARTED_EVENT } from "@/lib/agents/autopilot";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { UpgradeToastAction } from "@/components/ui/upgrade-toast-action";
+import { isPlanLimitCode } from "@/lib/plan-limit-failure";
 import {
   Bot,
   Play,
@@ -474,10 +476,18 @@ export function AgentWorkflow() {
       if (err.code === "AGENT_RUN_IN_PROGRESS" && err.runId) {
         setRunId(err.runId);
       }
+      const planLimit = isPlanLimitCode(err.code);
       toast({
-        title: locale === "ar" ? "تعذر التشغيل" : "Could not start",
+        title: planLimit
+          ? locale === "ar"
+            ? "بلغت حد باقتك"
+            : "Plan limit reached"
+          : locale === "ar"
+            ? "تعذر التشغيل"
+            : "Could not start",
         description: err.message,
-        variant: "destructive",
+        variant: planLimit ? "default" : "destructive",
+        ...(planLimit ? { action: <UpgradeToastAction locale={locale} /> } : {}),
       });
     },
   });

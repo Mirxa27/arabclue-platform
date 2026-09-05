@@ -504,3 +504,29 @@ describe("assertExportFormatAllowed", () => {
     await expect(assertExportFormatAllowed("user-1", "docx")).resolves.toBeUndefined();
   });
 });
+
+describe("resolveGoverningSubscription", () => {
+  test("a teammate is governed by the owner's row and cannot buy", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "BIDDER", activeWorkspaceId: "ws-1" };
+    mockOwner = { userId: "owner-1" };
+    mockOwnerSub = makeSub({ id: "sub-owner", userId: "owner-1", plan: makePlan({ name: "PRO" }) });
+    mockSub = makeSub();
+    const { resolveGoverningSubscription } = await import("../quotas");
+    const governing = await resolveGoverningSubscription("user-1");
+    expect(governing.sub?.id).toBe("sub-owner");
+    expect(governing.isOwnRow).toBe(false);
+    expect(governing.governedByUserId).toBe("owner-1");
+  });
+
+  test("the owner is governed by their own row", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "BIDDER", activeWorkspaceId: "ws-1" };
+    mockOwner = { userId: "user-1" };
+    mockSub = makeSub();
+    const { resolveGoverningSubscription } = await import("../quotas");
+    const governing = await resolveGoverningSubscription("user-1");
+    expect(governing.sub?.id).toBe("sub-1");
+    expect(governing.isOwnRow).toBe(true);
+  });
+});

@@ -1609,6 +1609,14 @@ export const localizationRegistry = {
     ar: "موعد تقديم مناقصة «{{projectTitle}}» هو {{deadline}}. راجع العرض وأكمل التصدير قبل الموعد.",
     en: "The submission deadline for “{{projectTitle}}” is {{deadline}}. Review the proposal and finish the export before then.",
   },
+  notification_draft_idle_subject: {
+    ar: "مسودة «{{projectTitle}}» بانتظارك منذ {{days}} يوم",
+    en: "Your draft for “{{projectTitle}}” has been waiting {{days}} days",
+  },
+  notification_draft_idle_body: {
+    ar: "لم تُحرَّر مسودة العطاء منذ {{days}} يوماً. الوكلاء يحتفظون بالمسودة والأدلة جاهزة — تابع من حيث توقفت.",
+    en: "The proposal draft has not been edited for {{days}} days. The agents keep the draft and its evidence ready — pick up where you left off.",
+  },
   // Derived bell alerts (composed per poll, not persisted)
   notification_cert_expired_title: { ar: "شهادة منتهية: {{name}}", en: "Certificate expired: {{name}}" },
   notification_cert_expiring_title: { ar: "شهادة تنتهي خلال {{days}} يوم: {{name}}", en: "Certificate expires in {{days}}d: {{name}}" },
@@ -2424,6 +2432,14 @@ export const localizationRegistry = {
   FORBIDDEN: {
     ar: "ليست لديك صلاحية تنفيذ هذا الإجراء",
     en: "You do not have permission to perform this action",
+  },
+  BILLING_OWNER_ONLY: {
+    ar: "يدير مالك مساحة العمل الفوترة والاشتراك — اطلب منه الترقية",
+    en: "Billing for this workspace is managed by its owner — ask them to upgrade",
+  },
+  DOWNGRADE_AT_RENEWAL: {
+    ar: "يسري التخفيض عند التجديد في {{date}} — تبقى باقتك الحالية بكامل مزاياها حتى ذلك الحين",
+    en: "Downgrades take effect at your renewal on {{date}} — your current plan keeps all its features until then",
   },
   UNAUTHORIZED: {
     ar: "سجّل الدخول للمتابعة",
@@ -3401,6 +3417,8 @@ export const COMPLETION_ERROR_CONTRACTS = {
   BILINGUAL_LANGUAGE_DIRECTION_INVALID: { actionKey: "error_action_validate_document_language", messageKey: "BILINGUAL_LANGUAGE_DIRECTION_INVALID" },
   BILINGUAL_COUNTERPART_REQUIRED: { actionKey: "error_action_validate_document_language", messageKey: "BILINGUAL_COUNTERPART_REQUIRED" },
   FORBIDDEN: { actionKey: "error_action_access_resource", messageKey: "FORBIDDEN" },
+  BILLING_OWNER_ONLY: { actionKey: "error_action_complete_request", messageKey: "BILLING_OWNER_ONLY" },
+  DOWNGRADE_AT_RENEWAL: { actionKey: "error_action_complete_request", messageKey: "DOWNGRADE_AT_RENEWAL" },
   UNAUTHORIZED: { actionKey: "error_action_access_resource", messageKey: "UNAUTHORIZED" },
   PROPOSAL_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "PROPOSAL_NOT_FOUND" },
   PROJECT_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "PROJECT_NOT_FOUND" },

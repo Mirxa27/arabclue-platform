@@ -240,6 +240,8 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // two most-used codes in the tree; the default has to be right unasked.
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  BILLING_OWNER_ONLY: 403,
+  DOWNGRADE_AT_RENEWAL: 409,
   INVALID_CREDENTIALS: 401,
   // The proposal cannot be written in its current status. Well-formed request,
   // authorized caller, wrong state — 409, and every call site already said so.

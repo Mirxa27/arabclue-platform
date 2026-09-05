@@ -126,3 +126,33 @@ describe("the mission starter that onboarding would refuse", () => {
     }
   });
 });
+
+describe("idle drafts are nudged once per idle stretch", () => {
+  test("a week without an edit counts as idle, and an edit reopens the key", async () => {
+    const { idleDays, idleDraftResourceId, IDLE_DRAFT_DAYS } = await import(
+      "@/app/api/cron/deadline-reminders/route"
+    );
+    const now = new Date("2026-09-05T06:15:00Z");
+    expect(IDLE_DRAFT_DAYS).toBe(7);
+    expect(idleDays(new Date("2026-08-28T12:00:00Z"), now)).toBe(7);
+    expect(idleDays(new Date("2026-09-04T00:00:00Z"), now)).toBe(1);
+    const before = idleDraftResourceId("prop-1", new Date("2026-08-20T09:00:00Z"));
+    const afterEdit = idleDraftResourceId("prop-1", new Date("2026-09-01T09:00:00Z"));
+    expect(before).toBe("prop-1:2026-08-20");
+    expect(afterEdit).not.toBe(before);
+  });
+
+  test("the nudge rides the daily deadline run instead of a sixth cron entry", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/app/api/cron/deadline-reminders/route.ts"),
+      "utf8"
+    );
+    expect(source).toContain('type: "DRAFT_IDLE"');
+    expect(source).toContain("nudgeIdleDrafts({");
+    const crons = JSON.parse(readFileSync(join(process.cwd(), "vercel.json"), "utf8")).crons as {
+      path: string;
+    }[];
+    expect(crons.some((c) => c.path === "/api/cron/deadline-reminders")).toBe(true);
+    expect(crons.some((c) => /idle|draft/.test(c.path))).toBe(false);
+  });
+});

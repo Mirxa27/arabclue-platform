@@ -171,6 +171,21 @@ async function findGoverningSubscription(userId: string) {
   return { user, sub: null };
 }
 
+/**
+ * The subscription the billing screen should describe for `userId`: the
+ * workspace owner's when the user works inside someone else's workspace, else
+ * their own. `isOwnRow` is false for a teammate, who cannot buy for the
+ * workspace (a purchase would create a row the quotas never read).
+ */
+export async function resolveGoverningSubscription(userId: string) {
+  const { sub } = await findGoverningSubscription(userId);
+  return {
+    sub,
+    isOwnRow: !sub || sub.userId === userId,
+    governedByUserId: sub?.userId ?? userId,
+  };
+}
+
 function isPlatformAdmin(user: { role: string } | null | undefined): boolean {
   return user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
 }

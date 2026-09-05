@@ -221,19 +221,24 @@ export function PublicShell({
                 {mounted && isDark ? <Sun className="size-[16px]" /> : <Moon className="size-[16px]" />}
               </button>
 
-              <Button
-                asChild
-                size="sm"
-                className={cn(
-                  "hidden sm:inline-flex h-[40px] rounded-full font-[600] tracking-[-0.01em] gap-1.5 px-5 shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset] hover:shadow-[0_0_0_1px_rgba(255,255,255,0.14)_inset] transition-all active:scale-[0.98] text-[13px]",
-                  isDark ? "bg-white text-black hover:bg-white/90" : "bg-foreground text-background hover:bg-foreground/90"
-                )}
-              >
-                <Link href="/login" className="inline-flex items-center gap-1.5">
-                  {locale === "ar" ? "دخول المساحة" : "Enter workspace"}
-                  <ArrowUpRight className="size-3.5 opacity-70" />
-                </Link>
-              </Button>
+              {/* The breakpoint lives on a wrapper: with asChild the Link's
+                  own inline-flex outranked `hidden`, so the CTA rendered at
+                  every width and squeezed the wordmark off the phone header. */}
+              <span className="hidden sm:inline-flex">
+                <Button
+                  asChild
+                  size="sm"
+                  className={cn(
+                    "h-[40px] rounded-full font-[600] tracking-[-0.01em] gap-1.5 px-5 shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset] hover:shadow-[0_0_0_1px_rgba(255,255,255,0.14)_inset] transition-all active:scale-[0.98] text-[13px]",
+                    isDark ? "bg-white text-black hover:bg-white/90" : "bg-foreground text-background hover:bg-foreground/90"
+                  )}
+                >
+                  <Link href="/login" className="inline-flex items-center gap-1.5">
+                    {locale === "ar" ? "دخول المساحة" : "Enter workspace"}
+                    <ArrowUpRight className="size-3.5 opacity-70" />
+                  </Link>
+                </Button>
+              </span>
 
               <Button
                 variant="ghost"
