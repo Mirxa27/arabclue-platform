@@ -57,7 +57,9 @@ describe("the gateway can serve embeddings", () => {
     // gateway is consulted, and `return out;` is where it gives up (nulls).
     const source = read("src/lib/llm/index.ts");
     const gatewayAt = source.indexOf("embedManyViaGateway(");
-    const giveUpAt = source.lastIndexOf("return out;");
+    // The batch path now also reports the producing model; giving up is the
+    // return of the vectors with whatever is still null.
+    const giveUpAt = source.lastIndexOf("return { vectors: out,");
     expect(gatewayAt).toBeGreaterThan(-1);
     expect(giveUpAt).toBeGreaterThan(-1);
     expect(gatewayAt).toBeLessThan(giveUpAt);

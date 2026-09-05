@@ -40,7 +40,7 @@ import {
 } from "./enrich";
 import type { RagDocument } from "../rag";
 import { embedText } from "../llm";
-import { loadProjectTenderCorpus } from "../document-chunks";
+import { retrieveTenderChunks } from "../document-chunks";
 import { audit, AUDIT_ACTIONS } from "../audit";
 import { resolveBidderDisplayName } from "../text-quality";
 import { isQualityPastProjectTitle } from "../text-quality";
@@ -943,13 +943,20 @@ export async function runPreparationStage(
       .map((r) => `${r.restrictionType}: ${r.text}`)
       .join("\n");
 
-    const queryEmbedding = await embedText(
-      sanitizeText(
-        `${project.title}\n${entities.scope}\n${entities.milestones.map((m) => m.name).join(" ")}`
-      )
+    const scopeQuery = sanitizeText(
+      `${project.title}\n${entities.scope}\n${entities.milestones.map((m) => m.name).join(" ")}`
     );
+    const queryEmbedding = await embedText(scopeQuery);
 
-    const tenderCorpus = await loadProjectTenderCorpus(input.projectId);
+    // Tender passages ranked in SQL (dense + lexical, fused) for this scope,
+    // instead of the project's first 200 chunks whatever the query.
+    const tenderCorpus = await retrieveTenderChunks({
+      workspaceId: project.workspaceId,
+      projectId: input.projectId,
+      query: scopeQuery,
+      queryEmbedding,
+      limit: 24,
+    });
 
     let technical = runTechnicalArchitect({
       entities,

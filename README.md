@@ -90,6 +90,8 @@ bun run dev
 | `bun run test` | `bun test src/lib/__tests__` |
 | `bun run quality:documents` | Document-generation TypeScript, lint, tests, and coverage gate |
 | `bun run deploy:safety` | Fail-closed secret-history and production-infrastructure gate |
+| `bun run eval:rag` | Offline retrieval eval over `public/samples` (precision@1/@3, MRR); exits 1 under the pinned floor |
+| `bun run rag:reindex [-- --workspace <id>] [-- --stale-only]` | Re-extract, re-chunk and re-embed uploaded documents (after an embedding-model change or parser fix) |
 | `bun run db:generate / db:studio` | Read-safe Prisma client and inspection helpers |
 | `bun run db:push:dev / db:migrate / db:migrate:deploy` | Explicit schema-changing commands; isolated/approved environments only |
 

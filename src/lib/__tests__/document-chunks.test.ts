@@ -45,10 +45,11 @@ describe("chunkText", () => {
     expect(chunks[0]).toBe("hello world tab");
   });
 
-  test("respects MAX_CHUNKS_PER_DOC limit of 40", () => {
+  test("respects the MAX_CHUNKS_PER_DOC safety cap (400 — the old 40 truncated real RFPs)", () => {
     const text = "a".repeat(100000);
     const chunks = chunkText(text, 100, 10);
-    expect(chunks.length).toBeLessThanOrEqual(40);
+    expect(chunks.length).toBeLessThanOrEqual(400);
+    expect(chunks.length).toBeGreaterThan(40);
   });
 
   test("skips chunks shorter than 40 chars", () => {
@@ -63,7 +64,8 @@ describe("chunkText", () => {
     const chunks = chunkText(text);
     expect(chunks.length).toBeGreaterThan(1);
     for (const c of chunks) {
-      expect(c.length).toBeLessThanOrEqual(900);
+      // CHUNK_TARGET is 1,000 characters (see document-chunks.ts).
+      expect(c.length).toBeLessThanOrEqual(1000);
     }
   });
 

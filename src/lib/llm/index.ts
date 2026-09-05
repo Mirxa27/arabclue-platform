@@ -35,6 +35,7 @@ import {
   GATEWAY_MODEL_ID,
   callGateway,
   embedManyViaGateway,
+  GATEWAY_EMBEDDING_MODEL_ID,
   gatewayAvailable,
 } from "./gateway";
 import { selectUsableProvider } from "./provider-failover";
@@ -644,9 +645,21 @@ export async function embedText(text: string): Promise<number[] | null> {
  * an entry is `null` when nothing answered for it.
  */
 export async function embedTexts(texts: string[]): Promise<Array<number[] | null>> {
+  return (await embedTextsWithModel(texts)).vectors;
+}
+
+/**
+ * Same as embedTexts, plus the id of the model that produced the vectors so
+ * the store can tag them: the embedding model is an admin choice and vectors
+ * from different models must never be compared (see rag-search.ts).
+ */
+export async function embedTextsWithModel(
+  texts: string[]
+): Promise<{ vectors: Array<number[] | null>; model: string | null }> {
   const trimmed = texts.map((t) => t.slice(0, 8000));
-  if (trimmed.length === 0) return [];
+  if (trimmed.length === 0) return { vectors: [], model: null };
   const out: Array<number[] | null> = trimmed.map(() => null);
+  let usedModel: string | null = null;
 
   // Bedrock's OpenAI-compatible surface documents chat completions only.
   let remote: { base: string; headers: Record<string, string>; model: string; timeoutMs: number } | null = null;
@@ -702,7 +715,10 @@ export async function embedTexts(texts: string[]): Promise<Array<number[] | null
               byIndex[at] = row.embedding;
             }
           });
-          if (byIndex.some((v) => v)) vectors = byIndex;
+          if (byIndex.some((v) => v)) {
+            vectors = byIndex;
+            usedModel = remote.model;
+          }
         }
       } catch {
         /* fall through to the gateway */
@@ -713,6 +729,7 @@ export async function embedTexts(texts: string[]): Promise<Array<number[] | null
       try {
         const embs = await embedManyViaGateway(batch);
         vectors = batch.map((_, i) => (embs[i]?.length ? embs[i] : null));
+        usedModel = GATEWAY_EMBEDDING_MODEL_ID;
       } catch {
         /* nothing left to try */
       }
@@ -724,7 +741,7 @@ export async function embedTexts(texts: string[]): Promise<Array<number[] | null
       });
     }
   }
-  return out;
+  return { vectors: out, model: out.some((v) => v) ? usedModel : null };
 }
 
 function estimateTokens(text: string): number {

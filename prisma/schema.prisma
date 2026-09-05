@@ -369,14 +369,27 @@ model CopilotAction {
 
 // RAG chunks from uploaded tender documents (RFP, specs, contracts, etc.)
 model DocumentChunk {
-  id            String   @id @default(cuid())
-  documentId    String
-  workspaceId   String
-  projectId     String?
-  chunkIndex    Int
-  content       String
-  embeddingJson String? // JSON number[] for dense retrieval
-  createdAt     DateTime @default(now())
+  id             String                   @id @default(cuid())
+  documentId     String
+  workspaceId    String
+  projectId      String?
+  chunkIndex     Int
+  content        String
+  embeddingJson  String? // JSON number[]; legacy mirror of `embedding`, kept for older readers
+  /// pgvector column (untyped dimension: rows embedded by different models coexist);
+  /// written with raw SQL, searched with `<=>` filtered by embeddingDim.
+  embedding      Unsupported("vector")?
+  embeddingModel String?
+  embeddingDim   Int?
+  /// Structure-aware chunking metadata: the heading the chunk sits under, the
+  /// page it came from when the extractor marked pages, and its script.
+  sectionHeading String?
+  pageRef        String?
+  language       String? // ar | en | mixed
+  /// Generated column (migration 20260905200000_rag_pgvector): normalized
+  /// Arabic/English tokens of heading + content for hybrid lexical search.
+  tsv            Unsupported("tsvector")?
+  createdAt      DateTime                 @default(now())
 
   document UploadedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -384,6 +397,7 @@ model DocumentChunk {
   @@index([workspaceId])
   @@index([projectId])
   @@index([documentId])
+  @@index([workspaceId, embeddingDim])
 }
 
 model DocumentVersion {

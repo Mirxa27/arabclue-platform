@@ -353,8 +353,16 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
       'ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartMd"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartLocale"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartGeneratedAt"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartDiagnosticsJson";',
   },
   {
-    id: "20261126000000_autonomy_slice_1",
+    id: "20260905200000_rag_pgvector",
     position: 27,
+    capabilities: ["document ingestion", "document search", "proposal generation"],
+    createsTables: [],
+    reverse:
+      'DROP INDEX IF EXISTS "DocumentChunk_tsv_idx"; DROP INDEX IF EXISTS "DocumentChunk_workspaceId_embeddingDim_idx"; ALTER TABLE "DocumentChunk" DROP COLUMN "tsv"; ALTER TABLE "DocumentChunk" DROP COLUMN "language"; ALTER TABLE "DocumentChunk" DROP COLUMN "pageRef"; ALTER TABLE "DocumentChunk" DROP COLUMN "sectionHeading"; ALTER TABLE "DocumentChunk" DROP COLUMN "embeddingDim"; ALTER TABLE "DocumentChunk" DROP COLUMN "embeddingModel"; ALTER TABLE "DocumentChunk" DROP COLUMN "embedding";',
+  },
+  {
+    id: "20261126000000_autonomy_slice_1",
+    position: 28,
     capabilities: [
       "autonomy shell",
       "company profile Markdown",
