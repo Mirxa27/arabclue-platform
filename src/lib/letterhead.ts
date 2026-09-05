@@ -9,6 +9,10 @@ import {
   normalizeDocumentBrandFont,
   safeBrandLogoUrlForDocument,
 } from "./brand-policy";
+import {
+  buildPdfFooterTemplate,
+  buildPdfHeaderTemplate,
+} from "./pdf/document-chrome";
 
 /**
  * Client letterhead helpers — apply workspace BrandProfile to HTML/PDF chrome.
@@ -107,28 +111,59 @@ export function letterheadTagline(
   return raw.trim();
 }
 
+/**
+ * Running PDF header for letterhead documents: company (start), tender
+ * reference (end), closed by a hairline. Shares the chrome builder used by
+ * structured proposals so every PDF the platform emits reads as one family.
+ */
 export function pdfHeaderTemplate(opts: {
   companyName: string;
   etimadRef?: string | null;
   primaryColor?: string | null;
+  /** Optional Arabic company line rendered under the Latin one. */
+  companyNameAr?: string | null;
+  /** Horizontal PDF margin to align with; defaults to 18mm. */
+  inlineMargin?: string | null;
 }): string {
   const color = normalizeDocumentBrandColor(
     opts.primaryColor,
     designTokens.colors.primary[600]
   );
-  const ref = opts.etimadRef ? ` · ${escapeAttr(opts.etimadRef)}` : "";
-  return `<div style="font-size:8px;width:100%;padding:0 12mm;color:${escapeAttr(color)};font-family:Arial,sans-serif;display:flex;justify-content:space-between;"><span>${escapeAttr(opts.companyName)}${ref}</span><span style="color:${designTokens.colors.secondary[400]}">Letterhead</span></div>`;
+  return buildPdfHeaderTemplate({
+    title: opts.companyName,
+    titleSecondary: opts.companyNameAr ?? null,
+    tenderReference: opts.etimadRef ?? null,
+    accentColor: color,
+    inlineMargin: opts.inlineMargin ?? null,
+  });
 }
 
+/**
+ * Running PDF footer for letterhead documents: optional status pill and
+ * generation date, real "Page X of Y" counters, optional integrity prefix.
+ */
 export function pdfFooterTemplate(opts: {
   companyName: string;
   primaryColor?: string | null;
+  statusLabel?: string | null;
+  statusLabelAr?: string | null;
+  generatedOn?: string | null;
+  integrityHash?: string | null;
+  inlineMargin?: string | null;
 }): string {
   const color = normalizeDocumentBrandColor(
     opts.primaryColor,
-    designTokens.colors.secondary[500]
+    designTokens.colors.primary[600]
   );
-  return `<div style="font-size:8px;width:100%;padding:0 12mm;color:${escapeAttr(color)};font-family:Arial,sans-serif;display:flex;justify-content:space-between;"><span>${escapeAttr(opts.companyName)}</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`;
+  return buildPdfFooterTemplate({
+    title: opts.companyName,
+    statusLabel: opts.statusLabel ?? null,
+    statusLabelSecondary: opts.statusLabelAr ?? null,
+    generatedOn: opts.generatedOn ?? null,
+    integrityHash: opts.integrityHash ?? null,
+    accentColor: color,
+    inlineMargin: opts.inlineMargin ?? null,
+  });
 }
 
 function escapeAttr(s: string): string {
@@ -173,8 +208,9 @@ export function letterheadBarHtml(opts: {
     tagRaw && !isPlaceholderCompanyName(tagRaw) && tagRaw !== opts.companyName
       ? tagRaw
       : "";
-  return `<div class="letterhead-bar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-bottom:18px;border-radius:8px;background:linear-gradient(90deg,${primary},${secondary});color:#fff;border-bottom:3px solid ${accent}">
-    <div style="display:flex;align-items:center;gap:10px">${logo}<div><div style="font-weight:700;font-size:13px">${escapeAttr(opts.companyName)}</div>${tag ? `<div style="font-size:10px;opacity:.9">${escapeAttr(tag)}</div>` : ""}</div></div>
-    <div style="font-size:9px;opacity:.85;letter-spacing:.04em;text-transform:uppercase">${opts.locale === "ar" ? "ورق رسمي" : "Official letterhead"}</div>
+  const label = opts.locale === "ar" ? "ورق رسمي" : "Official letterhead";
+  return `<div class="letterhead-bar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px 11px;margin-bottom:22px;border-radius:2px;background:linear-gradient(90deg,${primary},${secondary});color:#fff;border-top:3px solid ${accent}">
+    <div style="display:flex;align-items:center;gap:12px">${logo}<div><div style="font-weight:650;font-size:13px;letter-spacing:-0.005em">${escapeAttr(opts.companyName)}</div>${tag ? `<div style="font-size:10px;opacity:.88;margin-top:2px">${escapeAttr(tag)}</div>` : ""}</div></div>
+    <div style="font-size:8.5px;opacity:.85;letter-spacing:${opts.locale === "ar" ? "0" : ".14em"};text-transform:uppercase;font-weight:600">${label}</div>
   </div>`;
 }

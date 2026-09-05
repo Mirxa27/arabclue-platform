@@ -35,6 +35,10 @@ import {
 } from "./pdf/html-to-pdf";
 import { BILINGUAL_LAYOUT_READY_SELECTOR } from "./layout-sync";
 import { validateAndNormalizeLogoImage } from "./brand-logo";
+import {
+  buildPdfFooterTemplate,
+  buildPdfHeaderTemplate,
+} from "./pdf/document-chrome";
 
 type FontAsset = Readonly<{
   family: string;
@@ -286,10 +290,17 @@ export function getEmbeddedBilingualFontCss(
   return pending;
 }
 
+/**
+ * Bind the embedded font pair to the layout's family variables. Leading is
+ * owned by the layout stylesheet (per script and per element), so this only
+ * swaps families and text-flow policy; overriding line-height here would
+ * flatten heading, table, and body rhythm into one value.
+ */
 function fontOverrideCss(fontPair: BilingualFontPairId): string {
-  const pair = resolveFontPair(fontPair);
-  const lineHeight = Math.min(pair.normalizedLineHeight, 1.58);
+  resolveFontPair(fontPair);
   return `.bilingual-document {
+  --bilingual-font-en: ${getFontPairStack(fontPair, "en")};
+  --bilingual-font-ar: ${getFontPairStack(fontPair, "ar")};
   font-kerning: normal;
   font-synthesis: none;
   font-variant-ligatures: common-ligatures contextual;
@@ -297,17 +308,21 @@ function fontOverrideCss(fontPair: BilingualFontPairId): string {
 }
 
 .bilingual-document :lang(en) {
-  font-family: ${getFontPairStack(fontPair, "en")};
-  line-height: ${String(lineHeight)};
-  hyphens: auto;
+  font-family: var(--bilingual-font-en);
+  hyphens: manual;
 }
 
 .bilingual-document :lang(ar) {
-  font-family: ${getFontPairStack(fontPair, "ar")};
-  line-height: ${String(Math.min(lineHeight + 0.05, 1.65))};
+  font-family: var(--bilingual-font-ar);
   letter-spacing: normal;
   word-spacing: normal;
   hyphens: none;
+}
+
+.bilingual-document code,
+.bilingual-document .bilingual-integrity__hash,
+.bilingual-document [data-alignment-key="proposal.control"] .bilingual-value--technical-term {
+  font-family: var(--bilingual-font-mono);
 }
 
 .bilingual-document bdi {
@@ -468,6 +483,33 @@ export interface BilingualRenderOptions {
   readonly sectionNumbering?: boolean;
   readonly lifecycle?: RenderBilingualDocumentOptions["lifecycle"];
   readonly palette?: RenderBilingualDocumentOptions["palette"];
+  /** Real content hash (and optional offline QR payload) for the artifact. */
+  readonly integrity?: RenderBilingualDocumentOptions["integrity"];
+  /** Append the bilingual approval / signature block. */
+  readonly signatureBlock?: RenderBilingualDocumentOptions["signatureBlock"];
+}
+
+/** Render-option keys forwarded verbatim from the PDF adapter to the layout. */
+function forwardedRenderOptions(
+  options: BilingualRenderOptions,
+): Omit<BilingualRenderOptions, "target" | "fontPair"> {
+  return {
+    ...(options.cover !== undefined ? { cover: options.cover } : {}),
+    ...(options.tableOfContents !== undefined
+      ? { tableOfContents: options.tableOfContents }
+      : {}),
+    ...(options.sectionNumbering !== undefined
+      ? { sectionNumbering: options.sectionNumbering }
+      : {}),
+    ...(options.lifecycle !== undefined ? { lifecycle: options.lifecycle } : {}),
+    ...(options.palette !== undefined ? { palette: options.palette } : {}),
+    ...(options.integrity !== undefined
+      ? { integrity: options.integrity }
+      : {}),
+    ...(options.signatureBlock !== undefined
+      ? { signatureBlock: options.signatureBlock }
+      : {}),
+  };
 }
 
 export interface BilingualRenderArtifact {
@@ -491,15 +533,7 @@ export async function renderBilingualArtifact(
   const baseHtml = renderBilingualHTML(document, {
     target: options.target ?? "screen",
     includeDocumentShell: true,
-    ...(options.cover !== undefined ? { cover: options.cover } : {}),
-    ...(options.tableOfContents !== undefined
-      ? { tableOfContents: options.tableOfContents }
-      : {}),
-    ...(options.sectionNumbering !== undefined
-      ? { sectionNumbering: options.sectionNumbering }
-      : {}),
-    ...(options.lifecycle !== undefined ? { lifecycle: options.lifecycle } : {}),
-    ...(options.palette !== undefined ? { palette: options.palette } : {}),
+    ...forwardedRenderOptions(options),
   });
 
   const { generatePremiumPrintCss } = await import("./pdf/print-ready");
@@ -524,14 +558,6 @@ export async function renderBilingualArtifact(
     quality,
   };
 }
-
-const DEFAULT_BILINGUAL_FOOTER = `<div style="box-sizing:border-box;width:100%;padding:0 14mm;color:#64748b;font-size:8px;display:flex;justify-content:center;gap:5px;font-family:Arial,sans-serif;">
-  <span>Page</span>
-  <span class="pageNumber"></span>
-  <span>/</span>
-  <span class="totalPages"></span>
-  <span dir="rtl">صفحة</span>
-</div>`;
 
 export interface GenerateBilingualPdfOptions extends BilingualRenderOptions {
   readonly pdf?: HtmlToPdfOptions;
@@ -701,9 +727,69 @@ export async function prepareBilingualPdfDocument(
   return parseBilingualDocument({ ...document, sections });
 }
 
+/** Plain-text form of a localized inline title, for running headers. */
+function inlineTitleText(
+  nodes: BilingualDocumentSpec["title"]["en"],
+): string {
+  return nodes
+    .map((node) => {
+      switch (node.type) {
+        case "text":
+        case "code":
+          return node.text;
+        case "value":
+          return node.value.text;
+        case "strong":
+        case "emphasis":
+        case "link":
+          return inlineTitleText(node.children);
+        default:
+          return " ";
+      }
+    })
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const RUNNING_STATUS_LABELS = {
+  draft: { en: "Draft", ar: "مسودة" },
+  final: { en: "Authoritative", ar: "معتمد" },
+} as const;
+
 /**
- * Generate a font-embedded Chromium PDF from the canonical print artifact.
- * Now premium print-ready: bleed 3mm, safety 5mm, tagged, crop marks, premium margins, semantic structure.
+ * Default running header/footer: document title and tender reference on top,
+ * lifecycle status, generation date, real page counters, and the integrity
+ * prefix below. Callers can still supply their own templates via `pdf`.
+ */
+function defaultRunningTemplates(
+  document: BilingualDocumentSpec,
+  options: GenerateBilingualPdfOptions,
+  inlineMargin: string,
+): Pick<HtmlToPdfOptions, "headerTemplate" | "footerTemplate"> {
+  const lifecycle = options.lifecycle === "final" ? "final" : "draft";
+  const running = {
+    title: inlineTitleText(document.title.en),
+    titleSecondary: inlineTitleText(document.title.ar),
+    tenderReference: options.cover?.tenderReference ?? null,
+    statusLabel: RUNNING_STATUS_LABELS[lifecycle].en,
+    statusLabelSecondary: RUNNING_STATUS_LABELS[lifecycle].ar,
+    generatedOn: options.cover?.dateLabel?.en ?? null,
+    integrityHash: options.integrity?.hash ?? null,
+    accentColor: options.palette?.primaryColor ?? null,
+    inlineMargin,
+  };
+  return {
+    headerTemplate: buildPdfHeaderTemplate(running),
+    footerTemplate: buildPdfFooterTemplate(running),
+  };
+}
+
+/**
+ * Generate a font-embedded Chromium PDF from the canonical print artifact:
+ * premium A4 margins, tagged structure with a heading outline, synchronized
+ * bilingual pagination, and a running header/footer that names the document,
+ * its status, real page counters, and the integrity prefix when supplied.
  */
 export async function generateBilingualPdf(
   input: unknown,
@@ -711,34 +797,28 @@ export async function generateBilingualPdf(
 ): Promise<BilingualPdfArtifact> {
   const { PRINT_READY } = await import("./pdf/print-ready");
 
-  const premiumHeaderTemplate = `<div style="box-sizing:border-box;width:100%;padding:0 14mm;color:${PRINT_READY.color.palette.gray[500]};font-size:7.5pt;font-family:'IBM Plex Sans','Noto Sans',Arial,sans-serif;display:flex;justify-content:space-between;align-items:center;border-bottom:0.25pt solid ${PRINT_READY.color.palette.gray[200]};">
-  <span style="font-weight:600;">ArabClue</span>
-  <span style="font-size:7pt;letter-spacing:0.04em;">Premium Print-Ready · Bleed ${PRINT_READY.bleed.size} · Safety ${PRINT_READY.bleed.safety} · sRGB + Embedded OFL</span>
-</div>`;
-
-  const premiumFooterTemplate = `<div style="box-sizing:border-box;width:100%;padding:0 14mm;color:${PRINT_READY.color.palette.gray[500]};font-size:7.5pt;font-family:'IBM Plex Sans','Noto Sans',Arial,sans-serif;display:flex;justify-content:space-between;align-items:center;">
-  <span style="display:flex;gap:6pt;">
-    <span>Page</span><span class="pageNumber"></span><span>/</span><span class="totalPages"></span>
-    <span dir="rtl" lang="ar">صفحة</span>
-  </span>
-  <span style="font-size:6.5pt;color:${PRINT_READY.color.palette.gray[300]};">${PRINT_READY.color.profileNote}</span>
-</div>`;
-
+  const margin = {
+    top: PRINT_READY.margins.premium.top,
+    bottom: PRINT_READY.margins.premium.bottom,
+    left: PRINT_READY.margins.premium.left,
+    right: PRINT_READY.margins.premium.right,
+    ...options.pdf?.margin,
+  };
   const pdfOptions: HtmlToPdfOptions = {
     format: "A4",
     printBackground: true,
     displayHeaderFooter: true,
-    headerTemplate: premiumHeaderTemplate,
-    footerTemplate: premiumFooterTemplate,
-    margin: {
-      top: PRINT_READY.margins.premium.top,
-      bottom: PRINT_READY.margins.premium.bottom,
-      left: PRINT_READY.margins.premium.left,
-      right: PRINT_READY.margins.premium.right,
-    },
+    ...defaultRunningTemplates(
+      parseBilingualDocument(input),
+      options,
+      margin.left,
+    ),
     waitMs: 0,
     readinessTimeoutMs: 10_000,
     ...options.pdf,
+    // Caller margins layer over the premium defaults field by field so a
+    // partial override never silently resets the other three edges.
+    margin,
     synchronizeBilingualLayout: true,
     readySelector: BILINGUAL_LAYOUT_READY_SELECTOR,
     tagged: true,
@@ -754,15 +834,7 @@ export async function generateBilingualPdf(
   const artifact = await renderBilingualArtifact(document, {
     target: "print",
     fontPair: options.fontPair,
-    ...(options.cover !== undefined ? { cover: options.cover } : {}),
-    ...(options.tableOfContents !== undefined
-      ? { tableOfContents: options.tableOfContents }
-      : {}),
-    ...(options.sectionNumbering !== undefined
-      ? { sectionNumbering: options.sectionNumbering }
-      : {}),
-    ...(options.lifecycle !== undefined ? { lifecycle: options.lifecycle } : {}),
-    ...(options.palette !== undefined ? { palette: options.palette } : {}),
+    ...forwardedRenderOptions(options),
   });
   const pdf = await htmlToPdf(artifact.html, pdfOptions);
   if (!isPdfBuffer(pdf)) {

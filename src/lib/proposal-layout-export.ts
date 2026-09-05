@@ -11,6 +11,7 @@ import {
   parseBilingualDocument,
   renderBilingualHTML,
   type BilingualDocumentCover,
+  type BilingualDocumentIntegrity,
   type BilingualDocumentSpec,
   type BilingualBrandPalette,
   type BilingualInlineNode,
@@ -27,6 +28,10 @@ import {
   type GenerateBilingualPdfOptions,
 } from "./bilingual-pdf";
 import { createBidiValue } from "./bilingual-typography";
+import {
+  buildPdfFooterTemplate,
+  buildPdfHeaderTemplate,
+} from "./pdf/document-chrome";
 import {
   compileProposalLayout,
   generateProposalPptx,
@@ -101,6 +106,20 @@ export interface ProposalDocumentChrome {
   readonly sectionNumbering: boolean;
   readonly lifecycle: "draft" | "final";
   readonly palette: BilingualBrandPalette;
+  /**
+   * Real integrity data for the rendered artifact: the immutable snapshot
+   * hash (already printed in the control section) plus an offline QR payload
+   * `arabclue:proposal:<snapshotId>:<snapshotHash>`.
+   */
+  readonly integrity: BilingualDocumentIntegrity;
+  /** Bilingual approval block appended after the last section. */
+  readonly signatureBlock: boolean;
+  /** Running header/footer content for paged PDF output. */
+  readonly running: Readonly<{
+    title: LocalizedProposalText;
+    tenderReference: string | null;
+    generatedOn: string;
+  }>;
 }
 
 export interface CompileProposalLayoutDocumentOptions {
@@ -647,7 +666,15 @@ function evidenceBlocks(
       cells: {
         [columns[0].id]: { content: localizedText(entry.label) },
         [columns[1].id]: {
-          content: localizedText(EVIDENCE_STATUS[entry.status]),
+          // A cell whose whole content is emphasised renders as a status chip.
+          content: {
+            en: [
+              { type: "strong", children: text(EVIDENCE_STATUS[entry.status].en) },
+            ],
+            ar: [
+              { type: "strong", children: text(EVIDENCE_STATUS[entry.status].ar) },
+            ],
+          },
         },
         [columns[2].id]: {
           content: localizedValuesLine(
@@ -669,6 +696,31 @@ function evidenceBlocks(
   ];
 }
 
+function pricingStatusContent(
+  pricingStatus: Extract<
+    ProposalBlock,
+    { type: "COMMERCIAL_HANDOFF" }
+  >["pricingStatus"]
+): Readonly<{
+  en: readonly BilingualInlineNode[];
+  ar: readonly BilingualInlineNode[];
+}> {
+  const line = (language: "en" | "ar"): readonly BilingualInlineNode[] => [
+    {
+      type: "text",
+      text: language === "ar" ? "حالة التسعير: " : "Pricing status: ",
+    },
+    ...text(PRICING_STATUS[pricingStatus][language]),
+  ];
+  if (pricingStatus !== "USER_ENTRY_REQUIRED") {
+    return { en: line("en"), ar: line("ar") };
+  }
+  return {
+    en: [{ type: "strong", children: line("en") }],
+    ar: [{ type: "strong", children: line("ar") }],
+  };
+}
+
 function commercialBlocks(
   block: Extract<ProposalBlock, { type: "COMMERCIAL_HANDOFF" }>,
   baseId: string
@@ -682,16 +734,9 @@ function commercialBlocks(
     {
       type: "paragraph",
       id: `${baseId}.pricing-status`,
-      content: {
-        en: [
-          { type: "text", text: "Pricing status: " },
-          ...text(PRICING_STATUS[block.pricingStatus].en),
-        ],
-        ar: [
-          { type: "text", text: "حالة التسعير: " },
-          ...text(PRICING_STATUS[block.pricingStatus].ar),
-        ],
-      },
+      // Pending user entry is a whole-paragraph emphasis, which the layout
+      // renders as an attention callout; verified values stay plain.
+      content: pricingStatusContent(block.pricingStatus),
     },
   ];
   if (block.entries.length === 0) return blocks;
@@ -920,7 +965,8 @@ function controlSection(
       id: "proposal-snapshot-hash",
       content: localizedValueLine(
         { en: "Snapshot hash: ", ar: "بصمة اللقطة: " },
-        metadata.snapshotHash
+        metadata.snapshotHash,
+        "technical-term"
       ),
     },
     {
@@ -928,7 +974,8 @@ function controlSection(
       id: "proposal-plan-hash",
       content: localizedValueLine(
         { en: "Plan hash: ", ar: "بصمة الخطة: " },
-        metadata.planHash
+        metadata.planHash,
+        "technical-term"
       ),
     },
   ];
@@ -1090,6 +1137,7 @@ function deriveChrome(
   lifecycle: "DRAFT" | "FINAL"
 ): ProposalDocumentChrome {
   const exportedAt = new Date();
+  const generatedOn = exportedAt.toISOString().slice(0, 10);
   return Object.freeze({
     cover: Object.freeze({
       kicker: PRESET_KICKER[plan.presetKey],
@@ -1097,10 +1145,7 @@ function deriveChrome(
       ...(snapshot.tenderReference
         ? { tenderReference: snapshot.tenderReference }
         : {}),
-      dateLabel: {
-        en: exportedAt.toISOString().slice(0, 10),
-        ar: exportedAt.toISOString().slice(0, 10),
-      },
+      dateLabel: { en: generatedOn, ar: generatedOn },
     }),
     tableOfContents: true,
     sectionNumbering: true,
@@ -1109,6 +1154,17 @@ function deriveChrome(
       primaryColor: snapshot.brand.primaryColor ?? null,
       secondaryColor: snapshot.brand.secondaryColor ?? null,
       accentColor: snapshot.brand.accentColor ?? null,
+    }),
+    integrity: Object.freeze({
+      hash: plan.snapshotHash,
+      qrPayload: `arabclue:proposal:${plan.snapshotId}:${plan.snapshotHash}`,
+      label: Object.freeze({ en: "Snapshot hash", ar: "بصمة اللقطة" }),
+    }),
+    signatureBlock: true,
+    running: Object.freeze({
+      title: snapshot.projectTitle,
+      tenderReference: snapshot.tenderReference,
+      generatedOn,
     }),
   });
 }
@@ -1193,6 +1249,54 @@ function mergeChrome(
       ? { lifecycle: chrome.lifecycle }
       : {}),
     ...(options.palette === undefined ? { palette: chrome.palette } : {}),
+    ...(options.integrity === undefined
+      ? { integrity: chrome.integrity }
+      : {}),
+    ...(options.signatureBlock === undefined
+      ? { signatureBlock: chrome.signatureBlock }
+      : {}),
+  };
+}
+
+const RUNNING_STATUS: Record<
+  "draft" | "final",
+  Readonly<{ en: string; ar: string }>
+> = {
+  draft: { en: "Draft", ar: "مسودة" },
+  final: { en: "Authoritative", ar: "معتمد" },
+};
+
+/**
+ * Chromium running header/footer for the paged PDF: project title, tender
+ * reference, lifecycle status, generation date, page X of Y, and the snapshot
+ * hash prefix. Callers keep full control by passing their own templates.
+ */
+function runningPdfChrome(
+  compilation: ProposalLayoutDocumentCompilation,
+  merged: RenderBilingualDocumentOptions,
+  pdf: GenerateBilingualPdfOptions["pdf"]
+): GenerateBilingualPdfOptions["pdf"] {
+  if (compilation.status !== "READY") return pdf;
+  if (pdf?.headerTemplate !== undefined && pdf?.footerTemplate !== undefined) {
+    return pdf;
+  }
+  const { chrome } = compilation;
+  const lifecycle = merged.lifecycle === "final" ? "final" : "draft";
+  const running = {
+    title: chrome.running.title.en,
+    titleSecondary: chrome.running.title.ar,
+    tenderReference: chrome.running.tenderReference,
+    statusLabel: RUNNING_STATUS[lifecycle].en,
+    statusLabelSecondary: RUNNING_STATUS[lifecycle].ar,
+    generatedOn: chrome.running.generatedOn,
+    integrityHash: merged.integrity?.hash ?? null,
+    accentColor: chrome.palette.primaryColor ?? null,
+    inlineMargin: pdf?.margin?.left ?? null,
+  };
+  return {
+    ...pdf,
+    headerTemplate: pdf?.headerTemplate ?? buildPdfHeaderTemplate(running),
+    footerTemplate: pdf?.footerTemplate ?? buildPdfFooterTemplate(running),
   };
 }
 
@@ -1229,6 +1333,13 @@ export async function generateProposalLayoutPdf(
       ? { lifecycle: merged.lifecycle }
       : {}),
     ...(merged.palette !== undefined ? { palette: merged.palette } : {}),
+    ...(merged.integrity !== undefined
+      ? { integrity: merged.integrity }
+      : {}),
+    ...(merged.signatureBlock !== undefined
+      ? { signatureBlock: merged.signatureBlock }
+      : {}),
+    pdf: runningPdfChrome(compilation, merged, options.pdf),
   });
 }
 

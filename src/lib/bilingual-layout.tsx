@@ -9,7 +9,6 @@
  * executable inline scripts, or mutable singleton state.
  */
 
-import { designTokens } from "./design-tokens";
 import {
   renderDocumentChart,
   type DocumentChartDefinition,
@@ -21,6 +20,11 @@ import {
   type DocumentLanguage,
   type StrongDirection,
 } from "./bilingual-typography";
+import {
+  describeIntegrityHash,
+  isSafeIntegrityQrPayload,
+  renderIntegrityQrSvg,
+} from "./pdf/document-chrome";
 
 // ============================================================================
 // Public model
@@ -274,6 +278,17 @@ export interface RenderBilingualDocumentOptions {
    * replace body ink.
    */
   readonly palette?: BilingualBrandPalette;
+  /**
+   * Real integrity data for the artifact (content hash, optional offline QR
+   * payload). Only a verified hex prefix is ever printed; when omitted, no
+   * integrity strip is rendered at all.
+   */
+  readonly integrity?: BilingualDocumentIntegrity;
+  /**
+   * Append a bilingual signature / approval block after the last section.
+   * Off by default so lightweight fixtures keep their exact pair count.
+   */
+  readonly signatureBlock?: boolean;
 }
 
 /** Content shown on a generated cover page. All fields are optional. */
@@ -284,6 +299,23 @@ export interface BilingualDocumentCover {
   readonly bidderName?: Localized<string>;
   readonly tenderReference?: string;
   readonly dateLabel?: Localized<string>;
+  /** Handling / confidentiality line printed on the cover meta block. */
+  readonly confidentiality?: Localized<string>;
+}
+
+/**
+ * Integrity metadata that already exists for the artifact. The hash is
+ * displayed as a short prefix on the cover and in the footer strip; the QR
+ * payload (for example `arabclue:proposal:<id>:<hash>`) is encoded verbatim
+ * for offline checks. No verification URL is invented.
+ */
+export interface BilingualDocumentIntegrity {
+  /** Hex digest, optionally prefixed with `sha256:`. */
+  readonly hash: string;
+  /** Printable-ASCII payload (1-512 characters) for the cover QR code. */
+  readonly qrPayload?: string;
+  /** Caption for the hash, defaulting to "Content hash" / "بصمة المحتوى". */
+  readonly label?: Localized<string>;
 }
 
 /**
@@ -1847,25 +1879,170 @@ function tableAlignmentClass(align: BilingualTableColumn["align"]): string {
   return `bilingual-table-cell--${align ?? "start"}`;
 }
 
+/**
+ * Approximate graphemes that fit across one language column at table size.
+ * Dense tables step their type down (see CSS), which raises the budget.
+ */
+const TABLE_GRAPHEME_BUDGET = 52;
+const TABLE_BUDGET_SCALE_BY_COLUMNS: Readonly<Record<number, number>> = {
+  4: 1.06,
+  5: 1.24,
+  6: 1.24,
+};
+const COLUMN_CONTENT_WEIGHT_CAP = 48;
+const COLUMN_TOKEN_MIN_CAP = 16;
+const COLUMN_PADDING_GRAPHEMES = 3;
+/** Uppercase, tracked header text and tabular numerals run wider than prose. */
+const HEADER_TOKEN_FACTOR = 1.5;
+/** Dense tables keep sentence-case headers, so their tokens are not wider. */
+const DENSE_HEADER_TOKEN_FACTOR = 1.05;
+const DENSE_TABLE_COLUMN_THRESHOLD = 4;
+const NUMERIC_TOKEN_FACTOR = 1.2;
+const NON_BREAKING_VALUE_KINDS = new Set<BilingualValueKind>([
+  "number",
+  "currency",
+  "date",
+]);
+
+function longestTokenGraphemes(nodes: readonly BilingualInlineNode[]): number {
+  return inlineText(nodes)
+    .split(/\s+/u)
+    .reduce((longest, token) => Math.max(longest, countGraphemes(token)), 0);
+}
+
+/** True when the cell is set entirely in non-breaking numeric values. */
+function isNonBreakingCell(nodes: readonly BilingualInlineNode[]): boolean {
+  return (
+    nodes.length > 0 &&
+    nodes.every(
+      (node) =>
+        node.type === "value" &&
+        node.valueKind !== undefined &&
+        NON_BREAKING_VALUE_KINDS.has(node.valueKind),
+    )
+  );
+}
+
+interface ColumnSizingStats {
+  /** Width a column needs for tokens the stylesheet never breaks. */
+  readonly hardMin: number;
+  /** Width the longest ordinary token wants before mid-word breaking. */
+  readonly softMin: number;
+  /** Share of leftover space, from the longest header or cell text. */
+  readonly weight: number;
+}
+
+function columnSizingStats(
+  table: PairedTableBlock,
+  column: BilingualTableColumn,
+): ColumnSizingStats {
+  const headerToken =
+    Math.max(
+      longestTokenGraphemes(column.header.en),
+      longestTokenGraphemes(column.header.ar),
+    ) *
+    (table.columns.length >= DENSE_TABLE_COLUMN_THRESHOLD
+      ? DENSE_HEADER_TOKEN_FACTOR
+      : HEADER_TOKEN_FACTOR);
+  let hardToken = 0;
+  let softToken = headerToken;
+  let longestText = Math.max(
+    countInlineGraphemes(column.header.en),
+    countInlineGraphemes(column.header.ar),
+  );
+  for (const row of table.rows) {
+    const cell = row.cells[column.id];
+    if (!cell) continue;
+    for (const language of ["en", "ar"] as const) {
+      const content = cell.content[language];
+      const token = longestTokenGraphemes(content);
+      if (isNonBreakingCell(content)) {
+        hardToken = Math.max(hardToken, token * NUMERIC_TOKEN_FACTOR);
+      } else {
+        softToken = Math.max(softToken, token);
+      }
+      longestText = Math.max(longestText, countInlineGraphemes(content));
+    }
+  }
+  return {
+    hardMin: hardToken > 0 ? hardToken + COLUMN_PADDING_GRAPHEMES : 0,
+    softMin:
+      Math.min(softToken, COLUMN_TOKEN_MIN_CAP) + COLUMN_PADDING_GRAPHEMES,
+    weight: Math.min(longestText, COLUMN_CONTENT_WEIGHT_CAP) + 4,
+  };
+}
+
+/**
+ * Deterministic column widths for tables whose author gave none. Fixed table
+ * layout keeps every row fragment aligned, but equal widths starve long
+ * columns and split words mid-token. Each column first receives room for its
+ * non-breaking numerals, then for its longest ordinary token, and any space
+ * left is shared by content length; both language tables use the same grid.
+ */
+function resolveColumnWidths(table: PairedTableBlock): readonly number[] | null {
+  const columnCount = table.columns.length;
+  if (columnCount < 2) return null;
+  if (table.columns.some((column) => column.widthPercent !== undefined)) {
+    return null;
+  }
+  const budget =
+    TABLE_GRAPHEME_BUDGET *
+    (TABLE_BUDGET_SCALE_BY_COLUMNS[columnCount] ?? (columnCount > 6 ? 1.33 : 1));
+  const stats = table.columns.map((column) => columnSizingStats(table, column));
+  const sum = (values: readonly number[]): number =>
+    values.reduce((total, value) => total + value, 0);
+
+  const hardTotal = sum(stats.map((column) => column.hardMin));
+  const hardScale = hardTotal > budget ? budget / hardTotal : 1;
+  const hard = stats.map((column) => column.hardMin * hardScale);
+  const softBudget = Math.max(0, budget - sum(hard));
+  const softNeeds = stats.map((column) =>
+    column.hardMin > 0 ? Math.max(0, column.softMin - column.hardMin) : column.softMin,
+  );
+  const softTotal = sum(softNeeds);
+  const softScale = softTotal > softBudget ? softBudget / softTotal : 1;
+  const base = stats.map((_, index) => hard[index] + softNeeds[index] * softScale);
+  const remaining = Math.max(0, budget - sum(base));
+  const weightTotal = sum(stats.map((column) => column.weight));
+  const widths = stats.map(
+    (column, index) => base[index] + remaining * (column.weight / weightTotal),
+  );
+  const widthTotal = sum(widths);
+  return widths.map((width) => Math.round((width / widthTotal) * 1000) / 10);
+}
+
+function renderColumnGroup(
+  table: PairedTableBlock,
+  resolvedWidths: readonly number[] | null,
+): string {
+  if (resolvedWidths) {
+    return `<colgroup>${resolvedWidths
+      .map((width) => `<col style="width:${String(width)}%" />`)
+      .join("")}</colgroup>`;
+  }
+  if (!table.columns.some((column) => column.widthPercent !== undefined)) {
+    return "";
+  }
+  return `<colgroup>${table.columns
+    .map((column) =>
+      column.widthPercent === undefined
+        ? "<col />"
+        : `<col style="width:${String(column.widthPercent)}%" />`,
+    )
+    .join("")}</colgroup>`;
+}
+
 function renderTable(
   table: PairedTableBlock,
   language: DocumentLanguage,
   includeHeader = true,
+  rowIndexOffset = 0,
+  resolvedWidths: readonly number[] | null = resolveColumnWidths(table),
 ): string {
   const caption = table.caption
     ? `<caption>${renderSafeInline(table.caption[language])}</caption>`
     : "";
-  const columnGroup = table.columns.some(
-    (column) => column.widthPercent !== undefined,
-  )
-    ? `<colgroup>${table.columns
-        .map((column) =>
-          column.widthPercent === undefined
-            ? "<col />"
-            : `<col style="width:${String(column.widthPercent)}%" />`,
-        )
-        .join("")}</colgroup>`
-    : "";
+  const columnGroup = renderColumnGroup(table, resolvedWidths);
   const head = includeHeader
     ? `<thead><tr>${table.columns
         .map(
@@ -1878,8 +2055,10 @@ function renderTable(
     : "";
   const body = `<tbody>${table.rows
     .map(
-      (row) =>
-        `<tr data-table-row-id="${escapeBilingualHtml(row.id)}">${table.columns
+      (row, rowIndex) =>
+        `<tr data-table-row-id="${escapeBilingualHtml(row.id)}" data-row-parity="${
+          (rowIndexOffset + rowIndex) % 2 === 0 ? "even" : "odd"
+        }">${table.columns
           .map((column) => {
             const cell = row.cells[column.id];
             if (!cell) return "";
@@ -1894,7 +2073,7 @@ function renderTable(
     .join("")}</tbody>`;
   return `<table data-repeat-header="${
     table.repeatHeader === false ? "false" : "true"
-  }">${caption}${columnGroup}${head}${body}</table>`;
+  }" data-column-count="${String(table.columns.length)}">${caption}${columnGroup}${head}${body}</table>`;
 }
 
 function renderBlockForLanguage(
@@ -2079,12 +2258,26 @@ function chunkArray<T>(
   return chunks;
 }
 
+/**
+ * Position of a fragment inside a block that the compiler split at a safe
+ * boundary. Continuation parts let the stylesheet render one visually
+ * continuous table or list even though every row is its own pagination unit.
+ */
+type FragmentPart = "only" | "first" | "middle" | "last";
+
 interface CompiledRenderFragment {
   readonly id: string;
   readonly kind: PairedBlock["type"];
   readonly content: Localized<string>;
   readonly keepTogether: boolean;
   readonly keepWithNext: boolean;
+  readonly part: FragmentPart;
+}
+
+function fragmentPart(index: number, count: number): FragmentPart {
+  if (count <= 1) return "only";
+  if (index === 0) return "first";
+  return index === count - 1 ? "last" : "middle";
 }
 
 function renderParagraphFragment(
@@ -2122,6 +2315,7 @@ function compileBlockRenderFragments(
       },
       keepTogether: true,
       keepWithNext: false,
+      part: fragmentPart(index, fragmentCount),
     }));
   }
 
@@ -2153,11 +2347,15 @@ function compileBlockRenderFragments(
       },
       keepTogether: true,
       keepWithNext: false,
+      part: fragmentPart(index, chunks.length),
     }));
   }
 
   if (block.type === "table") {
     const chunks = chunkArray(block.rows, MAX_TABLE_ROWS_PER_FRAGMENT);
+    // Widths derive from the whole table once so every row fragment shares
+    // the same column grid in both languages.
+    const resolvedWidths = resolveColumnWidths(block);
     return chunks.map((rows, index) => {
       const table: PairedTableBlock = {
         ...block,
@@ -2175,15 +2373,20 @@ function compileBlockRenderFragments(
             table,
             "en",
             index === 0 || block.repeatHeader !== false,
+            index * MAX_TABLE_ROWS_PER_FRAGMENT,
+            resolvedWidths,
           ),
           ar: renderTable(
             table,
             "ar",
             index === 0 || block.repeatHeader !== false,
+            index * MAX_TABLE_ROWS_PER_FRAGMENT,
+            resolvedWidths,
           ),
         },
         keepTogether: true,
         keepWithNext: false,
+        part: fragmentPart(index, chunks.length),
       };
     });
   }
@@ -2198,6 +2401,7 @@ function compileBlockRenderFragments(
       },
       keepTogether: true,
       keepWithNext: block.type === "heading" && block.keepWithNext === true,
+      part: "only",
     },
   ];
 }
@@ -2239,6 +2443,10 @@ function renderPairedFragment(options: {
   fragmentCount: number;
   breakBefore?: boolean;
   sectionMarker?: boolean;
+  part?: FragmentPart;
+  /** Extra class for chrome pairs (cover, signature) that carry own styling. */
+  className?: string;
+  cellClassName?: string;
 }): string {
   const {
     section,
@@ -2252,14 +2460,19 @@ function renderPairedFragment(options: {
     fragmentCount,
     breakBefore = false,
     sectionMarker = false,
+    part = "only",
+    className = "",
+    cellClassName = "",
   } = options;
   const languages = orderedLanguages(config.mode);
   const cells = languages
-    .map((language) => renderLanguageCell(content[language], language))
+    .map((language) =>
+      renderLanguageCell(content[language], language, cellClassName),
+    )
     .join("");
-  return `<div class="${fragmentClass(
-    config.mode,
-  )}" data-bilingual-pair data-alignment-key="${escapeBilingualHtml(
+  return `<div class="${fragmentClass(config.mode)}${
+    className ? ` ${className}` : ""
+  }" data-bilingual-pair data-alignment-key="${escapeBilingualHtml(
     section.alignmentKey,
   )}"${sectionMarker ? ` data-section-id="${escapeBilingualHtml(section.id)}"` : ""} data-fragment-id="${escapeBilingualHtml(
     fragmentId,
@@ -2269,7 +2482,7 @@ function renderPairedFragment(options: {
     keepWithNext ? "true" : "false"
   }" data-fragment-break-before="${breakBefore ? "true" : "false"}" data-fragment-index="${String(fragmentIndex)}" data-fragment-count="${String(
     fragmentCount,
-  )}">${cells}</div>`;
+  )}" data-fragment-part="${part}">${cells}</div>`;
 }
 
 function renderSection(
@@ -2319,6 +2532,7 @@ function renderSection(
         keepWithNext: fragment.keepWithNext,
         fragmentIndex: blockIndex + headingOffset,
         fragmentCount,
+        part: fragment.part,
         breakBefore:
           section.startOnNewPage === true &&
           headingOffset === 0 &&
@@ -2357,6 +2571,7 @@ function renderDocumentTitle(
   document: BilingualDocumentSpec,
   config: BilingualLayoutConfig,
   flattenForPrint: boolean,
+  followsCover = false,
 ): string {
   const languages = orderedLanguages(config.mode);
   const cells = languages
@@ -2367,9 +2582,14 @@ function renderDocumentTitle(
         }">${renderSafeInline(document.title[language])}</span>`,
     )
     .join("");
+  // After a cover sheet the title opens the body on its own page; the cover
+  // pair itself is a single synchronized row, so the paginator needs this
+  // explicit break to keep body rows off the cover.
   const heading = `<h1 class="${fragmentClass(
     config.mode,
-  )}" data-bilingual-pair data-alignment-key="document-title" data-fragment-id="document-title" data-fragment-kind="document-title" data-fragment-keep="true" data-fragment-keep-with-next="false" data-fragment-break-before="false" data-fragment-index="0" data-fragment-count="1">${cells}</h1>`;
+  )}" data-bilingual-pair data-alignment-key="document-title" data-fragment-id="document-title" data-fragment-kind="document-title" data-fragment-keep="true" data-fragment-keep-with-next="true" data-fragment-break-before="${
+    followsCover ? "true" : "false"
+  }" data-fragment-index="0" data-fragment-count="1" data-fragment-part="only">${cells}</h1>`;
   return flattenForPrint
     ? heading
     : `<header class="bilingual-document-header">${heading}</header>`;
@@ -2433,6 +2653,14 @@ function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+/** Document font stacks: local OFL families first, then metric-compatible system fallbacks. */
+const DOCUMENT_FONT_STACK_EN =
+  '"IBM Plex Sans", "Noto Sans", "Segoe UI", Arial, sans-serif';
+const DOCUMENT_FONT_STACK_AR =
+  '"IBM Plex Sans Arabic", "Noto Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif';
+const DOCUMENT_FONT_STACK_MONO =
+  '"IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace';
+
 export function generateBilingualCSS(
   config: BilingualLayoutConfig = DEFAULT_BILINGUAL_CONFIG,
   palette?: BilingualBrandPalette,
@@ -2458,32 +2686,75 @@ export function generateBilingualCSS(
     contrastRatio(secondaryCandidate, "#FFFFFF") >= 4.5
       ? secondaryCandidate
       : DEFAULT_INK;
+  // Brand primaries are often mid-tone; text set in the primary must still
+  // clear AA on paper, so darken it when the brand colour is too light.
+  const primaryText =
+    contrastRatio(primary, "#FFFFFF") >= 4.5
+      ? primary
+      : `color-mix(in srgb, ${primary} 70%, #000000)`;
 
   return `
 :root {
+  color-scheme: light;
   --bilingual-primary: ${primary};
+  --bilingual-primary-text: ${primaryText};
   --bilingual-ink: ${ink};
   --bilingual-ink-deep: #0F172A;
   --bilingual-muted: #475569;
-  --bilingual-border: #E2E8F0;
+  --bilingual-border: #D9DEE5;
   --bilingual-border-strong: #94A3B8;
-  --bilingual-surface: #F8FAFC;
-  --bilingual-surface-strong: #EEF2F6;
+  --bilingual-surface: #F6F8FA;
+  --bilingual-surface-strong: #EDF1F5;
   --bilingual-accent: ${accent};
   --bilingual-paper: #FFFFFF;
+  --bilingual-band-ink: #FFFFFF;
   --bilingual-en-column: ${String(enPercent)}fr;
   --bilingual-ar-column: ${String(arPercent)}fr;
+  --bilingual-en-fraction: ${String(enPercent / 100)};
   --bilingual-gap: 1.25rem;
+  --bilingual-cell-inline-padding: 0.55rem;
   --bilingual-rule: 2.5px solid var(--bilingual-primary);
   --bilingual-hairline: 0.5px solid var(--bilingual-border);
+  --bilingual-font-en: ${DOCUMENT_FONT_STACK_EN};
+  --bilingual-font-ar: ${DOCUMENT_FONT_STACK_AR};
+  --bilingual-font-mono: ${DOCUMENT_FONT_STACK_MONO};
+  /* Type scale (print-first, in points). Arabic runs one step larger with
+     more leading so connected letterforms and diacritics stay legible. */
+  --bilingual-size-display: 20pt;
+  --bilingual-size-h1: 17pt;
+  --bilingual-size-h2: 12.5pt;
+  --bilingual-size-h3: 11pt;
+  --bilingual-size-body: 10.5pt;
+  --bilingual-size-body-ar: 11pt;
+  --bilingual-size-small: 9pt;
+  --bilingual-size-caption: 8pt;
+  --bilingual-size-micro: 7pt;
+  --bilingual-leading-body-en: 1.5;
+  --bilingual-leading-body-ar: 1.7;
+  --bilingual-leading-heading-en: 1.22;
+  --bilingual-leading-heading-ar: 1.42;
+  --bilingual-leading-table-en: 1.38;
+  --bilingual-leading-table-ar: 1.55;
+  --bilingual-cover-band: 96mm;
+  --bilingual-cover-height: 236mm;
 }
 
 * { box-sizing: border-box; }
+
+/* 1rem = 11pt so rem-based rhythm is identical in the preview and the PDF. */
+html {
+  color-scheme: light;
+  font-size: 11pt;
+}
 
 body {
   margin: 0;
   color: var(--bilingual-ink-deep);
   background: var(--bilingual-paper);
+  font-family: var(--bilingual-font-en);
+  font-kerning: normal;
+  font-synthesis: none;
+  font-variant-ligatures: common-ligatures contextual;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -2495,15 +2766,37 @@ body {
   margin-inline: auto;
   padding-inline: 1.75rem;
   padding-block: 1.5rem 1.25rem;
-  font-size: 11pt;
-  line-height: 1.55;
+  font-size: var(--bilingual-size-body);
+  line-height: var(--bilingual-leading-body-en);
   color: var(--bilingual-ink-deep);
+}
+
+/* Script-aware families and leading. Cells set lang/dir, so every descendant
+   (including cover, TOC, and footer chrome) inherits the right face. */
+/* Ragged-right formal prose: no automatic hyphenation in either script. */
+.bilingual-document [lang="en"],
+.bilingual-document :lang(en) {
+  font-family: var(--bilingual-font-en);
+  letter-spacing: normal;
+  hyphens: manual;
+}
+
+.bilingual-document [lang="ar"],
+.bilingual-document :lang(ar) {
+  font-family: var(--bilingual-font-ar);
+  letter-spacing: normal;
+  word-spacing: normal;
+  hyphens: none;
 }
 
 .bilingual-document-header,
 .bilingual-section {
   display: contents;
 }
+
+/* ------------------------------------------------------------------ */
+/* Headings                                                            */
+/* ------------------------------------------------------------------ */
 
 .bilingual-document h1,
 .bilingual-document h2,
@@ -2513,39 +2806,81 @@ body {
 .bilingual-document h6 {
   margin-block: 0;
   color: var(--bilingual-ink);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.012em;
-  line-height: 1.25;
+  line-height: var(--bilingual-leading-heading-en);
   text-wrap: balance;
+  break-after: avoid-page;
+  page-break-after: avoid;
+}
+
+.bilingual-document [lang="ar"] h1,
+.bilingual-document [lang="ar"] h2,
+.bilingual-document [lang="ar"] h3,
+.bilingual-document [lang="ar"] h4,
+.bilingual-document [lang="ar"] h5,
+.bilingual-document [lang="ar"] h6 {
+  letter-spacing: 0;
+  line-height: var(--bilingual-leading-heading-ar);
 }
 
 .bilingual-document h1[data-fragment-kind="document-title"] {
-  font-size: 1.55rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  padding-block-end: 0.7rem;
-  margin-block-end: 1.1rem;
+  font-size: var(--bilingual-size-h1);
+  font-weight: 650;
+  letter-spacing: -0.018em;
+  color: var(--bilingual-ink-deep);
   border-block-end: var(--bilingual-rule);
   break-before: auto !important;
   page-break-before: auto !important;
 }
 
 .bilingual-document h1[data-fragment-kind="document-title"] .bilingual-cell {
-  padding-block: 0.15rem 0.35rem;
+  padding-block: 0.2rem 0.75rem;
+  margin-block-end: 0;
+}
+
+.bilingual-document h1[data-fragment-kind="document-title"] .bilingual-cell--ar {
+  font-size: calc(var(--bilingual-size-h1) * 1.04);
 }
 
 .bilingual-document h2 {
-  font-size: 0.95rem;
-  font-weight: 650;
+  font-size: var(--bilingual-size-h2);
+  font-weight: 600;
   letter-spacing: -0.01em;
-  padding-block-end: 0.35rem;
-  margin-block-end: 0.15rem;
-  border-block-end: 1px solid color-mix(in srgb, var(--bilingual-primary) 45%, var(--bilingual-border));
+  color: var(--bilingual-ink-deep);
+  padding-block-end: 0.3rem;
+  border-block-end: 1px solid color-mix(in srgb, var(--bilingual-primary) 55%, var(--bilingual-border));
+}
+
+/* Hanging section numbers: the numeral sits in its own slot so wrapped
+   titles align on a common indent in both reading directions. */
+.bilingual-document h2:has(> .bilingual-section-number) {
+  display: grid;
+  grid-template-columns: minmax(2.1em, auto) minmax(0, 1fr);
+  column-gap: 0.55em;
+  align-items: baseline;
 }
 
 .bilingual-document h3 {
-  font-size: 0.88rem;
+  font-size: var(--bilingual-size-h3);
   font-weight: 600;
+  color: var(--bilingual-ink);
+}
+
+.bilingual-document h4,
+.bilingual-document h5,
+.bilingual-document h6 {
+  font-size: var(--bilingual-size-body);
+  font-weight: 600;
+  color: var(--bilingual-ink);
+}
+
+.bilingual-document h5,
+.bilingual-document h6 {
+  font-size: var(--bilingual-size-small);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bilingual-muted);
 }
 
 .bilingual-section--new-page {
@@ -2555,214 +2890,24 @@ body {
 .bilingual-section-number {
   display: inline-block;
   min-inline-size: 1.6em;
-  color: var(--bilingual-primary);
-  font-variant-numeric: tabular-nums;
+  color: var(--bilingual-primary-text);
+  font-family: var(--bilingual-font-en);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
   font-weight: 700;
+  letter-spacing: 0;
 }
 
 /* ------------------------------------------------------------------ */
-/* Cover page                                                          */
+/* Paired rows                                                         */
 /* ------------------------------------------------------------------ */
 
-.bilingual-cover {
-  break-after: page;
-  page-break-after: always;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-block-size: 240mm;
-  margin-block-end: 1.5rem;
-}
-
-.bilingual-cover__band {
-  position: relative;
-  padding: 18mm 12mm 14mm;
-  margin-block-start: -1.5rem;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--bilingual-primary) 92%, #000000) 0%,
-    var(--bilingual-primary) 55%,
-    color-mix(in srgb, var(--bilingual-primary) 72%, var(--bilingual-accent)) 100%
-  );
-  color: #ffffff;
-}
-
-.bilingual-cover__band-accent {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline: 0;
-  block-size: 2.5mm;
-  background: var(--bilingual-accent);
-}
-
-.bilingual-cover__kicker-row .bilingual-cover__line {
-  font-size: 8.5pt;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  opacity: 0.85;
-}
-
-.bilingual-cover__title {
-  margin-block: 10mm 0;
-  color: #ffffff;
-}
-
-.bilingual-cover__title-line {
-  display: block;
-  font-size: 21pt;
-  line-height: 1.3;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.bilingual-cover__subtitle-row .bilingual-cover__line {
-  margin-block-start: 6mm;
-  font-size: 11pt;
-  line-height: 1.5;
-  opacity: 0.92;
-}
-
-.bilingual-cover__row + .bilingual-cover__subtitle-row,
-.bilingual-cover__kicker-row + .bilingual-cover__title + .bilingual-cover__subtitle-row {
-  margin-block-start: 6mm;
-}
-
-.bilingual-cover__meta {
-  padding: 0 12mm 4mm;
-}
-
-.bilingual-cover__meta-item {
-  margin-block-end: 5mm;
-}
-
-.bilingual-cover__meta-label {
-  display: block;
-  font-size: 7.5pt;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--bilingual-muted);
-}
-
-.bilingual-cover__meta-value {
-  font-size: 12pt;
-  font-weight: 650;
-  color: var(--bilingual-ink);
-  font-variant-numeric: tabular-nums;
-}
-
-.bilingual-cover__bidder-row .bilingual-cover__line,
-.bilingual-cover__date-row .bilingual-cover__line {
-  font-size: 11.5pt;
-  font-weight: 600;
-  color: var(--bilingual-ink);
-  border-top: var(--bilingual-hairline);
-  padding-block-start: 4mm;
-  margin-block-end: 0;
-}
-
-.bilingual-cover__date-row { margin-block-start: 4mm; }
-
-@media print {
-  .bilingual-cover {
-    min-block-size: auto;
-    block-size: 100vh;
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Table of contents                                                   */
-/* ------------------------------------------------------------------ */
-
-[data-bilingual-toc] {
-  margin-block-end: 1rem;
-}
-
-.bilingual-toc__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  counter-reset: none;
-}
-
-.bilingual-toc__item {
-  margin-block: 0.28rem;
-  break-inside: avoid;
-}
-
-.bilingual-toc__link {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5em;
-  color: inherit;
-  text-decoration: none;
-  font-size: 10.5pt;
-}
-
-.bilingual-toc__link::after {
-  content: "";
-  order: 2;
-  flex: 1;
-  border-block-end: 1px dotted var(--bilingual-border-strong);
-  transform: translateY(-0.25em);
-}
-
-.bilingual-toc__title {
-  order: 1;
-}
-
-.bilingual-toc__link:hover .bilingual-toc__title {
-  color: var(--bilingual-primary);
-}
-
-/* ------------------------------------------------------------------ */
-/* KPI stat cards                                                      */
-/* ------------------------------------------------------------------ */
-
-.bilingual-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 0.7rem;
-  margin-block: 0.35rem 0.7rem;
-}
-
-.bilingual-kpi-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.75rem 0.85rem;
-  background: var(--bilingual-surface);
-  border: 1px solid var(--bilingual-border);
-  border-inline-start: 3px solid var(--bilingual-primary);
-  break-inside: avoid-page;
-  page-break-inside: avoid;
-}
-
-.bilingual-kpi-value {
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--bilingual-primary);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-.bilingual-kpi-label {
-  font-size: 8.5pt;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--bilingual-muted);
-}
-
-.bilingual-kpi-hint {
-  font-size: 7.5pt;
-  color: var(--bilingual-muted);
-  opacity: 0.85;
-}
-
+/* Rows carry no margin or padding of their own: the trusted paginator
+   measures cells, so vertical rhythm lives in cell padding (below). */
 .bilingual-pair {
   position: relative;
   inline-size: 100%;
-  margin-block-end: 0.7rem;
+  margin-block-end: 0;
   break-inside: avoid-page;
   page-break-inside: avoid;
 }
@@ -2777,23 +2922,103 @@ body {
   align-items: stretch;
 }
 
+/* Hairline gutter between the two languages, centred in the grid gap. */
+.bilingual-pair--parallel::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(
+    (100% - var(--bilingual-gap)) * var(--bilingual-en-fraction) +
+      var(--bilingual-gap) / 2
+  );
+  inline-size: 0;
+  border-inline-start: var(--bilingual-hairline);
+  pointer-events: none;
+}
+
+.bilingual-pair--parallel.bilingual-cover::before,
+.bilingual-pair--parallel[data-fragment-kind="document-title"]::before {
+  display: none;
+}
+
 .bilingual-pair--serial {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0;
+}
+
+.bilingual-pair--serial > .bilingual-cell + .bilingual-cell {
+  border-block-start: var(--bilingual-hairline);
+}
+
+.bilingual-cover.bilingual-pair--serial > .bilingual-cell + .bilingual-cell {
+  border-block-start: none;
 }
 
 .bilingual-cell {
   position: relative;
   min-inline-size: 0;
-  padding-inline: 0.55rem;
-  padding-block: 0.4rem;
+  padding-inline: var(--bilingual-cell-inline-padding);
+  padding-block: 0.15rem 0.6rem;
   overflow-wrap: break-word;
+}
+
+/* Vertical rhythm by fragment kind (measured as cell height). */
+[data-fragment-kind="section-heading"] > .bilingual-cell,
+[data-fragment-kind="toc-heading"] > .bilingual-cell {
+  padding-block: 1.1rem 0.55rem;
+}
+
+[data-fragment-kind="document-title"] + [data-fragment-kind="section-heading"] > .bilingual-cell,
+[data-bilingual-toc] + [data-fragment-kind="section-heading"] > .bilingual-cell {
+  padding-block-start: 0.85rem;
+}
+
+[data-fragment-kind="heading"] > .bilingual-cell {
+  padding-block: 0.75rem 0.3rem;
+}
+
+[data-fragment-kind="paragraph"] > .bilingual-cell {
+  padding-block: 0.1rem 0.55rem;
+}
+
+[data-fragment-kind="list"] > .bilingual-cell {
+  padding-block: 0.05rem 0.2rem;
+}
+
+[data-fragment-kind="list"][data-fragment-part="last"] > .bilingual-cell,
+[data-fragment-kind="list"][data-fragment-part="only"] > .bilingual-cell {
+  padding-block-end: 0.6rem;
+}
+
+/* A table fragment fills its synchronized row so zebra fills and the closing
+   hairline stay level across both languages. */
+[data-fragment-kind="table"] > .bilingual-cell {
+  padding-block: 0 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+[data-fragment-kind="table"][data-fragment-part="first"] > .bilingual-cell,
+[data-fragment-kind="table"][data-fragment-part="only"] > .bilingual-cell {
+  padding-block-start: 0.35rem;
+}
+
+[data-fragment-kind="table"][data-fragment-part="last"] > .bilingual-cell,
+[data-fragment-kind="table"][data-fragment-part="only"] > .bilingual-cell {
+  padding-block-end: 0.8rem;
+}
+
+[data-fragment-kind="kpi"] > .bilingual-cell,
+[data-fragment-kind="image"] > .bilingual-cell,
+[data-fragment-kind="chart"] > .bilingual-cell {
+  padding-block: 0.3rem 0.75rem;
 }
 
 .bilingual-continuation-marker {
   position: absolute;
-  inset-inline-start: 0.55rem;
+  inset-inline-start: var(--bilingual-cell-inline-padding);
   z-index: 1;
   color: var(--bilingual-muted);
   font-size: 7.5px;
@@ -2812,15 +3037,32 @@ body {
 }
 
 .bilingual-cell--en {
-  font-family: ${designTokens.typography.fontFamilies.english};
+  font-family: var(--bilingual-font-en);
   text-align: start;
 }
 
 .bilingual-cell--ar {
-  font-family: ${designTokens.typography.fontFamilies.arabic};
+  font-family: var(--bilingual-font-ar);
+  font-size: var(--bilingual-size-body-ar);
   text-align: start;
   letter-spacing: 0;
 }
+
+/* Latin-script runs inside Arabic cells keep the Latin face: the Arabic
+   family's Latin glyphs are wider and would wrap identifiers differently. */
+.bilingual-document .bilingual-cell--ar .bilingual-value--latin,
+.bilingual-document .bilingual-cell--ar p[dir="ltr"],
+.bilingual-document .bilingual-cell--ar li[dir="ltr"],
+.bilingual-document .bilingual-cell--ar td[dir="ltr"],
+.bilingual-document .bilingual-cell--ar h2[dir="ltr"],
+.bilingual-document .bilingual-cell--ar h3[dir="ltr"],
+.bilingual-document .bilingual-cell--ar h4[dir="ltr"] {
+  font-family: var(--bilingual-font-en);
+}
+
+/* ------------------------------------------------------------------ */
+/* Inline values                                                       */
+/* ------------------------------------------------------------------ */
 
 .bilingual-value {
   unicode-bidi: isolate;
@@ -2836,59 +3078,265 @@ body {
 .bilingual-value--number,
 .bilingual-value--currency,
 .bilingual-value--date,
+.bilingual-value--identifier,
 .bilingual-table-cell--numeric {
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
 }
 
+.bilingual-value--number,
+.bilingual-value--currency,
+.bilingual-value--date {
+  white-space: nowrap;
+}
+
+/* Identifiers (evidence IDs, references, [Sn] citations) read as refs. */
+p .bilingual-value--identifier,
+li .bilingual-value--identifier {
+  font-size: 0.88em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--bilingual-ink);
+  padding-inline: 0.28em;
+  padding-block: 0.02em;
+  border: var(--bilingual-hairline);
+  border-color: var(--bilingual-border-strong);
+  border-radius: 2px;
+  background: var(--bilingual-surface);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.bilingual-value--technical-term {
+  letter-spacing: 0.005em;
+}
+
+.bilingual-cell code {
+  font-family: var(--bilingual-font-mono);
+  font-size: 0.9em;
+  padding-inline: 0.25em;
+  background: var(--bilingual-surface);
+  border-radius: 2px;
+  overflow-wrap: anywhere;
+}
+
+.bilingual-cell a {
+  color: var(--bilingual-primary-text);
+  text-decoration: underline;
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.14em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Body text, lists, notices                                           */
+/* ------------------------------------------------------------------ */
+
 .bilingual-cell p {
-  margin-block: 0 0.55rem;
-  line-height: 1.55;
+  margin-block: 0 0.4rem;
+  font-size: inherit;
+  line-height: var(--bilingual-leading-body-en);
   color: var(--bilingual-ink-deep);
+  orphans: 3;
+  widows: 3;
+}
+
+.bilingual-cell--ar p,
+.bilingual-cell--ar li,
+.bilingual-cell--ar td,
+.bilingual-cell--ar th,
+.bilingual-cell--ar figcaption {
+  line-height: var(--bilingual-leading-body-ar);
+}
+
+.bilingual-cell p:last-child {
+  margin-block-end: 0;
 }
 
 .bilingual-cell ul,
 .bilingual-cell ol {
-  margin-block: 0.2rem 0.65rem;
-  padding-inline-start: 1.15rem;
+  margin-block: 0 0.25rem;
+  margin-inline: 0;
+  padding-inline-start: 1.3rem;
 }
 
 .bilingual-cell li {
-  margin-block: 0.18rem;
-  line-height: 1.45;
+  margin-block: 0.12rem;
+  line-height: var(--bilingual-leading-body-en);
   padding-inline-start: 0.1rem;
 }
 
 .bilingual-cell li::marker {
-  color: var(--bilingual-primary);
+  color: var(--bilingual-primary-text);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
+
+/* A paragraph consisting solely of emphasised text is a notice; bold reads
+   as attention (gaps, user input needed), italic as a legal or advisory
+   note. Both are icon-free, border-accented callouts. */
+.bilingual-cell > p > strong:only-child,
+.bilingual-cell > p > em:only-child {
+  display: block;
+  padding: 0.55rem 0.8rem;
+  border-inline-start: 3px solid var(--bilingual-accent);
+  background: color-mix(in srgb, var(--bilingual-accent) 7%, var(--bilingual-paper));
+  color: var(--bilingual-ink-deep);
+  font-weight: 600;
+  font-style: normal;
+  line-height: inherit;
+  break-inside: avoid;
+}
+
+.bilingual-cell > p > em:only-child {
+  border-inline-start-color: var(--bilingual-border-strong);
+  background: var(--bilingual-surface);
+  font-weight: 500;
+  color: var(--bilingual-muted);
+}
+
+/* Provenance lines (block sources, evidence IDs) set as a compact strip. */
+.bilingual-pair[data-fragment-id$=".sources"] > .bilingual-cell {
+  padding-block: 0.1rem 0.85rem;
+}
+
+.bilingual-pair[data-fragment-id$=".sources"] p {
+  font-size: var(--bilingual-size-caption);
+  line-height: 1.5;
+  color: var(--bilingual-muted);
+  padding-block-start: 0.3rem;
+  border-block-start: var(--bilingual-hairline);
+}
+
+.bilingual-pair[data-fragment-id$=".sources"] .bilingual-value--identifier {
+  font-size: 0.95em;
+}
+
+/* Document-control paragraphs (bidder, references, hashes) as a ledger. */
+.bilingual-pair[data-alignment-key="proposal.control"][data-fragment-kind="paragraph"] > .bilingual-cell {
+  padding-block: 0.05rem 0.05rem;
+}
+
+.bilingual-pair[data-alignment-key="proposal.control"][data-fragment-kind="paragraph"] p {
+  font-size: var(--bilingual-size-small);
+  line-height: 1.5;
+  padding-block: 0.32rem 0.3rem;
+  margin-block: 0;
+  border-block-end: var(--bilingual-hairline);
+  overflow-wrap: anywhere;
+}
+
+.bilingual-pair[data-alignment-key="proposal.control"] .bilingual-value--technical-term {
+  font-family: var(--bilingual-font-mono);
+  font-size: 0.86em;
+  letter-spacing: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tables                                                              */
+/* ------------------------------------------------------------------ */
 
 .bilingual-cell table {
   inline-size: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  margin-block: 0.35rem 0.55rem;
-  font-size: 0.86rem;
-  line-height: 1.35;
+  margin-block: 0;
+  font-size: var(--bilingual-size-small);
+  line-height: var(--bilingual-leading-table-en);
   border: none;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.bilingual-cell--ar table {
+  font-size: calc(var(--bilingual-size-small) + 0.5pt);
+  line-height: var(--bilingual-leading-table-ar);
+}
+
+.bilingual-cell--ar td,
+.bilingual-cell--ar th {
+  line-height: var(--bilingual-leading-table-ar);
+}
+
+/* Dense tables step the type down instead of splitting words. */
+.bilingual-cell table[data-column-count="4"] {
+  font-size: calc(var(--bilingual-size-small) - 0.5pt);
+}
+
+.bilingual-cell table[data-column-count="5"],
+.bilingual-cell table[data-column-count="6"] {
+  font-size: calc(var(--bilingual-size-caption) - 0.75pt);
+}
+
+.bilingual-cell table[data-column-count="7"],
+.bilingual-cell table[data-column-count="8"],
+.bilingual-cell table[data-column-count="9"],
+.bilingual-cell table[data-column-count="10"],
+.bilingual-cell table[data-column-count="11"],
+.bilingual-cell table[data-column-count="12"] {
+  font-size: calc(var(--bilingual-size-caption) - 1.25pt);
+}
+
+.bilingual-cell table[data-column-count="4"] th,
+.bilingual-cell table[data-column-count="4"] td {
+  padding-inline: 0.4rem;
+}
+
+/* Dense headers keep sentence case and drop tracking so labels stay whole. */
+.bilingual-cell table[data-column-count="4"] th,
+.bilingual-cell table[data-column-count="5"] th,
+.bilingual-cell table[data-column-count="6"] th {
+  font-size: calc(var(--bilingual-size-micro) + 0.25pt);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.bilingual-cell table[data-column-count="7"] th,
+.bilingual-cell table[data-column-count="8"] th,
+.bilingual-cell table[data-column-count="9"] th,
+.bilingual-cell table[data-column-count="10"] th,
+.bilingual-cell table[data-column-count="11"] th,
+.bilingual-cell table[data-column-count="12"] th {
+  font-size: calc(var(--bilingual-size-micro) - 0.5pt);
+  letter-spacing: 0;
+}
+
+.bilingual-cell table[data-column-count="5"] th,
+.bilingual-cell table[data-column-count="5"] td,
+.bilingual-cell table[data-column-count="6"] th,
+.bilingual-cell table[data-column-count="6"] td {
+  padding-inline: 0.32rem;
+}
+
+[data-fragment-part="first"] > .bilingual-cell table,
+[data-fragment-part="only"] > .bilingual-cell table {
   border-block-start: 1.5px solid var(--bilingual-ink);
+}
+
+[data-fragment-part="last"] > .bilingual-cell table,
+[data-fragment-part="only"] > .bilingual-cell table {
   border-block-end: 1.5px solid var(--bilingual-ink);
 }
 
 .bilingual-cell caption {
-  margin-block-end: 0.4rem;
+  caption-side: top;
+  margin-block-end: 0.35rem;
+  padding-block-end: 0.15rem;
   font-weight: 650;
-  font-size: 0.78rem;
-  letter-spacing: 0.01em;
+  font-size: var(--bilingual-size-caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--bilingual-ink);
   text-align: start;
 }
 
+.bilingual-cell--ar caption {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-small);
+}
+
 .bilingual-cell th,
 .bilingual-cell td {
-  padding-inline: 0.55rem;
-  padding-block: 0.42rem;
+  padding-inline: 0.5rem;
+  padding-block: 0.38rem;
   border: none;
   border-block-end: var(--bilingual-hairline);
   vertical-align: top;
@@ -2898,45 +3346,93 @@ body {
 
 .bilingual-cell thead {
   display: table-header-group;
-  background: linear-gradient(
-    180deg,
-    var(--bilingual-surface-strong) 0%,
-    var(--bilingual-surface) 100%
-  );
+  background: var(--bilingual-surface-strong);
 }
 
 .bilingual-cell th {
   font-weight: 650;
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
+  font-size: calc(var(--bilingual-size-caption) - 0.25pt);
+  line-height: 1.35;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--bilingual-ink);
   border-block-end: 1px solid var(--bilingual-border-strong);
+  overflow-wrap: break-word;
+}
+
+/* Narrow measures may hyphenate English rather than split words. */
+.bilingual-cell--en th,
+.bilingual-cell--en table[data-column-count="4"] td,
+.bilingual-cell--en table[data-column-count="5"] td,
+.bilingual-cell--en table[data-column-count="6"] td {
+  hyphens: auto;
+}
+
+.bilingual-cell--ar th {
+  font-size: var(--bilingual-size-caption);
+  letter-spacing: 0;
+}
+
+.bilingual-cell tbody tr[data-row-parity="odd"] > td {
+  background: var(--bilingual-surface);
 }
 
 .bilingual-cell tbody tr:last-child td {
   border-block-end: none;
 }
 
+/* Consecutive row fragments of one table read as a single table: the
+   header appears once and continuation rows keep only their hairline. */
+.bilingual-pair[data-fragment-kind="table"][data-fragment-part="middle"] thead,
+.bilingual-pair[data-fragment-kind="table"][data-fragment-part="last"] thead {
+  display: none;
+}
+
+.bilingual-pair[data-fragment-kind="table"][data-fragment-part="first"] tbody tr:last-child td,
+.bilingual-pair[data-fragment-kind="table"][data-fragment-part="middle"] tbody tr:last-child td {
+  border-block-end: var(--bilingual-hairline);
+}
+
 .bilingual-cell table[data-repeat-header="false"] thead {
   display: table-row-group;
+}
+
+/* A cell whose entire content is emphasised is a status label. */
+.bilingual-cell td > strong:only-child {
+  display: inline-block;
+  padding-inline: 0.5em;
+  padding-block: 0.08em;
+  border: 1px solid var(--bilingual-border-strong);
+  border-radius: 999px;
+  font-size: 0.86em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--bilingual-ink);
+  background: var(--bilingual-paper);
+  white-space: nowrap;
 }
 
 .bilingual-table-cell--center { text-align: center !important; }
 .bilingual-table-cell--end { text-align: end !important; }
 .bilingual-table-cell--numeric { text-align: end !important; }
 
+/* ------------------------------------------------------------------ */
+/* Figures and charts                                                  */
+/* ------------------------------------------------------------------ */
+
 .bilingual-visual {
   margin-inline: 0;
-  margin-block: 0.85rem 0.35rem;
-  padding-block: 0.55rem 0.35rem;
+  margin-block: 0.35rem 0;
+  padding-block: 0.55rem 0.3rem;
   text-align: center;
   border-block-start: var(--bilingual-hairline);
 }
 
 .bilingual-visual img {
+  display: inline-block;
   max-inline-size: 100%;
   block-size: auto;
+  margin-inline: auto;
   border-radius: 2px;
 }
 
@@ -2947,49 +3443,14 @@ body {
 .bilingual-visual figcaption {
   margin-block-start: 0.4rem;
   color: var(--bilingual-muted);
-  font-size: 0.7rem;
+  font-size: var(--bilingual-size-caption);
   font-weight: 550;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
-.bilingual-document-footer {
-  display: grid;
-  grid-template-columns:
-    minmax(0, var(--bilingual-en-column))
-    minmax(0, var(--bilingual-ar-column));
-  gap: var(--bilingual-gap);
-  margin-block-start: 1.35rem;
-  padding-block-start: 0.7rem;
-  border-block-start: 1.5px solid var(--bilingual-ink);
-  color: var(--bilingual-muted);
-  font-size: 0.68rem;
-  letter-spacing: 0.02em;
-  line-height: 1.4;
-}
-
-.bilingual-document-footer__cell {
-  min-inline-size: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.bilingual-document-footer__cell--en,
-.bilingual-document-footer__cell--ar {
-  text-align: start;
-}
-
-.bilingual-document-footer__brand {
-  color: var(--bilingual-ink);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-size: 0.66rem;
-}
-
-.bilingual-document-footer__meta {
-  color: var(--bilingual-muted);
+.bilingual-cell--ar .bilingual-visual figcaption {
+  letter-spacing: 0;
 }
 
 .document-chart {
@@ -3008,6 +3469,532 @@ body {
   overflow-x: auto;
 }
 
+/* ------------------------------------------------------------------ */
+/* KPI stat cards                                                      */
+/* ------------------------------------------------------------------ */
+
+.bilingual-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 0.6rem;
+  margin-block: 0.1rem 0;
+}
+
+.bilingual-kpi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.65rem 0.8rem 0.6rem;
+  background: var(--bilingual-surface);
+  border: var(--bilingual-hairline);
+  border-inline-start: 3px solid var(--bilingual-primary);
+  break-inside: avoid-page;
+  page-break-inside: avoid;
+}
+
+.bilingual-document .bilingual-kpi-value .bilingual-value {
+  font-family: inherit;
+}
+
+.bilingual-kpi-value {
+  font-size: 17pt;
+  font-weight: 650;
+  line-height: 1.15;
+  color: var(--bilingual-primary-text);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: -0.02em;
+}
+
+.bilingual-cell--ar .bilingual-kpi-value {
+  letter-spacing: 0;
+}
+
+.bilingual-kpi-label {
+  font-size: var(--bilingual-size-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  color: var(--bilingual-muted);
+}
+
+.bilingual-cell--ar .bilingual-kpi-label {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-caption);
+}
+
+.bilingual-kpi-hint {
+  font-size: var(--bilingual-size-micro);
+  color: var(--bilingual-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Cover sheet                                                         */
+/* ------------------------------------------------------------------ */
+
+.bilingual-cover {
+  break-after: page;
+  page-break-after: always;
+  min-block-size: var(--bilingual-cover-height);
+  margin-block-end: 0;
+  background:
+    linear-gradient(
+      180deg,
+      var(--bilingual-accent) 0,
+      var(--bilingual-accent) 2.5mm,
+      transparent 2.5mm
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bilingual-primary) 88%, #000000) 0,
+      var(--bilingual-primary) var(--bilingual-cover-band),
+      transparent var(--bilingual-cover-band)
+    );
+  background-repeat: no-repeat;
+}
+
+.bilingual-cover.bilingual-pair--serial {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--bilingual-gap);
+  direction: ltr;
+}
+
+.bilingual-cover__cell {
+  display: flex;
+  flex-direction: column;
+  padding-inline: 12mm 4mm;
+  padding-block: 14mm 10mm;
+}
+
+.bilingual-cover__cell.bilingual-cell--ar {
+  padding-inline: 4mm 12mm;
+}
+
+.bilingual-cover__band-block {
+  block-size: calc(var(--bilingual-cover-band) - 14mm - 8mm);
+  overflow: hidden;
+  color: var(--bilingual-band-ink);
+}
+
+.bilingual-cover__line {
+  margin: 0;
+}
+
+.bilingual-cover__kicker {
+  font-size: var(--bilingual-size-caption);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--bilingual-band-ink);
+  opacity: 0.88;
+  margin-block-end: 7mm;
+}
+
+.bilingual-cover__band-block p {
+  color: var(--bilingual-band-ink);
+}
+
+.bilingual-cell--ar .bilingual-cover__kicker {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-small);
+}
+
+.bilingual-cover__title-line {
+  display: block;
+  font-size: var(--bilingual-size-display);
+  line-height: 1.22;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  color: var(--bilingual-band-ink);
+}
+
+.bilingual-cell--ar .bilingual-cover__title-line {
+  font-size: calc(var(--bilingual-size-display) * 1.05);
+  line-height: 1.42;
+  letter-spacing: 0;
+}
+
+.bilingual-cover__subtitle {
+  margin-block-start: 5mm;
+  font-size: var(--bilingual-size-body);
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
+/* Meta rows use fixed line boxes (mm) so the English and Arabic ledgers and
+   their hairlines stay level despite different script metrics. */
+.bilingual-cover__meta {
+  margin-block-start: 12mm;
+  display: grid;
+  gap: 4mm;
+}
+
+.bilingual-cover__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8mm;
+  padding-block-end: 2.6mm;
+  border-block-end: var(--bilingual-hairline);
+}
+
+.bilingual-cover__meta-label {
+  font-size: var(--bilingual-size-micro);
+  line-height: 4mm;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bilingual-muted);
+}
+
+.bilingual-cell--ar .bilingual-cover__meta-label {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-caption);
+}
+
+.bilingual-cover__meta-value {
+  font-size: var(--bilingual-size-body);
+  line-height: 6.5mm;
+  font-weight: 600;
+  color: var(--bilingual-ink-deep);
+  font-variant-numeric: tabular-nums lining-nums;
+  overflow-wrap: anywhere;
+}
+
+.bilingual-cover__meta-item--reference .bilingual-cover__meta-value {
+  font-size: 13pt;
+  letter-spacing: 0.02em;
+  color: var(--bilingual-primary-text);
+}
+
+.bilingual-cover__control {
+  margin-block-start: auto;
+  padding-block-start: 6mm;
+  display: grid;
+  gap: 3.5mm;
+}
+
+.bilingual-cover__control .bilingual-cover__meta-item {
+  border-block-end: none;
+  padding-block-end: 0;
+}
+
+.bilingual-cover__control .bilingual-cover__meta-value {
+  font-size: var(--bilingual-size-small);
+  line-height: 5.5mm;
+  font-weight: 500;
+}
+
+.bilingual-cover__meta-item--status .bilingual-cover__meta-value {
+  display: inline-flex;
+  align-self: start;
+  padding-inline: 0.6em;
+  padding-block: 0.15em;
+  border: 1px solid var(--bilingual-primary);
+  border-radius: 2px;
+  font-size: var(--bilingual-size-caption);
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bilingual-primary-text);
+}
+
+.bilingual-cell--ar .bilingual-cover__meta-item--status .bilingual-cover__meta-value {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-small);
+}
+
+/* Integrity strip: hash prefix (both cells) and offline QR (English cell). */
+.bilingual-integrity {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+  min-block-size: 20mm;
+  padding-block-start: 3mm;
+  border-block-start: 1px solid var(--bilingual-border-strong);
+}
+
+.bilingual-integrity__qr {
+  flex: none;
+  display: block;
+  border: var(--bilingual-hairline);
+}
+
+.bilingual-integrity__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6mm;
+  min-inline-size: 0;
+}
+
+.bilingual-integrity__label {
+  font-size: var(--bilingual-size-micro);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bilingual-muted);
+}
+
+.bilingual-cell--ar .bilingual-integrity__label,
+.bilingual-document-footer__cell--ar .bilingual-integrity__label {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-caption);
+}
+
+.bilingual-integrity__hash {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5em;
+  font-family: var(--bilingual-font-mono);
+  font-size: var(--bilingual-size-small);
+  color: var(--bilingual-ink-deep);
+  unicode-bidi: isolate;
+}
+
+.bilingual-integrity__algorithm {
+  font-family: var(--bilingual-font-en);
+  font-size: var(--bilingual-size-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bilingual-muted);
+}
+
+.bilingual-integrity__prefix {
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* Table of contents                                                   */
+/* ------------------------------------------------------------------ */
+
+[data-bilingual-toc] {
+  display: contents;
+}
+
+[data-fragment-kind="toc-list"] > .bilingual-cell {
+  padding-block: 0.2rem 1.2rem;
+}
+
+.bilingual-toc__heading {
+  font-size: var(--bilingual-size-h3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bilingual-muted);
+  border-block-end-color: var(--bilingual-border-strong);
+}
+
+.bilingual-cell--ar .bilingual-toc__heading {
+  letter-spacing: 0;
+}
+
+.bilingual-toc__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: none;
+}
+
+.bilingual-toc__item {
+  margin-block: 0;
+  break-inside: avoid;
+}
+
+.bilingual-cell a.bilingual-toc__link {
+  display: grid;
+  grid-template-columns: minmax(2.1em, auto) minmax(0, max-content) minmax(1.5em, 1fr);
+  align-items: baseline;
+  column-gap: 0.55em;
+  padding-block: 0.32rem;
+  color: var(--bilingual-ink-deep);
+  text-decoration: none;
+  font-size: var(--bilingual-size-body);
+  font-weight: 500;
+}
+
+.bilingual-cell a.bilingual-toc__link:not(:has(> .bilingual-section-number)) {
+  grid-template-columns: minmax(0, max-content) minmax(1.5em, 1fr);
+}
+
+.bilingual-toc__leader {
+  border-block-end: 1px dotted var(--bilingual-border-strong);
+  transform: translateY(-0.28em);
+}
+
+.bilingual-toc__title {
+  min-inline-size: 0;
+}
+
+.bilingual-toc__link:hover .bilingual-toc__title {
+  color: var(--bilingual-primary-text);
+}
+
+/* ------------------------------------------------------------------ */
+/* Signature / approval block                                          */
+/* ------------------------------------------------------------------ */
+
+.bilingual-signature > .bilingual-cell {
+  padding-block: 1.4rem 0.8rem;
+}
+
+.bilingual-signature__heading {
+  font-size: var(--bilingual-size-h3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bilingual-muted);
+  border-block-end-color: var(--bilingual-border-strong);
+  margin-block-end: 0.7rem;
+}
+
+.bilingual-cell--ar .bilingual-signature__heading {
+  letter-spacing: 0;
+}
+
+.bilingual-signature__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.8rem 1rem;
+}
+
+.bilingual-signature__role {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  break-inside: avoid;
+}
+
+.bilingual-signature__role-label {
+  font-size: var(--bilingual-size-caption);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bilingual-ink);
+}
+
+.bilingual-cell--ar .bilingual-signature__role-label {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-small);
+}
+
+.bilingual-signature__field {
+  display: block;
+  min-block-size: 7mm;
+  border-block-end: 1px solid var(--bilingual-border-strong);
+  position: relative;
+}
+
+.bilingual-signature__field--date {
+  max-inline-size: 60%;
+}
+
+.bilingual-signature__field-label {
+  display: block;
+  font-size: var(--bilingual-size-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bilingual-muted);
+}
+
+.bilingual-cell--ar .bilingual-signature__field-label {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-caption);
+}
+
+.bilingual-signature__stamp {
+  min-block-size: 30mm;
+  border: 1px dashed var(--bilingual-border-strong);
+  border-radius: 3px;
+  padding: 0.45rem 0.6rem;
+}
+
+.bilingual-signature__note {
+  margin-block: 0.7rem 0;
+  font-size: var(--bilingual-size-caption);
+  line-height: 1.5;
+  color: var(--bilingual-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Identity footer                                                     */
+/* ------------------------------------------------------------------ */
+
+.bilingual-document-footer {
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--bilingual-en-column))
+    minmax(0, var(--bilingual-ar-column));
+  gap: var(--bilingual-gap);
+  margin-block-start: 1.35rem;
+  padding-block-start: 0.6rem;
+  border-block-start: 1.5px solid var(--bilingual-ink);
+  color: var(--bilingual-muted);
+  font-size: var(--bilingual-size-micro);
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+}
+
+.bilingual-document-footer__cell {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  padding-inline: var(--bilingual-cell-inline-padding);
+}
+
+.bilingual-document-footer__cell--en,
+.bilingual-document-footer__cell--ar {
+  text-align: start;
+}
+
+.bilingual-document-footer__cell--ar {
+  letter-spacing: 0;
+  font-size: var(--bilingual-size-caption);
+}
+
+.bilingual-document-footer__brand {
+  color: var(--bilingual-ink);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bilingual-document-footer__cell--ar .bilingual-document-footer__brand {
+  letter-spacing: 0;
+}
+
+.bilingual-document-footer__meta {
+  color: var(--bilingual-muted);
+}
+
+.bilingual-document-footer__date {
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--bilingual-ink-deep);
+}
+
+.bilingual-document-footer__integrity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5em;
+  margin-block-start: 0.15rem;
+  font-family: var(--bilingual-font-mono);
+  color: var(--bilingual-ink-deep);
+}
+
+.bilingual-document-footer__integrity .bilingual-integrity__label {
+  font-family: var(--bilingual-font-en);
+}
+
+.bilingual-document-footer__cell--ar .bilingual-document-footer__integrity .bilingual-integrity__label {
+  font-family: var(--bilingual-font-ar);
+}
+
+/* ------------------------------------------------------------------ */
+/* Pagination hints and viewer plumbing                                */
+/* ------------------------------------------------------------------ */
+
 [data-fragment-keep="true"] {
   break-inside: avoid;
 }
@@ -3021,6 +4008,8 @@ body {
   justify-content: center;
   gap: 0.5rem;
   margin-block-end: 1rem;
+  font-size: var(--bilingual-size-small);
+  color: var(--bilingual-muted);
 }
 
 .bilingual-viewer-tabs button {
@@ -3028,15 +4017,15 @@ body {
   padding-block: 0.4rem;
   border: 1px solid var(--bilingual-primary);
   border-radius: 999px;
-  color: var(--bilingual-primary);
-  background: white;
+  color: var(--bilingual-primary-text);
+  background: var(--bilingual-paper);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 600;
 }
 
 .bilingual-viewer-tabs button[aria-pressed="true"] {
-  color: white;
+  color: var(--bilingual-paper);
   background: var(--bilingual-primary);
 }
 
@@ -3065,8 +4054,22 @@ body {
   display: flex !important;
 }
 
+[data-bilingual-sync-measuring="true"] .bilingual-cover.bilingual-pair--serial {
+  display: grid !important;
+}
+
 [data-bilingual-sync-measuring="true"] .bilingual-pair--serial [data-language] {
   display: block !important;
+}
+
+[data-bilingual-sync-measuring="true"] .bilingual-cover [data-language] {
+  display: flex !important;
+}
+
+/* Synchronized pages: the footer is pinned by the renderer; keep it clear of
+   the last rows by reserving nothing here (rows are absolutely positioned). */
+.bilingual-synchronized-page {
+  overflow: visible;
 }
 
 @media screen and (max-width: ${String(config.mobileBreakpointPx)}px) {
@@ -3075,7 +4078,8 @@ body {
   }
 
   .bilingual-pair--parallel,
-  .bilingual-document-footer {
+  .bilingual-document-footer,
+  .bilingual-cover.bilingual-pair--serial {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -3083,11 +4087,49 @@ body {
     gap: 0.75rem;
   }
 
+  .bilingual-pair--parallel::before {
+    display: none;
+  }
+
   .bilingual-cell--en { order: ${String(mobileEnOrder)}; }
   .bilingual-cell--ar { order: ${String(mobileArOrder)}; }
 
   .bilingual-document-footer__cell--en { order: ${String(mobileEnOrder)}; }
   .bilingual-document-footer__cell--ar { order: ${String(mobileArOrder)}; }
+
+  /* Stacked cover: the whole sheet becomes the brand panel. */
+  .bilingual-cover {
+    min-block-size: auto;
+    --bilingual-muted: rgba(255, 255, 255, 0.78);
+    --bilingual-ink-deep: #FFFFFF;
+    --bilingual-ink: #FFFFFF;
+    --bilingual-primary-text: #FFFFFF;
+    --bilingual-border: rgba(255, 255, 255, 0.35);
+    --bilingual-border-strong: rgba(255, 255, 255, 0.55);
+    background:
+      linear-gradient(
+        180deg,
+        var(--bilingual-accent) 0,
+        var(--bilingual-accent) 2.5mm,
+        transparent 2.5mm
+      ),
+      var(--bilingual-primary);
+  }
+
+  .bilingual-cover__cell,
+  .bilingual-cover__cell.bilingual-cell--ar {
+    padding-inline: 8mm;
+    padding-block: 12mm 8mm;
+  }
+
+  .bilingual-cover__band-block {
+    block-size: auto;
+    overflow: visible;
+  }
+
+  .bilingual-integrity__qr {
+    background: #FFFFFF;
+  }
 }
 
 @media print {
@@ -3108,6 +4150,11 @@ body {
 
   .bilingual-section--new-page {
     break-before: auto;
+  }
+
+  .bilingual-cover {
+    block-size: var(--bilingual-cover-height);
+    min-block-size: var(--bilingual-cover-height);
   }
 
   .bilingual-viewer-tabs {
@@ -3134,8 +4181,32 @@ body {
     display: block !important;
   }
 
-  .bilingual-cell th,
+  .bilingual-cover [data-language] {
+    display: flex !important;
+  }
+
+  .bilingual-cell tr,
+  .bilingual-kpi-card,
+  .bilingual-visual {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   .bilingual-cell thead {
+    display: table-header-group;
+  }
+
+  .bilingual-cell p,
+  .bilingual-cell li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  .bilingual-cell th,
+  .bilingual-cell thead,
+  .bilingual-cover,
+  .bilingual-kpi-card,
+  .bilingual-cell tbody tr[data-row-parity="odd"] > td {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
@@ -3186,8 +4257,13 @@ export class BilingualLayoutEngine {
     const numberedSections = options.sectionNumbering
       ? assignSectionNumbers(document.sections)
       : [];
+    const integrity = resolveIntegrity(options.integrity);
     const coverHtml = options.cover
-      ? renderCoverPage(options.cover, document, config)
+      ? renderCoverPage(options.cover, document, config, {
+          lifecycle,
+          integrity,
+          flattenForPrint,
+        })
       : "";
     const tocHtml =
       options.tableOfContents && document.sections.length > 0
@@ -3198,18 +4274,26 @@ export class BilingualLayoutEngine {
             flattenForPrint,
           )
         : "";
+    const signatureHtml = options.signatureBlock
+      ? renderSignatureBlock(config, lifecycle, flattenForPrint)
+      : "";
 
+    // Reading order: cover, document title, contents, body, approval block,
+    // identity footer. The title follows the cover on a fresh page so the
+    // synchronized paginator never shares the cover sheet with body rows.
     const root = `<main class="bilingual-document" data-bilingual-document data-document-id="${escapeBilingualHtml(
       document.id,
     )}" data-layout-mode="${config.mode}" data-viewer-preference="${
       config.viewer.mode
     }" data-viewer-mode="${effectiveViewerMode}" data-viewer-language="${
       config.viewer.defaultLanguage
-    }" data-render-target="${target}" data-lifecycle="${lifecycle}" data-bilingual-layout-state="pending" data-bilingual-layout-ready="false">
+    }" data-render-target="${target}" data-lifecycle="${lifecycle}"${
+      options.cover ? ' data-has-cover="true"' : ""
+    } data-bilingual-layout-state="pending" data-bilingual-layout-ready="false">
 ${renderViewerMetadata(document.id, config, target)}
 ${coverHtml}
+${renderDocumentTitle(document, config, flattenForPrint, Boolean(options.cover))}
 ${tocHtml}
-${renderDocumentTitle(document, config, flattenForPrint)}
 ${document.sections
   .map((section, sectionIndex) =>
     renderSection(
@@ -3220,7 +4304,8 @@ ${document.sections
     ),
   )
   .join("\n")}
-${renderDocumentFooter(lifecycle)}
+${signatureHtml}
+${renderDocumentFooter(lifecycle, integrity, options.cover?.dateLabel)}
 </main>`;
 
     if (!includeDocumentShell) return root;
@@ -3235,6 +4320,7 @@ ${renderDocumentFooter(lifecycle)}
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
 <title>${escapeBilingualHtml(title)}</title>
 <style>${generateBilingualCSS(config, options.palette)}</style>
 </head>
@@ -3276,55 +4362,202 @@ export function assignSectionNumbers(
   });
 }
 
+interface ResolvedIntegrity {
+  readonly hash: string;
+  readonly prefix: string;
+  readonly algorithm: string | null;
+  readonly qrPayload: string | null;
+  readonly label: Localized<string>;
+}
+
+const DEFAULT_INTEGRITY_LABEL: Localized<string> = Object.freeze({
+  en: "Content hash",
+  ar: "بصمة المحتوى",
+});
+
+/**
+ * Accept only integrity data that can be displayed truthfully: a real hex
+ * digest and, optionally, a printable QR payload. Anything else is dropped so
+ * the document never carries a decorative or misleading verification mark.
+ */
+function resolveIntegrity(
+  integrity: BilingualDocumentIntegrity | undefined,
+): ResolvedIntegrity | null {
+  if (!integrity) return null;
+  const described = describeIntegrityHash(integrity.hash);
+  if (!described) return null;
+  const qrPayload =
+    integrity.qrPayload && isSafeIntegrityQrPayload(integrity.qrPayload)
+      ? integrity.qrPayload
+      : null;
+  const label =
+    integrity.label &&
+    isNonEmptyString(integrity.label.en) &&
+    isNonEmptyString(integrity.label.ar)
+      ? integrity.label
+      : DEFAULT_INTEGRITY_LABEL;
+  return {
+    hash: integrity.hash.trim(),
+    prefix: described.prefix,
+    algorithm: described.algorithm,
+    qrPayload,
+    label,
+  };
+}
+
+function coverLine(
+  value: Localized<string> | undefined,
+  language: DocumentLanguage,
+  className: string,
+  tag: "p" | "span" = "p",
+): string {
+  const text = value?.[language]?.trim();
+  if (!text) return "";
+  return `<${tag} class="bilingual-cover__line ${className}">${escapeBilingualHtml(
+    text,
+  )}</${tag}>`;
+}
+
+function coverMetaItem(
+  label: string,
+  value: string | undefined,
+  className = "",
+): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  return `<div class="bilingual-cover__meta-item${
+    className ? ` ${className}` : ""
+  }"><span class="bilingual-cover__meta-label">${escapeBilingualHtml(
+    label,
+  )}</span><span class="bilingual-cover__meta-value">${escapeBilingualHtml(
+    trimmed,
+  )}</span></div>`;
+}
+
+const COVER_COPY = {
+  tenderReference: { en: "Tender reference", ar: "مرجع المنافسة" },
+  bidder: { en: "Submitted by", ar: "مقدم العرض" },
+  date: { en: "Date", ar: "التاريخ" },
+  status: { en: "Document status", ar: "حالة الوثيقة" },
+  handling: { en: "Handling", ar: "التصنيف" },
+  integrity: { en: "Integrity", ar: "سلامة المستند" },
+  qrLabel: {
+    en: "Offline integrity code",
+    ar: "رمز التحقق من السلامة دون اتصال",
+  },
+  defaultConfidentiality: {
+    en: "Confidential · Prepared for tender evaluation",
+    ar: "سري · أُعدّ لتقييم المنافسة",
+  },
+} as const satisfies Readonly<Record<string, Localized<string>>>;
+
+function renderIntegrityStrip(
+  integrity: ResolvedIntegrity | null,
+  language: DocumentLanguage,
+  options: { readonly withQr: boolean },
+): string {
+  if (!integrity) return "";
+  const qr =
+    options.withQr && integrity.qrPayload
+      ? renderIntegrityQrSvg(integrity.qrPayload, {
+          size: "17mm",
+          ariaLabel: COVER_COPY.qrLabel[language],
+        })
+      : "";
+  const algorithm = integrity.algorithm
+    ? `<span class="bilingual-integrity__algorithm">${escapeBilingualHtml(
+        integrity.algorithm,
+      )}</span>`
+    : "";
+  return `<div class="bilingual-integrity">${qr}<div class="bilingual-integrity__text"><span class="bilingual-integrity__label">${escapeBilingualHtml(
+    integrity.label[language],
+  )}</span><span class="bilingual-integrity__hash" dir="ltr">${algorithm}<bdi class="bilingual-integrity__prefix">${escapeBilingualHtml(
+    integrity.prefix,
+  )}</bdi></span></div></div>`;
+}
+
+/**
+ * The cover is rendered as one synchronized bilingual pair: English on the
+ * start side, Arabic on the end side, sharing a brand band and a fixed sheet
+ * height. Being a pair keeps it first in the trusted paginator instead of
+ * being treated as trailing chrome, and the following document title carries
+ * an explicit page break so body rows never share the cover sheet.
+ *
+ * The cover is presentation chrome: its titles are styled <span>s, not
+ * headings, so the document keeps exactly one semantic <h1>.
+ */
 function renderCoverPage(
   cover: BilingualDocumentCover,
   document: BilingualDocumentSpec,
-  _config: BilingualLayoutConfig,
+  config: BilingualLayoutConfig,
+  context: {
+    readonly lifecycle: "draft" | "final";
+    readonly integrity: ResolvedIntegrity | null;
+    readonly flattenForPrint: boolean;
+  },
 ): string {
-  const line = (
-    value: Localized<string> | undefined,
-    className: string,
-  ): string => {
-    if (!value || (!value.en.trim() && !value.ar.trim())) return "";
-    return `<div class="bilingual-cover__row ${className}">
-  <p class="bilingual-cover__line bilingual-cover__line--en" lang="en" dir="ltr">${escapeBilingualHtml(
-    value.en,
-  )}</p>
-  <p class="bilingual-cover__line bilingual-cover__line--ar" lang="ar" dir="rtl">${escapeBilingualHtml(
-    value.ar,
-  )}</p>
-</div>`;
+  const status = LIFECYCLE_FOOTER[context.lifecycle];
+  const confidentiality = cover.confidentiality ??
+    COVER_COPY.defaultConfidentiality;
+  const cellFor = (language: DocumentLanguage): string => {
+    const isEnglish = language === "en";
+    const statusLabel = isEnglish ? status.brandEn : status.brandAr;
+    return `<div class="bilingual-cover__band-block">${coverLine(
+      cover.kicker,
+      language,
+      "bilingual-cover__kicker",
+    )}<span class="bilingual-cover__title-line">${escapeBilingualHtml(
+      inlineText(document.title[language]),
+    )}</span>${coverLine(
+      cover.subtitle,
+      language,
+      "bilingual-cover__subtitle",
+    )}</div>
+<div class="bilingual-cover__meta">${coverMetaItem(
+      COVER_COPY.tenderReference[language],
+      cover.tenderReference,
+      "bilingual-cover__meta-item--reference",
+    )}${coverMetaItem(
+      COVER_COPY.bidder[language],
+      cover.bidderName?.[language],
+    )}${coverMetaItem(
+      COVER_COPY.date[language],
+      cover.dateLabel?.[language],
+      "bilingual-cover__meta-item--date",
+    )}</div>
+<div class="bilingual-cover__control">${coverMetaItem(
+      COVER_COPY.status[language],
+      statusLabel,
+      "bilingual-cover__meta-item--status",
+    )}${coverMetaItem(
+      COVER_COPY.handling[language],
+      confidentiality[language],
+    )}${renderIntegrityStrip(context.integrity, language, {
+      withQr: isEnglish,
+    })}</div>`;
   };
-  const ref = cover.tenderReference?.trim();
-  // The cover is presentation chrome: its titles are styled <span>s, not
-  // headings, so the document keeps exactly one semantic <h1> and the PDF
-  // single-h1 quality gate stays satisfied.
-  return `<section class="bilingual-cover" data-bilingual-cover aria-label="Cover page">
-  <div class="bilingual-cover__band">
-    <span class="bilingual-cover__band-accent"></span>
-    ${line(cover.kicker, "bilingual-cover__kicker-row")}
-    <div class="bilingual-cover__title">
-      <span class="bilingual-cover__title-line" lang="en" dir="ltr">${escapeBilingualHtml(
-        inlineText(document.title.en),
-      )}</span>
-      <span class="bilingual-cover__title-line" lang="ar" dir="rtl">${escapeBilingualHtml(
-        inlineText(document.title.ar),
-      )}</span>
-    </div>
-    ${line(cover.subtitle, "bilingual-cover__subtitle-row")}
-  </div>
-  <div class="bilingual-cover__meta">
-    ${
-      ref
-        ? `<div class="bilingual-cover__meta-item"><span class="bilingual-cover__meta-label" lang="en" dir="ltr">Tender reference</span><span class="bilingual-cover__meta-value">${escapeBilingualHtml(
-            ref,
-          )}</span></div>`
-        : ""
-    }
-    ${cover.bidderName ? line(cover.bidderName, "bilingual-cover__bidder-row") : ""}
-    ${line(cover.dateLabel, "bilingual-cover__date-row")}
-  </div>
-</section>`;
+  const coverContext = {
+    id: "bilingual-cover",
+    alignmentKey: "bilingual.cover",
+  } as PairedSection;
+  return renderPairedFragment({
+    section: coverContext,
+    fragmentId: "bilingual-cover",
+    content: { en: cellFor("en"), ar: cellFor("ar") },
+    config,
+    kind: "cover",
+    keepTogether: true,
+    keepWithNext: false,
+    fragmentIndex: 0,
+    fragmentCount: 1,
+    breakBefore: false,
+    sectionMarker: context.flattenForPrint,
+    className: "bilingual-cover",
+    cellClassName: "bilingual-cover__cell",
+  }).replace(
+    '<div class="bilingual-pair',
+    '<div data-bilingual-cover role="region" aria-label="Cover page" class="bilingual-pair',
+  );
 }
 
 function renderTableOfContents(
@@ -3350,7 +4583,7 @@ function renderTableOfContents(
             section.id,
           )}--heading">${numberSpan}<span class="bilingual-toc__title">${renderSafeInline(
             titleNodes,
-          )}</span></a></li>`;
+          )}</span><span class="bilingual-toc__leader" aria-hidden="true"></span></a></li>`;
         })
         .join("")
     }</ol>`;
@@ -3363,8 +4596,8 @@ function renderTableOfContents(
     section: tocContext,
     fragmentId: "bilingual-toc--heading",
     content: {
-      en: `<h2 id="bilingual-toc--anchor">Table of contents</h2>`,
-      ar: `<h2>المحتويات</h2>`,
+      en: `<h2 id="bilingual-toc--anchor" class="bilingual-toc__heading">Table of contents</h2>`,
+      ar: `<h2 class="bilingual-toc__heading">المحتويات</h2>`,
     },
     config,
     kind: "toc-heading",
@@ -3391,6 +4624,85 @@ function renderTableOfContents(
   return `<div data-bilingual-toc>${headingPair}${listPair}</div>`;
 }
 
+const SIGNATURE_COPY = {
+  heading: { en: "Approval and signature", ar: "الاعتماد والتوقيع" },
+  preparedBy: { en: "Prepared by", ar: "أعدّه" },
+  reviewedBy: { en: "Reviewed by", ar: "راجعه" },
+  approvedBy: { en: "Authorised signatory", ar: "المفوّض بالتوقيع" },
+  name: { en: "Name and title", ar: "الاسم والمنصب" },
+  signature: { en: "Signature", ar: "التوقيع" },
+  date: { en: "Date", ar: "التاريخ" },
+  stamp: { en: "Company stamp", ar: "ختم الشركة" },
+  draftNote: {
+    en: "Signature lines are intentionally blank in a draft. Only a human signatory may complete them after approval.",
+    ar: "تُترك خانات التوقيع فارغة عمداً في المسودة، ولا يكملها إلا موقّع بشري بعد الاعتماد.",
+  },
+  finalNote: {
+    en: "Complete by hand or with a qualified electronic signature. The signatory remains the author of record.",
+    ar: "تُستكمل بخط اليد أو بتوقيع إلكتروني معتمد. ويبقى الموقّع هو المؤلف المسجل.",
+  },
+} as const satisfies Readonly<Record<string, Localized<string>>>;
+
+/**
+ * Bilingual approval block rendered as a synchronized pair so it paginates
+ * with the body instead of overlapping trailing chrome. Lines are empty by
+ * design: the engine never fabricates names, dates, or signatures.
+ */
+function renderSignatureBlock(
+  config: BilingualLayoutConfig,
+  lifecycle: "draft" | "final",
+  flattenForPrint: boolean,
+): string {
+  const cellFor = (language: DocumentLanguage): string => {
+    const role = (label: Localized<string>): string =>
+      `<div class="bilingual-signature__role"><span class="bilingual-signature__role-label">${escapeBilingualHtml(
+        label[language],
+      )}</span><span class="bilingual-signature__field"><span class="bilingual-signature__field-label">${escapeBilingualHtml(
+        SIGNATURE_COPY.name[language],
+      )}</span></span><span class="bilingual-signature__field"><span class="bilingual-signature__field-label">${escapeBilingualHtml(
+        SIGNATURE_COPY.signature[language],
+      )}</span></span><span class="bilingual-signature__field bilingual-signature__field--date"><span class="bilingual-signature__field-label">${escapeBilingualHtml(
+        SIGNATURE_COPY.date[language],
+      )}</span></span></div>`;
+    const note =
+      lifecycle === "final"
+        ? SIGNATURE_COPY.finalNote[language]
+        : SIGNATURE_COPY.draftNote[language];
+    return `<h2 class="bilingual-signature__heading">${escapeBilingualHtml(
+      SIGNATURE_COPY.heading[language],
+    )}</h2><div class="bilingual-signature__grid">${role(
+      SIGNATURE_COPY.preparedBy,
+    )}${role(SIGNATURE_COPY.reviewedBy)}${role(
+      SIGNATURE_COPY.approvedBy,
+    )}<div class="bilingual-signature__stamp"><span class="bilingual-signature__field-label">${escapeBilingualHtml(
+      SIGNATURE_COPY.stamp[language],
+    )}</span></div></div><p class="bilingual-signature__note">${escapeBilingualHtml(
+      note,
+    )}</p>`;
+  };
+  const signatureContext = {
+    id: "bilingual-signature",
+    alignmentKey: "bilingual.signature",
+  } as PairedSection;
+  return renderPairedFragment({
+    section: signatureContext,
+    fragmentId: "bilingual-signature",
+    content: { en: cellFor("en"), ar: cellFor("ar") },
+    config,
+    kind: "signature",
+    keepTogether: true,
+    keepWithNext: false,
+    fragmentIndex: 0,
+    fragmentCount: 1,
+    breakBefore: false,
+    sectionMarker: flattenForPrint,
+    className: "bilingual-signature",
+  }).replace(
+    '<div class="bilingual-pair',
+    '<div data-bilingual-signature class="bilingual-pair',
+  );
+}
+
 const LIFECYCLE_FOOTER: Record<
   "draft" | "final",
   { brandEn: string; metaEn: string; brandAr: string; metaAr: string }
@@ -3409,16 +4721,44 @@ const LIFECYCLE_FOOTER: Record<
   },
 };
 
-function renderDocumentFooter(lifecycle: "draft" | "final"): string {
+function renderDocumentFooter(
+  lifecycle: "draft" | "final",
+  integrity: ResolvedIntegrity | null = null,
+  dateLabel?: Localized<string>,
+): string {
   const copy = LIFECYCLE_FOOTER[lifecycle];
+  const dateFor = (language: DocumentLanguage): string => {
+    const value = dateLabel?.[language]?.trim();
+    return value
+      ? `<span class="bilingual-document-footer__date"><bdi>${escapeBilingualHtml(
+          value,
+        )}</bdi></span>`
+      : "";
+  };
+  const integrityFor = (language: DocumentLanguage): string =>
+    integrity
+      ? `<span class="bilingual-document-footer__integrity" dir="ltr"><span class="bilingual-integrity__label">${escapeBilingualHtml(
+          integrity.label[language],
+        )}</span>${
+          integrity.algorithm
+            ? `<span class="bilingual-integrity__algorithm">${escapeBilingualHtml(
+                integrity.algorithm,
+              )}</span>`
+            : ""
+        }<bdi class="bilingual-integrity__prefix">${escapeBilingualHtml(
+          integrity.prefix,
+        )}</bdi></span>`
+      : "";
   return `<footer class="bilingual-document-footer" data-bilingual-footer data-lifecycle="${lifecycle}" aria-label="Document identity">
   <div class="bilingual-document-footer__cell bilingual-document-footer__cell--en" lang="en" dir="ltr">
     <span class="bilingual-document-footer__brand">${escapeBilingualHtml(copy.brandEn)}</span>
     <span class="bilingual-document-footer__meta">${escapeBilingualHtml(copy.metaEn)}</span>
+    ${dateFor("en")}${integrityFor("en")}
   </div>
   <div class="bilingual-document-footer__cell bilingual-document-footer__cell--ar" lang="ar" dir="rtl">
     <span class="bilingual-document-footer__brand">${escapeBilingualHtml(copy.brandAr)}</span>
     <span class="bilingual-document-footer__meta">${escapeBilingualHtml(copy.metaAr)}</span>
+    ${dateFor("ar")}${integrityFor("ar")}
   </div>
 </footer>`;
 }

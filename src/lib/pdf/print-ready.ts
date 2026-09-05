@@ -207,13 +207,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 h1 { font-size: ${t.scale["4xl"]}; line-height: ${t.lineHeight.tight}; margin: 0 0 0.6em; }
-.bilingual-document h1 { font-size: 1.55rem; margin: 0; }
 h2 { font-size: ${t.scale["3xl"]}; line-height: ${t.lineHeight.tight}; margin: 1.6em 0 0.5em; border-bottom: 0.5pt solid ${PRINT_READY.color.palette.gray[200]}; padding-bottom: 0.3em; }
-.bilingual-document h2 {
-  font-size: 0.95rem;
-  margin: 0;
-  border-bottom-color: color-mix(in srgb, ${PRINT_READY.color.palette.inkPrimary} 25%, ${PRINT_READY.color.palette.gray[200]});
-}
 h3 { font-size: ${t.scale["2xl"]}; line-height: ${t.lineHeight.snug}; margin: 1.3em 0 0.4em; }
 h4 { font-size: ${t.scale.xl}; margin: 1.1em 0 0.35em; }
 h5, h6 { font-size: ${t.scale.lg}; margin: 1em 0 0.3em; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -278,24 +272,13 @@ td {
 }
 tr { break-inside: avoid; }
 
-/* Bilingual packages own their table chrome — do not reintroduce box borders. */
+/* Bilingual packages own their typography and table chrome: the layout
+   stylesheet defines scale, leading, rules, and zebra rows. Only keep the
+   box-border reset here so generic table rules never reintroduce borders. */
 .bilingual-document .bilingual-cell table,
 .bilingual-document .bilingual-cell th,
 .bilingual-document .bilingual-cell td {
   border-inline: none;
-}
-.bilingual-document .bilingual-cell th {
-  background: linear-gradient(180deg, #EEF2F6 0%, #F8FAFC 100%);
-  border-bottom: 1px solid #94A3B8;
-  color: ${PRINT_READY.color.palette.inkPrimary};
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.42rem 0.55rem;
-}
-.bilingual-document .bilingual-cell td {
-  border-bottom: 0.5px solid ${PRINT_READY.color.palette.gray[200]};
-  padding: 0.42rem 0.55rem;
 }
 
 /* Code - tabular numbers */
