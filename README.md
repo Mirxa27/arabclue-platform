@@ -69,6 +69,9 @@ bun run dev
 - Then `/app` dashboard.
 
 **Health**: `GET http://localhost:3000/api/health` → `{ ok: true, service: "arabclue" }`
+**Readiness**: `GET /api/ready` → `{ ready, service, time }`; send `x-readiness-token: $CRON_SECRET` (or an admin session) for the per-facet report.
+
+**Trial model**: every signup gets a 30-day Starter trial (`Subscription.status = TRIALING`). Quotas, export formats and the trial follow the workspace owner's subscription; a lapsed trial answers `402 TRIAL_ENDED` with `upgradePath: /app/billing`.
 
 ---
 
@@ -104,7 +107,10 @@ bun run dev
 | `BOOTSTRAP_ADMIN_EMAIL` | yes (first seed) | environment-specific; never hard-code a development identity in Production |
 | `ARABCLUE_ENC_KEY` | yes (prod) | encrypts admin EnvSettings (AES-256-GCM) |
 | `REDIS_URL` | yes (prod) | shared rate limiting and export admission; Production fails closed without it |
-| `CRON_SECRET` | yes (prod) | random secret of at least 16 characters for cron endpoints |
+| `CRON_SECRET` | yes (prod) | random secret of at least 16 characters for cron endpoints; also unlocks the detailed `/api/ready` report via `x-readiness-token` |
+| `RESEND_API_KEY` or `SMTP_*` | yes (prod) | transactional email; without a transport, registration cannot be verified and every outbox row stays pending |
+| `TRUSTED_PROXY_HOPS` | no | forwarded-header hops to trust for IP rate limits (default 1; only relevant off Vercel) |
+| `MYFATOORAH_ALLOW_UNSIGNED_WEBHOOKS` | no | `1` accepts unsigned webhooks outside tests (sandbox only); the default fails closed |
 
 Optional LLM / Billing:
 

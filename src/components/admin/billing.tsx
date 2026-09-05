@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Users,
   Scale,
+  Clock,
 } from "lucide-react";
 import { AdminBillingReconciliation } from "./billing-reconciliation";
 import { ErrorState } from "@/components/patterns";
@@ -75,8 +76,32 @@ interface Subscription {
   documentsUsed: number;
   tokensUsed: number;
   currentPeriodEnd: string;
+  trialEndsAt?: string | null;
   user: { name: string; email: string; role: string };
   plan: SubscriptionPlan;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Trials ending within this window, or lapsed within it, are worth a call. */
+const TRIAL_FOLLOW_UP_DAYS = 14;
+
+/**
+ * Trials the operator should follow up on, soonest first: ending within two
+ * weeks, or lapsed within the last two weeks without a payment. Pure so the
+ * window is testable; the payload already carries status and trialEndsAt.
+ */
+export function trialsToFollowUp<
+  T extends { status: string; trialEndsAt?: string | null; currentPeriodEnd: string },
+>(subscriptions: readonly T[], now = new Date()): Array<T & { daysLeft: number }> {
+  const horizon = TRIAL_FOLLOW_UP_DAYS * DAY_MS;
+  return subscriptions
+    .filter((s) => s.status === "TRIALING")
+    .map((s) => {
+      const end = new Date(s.trialEndsAt ?? s.currentPeriodEnd).getTime();
+      return { ...s, daysLeft: Math.ceil((end - now.getTime()) / DAY_MS) };
+    })
+    .filter((s) => Math.abs(s.daysLeft) * DAY_MS <= horizon)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
 interface BillingRecord {
@@ -241,6 +266,7 @@ export function AdminBilling() {
   const records = data?.records ?? [];
   const subscriptions = data?.subscriptions ?? [];
   const activeSubs = subscriptions.filter((s) => s.status === "ACTIVE");
+  const trialFollowUps = trialsToFollowUp(subscriptions);
 
   // Active-subscriber counts per plan (cheap O(n) — computed inline so the
   // React Compiler can preserve memoization automatically).
@@ -288,6 +314,67 @@ export function AdminBilling() {
           sub={`${formatSAR(stats?.totalTokensUsed ?? 0, locale)} ${locale === "ar" ? "رمز" : "tokens"}`}
         />
       </div>
+
+      {/* Trials to follow up: the operator's conversion list. A trial that
+          lapses unnoticed is lost revenue; one that is about to lapse is a
+          conversation. */}
+      {trialFollowUps.length > 0 && (
+        <Card className="p-0 overflow-hidden border-border/60">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-b border-border/60 bg-muted/30">
+            <div className="flex items-center gap-2.5">
+              <div className="size-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                <Clock className="size-4 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold">
+                  {locale === "ar" ? "تجارب تحتاج متابعة" : "Trials to follow up"}
+                </h3>
+                <p className="text-[11px] text-muted-foreground">
+                  {locale === "ar"
+                    ? "تنتهي خلال أسبوعين أو انتهت مؤخراً دون دفع"
+                    : "Ending within two weeks, or lapsed recently without a payment"}
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-semibold tabular-nums">{trialFollowUps.length}</span>
+          </div>
+          <div className="divide-y divide-border/50">
+            {trialFollowUps.map((s) => (
+              <div key={s.id} className="flex flex-wrap items-center gap-3 px-5 py-3 text-xs">
+                <div className="min-w-[180px] flex-1">
+                  <div className="font-medium">{s.user.name}</div>
+                  <a className="text-muted-foreground hover:underline" href={`mailto:${s.user.email}`}>
+                    {s.user.email}
+                  </a>
+                </div>
+                <div
+                  className={cn(
+                    "rounded-full px-2 py-0.5 font-semibold tabular-nums",
+                    s.daysLeft < 0
+                      ? "bg-destructive/10 text-destructive"
+                      : s.daysLeft <= 3
+                        ? "bg-amber-500/15 text-amber-700"
+                        : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {s.daysLeft < 0
+                    ? locale === "ar"
+                      ? `انتهت منذ ${Math.abs(s.daysLeft)} يوم`
+                      : `Lapsed ${Math.abs(s.daysLeft)}d ago`
+                    : locale === "ar"
+                      ? `${s.daysLeft} يوم متبقٍ`
+                      : `${s.daysLeft}d left`}
+                </div>
+                <div className="text-muted-foreground tabular-nums">
+                  {s.proposalsUsed} {locale === "ar" ? "عطاء" : "proposals"} · {s.documentsUsed}{" "}
+                  {locale === "ar" ? "مستند" : "docs"} · {formatSAR(s.tokensUsed, locale)}{" "}
+                  {locale === "ar" ? "رمز" : "tokens"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Middle: subscription plans */}
       <Card className="p-0 overflow-hidden border-border/60">
