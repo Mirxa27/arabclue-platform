@@ -878,3 +878,116 @@
   }
   /* Framer-motion will respect reducedMotion="user" via MotionConfig */
 }
+
+/* ------------------------------------------------------------------------
+   Ops — the agent control room (live draft, agent timeline, mission report,
+   document stage). Ambience only: every number these surfaces show comes
+   from the run. Continuous animations stop under prefers-reduced-motion.
+   ------------------------------------------------------------------------ */
+@keyframes ops-scan {
+  0% { transform: translateY(-100%); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateY(620%); opacity: 0; }
+}
+@keyframes ops-aurora-drift {
+  0% { transform: translate3d(-4%, -3%, 0) scale(1); }
+  50% { transform: translate3d(4%, 3%, 0) scale(1.06); }
+  100% { transform: translate3d(-4%, -3%, 0) scale(1); }
+}
+@keyframes ops-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes ops-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.8); }
+}
+@keyframes ops-ring {
+  0% { opacity: 0.6; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+@keyframes ops-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* The dark stage a document sits on — deliberately dark in both themes, the
+   way a print preview is; the paper carries the light. */
+.ops-stage {
+  background:
+    radial-gradient(120% 90% at 50% -10%, oklch(0.36 0.07 264 / 0.75), transparent 60%),
+    linear-gradient(180deg, oklch(0.2 0.03 264), oklch(0.15 0.02 264));
+  color: oklch(0.96 0.01 264);
+}
+.ops-stage-grid {
+  background-image:
+    linear-gradient(to right, oklch(1 0 0 / 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(1 0 0 / 0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse at 50% 30%, black 30%, transparent 85%);
+}
+/* Soft aurora from the design tokens; sits behind the paper. */
+.ops-aurora {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 35% at 20% 20%, color-mix(in oklch, var(--aurora-1) 55%, transparent), transparent 70%),
+    radial-gradient(35% 30% at 80% 15%, color-mix(in oklch, var(--aurora-2) 50%, transparent), transparent 70%),
+    radial-gradient(45% 40% at 60% 90%, color-mix(in oklch, var(--aurora-3) 45%, transparent), transparent 70%);
+  filter: blur(36px);
+  opacity: 0.5;
+  animation: ops-aurora-drift 16s ease-in-out infinite;
+  will-change: transform;
+}
+/* A single scan line sweeping the preview while words arrive. */
+.ops-scanline {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 16%;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, oklch(0.75 0.14 250 / 0.10) 50%, transparent);
+  animation: ops-scan 7s linear infinite;
+  will-change: transform;
+}
+.dark .ops-scanline {
+  background: linear-gradient(to bottom, transparent, oklch(0.8 0.12 250 / 0.14) 50%, transparent);
+}
+/* Indeterminate progress: a light passing along a bar or a node, nothing to
+   read as a percentage. */
+.ops-shimmer {
+  background-image: linear-gradient(90deg, transparent 0%, currentColor 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: ops-shimmer 1.6s linear infinite;
+}
+.ops-pulse { animation: ops-pulse 1.5s ease-in-out infinite; }
+.ops-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid currentColor;
+  animation: ops-ring 1.8s ease-out infinite;
+}
+.ops-spin { animation: ops-spin 1.4s linear infinite; }
+/* Faint horizontal ruling on the paper — reads as a document, not a textarea. */
+.ops-paper {
+  background-color: oklch(0.995 0.002 90);
+  color: oklch(0.22 0.02 264);
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.6) inset,
+    0 24px 60px -24px oklch(0 0 0 / 0.55),
+    0 0 0 1px oklch(0 0 0 / 0.08);
+}
+.dark .ops-paper {
+  background-color: oklch(0.985 0.003 90);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ops-aurora, .ops-shimmer, .ops-pulse, .ops-spin {
+    animation: none !important;
+  }
+  .ops-scanline, .ops-ring::after { display: none; }
+  .ops-shimmer { background-image: none; }
+}

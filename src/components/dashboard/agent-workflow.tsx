@@ -10,7 +10,7 @@ import { tr } from "@/lib/i18n";
 import { runFailureCopyKey } from "@/lib/agents/run-failure";
 import { LiveDraftPanel } from "./live-draft-panel";
 import { RUN_STARTED_EVENT } from "@/lib/agents/autopilot";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { UpgradeToastAction } from "@/components/ui/upgrade-toast-action";
@@ -19,8 +19,7 @@ import {
   Bot,
   Play,
   Loader2,
-  CheckCircle2,
-  CircleDashed,
+  Clock,
   FileSearch,
   ShieldCheck,
   Network,
@@ -28,11 +27,9 @@ import {
   PenLine,
   Scale,
   Sparkles,
-  ChevronRight,
   Square,
   FolderKanban,
   AlertCircle,
-  XCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,12 +40,19 @@ import { ErrorState } from "@/components/patterns";
 import { cn } from "@/lib/utils";
 import { AGENTS } from "@/lib/constants";
 import {
-  agentOutputText,
-  engineNote,
+  durationBetween,
+  formatElapsed,
+  liveDraftOutcomeFor,
+  missionReportFromArtifact,
   runHeadlineBadge,
+  runStartedAt,
   statusPollDisposition,
+  type MissionReport,
 } from "@/lib/agents/run-presentation";
 import { AgentRunHistory } from "./agent-run-history";
+import { MissionReportCard } from "./mission-report";
+import { AgentTimelineDetail, STATUS_KEY, StatusGlyph, agentTimeLabel } from "./agent-timeline-detail";
+import { useRunClock } from "./use-run-clock";
 import type { AgentRunHistoryItem } from "./agent-run-history";
 import type { AgentState, AgentId } from "@/lib/types";
 import type { ApiDocument } from "@/lib/api-types";
@@ -141,6 +145,12 @@ export function AgentWorkflow() {
   const [proposalId, setProposalId] = useState<string | null>(null);
   const [contractId, setContractId] = useState<string | null>(null);
   const [coveragePercent, setCoveragePercent] = useState<number | null>(null);
+  // The completed run's final artifact, normalised: AI review, live research
+  // sources, template-filled sections, uncovered requirement ids.
+  const [report, setReport] = useState<MissionReport | null>(null);
+  // The agent whose findings the detail card shows. Null follows the run: the
+  // running agent, else the failed one, else the last to finish.
+  const [pinnedAgent, setPinnedAgent] = useState<AgentId | null>(null);
   const [exportReady, setExportReady] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [runFailureKind, setRunFailureKind] = useState<string | null>(null);
@@ -286,6 +296,9 @@ export function AgentWorkflow() {
         data.coveragePercent ?? fa.coverage?.coveragePercent ?? null
       );
       setExportReady(data.exportReady ?? fa.exportReady ?? null);
+      setReport(missionReportFromArtifact(fa));
+    } else {
+      setReport(null);
     }
 
     const status = data.status;
@@ -315,10 +328,14 @@ export function AgentWorkflow() {
     setRunFailureKind(run.status === "FAILED" ? run.failureKind : null);
     setLlmFallback(false);
     setLlmProvider(null);
+    setLlmFailureKind(null);
+    setLlmTruncated(false);
     setProposalId(null);
     setContractId(null);
     setCoveragePercent(null);
     setExportReady(null);
+    setReport(null);
+    setPinnedAgent(null);
 
     try {
       const res = await fetch(
@@ -437,10 +454,14 @@ export function AgentWorkflow() {
       setErrorMessage(null);
       setLlmFallback(false);
       setLlmProvider(null);
+      setLlmFailureKind(null);
+      setLlmTruncated(false);
       setProposalId(null);
       setContractId(null);
       setCoveragePercent(null);
       setExportReady(null);
+      setReport(null);
+      setPinnedAgent(null);
       if (Array.isArray(data.agentStates) && data.agentStates.length) {
         setAgentStates(
           data.agentStates.map((a) => ({
@@ -635,13 +656,37 @@ export function AgentWorkflow() {
   const activeAgent = agentStates.find((a) => a.status === "running");
   const runHistory = runHistoryData?.runs ?? [];
   // The live draft appears the moment the drafting agent starts and stays
-  // until the run ends — the words keep arriving while the contract finishes.
+  // after the run ends: the document that was just written, with its sources,
+  // is the payoff — it should not vanish the instant `done` arrives. Ended
+  // runs replay the recorded stream; the panel says so.
   const draftingState = agentStates.find((a) => a.id === "PROPOSAL_DRAFTING");
   const lawState = agentStates.find((a) => a.id === "LAW_CONTRACT");
   const showLiveDraft =
-    running && !!runId && draftingState != null && normalizeStatus(draftingState.status) !== "pending";
+    !!runId && draftingState != null && normalizeStatus(draftingState.status) !== "pending";
   const showLiveContract =
-    running && !!runId && lawState != null && normalizeStatus(lawState.status) !== "pending";
+    !!runId && lawState != null && normalizeStatus(lawState.status) !== "pending";
+  const draftOutcome = liveDraftOutcomeFor(runStatus, running);
+
+  // The run clock: real stamps the orchestrator wrote on the agents, read
+  // against a once-a-second `now` that only ticks while the run is live.
+  const now = useRunClock(running);
+  const runStart = runStartedAt(agentStates);
+  const runElapsedLabel =
+    running && runStart ? formatElapsed(now - Date.parse(runStart)) : null;
+  const runEndedAt = agentStates.reduce<string | null>(
+    (latest, a) => (a.completedAt && (!latest || a.completedAt > latest) ? a.completedAt : latest),
+    null
+  );
+  const runDurationMs = !running ? durationBetween(runStart, runEndedAt) : null;
+  const runDurationLabel = runDurationMs == null ? null : formatElapsed(runDurationMs);
+
+  const focusAgentId =
+    pinnedAgent ??
+    activeAgent?.id ??
+    agentStates.find((a) => a.status === "failed")?.id ??
+    [...agentStates].reverse().find((a) => a.status === "completed")?.id ??
+    null;
+  const focusAgent = agentStates.find((a) => a.id === focusAgentId) ?? null;
 
   const projectTitle = useMemo(() => {
     const p = projectMeta?.project;
@@ -733,10 +778,18 @@ export function AgentWorkflow() {
                 itself — "ingest → compliance → technical → finance → draft →
                 contract" — which is the vocabulary of whoever built it. */}
             {running && activeAgent ? (
-              <p className="text-[11px] text-foreground/70 mt-0.5">
-                {locale === "ar"
-                  ? `يعمل الآن: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`
-                  : `Now running: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`}
+              <p className="text-[11px] text-foreground/70 mt-0.5 flex flex-wrap items-center gap-x-2">
+                <span>
+                  {locale === "ar"
+                    ? `يعمل الآن: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`
+                    : `Now running: ${tr(`agent_${activeAgent.id}_name`, locale)} · ${doneCount}/${AGENTS.length}`}
+                </span>
+                {runElapsedLabel ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-[10.5px] tabular-nums text-muted-foreground" dir="ltr">
+                    <Clock className="size-3" aria-hidden />
+                    {runElapsedLabel}
+                  </span>
+                ) : null}
               </p>
             ) : null}
           </div>
@@ -883,19 +936,24 @@ export function AgentWorkflow() {
 
       {/* Overall progress — always show when we have a run */}
       {(running || (completed && overall > 0)) && (
-        <div className="px-5 py-3 border-b border-border/50 space-y-2">
+        <div className="relative px-5 py-3 border-b border-border/50 space-y-2 overflow-hidden">
+          {running ? (
+            // A light travelling the top hairline while the run is live; it
+            // says "working", not "how far". The bar below carries the number.
+            <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px text-violet-500/80 ops-shimmer motion-reduce:hidden" />
+          ) : null}
           <div className="flex items-center justify-between text-xs">
             <span className="text-foreground/70 flex items-center gap-1.5 font-medium">
               <Sparkles className="size-3.5 text-amber-500" />
               {locale === "ar" ? "التقدم الإجمالي" : "Overall progress"}
             </span>
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground tabular-nums">
               {doneCount}/{AGENTS.length} {locale === "ar" ? "وكلاء" : "agents"}
             </span>
           </div>
           {/* The six-bar strip that used to sit here said the same thing as the
               six gauges below it, one screenful apart, with less detail. */}
-          <Progress value={overall} className="h-2.5 bg-slate-200 dark:bg-slate-700" />
+          <Progress value={overall} className="h-2 bg-slate-200 dark:bg-slate-700 [&_[data-slot=progress-indicator]]:bg-gradient-to-r [&_[data-slot=progress-indicator]]:from-violet-500 [&_[data-slot=progress-indicator]]:to-sky-500" />
         </div>
       )}
 
@@ -933,80 +991,61 @@ export function AgentWorkflow() {
         </div>
       )}
 
+      {/* The mission report: one block for everything the run produced — the
+          measured numbers, the caveats, the AI review — with the payoff
+          actions in its header. */}
       {completed && runStatus === "COMPLETED" && (
-        <div className="mx-3 mt-3 rounded-xl bg-gradient-to-br from-emerald-500/12 to-teal-500/10 border border-emerald-500/25 p-3.5 flex flex-wrap items-center gap-3">
-          <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-              {locale === "ar"
-                ? "تم إنشاء العطاء ومسودة العقد"
-                : "Proposal & contract draft ready"}
-            </div>
-            <div className="text-[11px] text-foreground/65 mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
-              {coveragePercent != null && (
-                <span>
-                  {locale === "ar" ? "تغطية" : "Coverage"}: {coveragePercent}%
-                </span>
-              )}
-              {exportReady != null && (
-                <span>
-                  {exportReady
-                    ? locale === "ar"
-                      ? "جاهز للتصدير"
-                      : "Export-ready"
-                    : locale === "ar"
-                      ? "يحتاج مراجعة التحقق"
-                      : "Needs validation review"}
-                </span>
-              )}
-              {contractId && (
-                <span>
-                  {locale === "ar" ? "عقد ثنائي اللغة" : "Bilingual contract"}
-                </span>
-              )}
-              {llmProvider && (
-                // The provider id and failure kind stay in the title attribute:
-                // useful when reporting a problem, noise in the summary line.
-                <span title={`${llmProvider}${llmFailureKind ? ` · ${llmFailureKind}` : ""}`}>
-                  {engineNote(llmFallback, locale)}
-                  {!llmFallback && llmTruncated
-                    ? locale === "ar"
-                      ? " (مقتطع)"
-                      : " (truncated)"
-                    : ""}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              className="h-8 text-[11px]"
-              onClick={() => startTransition(() => setView("proposals"))}
-              // A completed run does not guarantee a proposal row — a run that
-              // failed at drafting still reaches COMPLETED with no artifact.
-              disabled={!proposalId}
-            >
-              {locale === "ar" ? "فتح العطاء" : "Open proposal"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-[11px] gap-1"
-              onClick={() => startTransition(() => setView("contracts"))}
-              disabled={!contractId}
-            >
-              <Scale className="size-3" />
-              {locale === "ar" ? "العقد" : "Contract"}
-            </Button>
-          </div>
-        </div>
+        <MissionReportCard
+          locale={locale}
+          report={report}
+          coveragePercent={coveragePercent}
+          exportReady={exportReady}
+          provider={llmProvider}
+          fallback={llmFallback}
+          failureKind={llmFailureKind}
+          truncated={llmTruncated}
+          runDurationLabel={runDurationLabel}
+          hasContract={!!contractId}
+          actions={
+            <>
+              <Button
+                size="sm"
+                className="h-8 text-[11px]"
+                onClick={() => startTransition(() => setView("proposals"))}
+                // A completed run does not guarantee a proposal row — a run that
+                // failed at drafting still reaches COMPLETED with no artifact.
+                disabled={!proposalId}
+              >
+                {locale === "ar" ? "فتح العطاء" : "Open proposal"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-[11px] gap-1"
+                onClick={() => startTransition(() => setView("contracts"))}
+                disabled={!contractId}
+              >
+                <Scale className="size-3" />
+                {locale === "ar" ? "العقد" : "Contract"}
+              </Button>
+            </>
+          }
+        />
       )}
 
-      {/* Agent cards — one per step, once there is a run to show */}
+      {/* Agent cards — the six steps as one connected timeline, once there is
+          a run to show. A node lights as its step starts, ticks with its
+          duration when it finishes, and shows the recorded reason when it
+          fails; the connector before it fills once the step has begun. The
+          selected node's findings open in the detail card below. On a phone
+          the rail scrolls sideways. */}
       {hasRun ? (
         <>
-        <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="px-3 pt-3 sm:px-4 sm:pt-4">
+          <ol
+            aria-label={tr("agent_timeline_label", locale)}
+            className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 scrollbar-thin lg:grid lg:grid-cols-6 lg:overflow-visible lg:pb-0"
+          >
           {agentStates.map((a, idx) => {
             const meta = AGENT_META[a.id] ?? {
               icon: Bot,
@@ -1019,40 +1058,59 @@ export function AgentWorkflow() {
             const isRunning = status === "running";
             const isDone = status === "completed";
             const isFailed = status === "failed";
-            const outputText = agentOutputText(a.output, locale);
             const isPending = status === "pending";
-            const pct = isDone ? 100 : Math.round(a.progress || 0);
+            // The orchestrator's own milestone for the step; zero means it has
+            // reported none yet, and the gauge orbits instead of showing 0%.
+            const measured = Math.round(a.progress || 0);
+            const pct = isDone ? 100 : measured;
+            const selected = focusAgent?.id === a.id;
+            const name = tr(`agent_${a.id}_name`, locale);
+            const time = agentTimeLabel({ ...a, status }, now);
 
             return (
-              <motion.div
-                key={a.id}
-                layout={!reduceMotion}
-                // Driven by the real state: the running card breathes, a
-                // finished card settles, nothing moves on a timer alone.
-                animate={
-                  isRunning && !reduceMotion
-                    ? { scale: [1, 1.012, 1], opacity: 1 }
-                    : { scale: 1, opacity: isPending ? 0.72 : 1 }
-                }
-                transition={
-                  isRunning && !reduceMotion
-                    ? { duration: 2.2, repeat: Infinity, ease: "easeInOut" }
-                    : { duration: 0.35, ease: "easeOut" }
-                }
-                className={cn(
-                  "rounded-xl border p-3.5 transition-colors",
-                  isRunning &&
-                    "border-violet-500/50 bg-violet-500/8 shadow-[0_0_0_1px_rgba(139,92,246,0.12)]",
-                  isDone && "border-emerald-500/35 bg-emerald-500/6",
-                  isFailed && "border-destructive/40 bg-destructive/5",
-                  isPending && "border-border/80 bg-card"
-                )}
-              >
-                <div className="flex items-start gap-3">
+              <li key={a.id} className="relative flex min-w-[10.5rem] flex-1 snap-start lg:min-w-0">
+                {idx > 0 ? (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "absolute -start-2 top-[34px] h-px w-2 transition-colors duration-500",
+                      isPending ? "bg-border" : "bg-emerald-500/70"
+                    )}
+                  />
+                ) : null}
+                <motion.button
+                  type="button"
+                  onClick={() => setPinnedAgent(a.id)}
+                  aria-pressed={selected}
+                  aria-label={tr("agent_timeline_show_details", locale, { name })}
+                  // Driven by the real state: the running node breathes, a
+                  // finished node settles, nothing moves on a timer alone.
+                  animate={
+                    isRunning && !reduceMotion
+                      ? { scale: [1, 1.015, 1], opacity: 1 }
+                      : { scale: 1, opacity: isPending ? 0.72 : 1 }
+                  }
+                  transition={
+                    isRunning && !reduceMotion
+                      ? { duration: 2.2, repeat: Infinity, ease: "easeInOut" }
+                      : { duration: 0.35, ease: "easeOut" }
+                  }
+                  className={cn(
+                    "relative flex w-full flex-col items-center gap-1.5 overflow-hidden rounded-xl border px-2 py-2.5 text-center transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                    isRunning &&
+                      "border-violet-500/50 bg-violet-500/[0.07] shadow-[0_0_0_1px_rgba(139,92,246,0.12),0_0_32px_-12px_rgba(139,92,246,0.55)]",
+                    isDone && "border-emerald-500/35 bg-emerald-500/[0.05]",
+                    isFailed && "border-destructive/40 bg-destructive/5",
+                    isPending && "border-border/80 bg-card",
+                    selected && "ring-2 ring-ring/40 ring-offset-1 ring-offset-background"
+                  )}
+                >
                   <RadialGauge
                     value={pct}
-                    size={52}
-                    strokeWidth={5}
+                    size={48}
+                    strokeWidth={4}
+                    indeterminate={isRunning && measured <= 0}
                     trackClassName={
                       isFailed
                         ? "text-destructive/25"
@@ -1069,111 +1127,84 @@ export function AgentWorkflow() {
                             ? "text-violet-500"
                             : meta.ring + "/40"
                     )}
-                    ariaLabel={`${tr(`agent_${a.id}_name`, locale)} ${pct}%`}
+                    ariaLabel={`${name} · ${tr(STATUS_KEY[status], locale)}${
+                      isDone ? " · 100%" : isRunning && measured > 0 ? ` · ${measured}%` : ""
+                    }`}
                   >
-                    <div
+                    <span
                       className={cn(
-                        "size-9 rounded-full flex items-center justify-center",
+                        "relative flex size-8 items-center justify-center rounded-full",
                         meta.bg,
-                        isRunning && "agent-pulse"
+                        isRunning && !reduceMotion && "ops-ring text-violet-500/60"
                       )}
                     >
-                      <Icon className={cn("size-4", meta.color)} />
-                    </div>
+                      <Icon className={cn("size-3.5", meta.color)} />
+                    </span>
                   </RadialGauge>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-mono font-semibold text-muted-foreground">
-                            {String(idx + 1).padStart(2, "0")}
-                          </span>
-                          <span className="text-xs font-semibold truncate">
-                            {tr(`agent_${a.id}_name`, locale)}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-foreground/65 mt-0.5 line-clamp-2 leading-snug">
-                          {isRunning && a.findings?.[0]
-                            ? a.findings[0]
-                            : tr(`agent_${a.id}_desc`, locale)}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span
-                          className={cn(
-                            "text-[11px] font-mono font-bold tabular-nums",
-                            isDone && "text-emerald-600",
-                            isRunning && "text-violet-600",
-                            isFailed && "text-destructive",
-                            isPending && "text-muted-foreground"
-                          )}
-                        >
-                          {pct}%
-                        </span>
-                        {isDone && (
-                          <CheckCircle2 className="size-3.5 text-emerald-600" />
-                        )}
-                        {isRunning && (
-                          <Loader2 className="size-3.5 text-violet-600 animate-spin" />
-                        )}
-                        {isFailed && (
-                          <XCircle className="size-3.5 text-destructive" />
-                        )}
-                        {isPending && (
-                          <CircleDashed className="size-3.5 text-muted-foreground" />
-                        )}
-                      </div>
-                    </div>
-
-                    {(isRunning || isDone || isFailed) && a.findings && a.findings.length > 0 && (
-                      <ul className="mt-2 space-y-1 border-t border-border/50 pt-2">
-                        <AnimatePresence initial={false}>
-                        {a.findings.slice(0, isDone ? 3 : 2).map((f, i) => (
-                          <motion.li
-                            key={`${i}:${f}`}
-                            initial={reduceMotion ? false : { opacity: 0, y: 4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.3, ease: "easeOut" }}
-                            className={cn(
-                              "flex items-start gap-1.5 text-[10px]",
-                              isFailed ? "text-destructive/90" : "text-foreground/70"
-                            )}
-                          >
-                            <ChevronRight
-                              className={cn(
-                                "size-2.5 mt-0.5 shrink-0",
-                                isFailed ? "text-destructive" : "text-violet-500"
-                              )}
-                            />
-                            <span className="leading-relaxed">{f}</span>
-                          </motion.li>
-                        ))}
-                        </AnimatePresence>
-                      </ul>
+                  <span className="w-full min-w-0">
+                    <span className="block font-mono text-[9.5px] font-semibold tabular-nums text-muted-foreground">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
+                    <span className="block truncate text-[11px] font-semibold leading-tight">{name}</span>
+                  </span>
+                  <span
+                    className={cn(
+                      "inline-flex max-w-full items-center gap-1 text-[10px] font-medium",
+                      isDone && "text-emerald-700 dark:text-emerald-300",
+                      isRunning && "text-violet-700 dark:text-violet-200",
+                      isFailed && "text-destructive",
+                      isPending && "text-muted-foreground"
                     )}
-
-                    {outputText && isFailed && (
-                      <div className="mt-2 text-[10px] text-destructive bg-destructive/10 rounded-md px-2 py-1.5 border border-destructive/20">
-                        {outputText}
-                      </div>
-                    )}
-
-                    {outputText && isDone && (
-                      <div className="mt-2 text-[10px] text-emerald-800 dark:text-emerald-300 bg-emerald-500/10 rounded-md px-2 py-1.5 border border-emerald-500/20">
-                        ✓ {outputText}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
+                  >
+                    <StatusGlyph status={status} className="size-3" />
+                    <span className="truncate">{tr(STATUS_KEY[status], locale)}</span>
+                    {time ? (
+                      <span className="font-mono tabular-nums" dir="ltr">
+                        · {time}
+                      </span>
+                    ) : null}
+                  </span>
+                  {isRunning ? (
+                    // Indeterminate: a light passing along the foot of the node.
+                    <span aria-hidden className="absolute inset-x-3 bottom-1 h-px text-violet-500/80 ops-shimmer motion-reduce:hidden" />
+                  ) : null}
+                </motion.button>
+              </li>
             );
           })}
+          </ol>
+
+          {focusAgent ? (
+            <div className="mt-2.5">
+              <AgentTimelineDetail
+                key={focusAgent.id}
+                locale={locale}
+                agent={{ ...focusAgent, status: normalizeStatus(focusAgent.status) }}
+                index={agentStates.findIndex((a) => a.id === focusAgent.id)}
+                total={AGENTS.length}
+                now={now}
+                reduceMotion={!!reduceMotion}
+              />
+            </div>
+          ) : null}
         </div>
         {runId && (showLiveDraft || showLiveContract) ? (
-          <div className="mx-3 mb-3 grid grid-cols-1 gap-2.5 sm:mx-4 sm:mb-4 lg:grid-cols-2">
-            {showLiveDraft ? <LiveDraftPanel runId={runId} locale={locale} channel="draft" /> : null}
-            {showLiveContract ? <LiveDraftPanel runId={runId} locale={locale} channel="contract" /> : null}
+          <div className="mx-3 my-3 grid grid-cols-1 gap-3 sm:mx-4 sm:my-4 2xl:grid-cols-2">
+            {showLiveDraft ? (
+              <LiveDraftPanel
+                runId={runId}
+                locale={locale}
+                channel="draft"
+                runOutcome={draftOutcome}
+                // The sources drawer opens once the artifact is in; before that
+                // the panel has nothing to list and shows no drawer.
+                sources={report?.liveResearch ? report.liveResearch.sources : undefined}
+                sourcesUnavailableReason={report?.liveResearch?.unavailableReason ?? null}
+              />
+            ) : null}
+            {showLiveContract ? (
+              <LiveDraftPanel runId={runId} locale={locale} channel="contract" runOutcome={draftOutcome} />
+            ) : null}
           </div>
         ) : null}
         </>
@@ -1184,20 +1215,30 @@ export function AgentWorkflow() {
               ? "ما يحدث عند التشغيل"
               : "What happens when you run"}
           </h4>
-          <ol className="mt-2.5 space-y-1.5">
-            {AGENTS.map((a, i) => (
-              <li key={a.id} className="flex items-start gap-2.5 text-[11px]">
-                <span className="font-mono text-[10px] font-semibold text-muted-foreground mt-px shrink-0">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span className="font-medium shrink-0">
-                  {tr(`agent_${a.id}_name`, locale)}
-                </span>
-                <span className="text-foreground/60 min-w-0">
-                  {tr(`agent_${a.id}_desc`, locale)}
-                </span>
-              </li>
-            ))}
+          {/* The same six steps the timeline will show, as a quiet list: no
+              gauges, no numbers — there is nothing to measure yet. */}
+          <ol className="relative mt-3 space-y-0">
+            <span aria-hidden className="absolute start-[11px] top-3 bottom-3 w-px bg-border" />
+            {AGENTS.map((a, i) => {
+              const meta = AGENT_META[a.id];
+              const Icon = meta?.icon ?? Bot;
+              return (
+                <li key={a.id} className="relative flex items-start gap-3 py-1.5 text-[11px]">
+                  <span className={cn("relative z-[1] flex size-6 shrink-0 items-center justify-center rounded-full ring-4 ring-card", meta?.bg ?? "bg-muted")}>
+                    <Icon className={cn("size-3", meta?.color ?? "text-muted-foreground")} aria-hidden />
+                  </span>
+                  <span className="min-w-0 pt-0.5">
+                    <span className="flex items-baseline gap-1.5">
+                      <span className="font-mono text-[10px] font-semibold text-muted-foreground">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <span className="font-medium">{tr(`agent_${a.id}_name`, locale)}</span>
+                    </span>
+                    <span className="block text-foreground/60 leading-snug">{tr(`agent_${a.id}_desc`, locale)}</span>
+                  </span>
+                </li>
+              );
+            })}
           </ol>
         </div>
       )}

@@ -17,6 +17,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useArtifactDownload } from "@/hooks/use-artifact-download";
+import { tr } from "@/lib/i18n";
 import {
   createHtmlPreviewObjectUrl,
   createPdfPreviewObjectUrl,
@@ -252,18 +253,22 @@ export function DocumentPreviewFrame({
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-2xl border border-border/70 bg-background",
+        "flex flex-col overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm",
         className,
       )}
       dir={ar ? "rtl" : "ltr"}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5 bg-muted/20">
-        <div className="flex items-center gap-2 min-w-0">
-          <FileText className="size-4 text-muted-foreground shrink-0" />
-          <p className="text-sm font-medium truncate">
+      {/* Chrome: what this is, then one segmented control per decision
+          (layout or PDF; how the PDF fits), then the actions. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 bg-muted/30 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background">
+            <FileText className="size-3.5 text-muted-foreground" aria-hidden />
+          </span>
+          <p className="min-w-0 truncate text-sm font-medium">
             {title || (ar ? "معاينة المستند" : "Document preview")}
           </p>
-          <Badge variant="outline" className="text-[10px] uppercase">
+          <Badge variant="outline" className="text-[10px] uppercase tabular-nums">
             {mode === "pdf" ? "PDF" : ar ? "تخطيط" : "Layout"}
           </Badge>
           {stale ? (
@@ -273,26 +278,30 @@ export function DocumentPreviewFrame({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === "html" ? "default" : "outline"}
-            className="h-8"
-            onClick={() => setMode("html")}
-          >
-            {ar ? "تخطيط" : "Layout"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === "pdf" ? "default" : "outline"}
-            className="h-8"
-            onClick={() => setMode("pdf")}
-          >
-            PDF
-          </Button>
+          <div className="flex rounded-lg border border-border/70 bg-background p-0.5" role="group" aria-label={ar ? "وضع المعاينة" : "Preview mode"}>
+            <Button
+              type="button"
+              size="sm"
+              variant={mode === "html" ? "secondary" : "ghost"}
+              aria-pressed={mode === "html"}
+              className="h-7 px-2.5 text-[11px]"
+              onClick={() => setMode("html")}
+            >
+              {ar ? "تخطيط" : "Layout"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={mode === "pdf" ? "secondary" : "ghost"}
+              aria-pressed={mode === "pdf"}
+              className="h-7 px-2.5 text-[11px]"
+              onClick={() => setMode("pdf")}
+            >
+              PDF
+            </Button>
+          </div>
           {mode === "pdf" ? (
-            <div className="flex rounded-md border p-0.5">
+            <div className="flex rounded-lg border border-border/70 bg-background p-0.5" role="group" aria-label={tr("preview_zoom_label", locale)}>
               {(
                 [
                   ["fitH", ar ? "عرض" : "Width"],
@@ -305,6 +314,7 @@ export function DocumentPreviewFrame({
                   type="button"
                   size="sm"
                   variant={pdfZoom === id ? "secondary" : "ghost"}
+                  aria-pressed={pdfZoom === id}
                   className="h-7 px-2 text-[11px]"
                   onClick={() => setPdfZoom(id)}
                 >
@@ -321,8 +331,9 @@ export function DocumentPreviewFrame({
             disabled={loading}
             onClick={() => setReloadNonce((n) => n + 1)}
             title={ar ? "تحديث المعاينة" : "Refresh preview"}
+            aria-label={ar ? "تحديث المعاينة" : "Refresh preview"}
           >
-            <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+            <RefreshCw className={cn("size-3.5", loading && "motion-safe:animate-spin")} />
           </Button>
           <Button
             type="button"
@@ -364,6 +375,8 @@ export function DocumentPreviewFrame({
               size="sm"
               variant="ghost"
               className="h-8 gap-1"
+              title={ar ? "طباعة" : "Print"}
+              aria-label={ar ? "طباعة" : "Print"}
               onClick={() => {
                 const frame = document.getElementById(
                   `doc-preview-${proposalId}`,
@@ -398,15 +411,19 @@ export function DocumentPreviewFrame({
         </div>
       ) : null}
 
+      {/* The stage: dark in both themes, the way a print preview is; the paper
+          carries the light. No page counter — the embedded viewer does not
+          report one, and a guessed count would be a lie. */}
       <div
         className={cn(
-          "relative overflow-auto bg-slate-100/80 p-3 sm:p-5 dark:bg-slate-950/30",
+          "relative overflow-auto ops-stage p-3 sm:p-5 scrollbar-thin",
           compact ? "h-[420px]" : "h-[min(70vh,760px)]",
         )}
       >
+        <div aria-hidden className="pointer-events-none absolute inset-0 ops-stage-grid" />
         {loading ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground z-10 bg-background/40">
-            <Loader2 className="size-5 animate-spin" />
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/30 text-sm text-white/85 backdrop-blur-[2px]">
+            <Loader2 className="size-5 motion-safe:animate-spin" />
             {mode === "pdf"
               ? ar
                 ? "جارٍ توليد PDF…"
@@ -417,9 +434,9 @@ export function DocumentPreviewFrame({
           </div>
         ) : null}
         {error ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center z-10">
-            <p className="text-sm text-destructive max-w-md">{error}</p>
-            <p className="text-xs text-muted-foreground max-w-sm">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-6 text-center">
+            <p className="max-w-md rounded-lg border border-red-400/40 bg-red-500/15 px-3 py-2 text-sm text-red-100">{error}</p>
+            <p className="max-w-sm text-xs text-white/70">
               {ar
                 ? "تأكد من تثبيت Chromium لـ Playwright على الخادم، أو استخدم معاينة التخطيط HTML."
                 : "Ensure Playwright Chromium is installed on the server, or use HTML layout preview."}
@@ -446,7 +463,10 @@ export function DocumentPreviewFrame({
           </div>
         ) : null}
         {!loading && !error && mode === "html" && htmlSrc ? (
-          <div className="mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-sm border border-slate-200/90 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.18)] ring-1 ring-black/5">
+          <div
+            className="relative mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-[3px] bg-white ops-paper"
+            aria-label={tr("preview_stage_paper", locale)}
+          >
             <iframe
               id={`doc-preview-${proposalId}`}
               title={title || "Document preview"}
@@ -507,7 +527,10 @@ export function DocumentPreviewFrame({
           </div>
         ) : null}
         {!loading && !error && mode === "pdf" && pdfSrc ? (
-          <div className="mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-sm border border-slate-200/90 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.18)] ring-1 ring-black/5">
+          <div
+            className="relative mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-[3px] bg-white ops-paper"
+            aria-label={tr("preview_stage_paper", locale)}
+          >
             <iframe
               key={pdfSrc}
               title={title || "PDF preview"}
@@ -518,7 +541,7 @@ export function DocumentPreviewFrame({
           </div>
         ) : null}
         {!loading && !error && !htmlSrc && !pdfSrc ? (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground gap-2">
+          <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-white/70">
             <Maximize2 className="size-4" />
             {ar ? "لا معاينة" : "No preview"}
           </div>

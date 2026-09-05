@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Brain, CheckCircle2, FileText, Loader2, Search, Shield, Workflow } from "lucide-react";
 import type { TheaterToolEvent } from "@/lib/agents/platform/mission-tool-parts";
@@ -30,6 +30,7 @@ export function MissionPipelineBar({
   tools?: TheaterToolEvent[];
 }) {
   const ar = locale === "ar";
+  const reduceMotion = useReducedMotion() ?? false;
 
   // Progress is derived from real tool telemetry only.
   //
@@ -64,26 +65,24 @@ export function MissionPipelineBar({
     <div className="relative z-[1] shrink-0 overflow-hidden border-y border-black/[0.06] dark:border-white/[0.06] bg-white/[0.55] dark:bg-black/20 backdrop-blur-[14px]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_100%_at_20%_0%,rgba(20,184,166,0.08),transparent_60%)]" />
       {performing ? (
-        <motion.div
-          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-teal-400/50 to-transparent"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.4 }}
-        />
+        // A light travelling the top hairline while the agent works — the same
+        // "working, not how far" cue the agent timeline uses.
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px text-teal-400/70 ops-shimmer motion-reduce:hidden" />
       ) : null}
 
       <div className="relative flex flex-col gap-2 px-3 py-2.5 sm:px-4 sm:py-3">
-        <div className="hidden items-center gap-1 sm:flex">
+        <ol className="hidden items-center gap-1 sm:flex" aria-label={ar ? "مراحل المهمة" : "Mission stages"}>
           {PIPELINE_STEPS.map((step, i) => {
             const Icon = STEP_ICONS[step.key];
             const isActive = i === activeStep;
             const isDone = completedSteps.has(i);
             return (
-              <div key={step.key} className="flex flex-1 items-center gap-1 min-w-0">
+              <li key={step.key} className="flex flex-1 items-center gap-1 min-w-0">
                 <motion.div
-                  layout
+                  layout={!reduceMotion}
+                  aria-current={isActive ? "step" : undefined}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all duration-300 will-change-transform",
+                    "relative flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all duration-300 will-change-transform",
                     "shrink-0",
                     isActive
                       ? "border-teal-500/30 bg-teal-500/12 text-teal-900 dark:text-teal-100 shadow-[0_0_16px_-6px_rgba(20,184,166,0.55)]"
@@ -92,55 +91,65 @@ export function MissionPipelineBar({
                         : "border-black/10 bg-white/60 dark:border-white/10 dark:bg-white/[0.04] text-zinc-500 dark:text-zinc-500"
                   )}
                 >
-                  <span className="flex size-4 items-center justify-center">
-                    {isDone && !isActive ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : isActive ? <Loader2 className="size-3.5 animate-spin" /> : <Icon className="size-3.5" />}
+                  <span className={cn("relative flex size-4 items-center justify-center rounded-full", isActive && !reduceMotion && "ops-ring text-teal-500/60")}>
+                    {isDone && !isActive ? (
+                      <CheckCircle2 className="size-3.5 text-emerald-500" aria-hidden />
+                    ) : isActive ? (
+                      <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+                    ) : (
+                      <Icon className="size-3.5" aria-hidden />
+                    )}
                   </span>
                   <span className="hidden md:inline tracking-tight">{ar ? step.labelAr : step.labelEn}</span>
                   <span className="md:hidden tracking-tight">{ar ? step.labelAr.slice(0, 4) : step.labelEn.slice(0, 4)}</span>
                 </motion.div>
                 {i < PIPELINE_STEPS.length - 1 ? (
-                  <div className="flex flex-1 items-center">
+                  <div className="flex flex-1 items-center" aria-hidden>
                     <div className={cn("h-px flex-1 transition-colors duration-500", isDone ? "bg-emerald-500/40" : "bg-black/10 dark:bg-white/10")} />
                     <div
                       className={cn(
                         "size-1 rounded-full transition-colors duration-500 ms-1",
-                        isDone ? "bg-emerald-500" : isActive ? "bg-teal-500 animate-pulse" : "bg-zinc-300 dark:bg-white/20"
+                        isDone ? "bg-emerald-500" : isActive ? "bg-teal-500 motion-safe:animate-pulse" : "bg-zinc-300 dark:bg-white/20"
                       )}
                     />
                   </div>
                 ) : null}
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ol>
 
         <div className="flex sm:hidden items-center gap-2.5">
-          <div className="flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-white/10 overflow-hidden">
+          <div
+            className="flex-1 h-1.5 rounded-full bg-zinc-200 dark:bg-white/10 overflow-hidden"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={hasTelemetry ? progressPct : undefined}
+            aria-busy={performing || undefined}
+          >
             {hasTelemetry ? (
               <motion.div
                 className={cn(
                   "h-full rounded-full bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-400",
                   performing && "shadow-[0_0_12px_rgba(20,184,166,0.6)]"
                 )}
-                initial={{ width: 0 }}
+                initial={reduceMotion ? false : { width: 0 }}
                 animate={{ width: `${progressPct}%` }}
-                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: reduceMotion ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
               />
             ) : (
-              // Indeterminate: the agent is working but has not reported a step.
-              <motion.div
-                className="h-full w-1/3 rounded-full bg-gradient-to-r from-transparent via-teal-500 to-transparent"
-                animate={{ x: ["-100%", "300%"] }}
-                transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
-              />
+              // Indeterminate: the agent is working but has not reported a
+              // step. A CSS shimmer, so `prefers-reduced-motion` stops it.
+              <div className="h-full w-full text-teal-500/80 ops-shimmer motion-reduce:hidden" aria-hidden />
             )}
           </div>
           <AnimatePresence mode="popLayout">
             <motion.span
               key={activeStep >= 0 ? PIPELINE_STEPS[activeStep].key : "indeterminate"}
-              initial={{ opacity: 0, y: 4 }}
+              initial={reduceMotion ? false : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
+              exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
               className="shrink-0 rounded-full border border-black/10 bg-white/70 dark:border-white/10 dark:bg-white/[0.06] px-2 py-0.5 text-[10px] text-zinc-600 dark:text-zinc-400"
             >
               {/* The bar already carries the fraction. Say what is happening. */}
@@ -153,7 +162,7 @@ export function MissionPipelineBar({
                   : "Working"}
             </motion.span>
           </AnimatePresence>
-          {performing ? <span className="size-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" /> : null}
+          {performing ? <span className="size-1.5 rounded-full bg-teal-500 motion-safe:animate-pulse shrink-0" aria-hidden /> : null}
         </div>
       </div>
     </div>

@@ -1,43 +1,194 @@
 "use client";
 
 import { useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { tr } from "@/lib/i18n";
 import {
   Bot,
-  CheckCircle2,
+  ExternalLink,
   FileText,
   FolderKanban,
-  Loader2,
   Navigation,
   Radio,
   Search,
   Shield,
   Sparkles,
   Workflow,
-  XCircle,
   Zap,
 } from "lucide-react";
 import {
   extractDelegationPlan,
   extractDocumentPreview,
   extractRegulatoryPreview,
-  humanActionLabel,
   isComplianceishTool,
   isDocumentishTool,
   isToolDone,
   isToolFailed,
   isToolRunning,
   kindLabel,
-  summarizeToolInput,
-  summarizeToolOutput,
   toolDisplayName,
   toolKind,
   type TheaterToolEvent,
   type ToolKind,
 } from "@/lib/agents/platform/mission-tool-parts";
+import { extractSearchSources, formatRetrievedDate } from "@/lib/agents/run-presentation";
 import { MissionRealtimeWorkflow } from "./mission-realtime-workflow";
+
+/** The tools whose output is a list of dated, linked web sources. */
+const SEARCH_SOURCE_TOOLS = new Set(["searchWeb", "researchSaudiLaw"]);
+
+function searchQueryOf(input: unknown): string | null {
+  if (!input || typeof input !== "object") return null;
+  const q = (input as { query?: unknown }).query;
+  return typeof q === "string" && q.trim() ? q.trim() : null;
+}
+
+function searchErrorOf(tool: TheaterToolEvent): string | null {
+  if (typeof tool.errorText === "string" && tool.errorText.trim()) return tool.errorText.trim();
+  const o = tool.output;
+  if (o && typeof o === "object" && (o as { ok?: unknown }).ok === false) {
+    // A tool result, not an API failure body: `error` here is the plain
+    // sentence the tool itself returned (see searchWeb in platform/tools.ts).
+    const toolResult = o as { error?: unknown };
+    const reason = toolResult.error;
+    return typeof reason === "string" && reason.trim() ? reason.trim() : "";
+  }
+  return null;
+}
+
+/**
+ * Live web search, as source cards. Each card is one result the tool actually
+ * returned — its reference, the host as a monospace chip (no favicon service:
+ * a per-source request to a third party for a 16px icon is a tracking beacon
+ * on a compliance product), the title as a link, the snippet, and the date it
+ * was retrieved. `researchSaudiLaw`'s `liveSources` render the same way, with
+ * the `liveResearchStatus` it reports.
+ */
+function SearchSourcesPanel({ locale, tools }: { locale: "ar" | "en"; tools: TheaterToolEvent[] }) {
+  const ar = locale === "ar";
+  const searchTools = tools.filter((t) => SEARCH_SOURCE_TOOLS.has(t.name));
+  if (searchTools.length === 0) return null;
+  const latest = searchTools[searchTools.length - 1];
+  const running = isToolRunning(latest.state) || !!latest.preliminary;
+  const view = latest.output != null ? extractSearchSources(latest.output) : null;
+  const failure = !running && !view ? searchErrorOf(latest) : null;
+  const query = view?.query ?? searchQueryOf(latest.input);
+  // `researchSaudiLaw` without live sources is a registry synthesis, which the
+  // regulation panel already shows; nothing to add here.
+  if (!running && !failure && (!view || (view.sources.length === 0 && latest.name !== "searchWeb"))) return null;
+  const numberLocale = ar ? "ar-SA" : "en-GB";
+
+  return (
+    <motion.div
+      layout
+      className={cn(
+        "relative overflow-hidden rounded-[18px] border backdrop-blur-xl",
+        "border-sky-500/20 dark:border-sky-400/15 bg-white/70 dark:bg-zinc-900/50",
+        running && "shadow-[0_0_0_1px_rgba(14,165,233,0.12),0_0_28px_-10px_rgba(14,165,233,0.35)]"
+      )}
+      aria-label={tr("search_sources_title", locale)}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(100%_80%_at_90%_0%,rgba(14,165,233,0.12),transparent_50%)]" />
+      <div className="relative p-3.5 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-[11px] font-semibold tracking-wide uppercase text-sky-900 dark:text-sky-200">
+            <span className="flex size-6 items-center justify-center rounded-full border border-sky-500/20 bg-white/80 dark:bg-white/[0.06]">
+              <Search className={cn("size-3.5", running && "motion-safe:animate-pulse")} aria-hidden />
+            </span>
+            {tr("search_sources_title", locale)}
+          </div>
+          <Badge
+            variant="outline"
+            className={cn(
+              "rounded-full text-[10px] border-sky-500/20 bg-white/60 dark:bg-white/[0.05] tabular-nums",
+              running && "motion-safe:animate-pulse",
+              failure != null && "border-destructive/40 bg-destructive/10 text-destructive"
+            )}
+          >
+            {running
+              ? ar
+                ? "يبحث…"
+                : "searching…"
+              : failure != null
+                ? tr("search_sources_failed", locale)
+                : tr("live_draft_sources_count", locale, { count: (view?.sources.length ?? 0).toLocaleString(numberLocale) })}
+          </Badge>
+        </div>
+
+        {query ? (
+          <p className="text-[12px] leading-snug" dir="auto">
+            <span className="text-zinc-500">{tr("search_sources_query", locale)}: </span>
+            <span className="font-medium">{query}</span>
+          </p>
+        ) : null}
+
+        {running ? (
+          <div className="h-1 overflow-hidden rounded-full bg-sky-500/10">
+            <div className="h-full w-full text-sky-500/70 ops-shimmer motion-reduce:hidden" aria-hidden />
+          </div>
+        ) : null}
+
+        {failure != null ? (
+          <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-2.5 text-[11px] leading-relaxed text-destructive" role="alert" dir="auto">
+            {failure || tr("search_sources_failed", locale)}
+          </p>
+        ) : null}
+
+        {view?.answer ? (
+          <p className="line-clamp-3 rounded-xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-black/20 px-2.5 py-2 text-[11px] leading-snug text-zinc-700 dark:text-zinc-300" dir="auto">
+            {view.answer}
+          </p>
+        ) : null}
+
+        {view && view.sources.length > 0 ? (
+          <ol className="space-y-1.5">
+            {view.sources.map((s) => (
+              <li key={`${s.ref}-${s.url}`} className="min-w-0 rounded-xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-black/20 px-2.5 py-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded bg-sky-500/10 px-1.5 py-px font-mono text-[9.5px] font-semibold text-sky-700 dark:text-sky-200">{s.ref}</span>
+                  <span className="truncate rounded border border-zinc-200/80 dark:border-white/10 px-1.5 py-px font-mono text-[9.5px] text-zinc-500" dir="ltr">
+                    {s.hostname}
+                  </span>
+                  {s.retrievedAt ? (
+                    <span className="ms-auto shrink-0 text-[9.5px] tabular-nums text-zinc-500">
+                      {tr("live_draft_retrieved", locale, { date: formatRetrievedDate(s.retrievedAt, locale) })}
+                    </span>
+                  ) : null}
+                </div>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="mt-1 flex items-start gap-1 text-[11.5px] font-medium leading-snug hover:underline"
+                  dir="auto"
+                >
+                  <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                  <ExternalLink className="mt-0.5 size-3 shrink-0 text-zinc-400" aria-hidden />
+                  <span className="sr-only">{tr("live_draft_open_source", locale)}</span>
+                </a>
+                {s.snippet ? (
+                  <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-snug text-zinc-600 dark:text-zinc-400" dir="auto">
+                    {s.snippet}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        ) : view && !running && failure == null ? (
+          <p className="text-[11px] text-zinc-500">
+            {view.status && view.status.startsWith("unavailable")
+              ? tr("live_draft_sources_unavailable", locale, { reason: view.status.replace(/^unavailable:?/, "").replace(/[_:]+/g, " ").trim() || "unknown" })
+              : tr("search_sources_empty", locale)}
+          </p>
+        ) : null}
+
+        {view?.note ? <p className="text-[10px] leading-snug text-zinc-500" dir="auto">{view.note}</p> : null}
+      </div>
+    </motion.div>
+  );
+}
 
 function KindIcon({ kind, className }: { kind: ToolKind; className?: string }) {
   const c = cn("size-3.5", className);
@@ -134,14 +285,14 @@ function DocumentPreviewPanel({ locale, tools }: { locale: "ar" | "en"; tools: T
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className={cn("flex size-6 items-center justify-center rounded-full border border-cyan-500/20 bg-white/80 dark:bg-white/[0.06] backdrop-blur", running && "border-cyan-500/30 bg-cyan-500/10")}>
-              <FileText className={cn("size-3.5 text-cyan-700 dark:text-cyan-300", running && "animate-pulse")} />
+              <FileText className={cn("size-3.5 text-cyan-700 dark:text-cyan-300", running && "motion-safe:animate-pulse")} />
             </span>
             <span className="text-[11px] font-semibold tracking-wide uppercase text-cyan-900 dark:text-cyan-200">{ar ? "معاينة المستند" : "Document preview"}</span>
-            {running ? <span className="size-1.5 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" /> : null}
+            {running ? <span className="size-1.5 rounded-full bg-cyan-500 motion-safe:animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" /> : null}
           </div>
           <Badge variant="outline" className={cn(
             "rounded-full text-[10px] px-2 py-0.5 border-cyan-500/20 bg-white/60 dark:bg-white/[0.05]",
-            running && "animate-pulse border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
+            running && "motion-safe:animate-pulse border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
             failed && !running && "border-destructive/40 bg-destructive/10 text-destructive"
           )}>
             {running ? (ar ? "يولد…" : "generating…") : failed && !active ? (ar ? "فشل" : "failed") : ar ? "جاهز" : "ready"}
@@ -160,7 +311,7 @@ function DocumentPreviewPanel({ locale, tools }: { locale: "ar" | "en"; tools: T
                 failed && !running
                   ? "bg-destructive/70"
                   : "bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-400",
-                progress === null && running && "w-1/3 animate-pulse"
+                progress === null && running && "w-1/3 motion-safe:animate-pulse"
               )}
               initial={{ width: 0 }}
               animate={{
@@ -187,7 +338,7 @@ function DocumentPreviewPanel({ locale, tools }: { locale: "ar" | "en"; tools: T
             <div key={`${line}-${i}`} className={cn("flex gap-2", running && i === statusLines.length - 1 ? "text-cyan-800 dark:text-cyan-200" : "text-zinc-700 dark:text-zinc-300")}>
               <span className="text-cyan-600/60 shrink-0" aria-hidden="true">›</span>
               <span className="truncate">{line}</span>
-              {running && i === statusLines.length - 1 ? <span className="inline-block h-3 w-1.5 bg-cyan-500 animate-pulse" aria-hidden="true" /> : null}
+              {running && i === statusLines.length - 1 ? <span className="inline-block h-3 w-1.5 bg-cyan-500 motion-safe:animate-pulse" aria-hidden="true" /> : null}
             </div>
           ))}
         </div>
@@ -267,10 +418,10 @@ function RegulationCheckPanel({ locale, tools, voiceLive }: { locale: "ar" | "en
       <div className="relative p-3.5 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-[11px] font-semibold tracking-wide uppercase text-emerald-900 dark:text-emerald-200">
-            <span className="flex size-6 items-center justify-center rounded-full border border-emerald-500/20 bg-white/80 dark:bg-white/[0.06]"><Shield className={cn("size-3.5", running && "animate-pulse")} /></span>
+            <span className="flex size-6 items-center justify-center rounded-full border border-emerald-500/20 bg-white/80 dark:bg-white/[0.06]"><Shield className={cn("size-3.5", running && "motion-safe:animate-pulse")} /></span>
             {ar ? "فحص الأنظمة" : "Regulation check"}
           </div>
-          <Badge variant="outline" className={cn("rounded-full text-[10px] border-emerald-500/20 bg-white/60 dark:bg-white/[0.05]", running && "animate-pulse")}>{running ? (ar ? "يركّب…" : "synthesizing…") : ar ? "مُركّب" : "synthesized"}</Badge>
+          <Badge variant="outline" className={cn("rounded-full text-[10px] border-emerald-500/20 bg-white/60 dark:bg-white/[0.05]", running && "motion-safe:animate-pulse")}>{running ? (ar ? "يركّب…" : "synthesizing…") : ar ? "مُركّب" : "synthesized"}</Badge>
         </div>
         <p className="text-[13px] font-medium leading-snug">{preview?.title || toolDisplayName(active?.name || "researchSaudiLaw", ar)}</p>
         {preview?.frameworks?.length ? (
@@ -338,7 +489,7 @@ export function MissionToolTheater({
       <div className="flex items-center justify-between gap-2 border-b border-zinc-200/60 dark:border-white/10 pb-2.5 sm:pb-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={cn("flex size-7 sm:size-8 items-center justify-center rounded-full border transition-all duration-300 shrink-0", active ? "border-teal-500/30 bg-teal-500/14 text-teal-700 dark:text-teal-200 shadow-[0_0_16px_-6px_rgba(20,184,166,0.6)]" : "border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.04] text-zinc-500")}>
-            <Sparkles className={cn("size-3.5", active && "animate-pulse")} />
+            <Sparkles className={cn("size-3.5", active && "motion-safe:animate-pulse")} />
           </div>
           <div className="min-w-0">
             <p className="text-[13px] sm:text-[13.5px] font-[600] tracking-tight leading-none truncate">{ar ? "المعاينات الحية والمعالجة" : "Live previews & processing"}</p>
@@ -365,6 +516,7 @@ export function MissionToolTheater({
       <div className="space-y-3">
         <DelegationTeam locale={locale} tools={tools} />
         <DocumentPreviewPanel locale={locale} tools={tools} />
+        <SearchSourcesPanel locale={locale} tools={tools} />
         <RegulationCheckPanel locale={locale} tools={tools} voiceLive={voiceLive} />
         <MissionRealtimeWorkflow locale={locale} tools={tools} />
       </div>
