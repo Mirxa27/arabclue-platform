@@ -9,6 +9,11 @@ import {
   guardCaughtOrThrow,
   guardOrThrow,
 } from "../ai/provider-unavailable";
+import {
+  appendGlossaryWithinBudget,
+  formatArabicWeeks,
+  styleGuideFor,
+} from "../ai/style-guide";
 import { LEGAL_DISCLAIMER } from "../procurement-rules";
 import {
   researchSaudiLawForContract,
@@ -54,7 +59,16 @@ const ARTICLE_HEADER_RE = /^###\s*Article\s+(\d+)[^\n]*$/gim;
 const BILINGUAL_ARTICLE_HEADER_RE =
   /^###\s*Article\s+\d+\s*—\s*[^|\n]+\|\s*المادة\s+\d+\s*—\s*[^\n]+$/i;
 
-const SYSTEM_LAW_CONTRACT = `You are ArabClue Agent — Principal Saudi Contract Counsel Drafter (assistant only).
+/** Glossary budget inside the system prompt; the hard rules and the format come first. */
+const PROMPT_GLOSSARY_CHARS = 1_200;
+
+/**
+ * The system turn. Exported so its size cap can be asserted: the glossary is
+ * filtered to the terms the draft under refinement actually uses and capped,
+ * so the prompt stays under 6,000 characters for any draft.
+ */
+export function lawContractSystemPrompt(locale: Locale = "ar", draftText = ""): string {
+  const head = `You are ArabClue Agent — Principal Saudi Contract Counsel Drafter (assistant only).
 You draft bilingual EN/AR service / supply contracts for Saudi tender engagements.
 
 HARD RULES:
@@ -64,6 +78,8 @@ HARD RULES:
 - NEVER claim 100% legal certainty, "guaranteed enforceability", or that counsel review is optional.
 - Research FIRST using only the provided research brief and tender anchors. Do not invent statutes, article numbers, or gazette updates.
 - Every operative clause must be grounded in: (a) tender-explicit facts, (b) registry-backed findings marked REGISTRY_BACKED or TENDER_EXPLICIT, or (c) clearly labeled REQUIRES_COUNSEL recommendations.
+- Where the brief and the tender give no value for a term (a party name, a date, a cap, a forum), keep the draft's placeholder or write "[TO BE COMPLETED BY COUNSEL]" / "[يُستكمل بواسطة المستشار القانوني]" — never an invented value.
+- The English and Arabic bodies of an article carry the same parties, obligations, periods, percentages, exceptions and remedies; neither adds a term the other lacks.
 - Output MUST be bilingual front-to-front using exactly this article format (repeat for each article):
 
 ### Article N — English Title | المادة N — العنوان العربي
@@ -90,7 +106,35 @@ Then:
 (articles)
 
 End with signature blocks EN/AR and the disclaimer verbatim: "${LEGAL_DISCLAIMER}"
-`;
+Output Markdown only — no outer code fences.
+
+${styleGuideFor(locale)}`;
+  return appendGlossaryWithinBudget(head, locale, draftText, {
+    maxChars: PROMPT_GLOSSARY_CHARS,
+  });
+}
+
+/**
+ * What a model does to the article format when it is nearly right: wraps the
+ * whole draft in a code fence, puts a hyphen or en dash where the em dash
+ * goes in an article header, leaves a trailing space after `:::en`. Each of
+ * those made `parseContractArticles` see nothing and the run fall back to the
+ * deterministic draft. Normalizing them is safe — none changes a clause — and
+ * everything downstream (validation, export) reads the normalized text.
+ */
+export function normalizeContractMarkdown(md: string): string {
+  let text = md.trim();
+  const fenced = text.match(/^```[a-zA-Z0-9_-]*[ \t]*\r?\n([\s\S]*?)\r?\n?```$/);
+  if (fenced) text = fenced[1].trim();
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/^[ \t]*(:::(?:en|ar)?)[ \t]*$/gim, (_, marker: string) => marker.toLowerCase())
+    .replace(
+      /^(###\s*Article\s+\d+)\s*[-–—]+\s*([^|\n]+?)\s*\|\s*(المادة\s+\d+)\s*[-–—]+\s*/gim,
+      (_, article: string, titleEn: string, madda: string) =>
+        `${article} — ${titleEn} | ${madda} — `
+    );
+}
 
 export function buildDeterministicContract(opts: {
   projectTitle: string;
@@ -155,7 +199,7 @@ export function buildDeterministicContract(opts: {
         ? `The term follows milestone schedule: ${opts.entities.milestones.map((m) => `${m.name} (${m.weeks} weeks)`).join("; ")}. Exact start/end dates require human completion.`
         : `The term shall follow the Tender Documents. Start and end dates require human completion before signature.`,
       bodyAr: opts.entities?.milestones?.length
-        ? `تتبع المدة جدول المعالم: ${opts.entities.milestones.map((m) => `${m.name} (${m.weeks} أسبوعاً)`).join("؛ ")}. تواريخ البدء والانتهاء تتطلب استكمالاً بشرياً.`
+        ? `تتبع المدة جدول المعالم: ${opts.entities.milestones.map((m) => `${m.name} (${formatArabicWeeks(m.weeks)})`).join("؛ ")}. تواريخ البدء والانتهاء تتطلب استكمالاً بشرياً.`
         : `تتبع المدة مستندات المنافسة. تواريخ البدء والانتهاء تتطلب استكمالاً بشرياً قبل التوقيع.`,
       sourceIds: ["procurement-context"],
     },
@@ -308,6 +352,12 @@ export async function draftLawContract(opts: {
   locale?: Locale;
   /** Receives the refined contract as the model writes it; the result is unchanged. */
   onDelta?: (text: string) => void;
+  /**
+   * Dated, source-linked web passages ([Sn] … URL). Draft-grade context for
+   * recitals and REQUIRES_COUNSEL notes, never a substitute for the registry
+   * or for counsel; absent when no search key is configured.
+   */
+  liveResearch?: string;
 }): Promise<BilingualContractDraft> {
   const research = researchSaudiLawForContract({
     entities: opts.entities,
@@ -334,10 +384,17 @@ export async function draftLawContract(opts: {
   try {
     const completion = await generateCompletion(
       [
-        { role: "system", content: SYSTEM_LAW_CONTRACT },
+        {
+          role: "system",
+          content: lawContractSystemPrompt(opts.locale ?? "ar", deterministic.contentMd),
+        },
         {
           role: "user",
-          content: `Research brief JSON:\n${JSON.stringify(research).slice(0, 14000)}\n\nDeterministic draft to refine (preserve article markers :::en :::ar):\n${deterministic.contentMd.slice(0, 12000)}\n\nRefine operative language for formality. Do not add pricing. Do not claim 100% certainty. Keep bilingual article format exactly.`,
+          content: `Research brief JSON:\n${JSON.stringify(research).slice(0, 14000)}\n\n${
+            opts.liveResearch
+              ? `Live web research (dated, source-linked; cite as [Sn] with the URL inside a REQUIRES_COUNSEL note only; never as a statute text or certainty):\n<document>\n${opts.liveResearch.slice(0, 5000)}\n</document>\n\n`
+              : ""
+          }Deterministic draft to refine (preserve article markers :::en :::ar):\n${deterministic.contentMd.slice(0, 12000)}\n\nRefine operative language for formality. Do not add pricing. Do not claim 100% certainty. Keep bilingual article format exactly.`,
         },
       ],
       {
@@ -356,7 +413,9 @@ export async function draftLawContract(opts: {
       guardOrThrow(completion, "law-contract:draftContract");
     }
 
-    const md = completion.content?.trim() || deterministic.contentMd;
+    const md = completion.content?.trim()
+      ? normalizeContractMarkdown(completion.content)
+      : deterministic.contentMd;
     const articles = parseContractArticles(md);
     const useMd =
       articles.length >= 8 ? md : deterministic.contentMd;

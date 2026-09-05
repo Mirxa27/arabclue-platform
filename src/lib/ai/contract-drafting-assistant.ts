@@ -12,6 +12,7 @@
  * All AI output carries provenance metadata and passes validation gates.
  */
 
+import { z } from "zod";
 import { generateCompletion, type LLMMessage } from "../llm";
 import {
   LEGAL_DISCLAIMER,
@@ -25,7 +26,6 @@ import {
   CONTRACT_TEMPLATE_CATALOG,
   type ContractClauseId,
   type ContractTemplateKey,
-  type LocalizedText,
 } from "../document-templates/contract-templates";
 import { validateContractDraft } from "../agents/law-contract";
 import {
@@ -33,6 +33,8 @@ import {
   guardCaughtOrThrow,
   guardOrThrow,
 } from "./provider-unavailable";
+import { parseJsonWithSchema, schemaRejection } from "./json-output";
+import { appendGlossaryWithinBudget, styleGuideFor } from "./style-guide";
 import {
   NO_PRICING_RULE,
   REGULATORY_PRECISION_RULE,
@@ -53,6 +55,8 @@ export type AiProvenance = {
   fallback: boolean;
 };
 
+export type ClauseLegalReviewStatus = "REQUIRED" | "NOT_LEGAL_ADVICE";
+
 export type ClauseSuggestion = {
   clauseId: string;
   titleEn: string;
@@ -62,6 +66,14 @@ export type ClauseSuggestion = {
   riskLevel: "LOW" | "MEDIUM" | "HIGH";
   riskNotesEn: string;
   riskNotesAr: string;
+  /**
+   * What the clause rests on: `template:<clauseId>`, `tender:<field>`,
+   * `compliance:<controlId>` or `registry:<policyId>`. `null` means nothing in
+   * the provided context grounds it, and the clause is then HIGH risk with
+   * legal review required — never presented as settled.
+   */
+  sourceRef: string | null;
+  legalReviewStatus: ClauseLegalReviewStatus;
   provenance: AiProvenance;
 };
 
@@ -101,41 +113,218 @@ export type ContractDraftingInput = {
 };
 
 // ---------------------------------------------------------------------------
-// System prompt builder — no hardcoded prompts; assembled from registry
+// System prompt builders — assembled from the registry, the house style and
+// the glossary of the terms the context uses. Exported so their size cap can
+// be asserted (each stays under 6,000 characters for any context).
 // ---------------------------------------------------------------------------
 
-function buildClauseGenerationSystemPrompt(): string {
-  return `You are ArabClue AI Contract Drafting Assistant — bilingual EN/AR clause generation engine.
+/** Glossary budget inside these prompts; the rules and the schema come first. */
+const PROMPT_GLOSSARY_CHARS = 1_200;
+
+/** Most clauses the model may add beyond the template's own. */
+const MAX_CUSTOM_CLAUSES = 3;
+
+const CUSTOM_CLAUSE_ID_RE = /^custom\.[a-z0-9][a-z0-9-]{1,60}$/;
+
+export function buildClauseGenerationSystemPrompt(
+  locale: Locale = "ar",
+  contextText = ""
+): string {
+  const head = `You are ArabClue AI Contract Drafting Assistant — bilingual EN/AR clause generation engine for Saudi procurement engagements.
 ${NO_PRICING_RULE}
 ${REGULATORY_PRECISION_RULE}
-
-You generate bilingual contract clause suggestions for Saudi procurement engagements.
 Rules:
-- Generate clauses in paired EN/AR format using :::en and :::ar blocks.
-- Every clause must reference applicable Saudi frameworks: ${PROCUREMENT_LAW.nameEn} / ${PROCUREMENT_LAW.nameAr}.
-- Flag high-risk clauses (liability, termination, IP, data protection) with risk notes.
-- Never claim 100% legal certainty.
+- Draft one clause for each entry under "templateClauses" in the request, clauseId copied verbatim. You may add at most ${MAX_CUSTOM_CLAUSES} clauses the tender context requires and the template lacks, with clauseId "custom.<kebab-slug>", riskLevel HIGH and legalReviewStatus REQUIRED.
+- Every clause names its basis in "sourceRef": "template:<clauseId>", "tender:scope" | "tender:sla" | "tender:milestones" | "tender:evaluation", "compliance:<controlId>" or "registry:<policyId>" — only identifiers present in the request. A clause with no basis in the request is sourceRef null, riskLevel HIGH, legalReviewStatus REQUIRED, and its riskNotes say what is assumed.
+- Where the request gives no value for a term (a party name, a date, a cap, an amount, a governing forum), write a bracketed placeholder — "[TO BE COMPLETED BY COUNSEL]" / "[يُستكمل بواسطة المستشار القانوني]" — never an invented value. Penalty percentages come from the tender SLA verbatim or not at all.
+- Liability, termination, intellectual property, data protection, delay penalties and governing law are HIGH risk unless the tender text fixes the term; HIGH always carries legalReviewStatus REQUIRED. Reference ${PROCUREMENT_LAW.nameEn} / ${PROCUREMENT_LAW.nameAr} only where it applies.
+- bodyEn and bodyAr are plain clause text with the same meaning, formal legal register in each language; the caller assembles the bilingual article format. Never claim 100% legal certainty or that counsel review is optional.
 - Include: "${LEGAL_DISCLAIMER}"
-- Output JSON only: { "clauses": [{ "clauseId": string, "titleEn": string, "titleAr": string, "bodyEn": string, "bodyAr": string, "riskLevel": "LOW"|"MEDIUM"|"HIGH", "riskNotesEn": string, "riskNotesAr": string }] }`;
+- Output JSON only: { "clauses": [{ "clauseId": string, "titleEn": string, "titleAr": string, "bodyEn": string, "bodyAr": string, "riskLevel": "LOW"|"MEDIUM"|"HIGH", "riskNotesEn": string, "riskNotesAr": string, "sourceRef": string|null, "legalReviewStatus": "REQUIRED"|"NOT_LEGAL_ADVICE" }] }
+${styleGuideFor(locale)}`;
+  return appendGlossaryWithinBudget(head, locale, contextText, {
+    maxChars: PROMPT_GLOSSARY_CHARS,
+  });
 }
 
-function buildVariableInferenceSystemPrompt(): string {
-  return `You are ArabClue AI Variable Inference Engine for contract templates.
+export function buildVariableInferenceSystemPrompt(
+  locale: Locale = "ar",
+  contextText = ""
+): string {
+  const head = `You are ArabClue AI Variable Inference Engine for contract templates.
 ${NO_PRICING_RULE}
 Analyze project/tender data and suggest template variable values.
 Rules:
-- Only infer values supported by tender evidence or project data.
-- Never fabricate legal names, dates, or commercial terms.
-- Output JSON only: { "inferences": [{ "variableKey": string, "inferredValue": string, "confidence": number, "source": string }] }`;
+- Infer only for keys listed under "variables" in the request, variableKey copied verbatim; respect each variable's type.
+- A value must be supported by a field of the request; "source" names that field (for example "entities.sla", "entities.milestones", "projectTitle", "etimadRef"). Omit the variable when the request gives nothing for it — never fabricate legal names, dates, amounts, or commercial terms.
+- "confidence" is 0 to 1 and reflects how directly the source states the value (1 = verbatim, 0.5 = derived).
+- Output JSON only: { "inferences": [{ "variableKey": string, "inferredValue": string, "confidence": number, "source": string }] }
+${styleGuideFor(locale)}`;
+  return appendGlossaryWithinBudget(head, locale, contextText, {
+    maxChars: PROMPT_GLOSSARY_CHARS,
+  });
 }
 
-function buildConsistencyCheckSystemPrompt(): string {
+export function buildConsistencyCheckSystemPrompt(locale: Locale = "ar"): string {
   return `You are ArabClue AI Bilingual Consistency Validator.
 Compare paired EN/AR contract clauses for semantic equivalence.
 Rules:
-- Flag material discrepancies (not stylistic differences).
-- Never claim legal certainty.
-- Output JSON only: { "checks": [{ "clauseId": string, "isConsistent": boolean, "discrepancyEn": string, "discrepancyAr": string }] }`;
+- Check only the clauseIds given in the request, copied verbatim.
+- Flag material discrepancies — a party, obligation, period, percentage, exception, or remedy present in one language and absent or different in the other. Ignore stylistic differences.
+- Quote the differing phrase in discrepancyEn/discrepancyAr; both empty when consistent. Never claim legal certainty.
+- Output JSON only: { "checks": [{ "clauseId": string, "isConsistent": boolean, "discrepancyEn": string, "discrepancyAr": string }] }
+${styleGuideFor(locale)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Answer schemas — the model's JSON is admitted only in this shape
+// ---------------------------------------------------------------------------
+
+const legalReviewStatusSchema = z.enum(["REQUIRED", "NOT_LEGAL_ADVICE"]);
+
+const clauseAnswerSchema = z.object({
+  clauseId: z.string(),
+  titleEn: z.string(),
+  titleAr: z.string(),
+  bodyEn: z.string(),
+  bodyAr: z.string(),
+  riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  riskNotesEn: z.string().nullable().optional(),
+  riskNotesAr: z.string().nullable().optional(),
+  sourceRef: z.string().nullable().optional(),
+  legalReviewStatus: legalReviewStatusSchema.nullable().optional(),
+});
+
+const clausesAnswerSchema = z.object({ clauses: z.array(clauseAnswerSchema) });
+
+const inferenceAnswerSchema = z.object({
+  variableKey: z.string(),
+  inferredValue: z.string(),
+  confidence: z.number().nullable().optional(),
+  source: z.string().nullable().optional(),
+});
+
+const inferencesAnswerSchema = z.object({ inferences: z.array(inferenceAnswerSchema) });
+
+const checkAnswerSchema = z.object({
+  clauseId: z.string(),
+  isConsistent: z.boolean(),
+  discrepancyEn: z.string().nullable().optional(),
+  discrepancyAr: z.string().nullable().optional(),
+});
+
+const checksAnswerSchema = z.object({ checks: z.array(checkAnswerSchema) });
+
+type ParsedAnswer<T> = { ok: true; data: T[] } | { ok: false; issues: string[] };
+
+/** Clause identifiers the template names, in section order. */
+function templateClauseIds(templateKey: ContractTemplateKey): ContractClauseId[] {
+  const template = CONTRACT_TEMPLATE_CATALOG[templateKey];
+  if (!template) return [];
+  return template.sections.flatMap((section) => [...section.clauseIds]);
+}
+
+/**
+ * The model's clauses, admitted only for the template's clause identifiers
+ * (plus a bounded number of `custom.*` additions). An ungrounded clause is
+ * kept as HIGH risk with legal review required rather than dressed up as a
+ * template clause; HIGH always implies review. Provenance is the caller's.
+ */
+export function parseAiClauses(
+  content: string,
+  templateKey: ContractTemplateKey
+): ParsedAnswer<Omit<ClauseSuggestion, "provenance">> {
+  const parsed = parseJsonWithSchema(content, clausesAnswerSchema);
+  if (!parsed.ok) return parsed;
+  const allowed = new Set<string>(templateClauseIds(templateKey));
+  const seen = new Set<string>();
+  let custom = 0;
+  const clauses: Omit<ClauseSuggestion, "provenance">[] = [];
+  for (const c of parsed.data.clauses) {
+    const clauseId = c.clauseId.trim();
+    if (!clauseId || !c.bodyEn.trim() || !c.bodyAr.trim()) continue;
+    if (seen.has(clauseId)) continue;
+    const isCustom = CUSTOM_CLAUSE_ID_RE.test(clauseId);
+    if (!allowed.has(clauseId) && !isCustom) continue;
+    if (isCustom && custom >= MAX_CUSTOM_CLAUSES) continue;
+    if (isCustom) custom += 1;
+    seen.add(clauseId);
+
+    const sourceRef = c.sourceRef?.trim() || null;
+    const riskLevel: ClauseSuggestion["riskLevel"] =
+      isCustom || !sourceRef ? "HIGH" : c.riskLevel;
+    const legalReviewStatus: ClauseLegalReviewStatus =
+      riskLevel === "HIGH" ? "REQUIRED" : c.legalReviewStatus ?? "NOT_LEGAL_ADVICE";
+    clauses.push({
+      clauseId,
+      titleEn: c.titleEn,
+      titleAr: c.titleAr,
+      bodyEn: c.bodyEn,
+      bodyAr: c.bodyAr,
+      riskLevel,
+      riskNotesEn: c.riskNotesEn ?? "",
+      riskNotesAr: c.riskNotesAr ?? "",
+      sourceRef,
+      legalReviewStatus,
+    });
+  }
+  return { ok: true, data: clauses };
+}
+
+/**
+ * The model's variable values, admitted only for keys the template defines.
+ * A value for an unknown key has nowhere to bind and is dropped.
+ */
+export function parseAiVariableInferences(
+  content: string,
+  templateKey: ContractTemplateKey
+): ParsedAnswer<Omit<VariableInference, "provenance">> {
+  const parsed = parseJsonWithSchema(content, inferencesAnswerSchema);
+  if (!parsed.ok) return parsed;
+  const template = CONTRACT_TEMPLATE_CATALOG[templateKey];
+  const allowed = new Set<string>(template?.variables.map((v) => v.key) ?? []);
+  const seen = new Set<string>();
+  const inferences: Omit<VariableInference, "provenance">[] = [];
+  for (const v of parsed.data.inferences) {
+    const variableKey = v.variableKey.trim();
+    const inferredValue = v.inferredValue.trim();
+    if (!variableKey || !inferredValue || !allowed.has(variableKey) || seen.has(variableKey)) continue;
+    seen.add(variableKey);
+    inferences.push({
+      variableKey,
+      inferredValue,
+      confidence:
+        typeof v.confidence === "number" && Number.isFinite(v.confidence)
+          ? Math.max(0, Math.min(1, v.confidence))
+          : 0.5,
+      source: v.source?.trim() || "ai_inference",
+    });
+  }
+  return { ok: true, data: inferences };
+}
+
+/** The model's checks, one per clause it was shown; checks for other ids are dropped. */
+export function parseAiConsistencyChecks(
+  content: string,
+  clauseIds: readonly string[]
+): ParsedAnswer<Omit<BilingualConsistencyCheck, "provenance">> {
+  const parsed = parseJsonWithSchema(content, checksAnswerSchema);
+  if (!parsed.ok) return parsed;
+  const allowed = new Set(clauseIds);
+  const seen = new Set<string>();
+  const checks: Omit<BilingualConsistencyCheck, "provenance">[] = [];
+  for (const c of parsed.data.checks) {
+    const clauseId = c.clauseId.trim();
+    if (!allowed.has(clauseId) || seen.has(clauseId)) continue;
+    seen.add(clauseId);
+    checks.push({
+      clauseId,
+      isConsistent: c.isConsistent,
+      discrepancyEn: c.discrepancyEn ?? "",
+      discrepancyAr: c.discrepancyAr ?? "",
+    });
+  }
+  return { ok: true, data: checks };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +386,8 @@ function deterministicClauseSuggestions(
         riskLevel,
         riskNotesEn,
         riskNotesAr,
+        sourceRef: `template:${clauseId}`,
+        legalReviewStatus: riskLevel === "HIGH" ? "REQUIRED" : "NOT_LEGAL_ADVICE",
         provenance,
       });
     }
@@ -290,13 +481,27 @@ function deterministicConsistencyChecks(
     fallback: true,
   };
 
-  return clauses.map((c) => ({
-    clauseId: c.clauseId,
-    isConsistent: c.bodyEn.trim().length > 0 && c.bodyAr.trim().length > 0,
-    discrepancyEn: c.bodyEn.trim() ? "" : "English body is empty",
-    discrepancyAr: c.bodyAr.trim() ? "" : "نص البند بالإنجليزية فارغ",
-    provenance,
-  }));
+  return clauses.map((c) => {
+    const hasEn = c.bodyEn.trim().length > 0;
+    const hasAr = c.bodyAr.trim().length > 0;
+    // One discrepancy, stated in both languages — the Arabic message used to
+    // report the English body empty when it was the Arabic one that was.
+    const [discrepancyEn, discrepancyAr] =
+      hasEn && hasAr
+        ? ["", ""]
+        : !hasEn && !hasAr
+          ? ["Both language bodies are empty", "نص البند فارغ في اللغتين"]
+          : !hasEn
+            ? ["English body is empty", "نص البند بالإنجليزية فارغ"]
+            : ["Arabic body is empty", "نص البند بالعربية فارغ"];
+    return {
+      clauseId: c.clauseId,
+      isConsistent: hasEn && hasAr,
+      discrepancyEn,
+      discrepancyAr,
+      provenance,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -307,10 +512,27 @@ export async function generateClauseSuggestions(
   input: ContractDraftingInput
 ): Promise<ClauseSuggestion[]> {
   const deterministic = deterministicClauseSuggestions(input);
+  const locale = input.locale ?? "ar";
 
   try {
+    const template = CONTRACT_TEMPLATE_CATALOG[input.templateKey];
     const contextJson = JSON.stringify({
       templateKey: input.templateKey,
+      // The clauses the model drafts, by the identifiers the catalog knows;
+      // anything else it returns is dropped by parseAiClauses.
+      templateClauses:
+        template?.sections.flatMap((section) =>
+          section.clauseIds.map((clauseId) => {
+            const def = CONTRACT_CLAUSE_CATALOG[clauseId];
+            return {
+              clauseId,
+              section: section.key,
+              titleEn: def?.title.en ?? clauseId,
+              titleAr: def?.title.ar ?? clauseId,
+              applicability: def?.applicability ?? "GENERAL",
+            };
+          })
+        ) ?? [],
       projectTitle: input.projectTitle,
       etimadRef: input.etimadRef,
       scope: input.entities?.scope?.slice(0, 2000) ?? null,
@@ -319,7 +541,11 @@ export async function generateClauseSuggestions(
       complianceHighlights: input.complianceRows
         .filter((r) => r.status === "LEGAL_REVIEW_REQUIRED" || r.status === "PARTIAL")
         .slice(0, 15)
-        .map((r) => ({ controlId: r.controlId, status: r.status })),
+        .map((r) => ({
+          controlId: r.controlId,
+          status: r.status,
+          policyVersionId: r.policyVersionId ?? null,
+        })),
       frameworks: {
         procurementLaw: PROCUREMENT_LAW.citation,
         pdpl: PDPL_RULES.residencyEvaluationNote,
@@ -329,10 +555,13 @@ export async function generateClauseSuggestions(
     }).slice(0, 12000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildClauseGenerationSystemPrompt() },
+      {
+        role: "system",
+        content: buildClauseGenerationSystemPrompt(locale, contextJson),
+      },
       {
         role: "user",
-        content: `Generate bilingual clause suggestions for this Saudi procurement contract:\n${contextJson}\n\nGenerate clauses for each section of the ${input.templateKey} template. Return JSON only.`,
+        content: `Generate bilingual clause suggestions for this Saudi procurement contract:\n${contextJson}\n\nDraft each clause listed under templateClauses for the ${input.templateKey} template. Return JSON only.`,
       },
     ];
 
@@ -347,8 +576,15 @@ export async function generateClauseSuggestions(
       return deterministic;
     }
 
-    const parsed = safeParseClauseSuggestions(result.content);
-    if (!parsed || parsed.length === 0) return deterministic;
+    const parsed = parseAiClauses(result.content, input.templateKey);
+    if (!parsed.ok) {
+      guardOrThrow(
+        schemaRejection(result, parsed.issues),
+        "contract-drafting-assistant:generateClauseSuggestions"
+      );
+      return deterministic;
+    }
+    if (parsed.data.length === 0) return deterministic;
 
     const provenance: AiProvenance = {
       source: "AI_GENERATED",
@@ -360,7 +596,7 @@ export async function generateClauseSuggestions(
       fallback: false,
     };
 
-    return parsed.map((c) => ({
+    return parsed.data.map((c) => ({
       ...c,
       provenance,
     }));
@@ -369,49 +605,6 @@ export async function generateClauseSuggestions(
     console.warn("[contract-drafting-assistant] LLM clause generation failed, using deterministic", err);
     guardCaughtOrThrow(err, "contract-drafting-assistant:generateClauseSuggestions");
     return deterministic;
-  }
-}
-
-function safeParseClauseSuggestions(
-  content: string
-): ClauseSuggestion[] | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.clauses || !Array.isArray(parsed.clauses)) return null;
-
-    return parsed.clauses
-      .filter(
-        (c: unknown): c is Record<string, unknown> =>
-          typeof c === "object" && c !== null
-      )
-      .map((c) => ({
-        clauseId: String(c.clauseId ?? ""),
-        titleEn: String(c.titleEn ?? ""),
-        titleAr: String(c.titleAr ?? ""),
-        bodyEn: String(c.bodyEn ?? ""),
-        bodyAr: String(c.bodyAr ?? ""),
-        riskLevel: (["LOW", "MEDIUM", "HIGH"].includes(String(c.riskLevel))
-          ? String(c.riskLevel)
-          : "MEDIUM") as ClauseSuggestion["riskLevel"],
-        riskNotesEn: String(c.riskNotesEn ?? ""),
-        riskNotesAr: String(c.riskNotesAr ?? ""),
-        provenance: {
-          source: "AI_GENERATED" as const,
-          provider: "pending",
-          model: "pending",
-          engine: "LAW",
-          generatedAt: new Date().toISOString(),
-          confidence: 0.8,
-          fallback: false,
-        },
-      }))
-      .filter((c) => c.clauseId && c.bodyEn && c.bodyAr);
-  } catch {
-    return null;
   }
 }
 
@@ -424,25 +617,36 @@ export async function inferTemplateVariables(
 ): Promise<VariableInference[]> {
   const deterministic = deterministicVariableInferences(input);
 
+  const locale = input.locale ?? "ar";
+
   try {
     const template = CONTRACT_TEMPLATE_CATALOG[input.templateKey];
     if (!template) return deterministic;
 
-    const variableKeys = template.variables.map((v) => v.key);
-
     const contextJson = JSON.stringify({
-      variableKeys,
+      variables: template.variables.map((v) => ({
+        key: v.key,
+        type: v.type,
+        labelEn: v.label.en,
+        required: v.required,
+      })),
       projectTitle: input.projectTitle,
       etimadRef: input.etimadRef,
-      scope: input.entities?.scope?.slice(0, 2000) ?? null,
-      milestones: input.entities?.milestones?.slice(0, 10) ?? [],
-      sla: input.entities?.sla ?? null,
-      evaluation: input.entities?.evaluation ?? null,
-      localContentPreferencePercent: input.entities?.localContentPreferencePercent ?? null,
+      entities: {
+        scope: input.entities?.scope?.slice(0, 2000) ?? null,
+        milestones: input.entities?.milestones?.slice(0, 10) ?? [],
+        sla: input.entities?.sla ?? null,
+        evaluation: input.entities?.evaluation ?? null,
+        localContentPreferencePercent:
+          input.entities?.localContentPreferencePercent ?? null,
+      },
     }).slice(0, 10000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildVariableInferenceSystemPrompt() },
+      {
+        role: "system",
+        content: buildVariableInferenceSystemPrompt(locale, contextJson),
+      },
       {
         role: "user",
         content: `Infer template variable values from this project/tender data:\n${contextJson}\n\nReturn JSON only.`,
@@ -460,8 +664,15 @@ export async function inferTemplateVariables(
       return deterministic;
     }
 
-    const parsed = safeParseVariableInferences(result.content);
-    if (!parsed || parsed.length === 0) return deterministic;
+    const parsed = parseAiVariableInferences(result.content, input.templateKey);
+    if (!parsed.ok) {
+      guardOrThrow(
+        schemaRejection(result, parsed.issues),
+        "contract-drafting-assistant:inferTemplateVariables"
+      );
+      return deterministic;
+    }
+    if (parsed.data.length === 0) return deterministic;
 
     const provenance: AiProvenance = {
       source: "AI_GENERATED",
@@ -473,7 +684,7 @@ export async function inferTemplateVariables(
       fallback: false,
     };
 
-    return parsed.map((v) => ({
+    return parsed.data.map((v) => ({
       ...v,
       provenance,
     }));
@@ -485,43 +696,6 @@ export async function inferTemplateVariables(
   }
 }
 
-function safeParseVariableInferences(
-  content: string
-): VariableInference[] | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.inferences || !Array.isArray(parsed.inferences)) return null;
-
-    return parsed.inferences
-      .filter(
-        (v: unknown): v is Record<string, unknown> =>
-          typeof v === "object" && v !== null
-      )
-      .map((v) => ({
-        variableKey: String(v.variableKey ?? ""),
-        inferredValue: String(v.inferredValue ?? ""),
-        confidence: typeof v.confidence === "number" ? v.confidence : 0.5,
-        source: String(v.source ?? "ai_inference"),
-        provenance: {
-          source: "AI_GENERATED" as const,
-          provider: "pending",
-          model: "pending",
-          engine: "LAW",
-          generatedAt: new Date().toISOString(),
-          confidence: 0.8,
-          fallback: false,
-        },
-      }))
-      .filter((v) => v.variableKey && v.inferredValue);
-  } catch {
-    return null;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // AI-powered bilingual consistency validation
 // ---------------------------------------------------------------------------
@@ -530,10 +704,11 @@ export async function validateBilingualConsistency(
   clauses: ClauseSuggestion[]
 ): Promise<BilingualConsistencyCheck[]> {
   const deterministic = deterministicConsistencyChecks(clauses);
+  const reviewed = clauses.slice(0, 20);
 
   try {
     const clausesJson = JSON.stringify(
-      clauses.slice(0, 20).map((c) => ({
+      reviewed.map((c) => ({
         clauseId: c.clauseId,
         bodyEn: c.bodyEn.slice(0, 500),
         bodyAr: c.bodyAr.slice(0, 500),
@@ -541,7 +716,7 @@ export async function validateBilingualConsistency(
     ).slice(0, 12000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildConsistencyCheckSystemPrompt() },
+      { role: "system", content: buildConsistencyCheckSystemPrompt("ar") },
       {
         role: "user",
         content: `Validate bilingual consistency of these clause pairs:\n${clausesJson}\n\nReturn JSON only.`,
@@ -559,8 +734,18 @@ export async function validateBilingualConsistency(
       return deterministic;
     }
 
-    const parsed = safeParseConsistencyChecks(result.content);
-    if (!parsed || parsed.length === 0) return deterministic;
+    const parsed = parseAiConsistencyChecks(
+      result.content,
+      reviewed.map((c) => c.clauseId)
+    );
+    if (!parsed.ok) {
+      guardOrThrow(
+        schemaRejection(result, parsed.issues),
+        "contract-drafting-assistant:validateBilingualConsistency"
+      );
+      return deterministic;
+    }
+    if (parsed.data.length === 0) return deterministic;
 
     const provenance: AiProvenance = {
       source: "AI_GENERATED",
@@ -572,52 +757,15 @@ export async function validateBilingualConsistency(
       fallback: false,
     };
 
-    return parsed.map((c) => ({
-      ...c,
-      provenance,
-    }));
+    // Clauses the model skipped keep the deterministic presence check, with
+    // its own provenance, so every clause still has exactly one verdict.
+    const byClause = new Map(parsed.data.map((c) => [c.clauseId, { ...c, provenance }]));
+    return deterministic.map((d) => byClause.get(d.clauseId) ?? d);
   } catch (err) {
     if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[contract-drafting-assistant] LLM consistency check failed, using deterministic", err);
     guardCaughtOrThrow(err, "contract-drafting-assistant:validateBilingualConsistency");
     return deterministic;
-  }
-}
-
-function safeParseConsistencyChecks(
-  content: string
-): BilingualConsistencyCheck[] | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.checks || !Array.isArray(parsed.checks)) return null;
-
-    return parsed.checks
-      .filter(
-        (c: unknown): c is Record<string, unknown> =>
-          typeof c === "object" && c !== null
-      )
-      .map((c) => ({
-        clauseId: String(c.clauseId ?? ""),
-        isConsistent: Boolean(c.isConsistent),
-        discrepancyEn: String(c.discrepancyEn ?? ""),
-        discrepancyAr: String(c.discrepancyAr ?? ""),
-        provenance: {
-          source: "AI_GENERATED" as const,
-          provider: "pending",
-          model: "pending",
-          engine: "LAW",
-          generatedAt: new Date().toISOString(),
-          confidence: 0.8,
-          fallback: false,
-        },
-      }))
-      .filter((c) => c.clauseId);
-  } catch {
-    return null;
   }
 }
 

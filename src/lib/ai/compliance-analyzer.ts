@@ -13,12 +13,15 @@
  * Bilingual compliance reports.
  */
 
+import { z } from "zod";
 import { generateCompletion, type LLMMessage } from "../llm";
 import {
   ProviderUnavailableError,
   guardCaughtOrThrow,
   guardOrThrow,
 } from "./provider-unavailable";
+import { parseJsonWithSchema, schemaRejection } from "./json-output";
+import { appendGlossaryWithinBudget, styleGuideFor } from "./style-guide";
 import {
   NO_PRICING_RULE,
   REGULATORY_PRECISION_RULE,
@@ -30,17 +33,10 @@ import {
   PDPL_RULES,
   NCA_FRAMEWORKS,
   REGULATORY_POLICY_REGISTRY,
-  getActivePolicies,
-  extractLocalContentPreference,
-  noraPrinciplesFromTender,
-  type RegulatoryPolicyVersion,
+  type LegalReviewStatus,
 } from "../procurement-rules";
 import { evaluateCompliance } from "../agents/compliance";
-import type {
-  ComplianceMatrixRow,
-  IngestionEntities,
-  Locale,
-} from "../types";
+import type { IngestionEntities, Locale } from "../types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,6 +62,14 @@ export type ComplianceFinding = {
   remediationAr: string | null;
   sourceCategory: string;
   policyVersionId: string | null;
+  /**
+   * What in the scanned document the verdict rests on: a verbatim quote or a
+   * section/page reference. `null` means the document is silent on the
+   * control, in which case the status is never PASS or FAIL.
+   */
+  sourceRef: string | null;
+  /** REQUIRED when the verdict turns on a legal reading rather than on evidence. */
+  legalReviewStatus: LegalReviewStatus;
   provenance: AiProvenance;
 };
 
@@ -77,6 +81,9 @@ export type ComplianceGap = {
   severity: "CRITICAL" | "MAJOR" | "MINOR";
   remediationEn: string;
   remediationAr: string;
+  /** Registry entry that makes the control applicable; the gap cites it, never invents one. */
+  policyVersionId: string | null;
+  legalReviewStatus: LegalReviewStatus;
   provenance: AiProvenance;
 };
 
@@ -121,27 +128,111 @@ export type ComplianceAnalysisInput = {
 // System prompt builders
 // ---------------------------------------------------------------------------
 
-function buildComplianceScanSystemPrompt(): string {
-  return `You are ArabClue AI Compliance Scanner for Saudi procurement regulations.
+/** Glossary budget inside these prompts; the rules and the schema come first. */
+const PROMPT_GLOSSARY_CHARS = 1_200;
+
+/**
+ * Exported so the size cap can be asserted: each system prompt stays under
+ * 6,000 characters whatever document is passed, because the glossary is
+ * filtered to the terms the document uses and capped besides.
+ */
+export function buildComplianceScanSystemPrompt(
+  locale: Locale = "ar",
+  documentText = ""
+): string {
+  const head = `You are ArabClue AI Compliance Scanner for Saudi procurement regulations.
 ${NO_PRICING_RULE}
 ${REGULATORY_PRECISION_RULE}
 Scan documents against: ${PROCUREMENT_LAW.nameEn} / ${PROCUREMENT_LAW.nameAr}, PDPL, NCA ${NCA_FRAMEWORKS.ecc}/${NCA_FRAMEWORKS.ccc}.
 Rules:
-- Evidence-backed only — never fabricate regulatory requirements.
-- Use only identifiers from the tender or approved registry.
+- Report ONLY the controls listed under "controls" in the request; copy controlId, frameworkId and policyVersionId verbatim. Never add a control, a principle identifier, or a requirement the registry and the document do not contain.
+- Every finding cites what it rests on: "sourceRef" is a verbatim quote (at most 200 characters) or a section/page reference from the scanned document; null when the document is silent on the control.
+- PASS or FAIL only when sourceRef is non-null and the quoted passage supports the verdict on its own. When evidence is absent or ambiguous, or the verdict turns on a legal reading (data residency, cross-border transfer, penalty caps, preference percentages, applicability of a framework), return "WARNING" with legalReviewStatus "REQUIRED" and say in the evidence what is missing or what counsel must decide. Never assert.
+- legalReviewStatus is "REQUIRED" or "NOT_LEGAL_ADVICE". evidenceEn/evidenceAr carry the same facts; remediation names the evidence to add, not a commercial action.
 - Include: "${LEGAL_DISCLAIMER}"
-- Output JSON only: { "findings": [{ "controlId": string, "frameworkId": string, "status": "PASS"|"FAIL"|"WARNING"|"NOT_APPLICABLE", "evidenceEn": string, "evidenceAr": string, "remediationEn": string|null, "remediationAr": string|null, "sourceCategory": string, "policyVersionId": string|null }] }`;
+- Output JSON only: { "findings": [{ "controlId": string, "frameworkId": string, "status": "PASS"|"FAIL"|"WARNING"|"NOT_APPLICABLE", "evidenceEn": string, "evidenceAr": string, "remediationEn": string|null, "remediationAr": string|null, "sourceCategory": string, "policyVersionId": string|null, "sourceRef": string|null, "legalReviewStatus": "REQUIRED"|"NOT_LEGAL_ADVICE" }] }
+${styleGuideFor(locale)}`;
+  return appendGlossaryWithinBudget(head, locale, documentText, {
+    maxChars: PROMPT_GLOSSARY_CHARS,
+  });
 }
 
-function buildGapAnalysisSystemPrompt(): string {
-  return `You are ArabClue AI Compliance Gap Analyzer.
+export function buildGapAnalysisSystemPrompt(
+  locale: Locale = "ar",
+  documentText = ""
+): string {
+  const head = `You are ArabClue AI Compliance Gap Analyzer.
 ${NO_PRICING_RULE}
 ${REGULATORY_PRECISION_RULE}
 Identify missing compliance requirements in proposals/contracts.
 Rules:
-- Gaps must reference specific controls.
-- Never invent regulatory requirements.
-- Output JSON only: { "gaps": [{ "controlId": string, "frameworkId": string, "gapEn": string, "gapAr": string, "severity": "CRITICAL"|"MAJOR"|"MINOR", "remediationEn": string, "remediationAr": string }] }`;
+- A gap names one control from the "complianceMatrix" rows in the request, with controlId, frameworkId and policyVersionId copied verbatim; the matrix row is what makes the control applicable. Emit no gap for a control the matrix does not list.
+- gapEn/gapAr state what the document lacks and quote or reference the passage that shows it (or say the document is silent). Never invent regulatory requirements, thresholds, or percentages.
+- Severity: CRITICAL only when the matrix row is EVIDENCE_MISSING or NON_COMPLIANT for a tender-explicit control; a gap that turns on a legal reading is MAJOR with legalReviewStatus "REQUIRED".
+- legalReviewStatus is "REQUIRED" or "NOT_LEGAL_ADVICE". Remediation names the evidence to upload or the decision to obtain — no commercial or pricing action.
+- Output JSON only: { "gaps": [{ "controlId": string, "frameworkId": string, "gapEn": string, "gapAr": string, "severity": "CRITICAL"|"MAJOR"|"MINOR", "remediationEn": string, "remediationAr": string, "policyVersionId": string|null, "legalReviewStatus": "REQUIRED"|"NOT_LEGAL_ADVICE" }] }
+${styleGuideFor(locale)}`;
+  return appendGlossaryWithinBudget(head, locale, documentText, {
+    maxChars: PROMPT_GLOSSARY_CHARS,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Answer schemas — the model's JSON is admitted only in this shape
+// ---------------------------------------------------------------------------
+
+const legalReviewStatusSchema = z.enum(["REQUIRED", "NOT_LEGAL_ADVICE"]);
+const optionalText = z.string().nullable().optional();
+
+const findingAnswerSchema = z.object({
+  controlId: z.string(),
+  frameworkId: z.string().nullable().optional(),
+  status: z.enum(["PASS", "FAIL", "WARNING", "NOT_APPLICABLE"]),
+  evidenceEn: z.string(),
+  evidenceAr: z.string(),
+  remediationEn: optionalText,
+  remediationAr: optionalText,
+  sourceCategory: optionalText,
+  policyVersionId: optionalText,
+  sourceRef: optionalText,
+  legalReviewStatus: legalReviewStatusSchema.nullable().optional(),
+});
+
+const findingsAnswerSchema = z.object({ findings: z.array(findingAnswerSchema) });
+
+const gapAnswerSchema = z.object({
+  controlId: z.string(),
+  frameworkId: z.string().nullable().optional(),
+  gapEn: z.string(),
+  gapAr: z.string(),
+  severity: z.enum(["CRITICAL", "MAJOR", "MINOR"]),
+  remediationEn: z.string(),
+  remediationAr: z.string(),
+  policyVersionId: optionalText,
+  legalReviewStatus: legalReviewStatusSchema.nullable().optional(),
+});
+
+const gapsAnswerSchema = z.object({ gaps: z.array(gapAnswerSchema) });
+
+/** Longest quote a finding may carry as its citation. */
+const SOURCE_REF_CHARS = 200;
+
+/**
+ * A verdict is only as good as its citation. A PASS or FAIL with no sourceRef
+ * is downgraded to WARNING + legal review rather than dropped: the model's
+ * observation may still be useful, but it is not evidence.
+ */
+function withCitationDiscipline(finding: {
+  status: ComplianceFinding["status"];
+  sourceRef: string | null;
+  legalReviewStatus: LegalReviewStatus;
+}): Pick<ComplianceFinding, "status" | "sourceRef" | "legalReviewStatus"> {
+  const sourceRef = finding.sourceRef?.trim().slice(0, SOURCE_REF_CHARS) || null;
+  const asserts = finding.status === "PASS" || finding.status === "FAIL";
+  if (asserts && !sourceRef) {
+    return { status: "WARNING", sourceRef: null, legalReviewStatus: "REQUIRED" };
+  }
+  return { status: finding.status, sourceRef, legalReviewStatus: finding.legalReviewStatus };
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +281,10 @@ function deterministicFindings(
       remediationAr: row.remediation ?? null,
       sourceCategory: row.sourceCategory ?? "INFERRED_APPLICABILITY",
       policyVersionId: row.policyVersionId ?? null,
+      // The matrix reasons from keyword hits, not from a quotable passage; its
+      // evidence text says which terms it matched.
+      sourceRef: null,
+      legalReviewStatus: row.legalReviewStatus ?? "NOT_LEGAL_ADVICE",
       provenance: provenance,
     };
   });
@@ -234,7 +329,9 @@ function deterministicGaps(
       gapAr: `${row.controlId}: ${row.evidence.slice(0, 200)}`,
       severity,
       remediationEn: row.remediation ?? "Review and provide evidence",
-      remediationAr: row.remediation ?? "راجع وقدم الدليل",
+      remediationAr: row.remediation ?? "يلزم المراجعة وتقديم الدليل الداعم",
+      policyVersionId: row.policyVersionId ?? null,
+      legalReviewStatus: row.legalReviewStatus ?? "NOT_LEGAL_ADVICE",
       provenance,
     });
   }
@@ -282,15 +379,27 @@ export async function scanCompliance(
   input: ComplianceAnalysisInput
 ): Promise<ComplianceFinding[]> {
   const deterministic = deterministicFindings(input);
+  const locale = input.locale ?? "ar";
 
   try {
     const contextJson = JSON.stringify({
       documentType: input.documentType,
-      documentExcerpt: input.documentText.slice(0, 8000),
+      documentExcerpt: input.documentText.slice(0, 6000),
       scope: input.entities?.scope?.slice(0, 1000) ?? null,
       sla: input.entities?.sla ?? null,
       noraPrinciples: input.entities?.noraPrinciplesFromTender ?? [],
       localContentPreference: input.entities?.localContentPreferencePercent ?? null,
+      // The controls in scope, from the registry-backed matrix. The model
+      // reports on these and nothing else; the baseline is what the keyword
+      // matrix concluded, for it to confirm, refine, or downgrade with a quote.
+      controls: deterministic.map((f) => ({
+        controlId: f.controlId,
+        frameworkId: f.frameworkId,
+        policyVersionId: f.policyVersionId,
+        sourceCategory: f.sourceCategory,
+        baselineStatus: f.status,
+        baselineNote: f.evidenceEn.slice(0, 120),
+      })),
       frameworks: {
         procurementLaw: PROCUREMENT_LAW.citation,
         pdpl: PDPL_RULES.residencyEvaluationNote,
@@ -300,7 +409,10 @@ export async function scanCompliance(
     }).slice(0, 12000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildComplianceScanSystemPrompt() },
+      {
+        role: "system",
+        content: buildComplianceScanSystemPrompt(locale, input.documentText),
+      },
       {
         role: "user",
         content: `Scan this document for compliance:\n${contextJson}\n\nReturn JSON only.`,
@@ -318,8 +430,12 @@ export async function scanCompliance(
       return deterministic;
     }
 
-    const parsed = safeParseFindings(result.content);
-    if (!parsed || parsed.length === 0) return deterministic;
+    const parsed = parseAiFindings(result.content, deterministic);
+    if (!parsed.ok) {
+      guardOrThrow(schemaRejection(result, parsed.issues), "compliance-analyzer:scanCompliance");
+      return deterministic;
+    }
+    if (parsed.data.length === 0) return deterministic;
 
     const provenance: AiProvenance = {
       source: "AI_GENERATED",
@@ -331,7 +447,7 @@ export async function scanCompliance(
       fallback: false,
     };
 
-    return parsed.map((f) => ({ ...f, provenance }));
+    return parsed.data.map((f) => ({ ...f, provenance }));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[compliance-analyzer] LLM scan failed, using deterministic", err);
@@ -340,46 +456,46 @@ export async function scanCompliance(
   }
 }
 
-function safeParseFindings(content: string): ComplianceFinding[] | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.findings || !Array.isArray(parsed.findings)) return null;
+type ParsedAnswer<T> = { ok: true; data: T[] } | { ok: false; issues: string[] };
 
-    return parsed.findings
-      .filter(
-        (f: unknown): f is Record<string, unknown> =>
-          typeof f === "object" && f !== null
-      )
-      .map((f) => ({
-        controlId: String(f.controlId ?? ""),
-        frameworkId: String(f.frameworkId ?? ""),
-        status: (["PASS", "FAIL", "WARNING", "NOT_APPLICABLE"].includes(String(f.status))
-          ? String(f.status)
-          : "WARNING") as ComplianceFinding["status"],
-        evidenceEn: String(f.evidenceEn ?? ""),
-        evidenceAr: String(f.evidenceAr ?? ""),
-        remediationEn: f.remediationEn ? String(f.remediationEn) : null,
-        remediationAr: f.remediationAr ? String(f.remediationAr) : null,
-        sourceCategory: String(f.sourceCategory ?? "INFERRED_APPLICABILITY"),
-        policyVersionId: f.policyVersionId ? String(f.policyVersionId) : null,
-        provenance: {
-          source: "AI_GENERATED" as const,
-          provider: "pending",
-          model: "pending",
-          engine: "COMPLIANCE",
-          generatedAt: new Date().toISOString(),
-          confidence: 0.8,
-          fallback: false,
-        },
-      }))
-      .filter((f) => f.controlId);
-  } catch {
-    return null;
+/**
+ * The model's findings, admitted only for controls the matrix knows. A
+ * finding for an unknown control is a fabricated identifier and is dropped;
+ * frameworkId and policyVersionId come from the matrix row, not from the
+ * answer, so they cannot drift. Provenance is filled in by the caller.
+ */
+export function parseAiFindings(
+  content: string,
+  known: readonly ComplianceFinding[]
+): ParsedAnswer<Omit<ComplianceFinding, "provenance">> {
+  const parsed = parseJsonWithSchema(content, findingsAnswerSchema);
+  if (!parsed.ok) return parsed;
+  const byControl = new Map(known.map((f) => [f.controlId, f]));
+  const seen = new Set<string>();
+  const findings: Omit<ComplianceFinding, "provenance">[] = [];
+  for (const f of parsed.data.findings) {
+    const controlId = f.controlId.trim();
+    const row = byControl.get(controlId);
+    if (!row || seen.has(controlId)) continue;
+    seen.add(controlId);
+    const disciplined = withCitationDiscipline({
+      status: f.status,
+      sourceRef: f.sourceRef ?? null,
+      legalReviewStatus: f.legalReviewStatus ?? row.legalReviewStatus,
+    });
+    findings.push({
+      controlId,
+      frameworkId: row.frameworkId,
+      ...disciplined,
+      evidenceEn: f.evidenceEn,
+      evidenceAr: f.evidenceAr,
+      remediationEn: f.remediationEn || null,
+      remediationAr: f.remediationAr || null,
+      sourceCategory: f.sourceCategory || row.sourceCategory,
+      policyVersionId: row.policyVersionId,
+    });
   }
+  return { ok: true, data: findings };
 }
 
 // ---------------------------------------------------------------------------
@@ -390,24 +506,32 @@ export async function analyzeComplianceGaps(
   input: ComplianceAnalysisInput
 ): Promise<ComplianceGap[]> {
   const deterministic = deterministicGaps(input);
+  const locale = input.locale ?? "ar";
+  // Rows the model may name a gap against — the matrix rows short of PASS,
+  // each with the registry entry that makes the control applicable.
+  const candidates = deterministicFindings(input).filter((f) => f.status !== "PASS");
 
   try {
     const contextJson = JSON.stringify({
       documentType: input.documentType,
       documentExcerpt: input.documentText.slice(0, 6000),
       scope: input.entities?.scope?.slice(0, 1000) ?? null,
-      complianceMatrix: deterministicFindings(input)
-        .filter((f) => f.status !== "PASS")
-        .slice(0, 15)
-        .map((f) => ({
-          controlId: f.controlId,
-          status: f.status,
-          evidence: f.evidenceEn.slice(0, 200),
-        })),
+      complianceMatrix: candidates.slice(0, 15).map((f) => ({
+        controlId: f.controlId,
+        frameworkId: f.frameworkId,
+        policyVersionId: f.policyVersionId,
+        sourceCategory: f.sourceCategory,
+        status: f.status,
+        legalReviewStatus: f.legalReviewStatus,
+        evidence: f.evidenceEn.slice(0, 200),
+      })),
     }).slice(0, 10000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildGapAnalysisSystemPrompt() },
+      {
+        role: "system",
+        content: buildGapAnalysisSystemPrompt(locale, input.documentText),
+      },
       {
         role: "user",
         content: `Analyze compliance gaps:\n${contextJson}\n\nReturn JSON only.`,
@@ -425,8 +549,15 @@ export async function analyzeComplianceGaps(
       return deterministic;
     }
 
-    const parsed = safeParseGaps(result.content);
-    if (!parsed || parsed.length === 0) return deterministic;
+    const parsed = parseAiGaps(result.content, candidates);
+    if (!parsed.ok) {
+      guardOrThrow(
+        schemaRejection(result, parsed.issues),
+        "compliance-analyzer:analyzeComplianceGaps"
+      );
+      return deterministic;
+    }
+    if (parsed.data.length === 0) return deterministic;
 
     const provenance: AiProvenance = {
       source: "AI_GENERATED",
@@ -438,7 +569,7 @@ export async function analyzeComplianceGaps(
       fallback: false,
     };
 
-    return parsed.map((g) => ({ ...g, provenance }));
+    return parsed.data.map((g) => ({ ...g, provenance }));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[compliance-analyzer] LLM gap analysis failed, using deterministic", err);
@@ -447,44 +578,41 @@ export async function analyzeComplianceGaps(
   }
 }
 
-function safeParseGaps(content: string): ComplianceGap[] | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.gaps || !Array.isArray(parsed.gaps)) return null;
-
-    return parsed.gaps
-      .filter(
-        (g: unknown): g is Record<string, unknown> =>
-          typeof g === "object" && g !== null
-      )
-      .map((g) => ({
-        controlId: String(g.controlId ?? ""),
-        frameworkId: String(g.frameworkId ?? ""),
-        gapEn: String(g.gapEn ?? ""),
-        gapAr: String(g.gapAr ?? ""),
-        severity: (["CRITICAL", "MAJOR", "MINOR"].includes(String(g.severity))
-          ? String(g.severity)
-          : "MINOR") as ComplianceGap["severity"],
-        remediationEn: String(g.remediationEn ?? ""),
-        remediationAr: String(g.remediationAr ?? ""),
-        provenance: {
-          source: "AI_GENERATED" as const,
-          provider: "pending",
-          model: "pending",
-          engine: "COMPLIANCE",
-          generatedAt: new Date().toISOString(),
-          confidence: 0.8,
-          fallback: false,
-        },
-      }))
-      .filter((g) => g.controlId);
-  } catch {
-    return null;
+/**
+ * The model's gaps, admitted only against matrix rows it was shown. The
+ * registry entry and framework come from the row; a gap "for" a control the
+ * matrix never listed is an invented requirement and is dropped.
+ */
+export function parseAiGaps(
+  content: string,
+  candidates: readonly ComplianceFinding[]
+): ParsedAnswer<Omit<ComplianceGap, "provenance">> {
+  const parsed = parseJsonWithSchema(content, gapsAnswerSchema);
+  if (!parsed.ok) return parsed;
+  const byControl = new Map(candidates.map((f) => [f.controlId, f]));
+  const seen = new Set<string>();
+  const gaps: Omit<ComplianceGap, "provenance">[] = [];
+  for (const g of parsed.data.gaps) {
+    const controlId = g.controlId.trim();
+    const row = byControl.get(controlId);
+    if (!row || seen.has(controlId)) continue;
+    seen.add(controlId);
+    const legalReviewStatus = g.legalReviewStatus ?? row.legalReviewStatus;
+    gaps.push({
+      controlId,
+      frameworkId: row.frameworkId,
+      gapEn: g.gapEn,
+      gapAr: g.gapAr,
+      // A gap that needs counsel is not a certainty, whatever the model rated it.
+      severity:
+        g.severity === "CRITICAL" && legalReviewStatus === "REQUIRED" ? "MAJOR" : g.severity,
+      remediationEn: g.remediationEn,
+      remediationAr: g.remediationAr,
+      policyVersionId: row.policyVersionId,
+      legalReviewStatus,
+    });
   }
+  return { ok: true, data: gaps };
 }
 
 // ---------------------------------------------------------------------------
@@ -517,16 +645,20 @@ export async function generateComplianceScorecard(
     ? Math.round((passed / findings.length) * 100)
     : 0;
 
-  const reportEn = buildScorecardReportEn(
-    { passed, failed, warnings, notApplicable, overallScore, total: findings.length },
-    gaps,
-    input
-  );
-  const reportAr = buildScorecardReportAr(
-    { passed, failed, warnings, notApplicable, overallScore, total: findings.length },
-    gaps,
-    input
-  );
+  const legalReview = findings.filter((f) => f.legalReviewStatus === "REQUIRED").length;
+  const cited = findings.filter((f) => f.sourceRef !== null).length;
+  const stats: ScorecardStats = {
+    passed,
+    failed,
+    warnings,
+    notApplicable,
+    overallScore,
+    total: findings.length,
+    legalReview,
+    cited,
+  };
+  const reportEn = buildScorecardReportEn(stats, gaps, input);
+  const reportAr = buildScorecardReportAr(stats, gaps, input);
 
   const provenance: AiProvenance = findings[0]?.provenance ?? {
     source: "DETERMINISTIC_FALLBACK",
@@ -554,14 +686,38 @@ export async function generateComplianceScorecard(
   };
 }
 
+type ScorecardStats = {
+  passed: number;
+  failed: number;
+  warnings: number;
+  notApplicable: number;
+  overallScore: number;
+  total: number;
+  /** Findings whose verdict needs authorized counsel before it is relied on. */
+  legalReview: number;
+  /** Findings that quote or reference a passage of the scanned document. */
+  cited: number;
+};
+
+const DOCUMENT_TYPE_AR: Record<ComplianceAnalysisInput["documentType"], string> = {
+  PROPOSAL: "عرض",
+  CONTRACT: "عقد",
+  TENDER: "منافسة",
+};
+
 function buildScorecardReportEn(
-  stats: { passed: number; failed: number; warnings: number; notApplicable: number; overallScore: number; total: number },
+  stats: ScorecardStats,
   gaps: ComplianceGap[],
   input: ComplianceAnalysisInput
 ): string {
   const gapList = gaps
     .slice(0, 10)
-    .map((g) => `- [${g.severity}] ${g.controlId}: ${g.gapEn}`)
+    .map(
+      (g) =>
+        `- [${g.severity}] ${g.controlId}: ${g.gapEn}${
+          g.legalReviewStatus === "REQUIRED" ? " — legal review required" : ""
+        }`
+    )
     .join("\n");
 
   return `# Compliance Scorecard
@@ -574,6 +730,8 @@ function buildScorecardReportEn(
 - FAIL: ${stats.failed}
 - WARNING: ${stats.warnings}
 - NOT APPLICABLE: ${stats.notApplicable}
+- Legal review required: ${stats.legalReview}
+- Findings citing a document passage: ${stats.cited}/${stats.total}
 
 ## Critical Gaps
 ${gapList || "No critical gaps identified."}
@@ -583,25 +741,32 @@ ${LEGAL_DISCLAIMER}
 }
 
 function buildScorecardReportAr(
-  stats: { passed: number; failed: number; warnings: number; notApplicable: number; overallScore: number; total: number },
+  stats: ScorecardStats,
   gaps: ComplianceGap[],
   input: ComplianceAnalysisInput
 ): string {
   const gapList = gaps
     .slice(0, 10)
-    .map((g) => `- [${g.severity}] ${g.controlId}: ${g.gapAr}`)
+    .map(
+      (g) =>
+        `- [${g.severity}] ${g.controlId}: ${g.gapAr}${
+          g.legalReviewStatus === "REQUIRED" ? " — تلزم مراجعة قانونية" : ""
+        }`
+    )
     .join("\n");
 
   return `# بطاقة امتثال
 
-**نوع المستند:** ${input.documentType}
-**النتيجة الإجمالية:** ${stats.overallScore}% (${stats.passed}/${stats.total} ناجح)
+**نوع المستند:** ${DOCUMENT_TYPE_AR[input.documentType]} (${input.documentType})
+**النتيجة الإجمالية:** ${stats.overallScore}% (${stats.passed}/${stats.total} مستوفى)
 
 ## الملخص
-- ناجح: ${stats.passed}
-- فاشل: ${stats.failed}
-- تحذير: ${stats.warnings}
+- مستوفى (PASS): ${stats.passed}
+- غير مستوفى (FAIL): ${stats.failed}
+- تحذير (WARNING): ${stats.warnings}
 - غير منطبق: ${stats.notApplicable}
+- تلزم مراجعة قانونية: ${stats.legalReview}
+- نتائج تستند إلى نص المستند: ${stats.cited}/${stats.total}
 
 ## الفجوات الحرجة
 ${gapList || "لا توجد فجوات حرجة."}

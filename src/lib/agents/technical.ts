@@ -6,6 +6,7 @@ import {
   retrieveRelevant,
   type RagDocument,
 } from "../rag";
+import { formatArabicWeeks } from "../ai/style-guide";
 import type { IngestionEntities, TechnicalArchitectOutput } from "../types";
 import {
   isQualityMilestoneName,
@@ -136,7 +137,7 @@ export function runTechnicalArchitect(opts: {
     ? [
         "نموذج تسليم هجين يجمع تكرارات Agile مع بوابات PMI للمراحل التعاقدية.",
         `المعالم التعاقدية: ${cleanMilestones
-          .map((m) => `${m.name} (${m.weeks} أسابيع)`)
+          .map((m) => `${m.name} (${formatArabicWeeks(m.weeks)})`)
           .join("، ")}.`,
         "مسارات عمل بـ RACI: إدارة البرنامج، المعمارية، الهندسة، الجودة، الأمن، إدارة التغيير، والانتقال.",
       ].join(" ")

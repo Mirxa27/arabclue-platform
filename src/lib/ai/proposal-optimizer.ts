@@ -5,20 +5,24 @@
  * 1. Scoring engine — coverage, compliance, clarity, competitiveness
  * 2. Improvement suggestions — actionable, requirement-ID-referenced
  * 3. Section optimization — rewrite weak sections using LLM
- * 4. Win probability estimation — based on historical data and coverage
+ * 4. Readiness estimate (the `winProbability` field) — a heuristic on coverage,
+ *    compliance and the workspace's own history; never an award forecast
  *
  * Uses the existing LLM provider system.
  * Deterministic scoring when LLM is not configured.
  * No pricing suggestions (existing guardrail).
- * Bilingual output.
+ * Model answers are admitted only through a schema (`json-output.ts`); a
+ * requirement id the inputs do not contain drops the suggestion that cites it.
+ * Bilingual output, in the house style (`style-guide.ts`).
  */
 
+import { z } from "zod";
 import { generateCompletion, type LLMMessage } from "../llm";
 import {
   NO_PRICING_RULE,
   REGULATORY_PRECISION_RULE,
 } from "../agents/prompts";
-import { LEGAL_DISCLAIMER, LEGAL_DISCLAIMER_AR } from "../procurement-rules";
+import { LEGAL_DISCLAIMER } from "../procurement-rules";
 import { detectPricingSuggestion } from "../guardrails";
 import type {
   ComplianceMatrixRow,
@@ -31,6 +35,8 @@ import {
   guardCaughtOrThrow,
   guardOrThrow,
 } from "./provider-unavailable";
+import { parseJsonWithSchema, schemaRejection } from "./json-output";
+import { appendGlossaryWithinBudget, styleGuideFor } from "./style-guide";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,51 +121,258 @@ export type ProposalOptimizationInput = {
 // System prompt builders
 // ---------------------------------------------------------------------------
 
-function buildScoringSystemPrompt(): string {
-  return `You are ArabClue AI Proposal Scoring Engine.
+/** Glossary budget inside these prompts; the rules and the schema come first. */
+const PROMPT_GLOSSARY_CHARS = 1_200;
+
+/**
+ * Exported so the size cap can be asserted: each system prompt stays under
+ * 6,000 characters whatever document is passed, because the glossary is
+ * filtered to the terms the document uses and capped besides.
+ */
+export function buildScoringSystemPrompt(locale: Locale = "ar", documentText = ""): string {
+  const head = `You are ArabClue AI Proposal Scoring Engine.
 ${NO_PRICING_RULE}
 ${REGULATORY_PRECISION_RULE}
-Score proposals on: coverage, compliance, clarity, competitiveness (0-100 each).
+Score proposals on: coverage, compliance, clarity, competitiveness (0-100 each). "Competitiveness" here means how completely and verifiably the technical response answers the evaluation criteria — never price position.
 Rules:
-- Scores must be evidence-based — never inflate.
-- Reference specific requirement IDs in notes.
+- Scores must be evidence-based — never inflate. Each breakdown note quotes or names what in the document earned or cost the points, with requirement IDs verbatim.
 - Include: "${LEGAL_DISCLAIMER}"
-- Output JSON only: { "overall": number, "coverage": number, "compliance": number, "clarity": number, "competitiveness": number, "breakdown": [{ "metric": string, "metricAr": string, "score": number, "maxScore": 100, "notesEn": string, "notesAr": string }] }`;
+- Output JSON only: { "overall": number, "coverage": number, "compliance": number, "clarity": number, "competitiveness": number, "breakdown": [{ "metric": string, "metricAr": string, "score": number, "maxScore": 100, "notesEn": string, "notesAr": string }] }
+${styleGuideFor(locale)}`;
+  return appendGlossaryWithinBudget(head, locale, documentText, {
+    maxChars: PROMPT_GLOSSARY_CHARS,
+  });
 }
 
-function buildSuggestionSystemPrompt(): string {
-  return `You are ArabClue AI Proposal Improvement Advisor.
+export function buildSuggestionSystemPrompt(locale: Locale = "ar", documentText = ""): string {
+  const head = `You are ArabClue AI Proposal Improvement Advisor.
 ${NO_PRICING_RULE}
 ${REGULATORY_PRECISION_RULE}
 Generate specific, actionable improvement suggestions for proposal sections.
 Rules:
-- Every suggestion must reference a specific requirement ID when applicable.
+- "sectionId" is the exact text of the ## heading the suggestion belongs to, or one of "coverage-matrix", "compliance", "structure" for document-level advice.
+- "requirementId" is an identifier that appears verbatim in the document, the gaps, or the compliance gaps provided; null when none applies. Never coin one.
+- Suggest asking the human team for evidence rather than inventing experience, staff, certifications, or metrics.
 - Never suggest pricing, discounts, or commercial strategy.
-- Bilingual output (EN/AR).
-- Output JSON only: { "suggestions": [{ "sectionId": string, "requirementId": string|null, "suggestionEn": string, "suggestionAr": string, "priority": "HIGH"|"MEDIUM"|"LOW" }] }`;
+- suggestionEn and suggestionAr carry the same advice.
+- Output JSON only: { "suggestions": [{ "sectionId": string, "requirementId": string|null, "suggestionEn": string, "suggestionAr": string, "priority": "HIGH"|"MEDIUM"|"LOW" }] }
+${styleGuideFor(locale)}`;
+  return appendGlossaryWithinBudget(head, locale, documentText, {
+    maxChars: PROMPT_GLOSSARY_CHARS,
+  });
 }
 
-function buildSectionOptimizationSystemPrompt(): string {
-  return `You are ArabClue AI Section Optimization Engine.
+export function buildSectionOptimizationSystemPrompt(
+  locale: Locale = "ar",
+  sectionText = ""
+): string {
+  const head = `You are ArabClue AI Section Optimization Engine.
 ${NO_PRICING_RULE}
 ${REGULATORY_PRECISION_RULE}
 Rewrite weak proposal sections to improve evaluator scannability and requirement coverage.
 Rules:
-- Preserve all facts, citations, and requirement IDs.
-- Never invent experience, staff, certifications, or prices.
-- Bilingual improvements list.
-- Output JSON only: { "optimizedContent": string, "improvementsEn": [string], "improvementsAr": [string] }`;
+- Preserve every fact, figure, citation, and requirement ID; keep the section's language and its heading line.
+- Never invent experience, staff, certifications, clients, metrics, or prices; where evidence is missing, leave an explicit "[evidence needed: …]" marker for the human team.
+- improvementsEn and improvementsAr list the same changes.
+- Output JSON only: { "optimizedContent": string, "improvementsEn": [string], "improvementsAr": [string] }
+${styleGuideFor(locale)}`;
+  return appendGlossaryWithinBudget(head, locale, sectionText, {
+    maxChars: PROMPT_GLOSSARY_CHARS,
+  });
 }
 
-function buildWinProbabilitySystemPrompt(): string {
-  return `You are ArabClue AI Win Probability Estimator.
+export function buildWinProbabilitySystemPrompt(locale: Locale = "ar"): string {
+  return `You are ArabClue AI Readiness Estimator.
 ${NO_PRICING_RULE}
 ${REGULATORY_PRECISION_RULE}
-Estimate win probability based on coverage, compliance, and historical patterns.
+Estimate how ready this proposal is to score well on the tender's technical evaluation, using ONLY the provided document, requirement matrix and compliance rows. You have no award history and no competitor data: this is a readiness heuristic, never a win forecast, and the factors must name what in the document drives them.
 Rules:
-- Probability is 0-100. Never claim certainty.
-- List contributing factors with impact and weight.
-- Output JSON only: { "probability": number, "confidence": number, "factors": [{ "factorEn": string, "factorAr": string, "impact": "POSITIVE"|"NEGATIVE"|"NEUTRAL", "weight": number }] }`;
+- Probability is 0-100 and means "technical readiness", not the chance of award. Never claim certainty.
+- List contributing factors with impact and weight; factorEn and factorAr state the same factor.
+- Output JSON only: { "probability": number, "confidence": number, "factors": [{ "factorEn": string, "factorAr": string, "impact": "POSITIVE"|"NEGATIVE"|"NEUTRAL", "weight": number }] }
+${styleGuideFor(locale)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Answer schemas — the model's JSON is admitted only in this shape
+// ---------------------------------------------------------------------------
+
+const scoreAnswerSchema = z.object({
+  overall: z.number(),
+  coverage: z.number(),
+  compliance: z.number(),
+  clarity: z.number(),
+  competitiveness: z.number(),
+  breakdown: z
+    .array(
+      z.object({
+        metric: z.string(),
+        metricAr: z.string().nullable().optional(),
+        score: z.number(),
+        notesEn: z.string().nullable().optional(),
+        notesAr: z.string().nullable().optional(),
+      })
+    )
+    .nullable()
+    .optional(),
+});
+
+const suggestionsAnswerSchema = z.object({
+  suggestions: z.array(
+    z.object({
+      sectionId: z.string(),
+      requirementId: z.string().nullable().optional(),
+      suggestionEn: z.string().nullable().optional(),
+      suggestionAr: z.string().nullable().optional(),
+      priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
+    })
+  ),
+});
+
+const sectionAnswerSchema = z.object({
+  optimizedContent: z.string().min(1),
+  improvementsEn: z.array(z.string()).nullable().optional(),
+  improvementsAr: z.array(z.string()).nullable().optional(),
+});
+
+const winAnswerSchema = z.object({
+  probability: z.number(),
+  confidence: z.number().nullable().optional(),
+  factors: z
+    .array(
+      z.object({
+        factorEn: z.string(),
+        factorAr: z.string().nullable().optional(),
+        impact: z.enum(["POSITIVE", "NEGATIVE", "NEUTRAL"]),
+        weight: z.number().nullable().optional(),
+      })
+    )
+    .nullable()
+    .optional(),
+});
+
+type ParsedAnswer<T> = { ok: true; data: T } | { ok: false; issues: string[] };
+
+/** `ECC-1.1`, `REQ-12`, `PDPL-14`, `TP1.3` — the shapes requirement IDs take in a tender. */
+const REQUIREMENT_ID_RE = /\b[A-Z]{2,}[-_ ]?\d+(?:\.\d+)*\b/g;
+
+/**
+ * Every requirement identifier the inputs actually contain. A suggestion may
+ * only point at one of these; anything else is a reference the reader could
+ * not look up.
+ */
+export function knownRequirementIds(input: {
+  contentMd: string;
+  complianceRows: readonly Pick<ComplianceMatrixRow, "controlId">[];
+  coverage: Pick<CoveragePlan, "missingEvidenceTasks"> | null;
+}): Set<string> {
+  const ids = new Set<string>();
+  const texts = [input.contentMd, ...(input.coverage?.missingEvidenceTasks ?? [])];
+  for (const text of texts) {
+    for (const match of text.matchAll(REQUIREMENT_ID_RE)) ids.add(normalizeId(match[0]));
+  }
+  for (const row of input.complianceRows) ids.add(normalizeId(row.controlId));
+  return ids;
+}
+
+function normalizeId(id: string): string {
+  return id.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+export function parseAiScore(content: string): ParsedAnswer<Omit<ProposalScore, "provenance">> {
+  const parsed = parseJsonWithSchema(content, scoreAnswerSchema);
+  if (!parsed.ok) return parsed;
+  const s = parsed.data;
+  return {
+    ok: true,
+    data: {
+      overall: clampScore(s.overall),
+      coverage: clampScore(s.coverage),
+      compliance: clampScore(s.compliance),
+      clarity: clampScore(s.clarity),
+      competitiveness: clampScore(s.competitiveness),
+      breakdown: (s.breakdown ?? []).map((b) => ({
+        metric: b.metric,
+        metricAr: b.metricAr ?? "",
+        score: clampScore(b.score),
+        maxScore: 100,
+        notesEn: b.notesEn ?? "",
+        notesAr: b.notesAr ?? "",
+      })),
+    },
+  };
+}
+
+/**
+ * Suggestions with at least one language of advice and, when they cite a
+ * requirement, a requirement the inputs contain. A coined identifier drops
+ * the suggestion: advice that points at nothing is not actionable.
+ */
+export function parseAiSuggestions(
+  content: string,
+  knownIds: ReadonlySet<string>
+): ParsedAnswer<Omit<ImprovementSuggestion, "provenance">[]> {
+  const parsed = parseJsonWithSchema(content, suggestionsAnswerSchema);
+  if (!parsed.ok) return parsed;
+  const suggestions: Omit<ImprovementSuggestion, "provenance">[] = [];
+  for (const s of parsed.data.suggestions) {
+    const suggestionEn = s.suggestionEn?.trim() ?? "";
+    const suggestionAr = s.suggestionAr?.trim() ?? "";
+    if (!suggestionEn && !suggestionAr) continue;
+    const requirementId = s.requirementId?.trim() || null;
+    if (requirementId && !knownIds.has(normalizeId(requirementId))) continue;
+    suggestions.push({
+      sectionId: s.sectionId.trim(),
+      requirementId,
+      suggestionEn,
+      suggestionAr,
+      priority: s.priority,
+    });
+  }
+  return { ok: true, data: suggestions };
+}
+
+export function parseAiSectionOptimization(
+  content: string,
+  sectionId: string,
+  original: string
+): ParsedAnswer<Omit<SectionOptimization, "provenance">> {
+  const parsed = parseJsonWithSchema(content, sectionAnswerSchema);
+  if (!parsed.ok) return parsed;
+  return {
+    ok: true,
+    data: {
+      sectionId,
+      originalContent: original,
+      optimizedContent: parsed.data.optimizedContent,
+      improvementsEn: parsed.data.improvementsEn ?? [],
+      improvementsAr: parsed.data.improvementsAr ?? [],
+    },
+  };
+}
+
+export function parseAiWinProbability(
+  content: string
+): ParsedAnswer<Omit<WinProbability, "provenance">> {
+  const parsed = parseJsonWithSchema(content, winAnswerSchema);
+  if (!parsed.ok) return parsed;
+  const w = parsed.data;
+  return {
+    ok: true,
+    data: {
+      probability: clampScore(w.probability),
+      confidence:
+        typeof w.confidence === "number" && Number.isFinite(w.confidence)
+          ? Math.max(0, Math.min(1, w.confidence))
+          : 0.7,
+      factors: (w.factors ?? []).map((f) => ({
+        factorEn: f.factorEn,
+        factorAr: f.factorAr ?? "",
+        impact: f.impact,
+        weight: typeof f.weight === "number" && Number.isFinite(f.weight) ? f.weight : 0,
+      })),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +628,10 @@ export async function scoreProposal(
     }).slice(0, 10000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildScoringSystemPrompt() },
+      {
+        role: "system",
+        content: buildScoringSystemPrompt(input.locale ?? "ar", input.contentMd),
+      },
       {
         role: "user",
         content: `Score this proposal:\n${contextJson}\n\nReturn JSON only.`,
@@ -433,11 +649,14 @@ export async function scoreProposal(
       return deterministic;
     }
 
-    const parsed = safeParseScore(result.content);
-    if (!parsed) return deterministic;
+    const parsed = parseAiScore(result.content);
+    if (!parsed.ok) {
+      guardOrThrow(schemaRejection(result, parsed.issues), "proposal-optimizer:scoreProposal");
+      return deterministic;
+    }
 
     return {
-      ...parsed,
+      ...parsed.data,
       provenance: {
         source: "AI_GENERATED",
         provider: result.provider,
@@ -456,46 +675,8 @@ export async function scoreProposal(
   }
 }
 
-function safeParseScore(content: string): ProposalScore | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    return {
-      overall: clampScore(parsed.overall),
-      coverage: clampScore(parsed.coverage),
-      compliance: clampScore(parsed.compliance),
-      clarity: clampScore(parsed.clarity),
-      competitiveness: clampScore(parsed.competitiveness),
-      breakdown: Array.isArray(parsed.breakdown)
-        ? parsed.breakdown.map((b: Record<string, unknown>) => ({
-            metric: String(b.metric ?? ""),
-            metricAr: String(b.metricAr ?? ""),
-            score: clampScore(b.score),
-            maxScore: 100,
-            notesEn: String(b.notesEn ?? ""),
-            notesAr: String(b.notesAr ?? ""),
-          }))
-        : [],
-      provenance: {
-        source: "AI_GENERATED",
-        provider: "pending",
-        model: "pending",
-        engine: "DRAFTING",
-        generatedAt: new Date().toISOString(),
-        confidence: 0.8,
-        fallback: false,
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
-function clampScore(v: unknown): number {
-  const n = typeof v === "number" ? v : 0;
+function clampScore(v: number): number {
+  const n = Number.isFinite(v) ? v : 0;
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
@@ -520,7 +701,10 @@ export async function generateImprovementSuggestions(
     }).slice(0, 10000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildSuggestionSystemPrompt() },
+      {
+        role: "system",
+        content: buildSuggestionSystemPrompt(input.locale ?? "ar", input.contentMd),
+      },
       {
         role: "user",
         content: `Generate improvement suggestions:\n${contextJson}\n\nReturn JSON only.`,
@@ -538,8 +722,15 @@ export async function generateImprovementSuggestions(
       return deterministic;
     }
 
-    const parsed = safeParseSuggestions(result.content);
-    if (!parsed || parsed.length === 0) return deterministic;
+    const parsed = parseAiSuggestions(result.content, knownRequirementIds(input));
+    if (!parsed.ok) {
+      guardOrThrow(
+        schemaRejection(result, parsed.issues),
+        "proposal-optimizer:generateImprovementSuggestions"
+      );
+      return deterministic;
+    }
+    if (parsed.data.length === 0) return deterministic;
 
     const provenance: AiProvenance = {
       source: "AI_GENERATED",
@@ -551,52 +742,12 @@ export async function generateImprovementSuggestions(
       fallback: false,
     };
 
-    return parsed.map((s) => ({ ...s, provenance }));
+    return parsed.data.map((s) => ({ ...s, provenance }));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) throw err;
     console.warn("[proposal-optimizer] LLM suggestions failed, using deterministic", err);
     guardCaughtOrThrow(err, "proposal-optimizer:generateImprovementSuggestions");
     return deterministic;
-  }
-}
-
-function safeParseSuggestions(
-  content: string
-): ImprovementSuggestion[] | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.suggestions || !Array.isArray(parsed.suggestions)) return null;
-
-    return parsed.suggestions
-      .filter(
-        (s: unknown): s is Record<string, unknown> =>
-          typeof s === "object" && s !== null
-      )
-      .map((s) => ({
-        sectionId: String(s.sectionId ?? ""),
-        requirementId: s.requirementId ? String(s.requirementId) : null,
-        suggestionEn: String(s.suggestionEn ?? ""),
-        suggestionAr: String(s.suggestionAr ?? ""),
-        priority: (["HIGH", "MEDIUM", "LOW"].includes(String(s.priority))
-          ? String(s.priority)
-          : "MEDIUM") as ImprovementSuggestion["priority"],
-        provenance: {
-          source: "AI_GENERATED" as const,
-          provider: "pending",
-          model: "pending",
-          engine: "DRAFTING",
-          generatedAt: new Date().toISOString(),
-          confidence: 0.8,
-          fallback: false,
-        },
-      }))
-      .filter((s) => s.suggestionEn || s.suggestionAr);
-  } catch {
-    return null;
   }
 }
 
@@ -642,7 +793,10 @@ export async function optimizeSection(
     }).slice(0, 8000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildSectionOptimizationSystemPrompt() },
+      {
+        role: "system",
+        content: buildSectionOptimizationSystemPrompt(input.locale ?? "ar", sectionContent),
+      },
       {
         role: "user",
         content: `Optimize this proposal section:\n${contextJson}\n\nReturn JSON only.`,
@@ -660,16 +814,24 @@ export async function optimizeSection(
       return deterministic;
     }
 
-    const parsed = safeParseSectionOptimization(result.content, sectionId, sectionContent);
-    if (!parsed) return deterministic;
+    const parsed = parseAiSectionOptimization(result.content, sectionId, sectionContent);
+    if (!parsed.ok) {
+      guardOrThrow(schemaRejection(result, parsed.issues), "proposal-optimizer:optimizeSection");
+      return deterministic;
+    }
 
-    // Guardrail: reject pricing suggestions
-    if (detectPricingSuggestion(parsed.optimizedContent)) {
+    // Guardrail: a rewrite that prices is rejected the same way as one that
+    // failed its schema — refused when strict, deterministic when permissive.
+    if (detectPricingSuggestion(parsed.data.optimizedContent)) {
+      guardOrThrow(
+        schemaRejection(result, ["pricing_guardrail"]),
+        "proposal-optimizer:optimizeSection"
+      );
       return deterministic;
     }
 
     return {
-      ...parsed,
+      ...parsed.data,
       provenance: {
         source: "AI_GENERATED",
         provider: result.provider,
@@ -685,42 +847,6 @@ export async function optimizeSection(
     console.warn("[proposal-optimizer] LLM section optimization failed, using deterministic", err);
     guardCaughtOrThrow(err, "proposal-optimizer:optimizeSection");
     return deterministic;
-  }
-}
-
-function safeParseSectionOptimization(
-  content: string,
-  sectionId: string,
-  original: string
-): SectionOptimization | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    return {
-      sectionId,
-      originalContent: original,
-      optimizedContent: String(parsed.optimizedContent ?? original),
-      improvementsEn: Array.isArray(parsed.improvementsEn)
-        ? parsed.improvementsEn.map(String)
-        : [],
-      improvementsAr: Array.isArray(parsed.improvementsAr)
-        ? parsed.improvementsAr.map(String)
-        : [],
-      provenance: {
-        source: "AI_GENERATED",
-        provider: "pending",
-        model: "pending",
-        engine: "DRAFTING",
-        generatedAt: new Date().toISOString(),
-        confidence: 0.8,
-        fallback: false,
-      },
-    };
-  } catch {
-    return null;
   }
 }
 
@@ -749,10 +875,10 @@ export async function estimateWinProbability(
     }).slice(0, 6000);
 
     const messages: LLMMessage[] = [
-      { role: "system", content: buildWinProbabilitySystemPrompt() },
+      { role: "system", content: buildWinProbabilitySystemPrompt(input.locale ?? "ar") },
       {
         role: "user",
-        content: `Estimate win probability:\n${contextJson}\n\nReturn JSON only.`,
+        content: `Estimate technical readiness:\n${contextJson}\n\nReturn JSON only.`,
       },
     ];
 
@@ -767,11 +893,17 @@ export async function estimateWinProbability(
       return deterministic;
     }
 
-    const parsed = safeParseWinProbability(result.content);
-    if (!parsed) return deterministic;
+    const parsed = parseAiWinProbability(result.content);
+    if (!parsed.ok) {
+      guardOrThrow(
+        schemaRejection(result, parsed.issues),
+        "proposal-optimizer:estimateWinProbability"
+      );
+      return deterministic;
+    }
 
     return {
-      ...parsed,
+      ...parsed.data,
       provenance: {
         source: "AI_GENERATED",
         provider: result.provider,
@@ -787,43 +919,6 @@ export async function estimateWinProbability(
     console.warn("[proposal-optimizer] LLM win probability failed, using deterministic", err);
     guardCaughtOrThrow(err, "proposal-optimizer:estimateWinProbability");
     return deterministic;
-  }
-}
-
-function safeParseWinProbability(content: string): WinProbability | null {
-  try {
-    const cleaned = content
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    return {
-      probability: clampScore(parsed.probability),
-      confidence: typeof parsed.confidence === "number"
-        ? Math.max(0, Math.min(1, parsed.confidence))
-        : 0.7,
-      factors: Array.isArray(parsed.factors)
-        ? parsed.factors.map((f: Record<string, unknown>) => ({
-            factorEn: String(f.factorEn ?? ""),
-            factorAr: String(f.factorAr ?? ""),
-            impact: (["POSITIVE", "NEGATIVE", "NEUTRAL"].includes(String(f.impact))
-              ? String(f.impact)
-              : "NEUTRAL") as WinProbability["factors"][number]["impact"],
-            weight: typeof f.weight === "number" ? f.weight : 0,
-          }))
-        : [],
-      provenance: {
-        source: "AI_GENERATED",
-        provider: "pending",
-        model: "pending",
-        engine: "DRAFTING",
-        generatedAt: new Date().toISOString(),
-        confidence: 0.8,
-        fallback: false,
-      },
-    };
-  } catch {
-    return null;
   }
 }
 
