@@ -5,6 +5,36 @@
 
 **Tech Stack:** Next.js 16 + TypeScript + Tailwind + shadcn/ui + Prisma (Postgres) + NextAuth + Playwright PDF + ExcelJS + JSZip + multi-provider LLM + MyFatoorah.
 
+## Status (2026-09-05 production-readiness pass)
+
+### Delivered (this pass)
+Six parallel audits (billing, security, UX, AI, activation/analytics, deployment) followed by fixes across eight commits. Verified live in the browser against the shared dev database.
+
+**Blocking defects fixed**
+- Signup returned 500 on a cold Neon connection (4 s transaction ceiling); registration now signs the account in and lands in Billing when a plan was chosen. Post-login deep links to non-home views bounced to home (view-router stale-closure push) — fixed.
+- PDF text extraction failed for every PDF (pdfjs worker missing from the bundle) and Arabic came back as reversed presentation forms — parser externalised, worker traced into the ingesting routes, `restoreLogicalArabic` restores reading order.
+- The signup Starter never expired, recurring checkout paid the wrong invoice, no single-payment fallback — 30-day TRIALING trial with `TRIAL_ENDED`, one-invoice recurring checkout, per-workspace-owner entitlements, plan-gated export formats, token quota.
+- Transactional email never delivered (30-minute outbox deadline vs a daily cron) — inline dispatch after commit plus a 26 h deadline. Resend-verification told the truth; admins can mark verified; members can be role-changed and removed.
+- Platform agent answered a generic 500 when the default provider key did not resolve — 503 `AI_PROVIDER_UNAVAILABLE` with failover to the next usable provider; privileged tools require approval; document text fenced as untrusted.
+- Admin Create User failed by default; autopilot failed silently on incomplete onboarding; `/robots.txt` answered 500.
+
+**Also**: readiness detail gated behind the cron secret/admin session, ExcelJS/JSZip lazy-loaded, list queries bounded, six composite indexes (migration `20260905120000_hot_path_indexes`, applied to the dev database), security hardening (precheck limiter, env delete gate, email-change re-verification, presence tenant scoping, proxy matcher), pricing → `/register?plan=` handoff with the plan preselected in Billing, deadline reminders and trial-ending emails, activation funnel analytics.
+
+### Verification
+```bash
+bunx tsc --noEmit            # pass
+bun run lint                 # 0 errors (2 warnings in generated .well-known/workflow files)
+bun run test                 # 6076 pass, 0 fail, 13 intentional skips
+bun run build                # pass; pdf.worker.mjs and tesseract core traced into ingesting routes
+```
+
+### Operator items (cannot be done from the repo)
+- Production: set `REDIS_URL`, a mail transport (`RESEND_API_KEY` or SMTP), `CRON_SECRET`, and run `prisma migrate deploy` on the unpooled Neon URL.
+- Local `.env`: the sealed AI keys were encrypted with a different `ARABCLUE_ENC_KEY`; set an env key that matches a provider row's `apiKeyEnvKey`.
+- QA accounts created during browser testing in the dev database: `qa.0905@`, `qa.pro.0905@`, `qa.pro2.0905@`, `qa.pro3.0905@`, `qa.pro5.0905@`, `qa.pro6.0905@arabclue-qa.test` (safe to delete).
+
+---
+
 ## Status (2026-08-26 guided onboarding + design upgrade)
 
 ### Delivered (this pass)
