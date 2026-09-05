@@ -1,4 +1,5 @@
 import { readStoredFile, fileExists } from "../storage";
+import { restoreLogicalArabic } from "../arabic-visual-order";
 import {
   SLA_PENALTY_RULES,
   extractLocalContentPreference,
@@ -60,7 +61,8 @@ export async function extractTextFromBuffer(
       const parser = new PDFParse({ data: new Uint8Array(bytes) });
       try {
         const result = await parser.getText();
-        return sanitizeText(result.text || "");
+        // Presentation-form PDFs come back in visual order; see the module.
+        return sanitizeText(restoreLogicalArabic(result.text || ""));
       } finally {
         await parser.destroy().catch(() => {});
       }
@@ -213,13 +215,17 @@ function parseEtimadRef(text: string): string | null {
     "رقم\\s*(?:المنافسة|المشروع|العطاء|المرجع)",
     "مرجع\\s*اعتماد",
   ]);
+  // A reference carries digits and is written as a code; "Etimad-oriented"
+  // once produced the reference "ORIENTED" through the case-insensitive path.
   const source =
     labeled ||
     text.match(
-      /(?:etimad|اعتماد)[^\n\r]{0,40}?([A-Z0-9][A-Z0-9/_\-]{2,40})/i
+      /(?:etimad|اعتماد)[^\n\r]{0,40}?((?=[A-Z0-9/_\-]*\d)[A-Z0-9][A-Z0-9/_\-]{2,40})/
     )?.[1] ||
     null;
-  const ref = source?.match(/[A-Z0-9][A-Z0-9/_\-]{2,40}/i)?.[0] ?? null;
+  const ref =
+    source?.match(/(?=[A-Za-z0-9/_\-]*\d)[A-Za-z0-9][A-Za-z0-9/_\-]{2,40}/)?.[0] ??
+    null;
   return ref ? ref.toUpperCase() : null;
 }
 

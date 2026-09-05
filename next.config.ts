@@ -46,6 +46,20 @@ export const pdfRuntimeTraceIncludes = Object.freeze([
 ]);
 
 /**
+ * Document ingestion runs outside the bundle (see serverExternalPackages) and
+ * opens files through paths tracing cannot follow: pdfjs resolves its Node
+ * "fake worker" as `./pdf.worker.mjs` next to its own module, and tesseract.js
+ * loads its core/worker scripts via computed paths. Without these the
+ * function ships pdf.mjs but not the worker, and every PDF reads as "no
+ * extractable text layer" in production exactly as it did in dev.
+ */
+export const ingestionRuntimeTraceIncludes = Object.freeze([
+  "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+  "./node_modules/tesseract.js/**/*",
+  "./node_modules/tesseract.js-core/**/*",
+]);
+
+/**
  * Exported plain so the header/CSP tests can read it; the default export is
  * the same object wrapped by the Workflow DevKit, which turns it into the
  * async config function Next.js accepts (api-reference/workflow-next).
@@ -67,6 +81,13 @@ export const nextConfig: NextConfig = {
     "playwright",
     "playwright-core",
     "@sparticuz/chromium",
+    // pdf-parse spins up pdfjs's "fake worker" by importing pdf.worker.mjs
+    // through a path computed at runtime; bundled, that file does not exist
+    // and every PDF reads as "no extractable text layer". tesseract.js
+    // resolves its worker the same way (path.join(__dirname, …)).
+    "pdf-parse",
+    "pdfjs-dist",
+    "tesseract.js",
   ],
   turbopack: {
     root: path.resolve(__dirname),
@@ -74,6 +95,14 @@ export const nextConfig: NextConfig = {
   // Bundle the Chrome extension source with the serverless functions that
   // read it from disk (install metadata + on-the-fly ZIP packing).
   outputFileTracingIncludes: {
+    // Every entry point that parses an uploaded document, plus the Workflow
+    // step route where the ingestion agent runs.
+    "/api/documents": [...ingestionRuntimeTraceIncludes],
+    "/api/platform-agent/missions/*/attachments": [
+      ...ingestionRuntimeTraceIncludes,
+    ],
+    "/api/platform-agent/extension/ingest": [...ingestionRuntimeTraceIncludes],
+    "/.well-known/workflow/v1/step": [...ingestionRuntimeTraceIncludes],
     "/api/platform-agent/extension": ["./extensions/arabclue-agent/**/*"],
     "/api/platform-agent/extension/download": [
       "./extensions/arabclue-agent/**/*",

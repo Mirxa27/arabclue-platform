@@ -52,9 +52,13 @@ export async function extractTextFromImage(
   }
 
   const { createWorker } = await import("tesseract.js");
+  const { tmpdir } = await import("node:os");
   const prepared = await preprocessForOcr(bytes);
   const worker = await createWorker(["eng", "ara"], 1, {
     logger: () => undefined,
+    // Language data is fetched on first use and cached on disk; the default
+    // cache directory is the working directory, which is read-only on Vercel.
+    cachePath: tmpdir(),
   });
   try {
     const result = await worker.recognize(prepared);

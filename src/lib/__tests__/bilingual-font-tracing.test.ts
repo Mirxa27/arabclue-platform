@@ -78,3 +78,31 @@ describe("bilingual PDF serverless font tracing", () => {
     expect(pdfRuntimeTraceIncludes.some((g) => g.startsWith("./node_modules/@sparticuz/chromium/bin/"))).toBe(true);
   });
 });
+
+describe("document ingestion runtime files are traced", () => {
+  test("every ingesting route ships the pdfjs worker and the tesseract runtime", async () => {
+    const { nextConfig, ingestionRuntimeTraceIncludes } = await import(
+      "../../../next.config"
+    );
+    const includes = nextConfig.outputFileTracingIncludes as Record<string, string[]>;
+    for (const route of [
+      "/api/documents",
+      "/api/platform-agent/missions/*/attachments",
+      "/api/platform-agent/extension/ingest",
+      "/.well-known/workflow/v1/step",
+    ]) {
+      for (const file of ingestionRuntimeTraceIncludes) {
+        expect(includes[route]).toContain(file);
+      }
+    }
+    // pdfjs resolves "./pdf.worker.mjs" relative to legacy/build/pdf.mjs.
+    expect(ingestionRuntimeTraceIncludes).toContain(
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"
+    );
+    // The parser must stay external, or the worker path is computed inside
+    // the bundle where the file does not exist.
+    for (const pkg of ["pdf-parse", "pdfjs-dist", "tesseract.js"]) {
+      expect(nextConfig.serverExternalPackages).toContain(pkg);
+    }
+  });
+});
