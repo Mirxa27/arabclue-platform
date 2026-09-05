@@ -70,6 +70,22 @@ import {
   ErrorState,
 } from "@/components/patterns";
 import { submitProposalWithStructuredSnapshot } from "@/lib/proposal-submit-client";
+import {
+  describeCounterpartDiagnostic,
+  parseCounterpartDiagnosticsJson,
+  type CounterpartDiagnostic,
+  type CounterpartDiagnosticsRecord,
+} from "@/lib/counterpart-diagnostics";
+import { providerDisplayName } from "@/lib/ai/provider-label";
+import { formatDate } from "@/lib/typography";
+
+/** What `POST /api/proposals/[id]/counterpart` answers. */
+type CounterpartResponse = CounterpartDiagnosticsRecord & {
+  counterpartMd: string;
+  counterpartLocale: "ar" | "en";
+  counterpartGeneratedAt: string;
+  diagnostics: CounterpartDiagnostic[];
+};
 
 type StudioMode =
   | "edit"
@@ -300,7 +316,11 @@ function ProposalStudioBase({
   const [compareA, setCompareA] = useState<string>("");
   const [compareB, setCompareB] = useState<string>("");
   const [diffLines, setDiffLines] = useState<string[]>([]);
-  const [counterpartMd, setCounterpartMd] = useState("");
+  // Null until the writer types or a generation lands: the textarea then shows
+  // the counterpart persisted on the proposal, so a reload never loses it.
+  const [counterpartDraft, setCounterpartDraft] = useState<string | null>(null);
+  const [counterpartResult, setCounterpartResult] =
+    useState<CounterpartResponse | null>(null);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["proposal", proposalId],
@@ -364,13 +384,15 @@ function ProposalStudioBase({
     setInstruction("");
     setBoqRows([]);
     setDiffLines([]);
-    setCounterpartMd("");
+    setCounterpartDraft(null);
+    setCounterpartResult(null);
   }
   if (!open && activeId) {
     setActiveId(null);
     setDraftMd(null);
     setDraftLocale(null);
-    setCounterpartMd("");
+    setCounterpartDraft(null);
+    setCounterpartResult(null);
   }
 
   useEffect(() => {
@@ -436,6 +458,37 @@ function ProposalStudioBase({
     changeLog: string | null;
     createdAt: string;
   }[] = data?.proposal?.versions ?? [];
+
+  // The counterpart is the draft in the *other* language. A persisted one is
+  // offered only while it still is: switching the draft's language turns it
+  // into a same-language copy, which the export would refuse.
+  const counterpartLocale: "ar" | "en" = propLocale === "ar" ? "en" : "ar";
+  const persistedCounterpart: string =
+    data?.proposal?.counterpartLocale === counterpartLocale &&
+    typeof data?.proposal?.counterpartMd === "string"
+      ? data.proposal.counterpartMd
+      : "";
+  const counterpartMd = counterpartDraft ?? persistedCounterpart;
+  const counterpartRecord: CounterpartDiagnosticsRecord | null =
+    counterpartResult ??
+    (persistedCounterpart
+      ? parseCounterpartDiagnosticsJson(data?.proposal?.counterpartDiagnosticsJson)
+      : null);
+  const counterpartGeneratedAt: string | null =
+    counterpartResult?.counterpartGeneratedAt ??
+    (persistedCounterpart &&
+    typeof data?.proposal?.counterpartGeneratedAt === "string"
+      ? data.proposal.counterpartGeneratedAt
+      : null);
+  // Findings describe the generated text, not whatever the writer typed over it.
+  const showingGeneratedCounterpart =
+    counterpartMd.trim().length > 0 &&
+    counterpartMd === (counterpartResult?.counterpartMd ?? persistedCounterpart);
+  // A content edit after the run means the two sides no longer say the same thing.
+  const counterpartStale =
+    counterpartGeneratedAt !== null &&
+    versions.length > 0 &&
+    Date.parse(versions[0].createdAt) > Date.parse(counterpartGeneratedAt);
 
   const splitLetterhead = useMemo(
     () => ({
@@ -527,6 +580,33 @@ function ProposalStudioBase({
               ? "Skill applied"
               : "Skill preview ready",
         description: json.provider ? `via ${json.provider}` : undefined,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: err.message, variant: "destructive" });
+    },
+  });
+
+  const counterpartMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/proposals/${proposalId}/counterpart`, {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(apiErrorText(json, locale));
+      return json as CounterpartResponse;
+    },
+    onSuccess: (json) => {
+      // Fill the textarea from the answer itself; the refetch below only
+      // confirms what was persisted and must not be the thing the writer waits on.
+      setCounterpartResult(json);
+      setCounterpartDraft(json.counterpartMd);
+      qc.invalidateQueries({ queryKey: ["proposal", proposalId] });
+      toast({
+        title: tr("counterpart_generated", locale),
+        description: json.provider
+          ? `via ${providerDisplayName(json.provider)}`
+          : undefined,
       });
     },
     onError: (err: Error) => {
@@ -1127,13 +1207,12 @@ function ProposalStudioBase({
                       : "Prepare the bilingual review snapshot"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {propLocale === "ar"
-                      ? locale === "ar"
-                        ? "المسودة العربية في المحرر هي الجانب الأول. أدخل النسخة الإنجليزية الصريحة أدناه؛ لا ينشئ النظام ترجمة تلقائية."
-                        : "The Arabic editor draft is the first side. Enter the explicit English counterpart below; the system does not synthesize a translation."
-                      : locale === "ar"
-                        ? "المسودة الإنجليزية في المحرر هي الجانب الأول. أدخل النسخة العربية الصريحة أدناه؛ لا ينشئ النظام ترجمة تلقائية."
-                        : "The English editor draft is the first side. Enter the explicit Arabic counterpart below; the system does not synthesize a translation."}
+                    {tr(
+                      propLocale === "ar"
+                        ? "counterpart_intro_ar_first"
+                        : "counterpart_intro_en_first",
+                      locale
+                    )}
                   </p>
                   {data?.proposal?.structuredSnapshot != null && (
                     <Badge variant="outline" className="mt-2">
@@ -1144,19 +1223,48 @@ function ProposalStudioBase({
                   )}
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-medium">
-                    {propLocale === "ar"
-                      ? locale === "ar"
-                        ? "المحتوى الإنجليزي المقابل"
-                        : "English counterpart"
-                      : locale === "ar"
-                        ? "المحتوى العربي المقابل"
-                        : "Arabic counterpart"}
-                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-xs font-medium">
+                      {propLocale === "ar"
+                        ? locale === "ar"
+                          ? "المحتوى الإنجليزي المقابل"
+                          : "English counterpart"
+                        : locale === "ar"
+                          ? "المحتوى العربي المقابل"
+                          : "Arabic counterpart"}
+                    </label>
+                    {!showingGeneratedCounterpart && (
+                      <Button
+                        size="sm"
+                        className="h-7 text-[11px]"
+                        // The route translates the saved draft; an unsaved edit
+                        // would get a counterpart of the text before it.
+                        disabled={
+                          counterpartMutation.isPending ||
+                          submitMutation.isPending ||
+                          !persistedMd.trim() ||
+                          isDirty
+                        }
+                        title={
+                          isDirty ? tr("counterpart_save_first", locale) : undefined
+                        }
+                        onClick={() => counterpartMutation.mutate()}
+                      >
+                        {counterpartMutation.isPending ? (
+                          <Loader2 className="size-3 animate-spin me-1" />
+                        ) : (
+                          <Sparkles className="size-3 me-1" />
+                        )}
+                        {counterpartMutation.isPending
+                          ? tr("counterpart_generating", locale)
+                          : tr("counterpart_generate", locale)}
+                      </Button>
+                    )}
+                  </div>
                   <Textarea
                     value={counterpartMd}
                     onChange={(event) =>
-                      setCounterpartMd(event.target.value)
+                      setCounterpartDraft(event.target.value)
                     }
                     dir={propLocale === "ar" ? "ltr" : "rtl"}
                     className="min-h-[320px] font-mono text-xs leading-6"
@@ -1166,6 +1274,76 @@ function ProposalStudioBase({
                         : "# العرض العربي\n\nأدخل النسخة المقابلة الكاملة للمراجعة…"
                     }
                   />
+                  {showingGeneratedCounterpart && counterpartRecord ? (
+                    <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-muted-foreground">
+                          {counterpartGeneratedAt
+                            ? tr("counterpart_generated_meta", locale, {
+                                date: formatDate(
+                                  new Date(counterpartGeneratedAt),
+                                  locale
+                                ),
+                                provider: providerDisplayName(
+                                  counterpartRecord.provider
+                                ),
+                              })
+                            : providerDisplayName(counterpartRecord.provider)}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px]"
+                          disabled={
+                            counterpartMutation.isPending ||
+                            submitMutation.isPending ||
+                            isDirty
+                          }
+                          title={
+                            isDirty
+                              ? tr("counterpart_save_first", locale)
+                              : undefined
+                          }
+                          onClick={() => counterpartMutation.mutate()}
+                        >
+                          {counterpartMutation.isPending ? (
+                            <Loader2 className="size-3 animate-spin me-1" />
+                          ) : (
+                            <RefreshCw className="size-3 me-1" />
+                          )}
+                          {counterpartMutation.isPending
+                            ? tr("counterpart_generating", locale)
+                            : tr("counterpart_regenerate", locale)}
+                        </Button>
+                      </div>
+                      {counterpartStale && (
+                        <p className="text-destructive">
+                          {tr("counterpart_stale", locale)}
+                        </p>
+                      )}
+                      <p className="text-muted-foreground">
+                        {tr("counterpart_review_note", locale)}
+                      </p>
+                      {counterpartRecord.diagnostics.length === 0 ? (
+                        <p className="text-emerald-700 dark:text-emerald-400">
+                          {tr("counterpart_fidelity_ok", locale)}
+                        </p>
+                      ) : (
+                        <div className="space-y-1">
+                          <p className="font-medium">
+                            {tr("counterpart_fidelity_title", locale)}
+                          </p>
+                          <ul className="list-disc ps-4 space-y-0.5 text-amber-800 dark:text-amber-300">
+                            {counterpartRecord.diagnostics.map((diagnostic, i) => (
+                              <li key={`${diagnostic.code}-${diagnostic.section ?? "doc"}-${i}`}>
+                                {describeCounterpartDiagnostic(diagnostic, locale)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
                 <Button
                   size="sm"

@@ -568,6 +568,12 @@ model GeneratedProposal {
   contractRenderSnapshot         Json?
   contractRenderSnapshotHash     String?
   contractRenderSnapshotRevision Int       @default(0)
+  // AI-generated draft in the other language, for the synchronized bilingual
+  // export. The writer may still paste one by hand; this is the prefill.
+  counterpartMd                  String?
+  counterpartLocale              String? // ar | en — the language counterpartMd is written in
+  counterpartGeneratedAt         DateTime?
+  counterpartDiagnosticsJson     String? // JSON: CounterpartDiagnosticsRecord (fidelity findings + provider/model/tokens)
   createdAt                      DateTime  @default(now())
   updatedAt                      DateTime  @updatedAt
 

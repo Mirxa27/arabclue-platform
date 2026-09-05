@@ -345,8 +345,16 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
       'DROP INDEX IF EXISTS "AgentRun_projectId_createdAt_idx"; DROP INDEX IF EXISTS "GeneratedProposal_workspaceId_status_idx"; DROP INDEX IF EXISTS "GeneratedProposal_workspaceId_createdAt_idx"; DROP INDEX IF EXISTS "UploadedDocument_workspaceId_createdAt_idx"; DROP INDEX IF EXISTS "TenderProject_workspaceId_status_idx"; DROP INDEX IF EXISTS "TenderProject_workspaceId_updatedAt_idx";',
   },
   {
-    id: "20261126000000_autonomy_slice_1",
+    id: "20260905180000_proposal_counterpart",
     position: 26,
+    capabilities: ["proposal generation", "bilingual export"],
+    createsTables: [],
+    reverse:
+      'ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartMd"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartLocale"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartGeneratedAt"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartDiagnosticsJson";',
+  },
+  {
+    id: "20261126000000_autonomy_slice_1",
+    position: 27,
     capabilities: [
       "autonomy shell",
       "company profile Markdown",
