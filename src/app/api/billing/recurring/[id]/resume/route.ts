@@ -6,6 +6,7 @@ import {
   RecurringBillingError,
 } from "@/lib/recurring-billing";
 import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
+import { isCompletionErrorCode } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       });
     } catch (err) {
       if (err instanceof RecurringBillingError) {
-        throw new ApiError(err.message, err.httpStatus);
+        // Registered codes reach the client bilingual; others fall back to the
+        // generic sentence rather than leaking the internal message.
+        throw new ApiError(
+          err.message,
+          err.httpStatus,
+          isCompletionErrorCode(err.code) ? err.code : undefined
+        );
       }
       throw err;
     }

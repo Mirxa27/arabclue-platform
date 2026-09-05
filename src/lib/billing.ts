@@ -8,6 +8,10 @@ import { audit, AUDIT_ACTIONS } from "./audit";
 import { amountsMatch, getPaymentStatus } from "./myfatoorah";
 import { moneyNumber } from "./money";
 import { withProviderDeadline } from "./provider-timeout";
+import {
+  analyticsBackgroundOrigin,
+  recordActivationAnalyticsEvent,
+} from "./analytics-collector";
 import type { PaymentStatusResult } from "./myfatoorah";
 
 function addPeriod(start: Date, cycle: "MONTHLY" | "YEARLY"): Date {
@@ -18,6 +22,107 @@ function addPeriod(start: Date, cycle: "MONTHLY" | "YEARLY"): Date {
     end.setMonth(end.getMonth() + 1);
   }
   return end;
+}
+
+/**
+ * The subscription row a settled checkout produces.
+ *
+ * - A renewal or an early repurchase of the same plan extends the period from
+ *   the later of the stored period end and now, so paying early adds the full
+ *   cycle instead of nothing.
+ * - A plan change starts a fresh period from now.
+ * - Counters reset only when the stored period had lapsed; a mid-cycle plan
+ *   change keeps them. `storageUsedBytes` is never reset here: the files it
+ *   counts are still on disk.
+ * - A trial that is paid for becomes `ACTIVE` and stops being a trial.
+ */
+export function nextSubscriptionPeriod(
+  existing: Readonly<{
+    planId: string;
+    currentPeriodStart: Date;
+    currentPeriodEnd: Date;
+  }>,
+  paid: Readonly<{ planId: string; cycle: "MONTHLY" | "YEARLY" }>,
+  now: Date
+): Readonly<{
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;
+  resetUsage: boolean;
+}> {
+  const isExpired = existing.currentPeriodEnd.getTime() < now.getTime();
+  const isPlanChange = existing.planId !== paid.planId;
+
+  if (isPlanChange) {
+    return {
+      currentPeriodStart: now,
+      currentPeriodEnd: addPeriod(now, paid.cycle),
+      resetUsage: isExpired,
+    };
+  }
+
+  const extendFrom = isExpired ? now : existing.currentPeriodEnd;
+  return {
+    currentPeriodStart: isExpired ? now : existing.currentPeriodStart,
+    currentPeriodEnd: addPeriod(extendFrom, paid.cycle),
+    resetUsage: isExpired,
+  };
+}
+
+/**
+ * Counter change a manual billing record makes to a subscription.
+ *
+ * `USAGE` records consumption and spends allowance; `TOPUP` grants allowance
+ * back, clamped at zero so a top-up larger than what was used cannot drive a
+ * counter negative (a negative counter would read as headroom above the plan).
+ * Other record types (SUBSCRIPTION, REFUND, OVERAGE) move no counter.
+ */
+export function adjustUsageForManualRecord(
+  current: Readonly<{ proposalsUsed: number; tokensUsed: number }>,
+  record: Readonly<{
+    type: string;
+    proposalsIncluded: number;
+    tokensIncluded: number;
+  }>
+): Readonly<{ proposalsUsed: number; tokensUsed: number }> | null {
+  if (record.type === "USAGE") {
+    return {
+      proposalsUsed: current.proposalsUsed + record.proposalsIncluded,
+      tokensUsed: current.tokensUsed + record.tokensIncluded,
+    };
+  }
+  if (record.type === "TOPUP") {
+    return {
+      proposalsUsed: Math.max(0, current.proposalsUsed - record.proposalsIncluded),
+      tokensUsed: Math.max(0, current.tokensUsed - record.tokensIncluded),
+    };
+  }
+  return null;
+}
+
+/**
+ * Whether a gateway settlement report names this checkout.
+ *
+ * The gateway echoes the `CustomerReference` the checkout was created with; when
+ * it is present it must match. When the checkout already knows its invoice, the
+ * report's invoice must be that one. An absent field is not a mismatch — older
+ * gateway responses omit it — so the amount check still runs afterwards.
+ */
+export function settlementBelongsToCheckout(
+  checkout: Readonly<{ customerReference: string; invoiceId: string | null }>,
+  status: Readonly<{ customerReference: string | null; invoiceId: string }>
+): boolean {
+  const reportedRef = status.customerReference?.trim();
+  if (reportedRef && reportedRef !== checkout.customerReference) return false;
+
+  const reportedInvoice = status.invoiceId?.trim();
+  if (
+    reportedInvoice &&
+    checkout.invoiceId &&
+    reportedInvoice !== checkout.invoiceId
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -76,11 +181,19 @@ export async function fulfillCheckout(opts: {
   let paidCurrency: string | null = checkout.currency;
 
   const assertAmount = (status: {
+    invoiceId: string;
+    customerReference: string | null;
     invoiceValue: number;
     paidCurrency: string | null;
     isPaid: boolean;
   }) => {
     if (!status.isPaid) return;
+    // The settled payment must be *this* checkout's. A paymentId or invoiceId
+    // handed in from a redirect or webhook could name another invoice; without
+    // this comparison any paid invoice would activate any pending checkout.
+    if (!settlementBelongsToCheckout(checkout!, status)) {
+      throw new Error("reference_mismatch");
+    }
     if (
       !amountsMatch({
         expectedSar: checkout!.amount,
@@ -173,12 +286,12 @@ export async function fulfillCheckout(opts: {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "status_inquiry_failed";
-    if (msg === "amount_currency_mismatch") {
+    if (msg === "amount_currency_mismatch" || msg === "reference_mismatch") {
       await db.paymentCheckout.update({
         where: { id: checkout.id },
         data: {
           status: "FAILED",
-          errorMessage: "amount_currency_mismatch",
+          errorMessage: msg,
         },
       });
       await audit({
@@ -186,7 +299,7 @@ export async function fulfillCheckout(opts: {
         action: AUDIT_ACTIONS.BILLING_CHANGE,
         resource: "PaymentCheckout",
         resourceId: checkout.id,
-        details: { error: "amount_currency_mismatch", paidValue, paidCurrency },
+        details: { error: msg, paidValue, paidCurrency, paymentId, invoiceId },
         severity: "CRITICAL",
         success: false,
       });
@@ -205,6 +318,7 @@ export async function fulfillCheckout(opts: {
   const cycle = checkout.billingCycle === "YEARLY" ? "YEARLY" : "MONTHLY";
   const now = new Date();
   const periodEnd = addPeriod(now, cycle);
+  let ownedWorkspaceIds: string[] = [];
 
   await db.$transaction(async (tx) => {
     await tx.paymentCheckout.update({
@@ -238,23 +352,25 @@ export async function fulfillCheckout(opts: {
     });
 
     if (existing) {
-      const isExpired = existing.currentPeriodEnd < now;
-      const isPlanChange = existing.planId !== checkout!.planId;
-      // Only reset usage on period expiry (renewal) or first creation, not on mid-cycle plan change
-      const shouldReset = isExpired || !isPlanChange ? false : false;
-      // Correct logic: reset only if period expired (renewal)
-      const resetData = isExpired
-        ? { proposalsUsed: 0, documentsUsed: 0, tokensUsed: 0, storageUsedBytes: 0 }
+      const period = nextSubscriptionPeriod(
+        existing,
+        { planId: checkout!.planId, cycle },
+        now
+      );
+      // Storage is deliberately not reset: the counted files still exist.
+      const resetData = period.resetUsage
+        ? { proposalsUsed: 0, documentsUsed: 0, tokensUsed: 0 }
         : {};
-      // If plan changed mid-cycle, keep current usage counters
       await tx.subscription.update({
         where: { id: existing.id },
         data: {
           planId: checkout!.planId,
+          // A paid trial is a customer now; the trial clock stops meaning anything.
           status: "ACTIVE",
+          trialEndsAt: null,
           billingCycle: cycle,
-          currentPeriodStart: isExpired ? now : existing.currentPeriodStart,
-          currentPeriodEnd: isExpired ? periodEnd : existing.currentPeriodEnd,
+          currentPeriodStart: period.currentPeriodStart,
+          currentPeriodEnd: period.currentPeriodEnd,
           cancelledAt: null,
           ...resetData,
         },
@@ -277,9 +393,10 @@ export async function fulfillCheckout(opts: {
       where: { userId: checkout!.userId, role: { in: ["OWNER", "ADMIN"] } },
       select: { workspaceId: true },
     });
+    ownedWorkspaceIds = memberships.map((m) => m.workspaceId);
     if (memberships.length) {
       await tx.workspace.updateMany({
-        where: { id: { in: memberships.map((m) => m.workspaceId) } },
+        where: { id: { in: ownedWorkspaceIds } },
         data: { plan: checkout!.plan.name },
       });
     }
@@ -299,6 +416,25 @@ export async function fulfillCheckout(opts: {
       amount: checkout.amount,
     },
     severity: "INFO",
+  });
+
+  // Funnel: the checkout just committed to PAID. Fulfilment runs from the
+  // webhook and the reconcile cron with no session, so provenance is the
+  // payer's own workspace. Never throws; the fulfilment result is unaffected.
+  await recordActivationAnalyticsEvent({
+    eventType: "checkout_completed",
+    entityId: checkout.id,
+    mutationRef: paymentId ?? checkout.id,
+    origin: analyticsBackgroundOrigin({
+      subjectWorkspaceId:
+        checkout.user.activeWorkspaceId ?? ownedWorkspaceIds[0] ?? null,
+      initiatorUserId: checkout.userId,
+    }),
+    metadata: {
+      planId: checkout.planId,
+      billingCycle: cycle,
+      checkoutId: checkout.id,
+    },
   });
 
   return { ok: true, checkoutId: checkout.id };
@@ -848,27 +984,29 @@ export async function applyReconciliation(opts: {
 
       // Activate subscription
       const cycle = checkout.billingCycle === "YEARLY" ? "YEARLY" : "MONTHLY";
-      const periodEnd = new Date(now);
-      if (cycle === "YEARLY") {
-        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-      } else {
-        periodEnd.setMonth(periodEnd.getMonth() + 1);
-      }
+      const periodEnd = addPeriod(now, cycle);
 
       const existingSub = await tx.subscription.findUnique({
         where: { userId: checkout.userId },
       });
 
       if (existingSub) {
-        const isExpired = existingSub.currentPeriodEnd < now;
+        // Same period rule as fulfillCheckout: an early same-plan payment
+        // extends the period; a paid trial becomes a plain active subscription.
+        const period = nextSubscriptionPeriod(
+          existingSub,
+          { planId: checkout.planId, cycle },
+          now
+        );
         await tx.subscription.update({
           where: { id: existingSub.id },
           data: {
             planId: checkout.planId,
             status: "ACTIVE",
+            trialEndsAt: null,
             billingCycle: cycle,
-            currentPeriodStart: isExpired ? now : existingSub.currentPeriodStart,
-            currentPeriodEnd: isExpired ? periodEnd : existingSub.currentPeriodEnd,
+            currentPeriodStart: period.currentPeriodStart,
+            currentPeriodEnd: period.currentPeriodEnd,
             cancelledAt: null,
           },
         });

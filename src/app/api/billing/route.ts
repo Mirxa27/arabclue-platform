@@ -6,13 +6,14 @@ import {
   PLAN_MONEY_KEYS,
   withPublicMoney,
 } from "@/lib/money";
+import { hasSettledPayment, resolveEntitlementState } from "@/lib/quotas";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/billing — plans + current subscription + usage + history
 export async function GET() {
   return withTenant("session", async ({ session }) => {
-    const [plans, subscription, records, pendingCheckouts, mfKey] =
+    const [plans, subscription, records, pendingCheckouts, mfKey, hasPaid] =
       await Promise.all([
         db.subscriptionPlan.findMany({
           where: { isActive: true, isPublic: true },
@@ -37,9 +38,27 @@ export async function GET() {
           include: { plan: { select: { name: true, nameAr: true } } },
         }),
         getDecryptedEnv("MYFATOORAH_API_KEY"),
+        hasSettledPayment(session.user.id),
       ]);
 
+    const entitlement = resolveEntitlementState(
+      subscription ? { ...subscription, hasPaid } : null
+    );
+    const trial =
+      entitlement.kind === "TRIAL"
+        ? {
+            active: true,
+            endsAt: entitlement.endsAt.toISOString(),
+            daysLeft: entitlement.daysLeft,
+          }
+        : entitlement.kind === "TRIAL_ENDED"
+          ? { active: false, endsAt: entitlement.endedAt.toISOString(), daysLeft: 0 }
+          : { active: false, endsAt: null, daysLeft: null };
+
     return jsonOk({
+      /** Read-time classification of `subscription`; see resolveEntitlementState. */
+      entitlement: entitlement.kind,
+      trial,
       plans: plans.map((plan) => withPublicMoney({ ...plan }, PLAN_MONEY_KEYS)),
       subscription: subscription
         ? {

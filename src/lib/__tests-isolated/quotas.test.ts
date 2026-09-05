@@ -2,8 +2,11 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
 // In-memory mock state for db
-let mockSub: any = null;
+let mockSub: any = null; // subscription of the acting user ("user-1")
+let mockOwnerSub: any = null; // subscription of the workspace owner ("owner-1")
+let mockOwner: any = null; // workspaceMember.findFirst → the OWNER row
 let mockUser: any = null;
+let mockPaidRecords = 0; // PAID BillingRecord count for the legacy Starter rule
 let updateManyCalls: Array<{ userId: string; field: string; amount: number }> = [];
 
 type QuotasModule = typeof import("../quotas");
@@ -11,12 +14,15 @@ let assertWithinQuota: QuotasModule["assertWithinQuota"];
 let bumpUsage: QuotasModule["bumpUsage"];
 let quotaFailureCode: QuotasModule["quotaFailureCode"];
 let QuotaExceededError: QuotasModule["QuotaExceededError"];
+let assertExportFormatAllowed: QuotasModule["assertExportFormatAllowed"];
 
 beforeAll(async () => {
 mock.module("../db", () => ({
   db: {
     subscription: {
-      findUnique: mock(() => Promise.resolve(mockSub)),
+      findUnique: mock((args: any) =>
+        Promise.resolve(args?.where?.userId === "owner-1" ? mockOwnerSub : mockSub)
+      ),
       updateMany: mock((args: any) => {
         const field = Object.keys(args.data)[0];
         const amount = (args.data[field] as any).increment;
@@ -27,18 +33,38 @@ mock.module("../db", () => ({
     user: {
       findUnique: mock(() => Promise.resolve(mockUser)),
     },
+    workspaceMember: {
+      findFirst: mock(() => Promise.resolve(mockOwner)),
+    },
+    billingRecord: {
+      count: mock(() => Promise.resolve(mockPaidRecords)),
+    },
+    paymentCheckout: {
+      count: mock(() => Promise.resolve(0)),
+    },
   },
 }));
 
-({ assertWithinQuota, bumpUsage, quotaFailureCode, QuotaExceededError } =
-  await import("../quotas"));
+({
+  assertWithinQuota,
+  bumpUsage,
+  quotaFailureCode,
+  QuotaExceededError,
+  assertExportFormatAllowed,
+} = await import("../quotas"));
 });
 
 function resetMockState() {
   mockSub = null;
+  mockOwnerSub = null;
+  mockOwner = null;
   mockUser = null;
+  mockPaidRecords = 0;
   updateManyCalls = [];
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const inDays = (days: number) => new Date(Date.now() + days * DAY_MS);
 
 function makePlan(overrides: any = {}) {
   return {
@@ -58,6 +84,10 @@ function makeSub(overrides: any = {}) {
     userId: "user-1",
     status: "ACTIVE",
     planId: "plan-1",
+    // A period still running: without it an unpaid ACTIVE Starter row reads
+    // as a lapsed legacy trial, which is exactly the case tested further down.
+    currentPeriodEnd: inDays(20),
+    trialEndsAt: null,
     documentsUsed: 0,
     proposalsUsed: 0,
     storageUsedBytes: 0,
@@ -109,8 +139,110 @@ describe("assertWithinQuota", () => {
 
   test("allows TRIALING subscription", async () => {
     resetMockState();
-    mockSub = makeSub({ status: "TRIALING" });
+    mockSub = makeSub({ status: "TRIALING", trialEndsAt: inDays(10) });
     await expect(assertWithinQuota("user-1", "document")).resolves.toBeUndefined();
+  });
+
+  test("a TRIALING subscription past trialEndsAt throws TRIAL_ENDED", async () => {
+    // Arrange: the 30-day trial lapsed yesterday; the row was never renewed.
+    resetMockState();
+    mockSub = makeSub({
+      status: "TRIALING",
+      trialEndsAt: inDays(-1),
+      currentPeriodEnd: inDays(-1),
+    });
+    // Act / Assert
+    try {
+      await assertWithinQuota("user-1", "document");
+      throw new Error("expected TRIAL_ENDED");
+    } catch (e: any) {
+      expect(e).toBeInstanceOf(QuotaExceededError);
+      expect(e.code).toBe("TRIAL_ENDED");
+      expect(quotaFailureCode(e)).toBe("TRIAL_ENDED");
+    }
+  });
+
+  test("a legacy ACTIVE Starter row that never paid ends with its period", async () => {
+    // Arrange: written before trials carried a status, period long gone, no
+    // PAID record anywhere. Under the old gate this was free forever.
+    resetMockState();
+    mockPaidRecords = 0;
+    mockSub = makeSub({ status: "ACTIVE", currentPeriodEnd: inDays(-3) });
+    try {
+      await assertWithinQuota("user-1", "proposal");
+      throw new Error("expected TRIAL_ENDED");
+    } catch (e: any) {
+      expect(e.code).toBe("TRIAL_ENDED");
+    }
+  });
+
+  test("a paid ACTIVE Starter row is entitled even when its period date passed", async () => {
+    // A settled payment means it is a customer, not a trial; period lapse is
+    // the renewal machinery's business, not the quota gate's.
+    resetMockState();
+    mockPaidRecords = 1;
+    mockSub = makeSub({ status: "ACTIVE", currentPeriodEnd: inDays(-3) });
+    await expect(assertWithinQuota("user-1", "proposal")).resolves.toBeUndefined();
+  });
+
+  test("the bootstrap admin's own seeded Starter row never trips TRIAL_ENDED", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "SUPER_ADMIN", activeWorkspaceId: null };
+    mockSub = makeSub({ status: "ACTIVE", currentPeriodEnd: inDays(-400) });
+    await expect(assertWithinQuota("user-1", "document")).resolves.toBeUndefined();
+  });
+
+  test("a member is governed by the workspace owner's subscription", async () => {
+    // Arrange: the member's own Starter row is at its document cap, the
+    // owner's Pro row is not. Before this, the member was capped at Starter.
+    resetMockState();
+    mockUser = { id: "user-1", role: "MEMBER", activeWorkspaceId: "ws-1" };
+    mockOwner = { userId: "owner-1" };
+    mockSub = makeSub({ documentsUsed: 50, plan: makePlan({ maxDocuments: 50 }) });
+    mockOwnerSub = makeSub({
+      id: "sub-owner",
+      userId: "owner-1",
+      documentsUsed: 100,
+      plan: makePlan({ id: "plan-pro", name: "PRO", maxDocuments: 250 }),
+    });
+    // Act / Assert: the owner's allowance is what binds.
+    await expect(assertWithinQuota("user-1", "document")).resolves.toBeUndefined();
+
+    // ...and the owner's row is what a bump consumes.
+    await bumpUsage("user-1", "document");
+    expect(updateManyCalls).toEqual([
+      { userId: "owner-1", field: "documentsUsed", amount: 1 },
+    ]);
+  });
+
+  test("an owner's spent allowance binds every member, however many were invited", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "MEMBER", activeWorkspaceId: "ws-1" };
+    mockOwner = { userId: "owner-1" };
+    mockSub = makeSub({ documentsUsed: 0 });
+    mockOwnerSub = makeSub({
+      id: "sub-owner",
+      userId: "owner-1",
+      documentsUsed: 50,
+      plan: makePlan({ maxDocuments: 50 }),
+    });
+    try {
+      await assertWithinQuota("user-1", "document");
+      throw new Error("expected DOCUMENTS");
+    } catch (e: any) {
+      expect(e.code).toBe("DOCUMENTS");
+    }
+  });
+
+  test("falls back to the user's own subscription when the owner holds none", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "MEMBER", activeWorkspaceId: "ws-1" };
+    mockOwner = { userId: "owner-1" };
+    mockOwnerSub = null;
+    mockSub = makeSub({ documentsUsed: 3 });
+    await expect(assertWithinQuota("user-1", "document")).resolves.toBeUndefined();
+    await bumpUsage("user-1", "document");
+    expect(updateManyCalls[0].userId).toBe("user-1");
   });
 
   test("throws DOCUMENTS when document quota exceeded", async () => {
@@ -234,6 +366,9 @@ describe("assertWithinQuota", () => {
 });
 
 describe("quotaFailureCode", () => {
+  // TRIAL_ENDED is absent on purpose: its internal enum *is* its registry key,
+  // so the "raw enum is not a sentence" half of the loop does not apply to it.
+  // Its mapping is asserted separately below.
   const CODES = [
     "DOCUMENTS",
     "PROPOSALS",
@@ -241,6 +376,17 @@ describe("quotaFailureCode", () => {
     "TOKENS",
     "INACTIVE",
   ] as const;
+
+  test("TRIAL_ENDED maps to its own bilingual sentence", async () => {
+    const { legacyFailureBody } = await import("../api-failure");
+    const generic = legacyFailureBody(null).message;
+    const mapped = legacyFailureBody(
+      quotaFailureCode(new QuotaExceededError("internal", "TRIAL_ENDED"))
+    ).message;
+    expect(mapped).not.toEqual(generic);
+    expect(mapped.ar).toContain("التجريبية");
+    expect(mapped.en).toContain("trial has ended");
+  });
 
   test("every quota code resolves to a real bilingual sentence", async () => {
     // The internal enum is not a registry key. A route that answers 402 with
@@ -313,5 +459,48 @@ describe("bumpUsage", () => {
       updateManyCalls.push({ userId: args.where.userId, field, amount });
       return Promise.resolve({ count: 1 });
     });
+  });
+});
+
+describe("assertExportFormatAllowed", () => {
+  const starterFeatures = JSON.stringify(["basic_agents", "pdf_export"]);
+  const proFeatures = JSON.stringify(["all_agents", "pptx_pdf_xlsx_export"]);
+
+  test("a Starter trial may download PDF but not PPTX, and the 402 carries the contract code", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "BIDDER", activeWorkspaceId: null };
+    mockSub = makeSub({ status: "TRIALING", trialEndsAt: inDays(10), plan: makePlan({ featuresJson: starterFeatures }) });
+    await expect(assertExportFormatAllowed("user-1", "pdf")).resolves.toBeUndefined();
+    try {
+      await assertExportFormatAllowed("user-1", "pptx");
+      throw new Error("expected a QuotaExceededError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(QuotaExceededError);
+      expect(quotaFailureCode(err as InstanceType<typeof QuotaExceededError>)).toBe(
+        "EXPORT_FORMAT_NOT_IN_PLAN"
+      );
+    }
+  });
+
+  test("a teammate is gated by the workspace owner's Pro plan, not their own Starter", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "BIDDER", activeWorkspaceId: "ws-1" };
+    mockOwner = { userId: "owner-1" };
+    mockOwnerSub = makeSub({ id: "sub-owner", userId: "owner-1", plan: makePlan({ name: "PRO", featuresJson: proFeatures }) });
+    mockSub = makeSub({ plan: makePlan({ featuresJson: starterFeatures }) });
+    await expect(assertExportFormatAllowed("user-1", "xlsx")).resolves.toBeUndefined();
+  });
+
+  test("a lapsed trial is refused with TRIAL_ENDED before the format is even considered", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "BIDDER", activeWorkspaceId: null };
+    mockSub = makeSub({ status: "TRIALING", trialEndsAt: inDays(-1), plan: makePlan({ featuresJson: proFeatures }) });
+    await expect(assertExportFormatAllowed("user-1", "pdf")).rejects.toMatchObject({ code: "TRIAL_ENDED" });
+  });
+
+  test("a platform admin with no subscription is not gated", async () => {
+    resetMockState();
+    mockUser = { id: "user-1", role: "SUPER_ADMIN" };
+    await expect(assertExportFormatAllowed("user-1", "docx")).resolves.toBeUndefined();
   });
 });

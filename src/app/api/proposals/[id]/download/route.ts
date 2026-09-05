@@ -2,7 +2,9 @@ import { apiFailure } from "@/lib/api-failure";
 import {
   jsonApiFailure,
   jsonRateLimitFailure,
+  toErrorResponse,
 } from "@/lib/api-controller";
+import { assertExportFormatAllowed } from "@/lib/quotas";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
@@ -240,6 +242,12 @@ export async function GET(
       },
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
+  }
+  // Plan gate before any rendering work: the 402 names the upgrade path.
+  try {
+    await assertExportFormatAllowed(session.user.id, format);
+  } catch (err) {
+    return toErrorResponse(err, "proposals/[id]/download");
   }
   const localeParam = req.nextUrl.searchParams.get("locale");
   const pdfLocale =

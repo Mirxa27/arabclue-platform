@@ -31,7 +31,10 @@ import {
   initiatePayment,
   type RecurringModel,
 } from "./myfatoorah";
-import { notifySubscriptionFailed } from "./notification-service";
+import {
+  notifySubscriptionFailed,
+  notifySubscriptionPastDue,
+} from "./notification-service";
 import { systemUtcClock, utcNow, type UtcClock } from "./time";
 import {
   ProviderDeadlineExceededError,
@@ -960,7 +963,25 @@ export type StartRecurringProfileInput = {
   customerEmail: string;
   /** Optional caller-supplied idempotency key; a stable key is derived when absent. */
   idempotencyKey?: string;
+  /** Language of the hosted payment page the customer is sent to. */
+  language?: "AR" | "EN";
 };
+
+/**
+ * The profile the checkout route sends the customer to pay. The initial invoice
+ * of the recurring profile is the one that must be paid: it is what activates
+ * the profile at the provider. `paymentUrl` is that invoice's hosted page.
+ */
+export type StartedRecurringProfile = RecurringProfile & {
+  paymentUrl: string | null;
+};
+
+/**
+ * A `DRAFT` profile whose first invoice has not been paid this long is an
+ * abandoned checkout, not a live reservation: it is released so the customer
+ * can try again instead of meeting 409 RECURRING_PROFILE_EXISTS forever.
+ */
+export const ABANDONED_DRAFT_PROFILE_MS = 24 * 60 * 60 * 1000;
 
 export type RecurringProfile = {
   id: string;
@@ -1001,7 +1022,7 @@ export type RecurringProfile = {
  */
 export async function startRecurringProfile(
   input: StartRecurringProfileInput
-): Promise<RecurringProfile> {
+): Promise<StartedRecurringProfile> {
   if (!isRecurringBillingCycle(input.interval)) {
     throw new RecurringBillingError(
       "Recurring billing requires a monthly or yearly cycle",
@@ -1009,6 +1030,8 @@ export async function startRecurringProfile(
       400
     );
   }
+
+  await releaseAbandonedDraftProfiles(input.subscriptionId, new Date());
 
   // Criterion 9.11 — reject before any MyFatoorah operation.
   const occupying = await db.myFatoorahRecurringProfile.findFirst({
@@ -1075,6 +1098,70 @@ export async function startRecurringProfile(
       .catch(() => undefined);
     throw error;
   }
+}
+
+/**
+ * Frees the single profile slot from checkouts the customer walked away from.
+ *
+ * A `DRAFT` row is created before the customer pays the profile's first invoice.
+ * If that invoice is never paid the row stays `DRAFT` — occupying the slot and
+ * answering every later checkout with 409 — and its `FINALIZED` checkout intent
+ * blocks the same plan/cycle from being reserved again. After
+ * `ABANDONED_DRAFT_PROFILE_MS` with no charge, both are released: the profile
+ * moves to the terminal `CANCELLED` state (no cycle can ever have been charged
+ * on it, so nothing at the provider is undone) and the intent is `EXPIRED` so
+ * `reserveRecurringCheckoutIntent` reclaims it.
+ */
+export async function releaseAbandonedDraftProfiles(
+  subscriptionId: string,
+  now: Date
+): Promise<number> {
+  const stale = await db.myFatoorahRecurringProfile.findMany({
+    where: {
+      subscriptionId,
+      status: "DRAFT",
+      lastChargeAt: null,
+      createdAt: { lt: new Date(now.getTime() - ABANDONED_DRAFT_PROFILE_MS) },
+    },
+    select: { id: true, userId: true, recurringId: true },
+  });
+
+  let released = 0;
+  for (const profile of stale) {
+    const updated = await db.myFatoorahRecurringProfile.updateMany({
+      where: { id: profile.id, status: "DRAFT" },
+      data: {
+        status: "CANCELLED",
+        nextChargeAt: null,
+        lastFailureReason: "checkout_abandoned",
+        lastFailureAt: now,
+      },
+    });
+    if (updated.count !== 1) continue;
+    released += 1;
+
+    await db.recurringCheckoutIntent.updateMany({
+      where: {
+        subscriptionId,
+        providerReference: profile.recurringId,
+        status: "FINALIZED",
+      },
+      data: { status: "EXPIRED" },
+    });
+
+    await audit({
+      userId: profile.userId,
+      action: AUDIT_ACTIONS.BILLING_CHANGE,
+      resource: "MyFatoorahRecurringProfile",
+      resourceId: profile.id,
+      details: {
+        action: "release_abandoned_draft",
+        recurringId: profile.recurringId,
+        subscriptionId,
+      },
+    });
+  }
+  return released;
 }
 
 /**
@@ -1203,7 +1290,7 @@ async function reserveRecurringCheckoutIntent(data: {
 async function executeRecurringProfile(
   input: StartRecurringProfileInput,
   cycleAmount: StoredPlanCycleAmount
-): Promise<RecurringProfile> {
+): Promise<StartedRecurringProfile> {
   // The gateway takes a decimal SAR number; the exact stored literal stays
   // authoritative for everything the platform persists or displays.
   const gatewayAmount = Number(cycleAmount.amountExact);
@@ -1245,7 +1332,7 @@ async function executeRecurringProfile(
     customerReference: input.customerReference,
     callBackUrl,
     errorUrl,
-    language: "AR",
+    language: input.language ?? "AR",
     recurring: recurringModel,
   });
 
@@ -1289,18 +1376,20 @@ async function executeRecurringProfile(
       planId: input.planId,
       interval: input.interval,
       intervalDays,
+      initialInvoiceId: result.invoiceId,
     },
   });
 
-  return mapProfileToResult(profile);
+  return { ...mapProfileToResult(profile), paymentUrl: result.paymentUrl || null };
 }
 
 /**
  * Cancel a recurring payment profile (criterion 9.5).
  *
- * Only an active profile may be cancelled. The subscription keeps its stored
- * period end, no further period extension follows, and no refund or proration is
- * computed.
+ * An active, suspended, or draft profile may be cancelled. The subscription
+ * keeps its stored period end, no further period extension follows, and no
+ * refund or proration is computed. A draft was never activated at the provider
+ * (its first invoice is unpaid), so it is closed locally without a provider call.
  */
 export async function cancelRecurringProfile(
   recurringId: string,
@@ -1331,32 +1420,36 @@ export async function cancelRecurringProfile(
     );
   }
 
-  // Provider call outside the DB transaction with a 30-second deadline.
-  let success = false;
-  try {
-    success = await withProviderDeadline(
-      () => mfCancelRecurring(recurringId),
-      {
-        provider: "myfatoorah-recurring-cancel",
-        timeoutMs: RECURRING_PROVIDER_DEADLINE_MS,
+  // Provider call outside the DB transaction with a 30-second deadline. A
+  // draft has nothing to cancel at the provider: its first invoice was never
+  // paid, so the recurring profile never became chargeable there.
+  if (resolution.from !== "DRAFT") {
+    let success = false;
+    try {
+      success = await withProviderDeadline(
+        () => mfCancelRecurring(recurringId),
+        {
+          provider: "myfatoorah-recurring-cancel",
+          timeoutMs: RECURRING_PROVIDER_DEADLINE_MS,
+        }
+      );
+    } catch (error) {
+      if (error instanceof ProviderDeadlineExceededError) {
+        throw new RecurringBillingError(
+          "Recurring cancel timed out waiting for MyFatoorah",
+          "RECURRING_PROVIDER_TIMEOUT",
+          504
+        );
       }
-    );
-  } catch (error) {
-    if (error instanceof ProviderDeadlineExceededError) {
+      throw error;
+    }
+    if (!success) {
       throw new RecurringBillingError(
-        "Recurring cancel timed out waiting for MyFatoorah",
-        "RECURRING_PROVIDER_TIMEOUT",
-        504
+        "Failed to cancel recurring payment with MyFatoorah",
+        "RECURRING_PROVIDER_ERROR",
+        502
       );
     }
-    throw error;
-  }
-  if (!success) {
-    throw new RecurringBillingError(
-      "Failed to cancel recurring payment with MyFatoorah",
-      "RECURRING_PROVIDER_ERROR",
-      502
-    );
   }
 
   // Recheck stored state before finalization (criterion 9.13).
@@ -1763,6 +1856,8 @@ export async function handleRecurringChargeSuccess(opts: {
           where: { id: subscription.id },
           data: {
             status: "ACTIVE",
+            // A charged subscription is a customer's, not a trial's.
+            trialEndsAt: null,
             currentPeriodEnd: periodEnd,
             proposalsUsed: 0,
             documentsUsed: 0,
@@ -1822,6 +1917,7 @@ export async function handleRecurringChargeFailure(opts: {
   }
 
   let subscriptionId: string | null = null;
+  let enteredPastDue = false;
   const failedAt = new Date();
   const reason =
     truncateProviderFailureReason(opts.reason) ?? "Payment failed";
@@ -1850,6 +1946,7 @@ export async function handleRecurringChargeFailure(opts: {
         data: { status: "PAST_DUE" },
       });
       subscriptionId = subscription.id;
+      enteredPastDue = subscription.status !== "PAST_DUE";
     }
   });
 
@@ -1880,14 +1977,22 @@ export async function handleRecurringChargeFailure(opts: {
       null;
 
     if (workspaceId) {
-      // Criterion 17.2 — payment-failure trigger uses the failed template;
-      // past-due is reserved for period-expiry transitions.
-      notifySubscriptionFailed({
-        subscriptionId,
-        workspaceId,
-        userId: profile.userId,
-        reason,
-      }).catch((err) => {
+      // Criterion 17.2 — the transition into PAST_DUE is announced once with
+      // the past-due template; a further failed retry while already past due
+      // uses the payment-failed template, so one event never sends both.
+      const notify = enteredPastDue
+        ? notifySubscriptionPastDue({
+            subscriptionId,
+            workspaceId,
+            userId: profile.userId,
+          })
+        : notifySubscriptionFailed({
+            subscriptionId,
+            workspaceId,
+            userId: profile.userId,
+            reason,
+          });
+      notify.catch((err) => {
         console.error("[recurring-billing] notification error:", err);
       });
     }

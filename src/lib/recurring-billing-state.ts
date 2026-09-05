@@ -444,8 +444,14 @@ export const RECURRING_PROFILE_TRANSITIONS: Readonly<
     SUSPENDED: "CANCELLED",
     CANCELLED: "CANCELLED",
   }),
-  // Criterion 9.5: a member may cancel only an active profile.
-  MEMBER_CANCELLED: Object.freeze({ ACTIVE: "CANCELLED" }),
+  // Criterion 9.5: a member may cancel a profile that could still charge them —
+  // active, suspended (resumable), or a draft whose first invoice they will not
+  // pay. Only a cancelled profile has nothing left to cancel.
+  MEMBER_CANCELLED: Object.freeze({
+    DRAFT: "CANCELLED",
+    ACTIVE: "CANCELLED",
+    SUSPENDED: "CANCELLED",
+  }),
   // Criterion 9.6: a member may resume only a suspended profile.
   MEMBER_RESUMED: Object.freeze({ SUSPENDED: "ACTIVE" }),
 });

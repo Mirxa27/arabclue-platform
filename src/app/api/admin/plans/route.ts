@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
         maxWorkspaces: body.maxWorkspaces ?? 1,
         maxTokensPerMonth: body.maxTokensPerMonth ?? 500000,
         maxStorageGb: body.maxStorageGb ?? 5,
+        maxSeats: body.maxSeats ?? null,
         featuresJson: body.featuresJson ?? JSON.stringify([]),
         isActive: body.isActive ?? true,
         isPublic: body.isPublic ?? true,

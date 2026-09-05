@@ -524,16 +524,20 @@ async function runAcceptTransaction(
           select: { id: true },
         });
         if (starterPlan) {
+          // An invited account's own Starter row is a trial that ends; the
+          // workspace owner's plan is what governs its quota while it lasts.
+          const trialEndsAt = new Date(
+            input.acceptedAt.getTime() + STARTER_PERIOD_DAYS * DAY_MS
+          );
           await tx.subscription.create({
             data: {
               userId: created.id,
               planId: starterPlan.id,
-              status: "ACTIVE",
+              status: "TRIALING",
               billingCycle: "MONTHLY",
               currentPeriodStart: input.acceptedAt,
-              currentPeriodEnd: new Date(
-                input.acceptedAt.getTime() + STARTER_PERIOD_DAYS * DAY_MS
-              ),
+              currentPeriodEnd: trialEndsAt,
+              trialEndsAt,
             },
           });
         }

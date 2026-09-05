@@ -232,6 +232,8 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   QUOTA_STORAGE_EXCEEDED: 402,
   QUOTA_TOKENS_EXCEEDED: 402,
   SUBSCRIPTION_INACTIVE: 402,
+  TRIAL_ENDED: 402,
+  EXPORT_FORMAT_NOT_IN_PLAN: 402,
   // The suffix rules below key off `_FORBIDDEN`/`_REQUIRED`, which the bare
   // forms do not match — they fell through to 400, so "sign in to continue"
   // arrived under a status meaning the request was malformed. These are the

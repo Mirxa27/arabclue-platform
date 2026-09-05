@@ -26,14 +26,14 @@ export const MARKETING_PLANS: MarketingPlan[] = [
     featuresEn: [
       "10 proposals / month",
       "50 tender documents",
-      "5 GB storage",
+      "5 GB storage · 2 seats",
       "Core agent pipeline",
       "PDF export · Email support",
     ],
     featuresAr: [
       "10 عطاءات شهرياً",
       "50 مستند مناقصة",
-      "5 غيغابايت تخزين",
+      "5 غيغابايت تخزين · مقعدان",
       "خط وكلاء أساسي",
       "تصدير PDF · دعم بالبريد",
     ],
@@ -50,6 +50,7 @@ export const MARKETING_PLANS: MarketingPlan[] = [
     featuresEn: [
       "50 proposals / month",
       "250 documents · 25 GB storage",
+      "10 seats",
       "Full agent suite + brand kit",
       "RAG company corpus",
       "PPTX · PDF · XLSX export",
@@ -58,6 +59,7 @@ export const MARKETING_PLANS: MarketingPlan[] = [
     featuresAr: [
       "50 عطاءاً شهرياً",
       "250 مستنداً · 25 غيغابايت تخزين",
+      "10 مقاعد",
       "وكلاء كاملون + هوية العلامة",
       "قاعدة معرفة الشركة",
       "تصدير PPTX · PDF · XLSX",
@@ -76,6 +78,7 @@ export const MARKETING_PLANS: MarketingPlan[] = [
     featuresEn: [
       "Unlimited proposals & documents",
       "200 GB storage · 20M tokens / month",
+      "Unlimited seats",
       "Approval chain & reviewer roles",
       "All export formats · dedicated support",
       "On request: SSO · custom agents · audit export",
@@ -83,6 +86,7 @@ export const MARKETING_PLANS: MarketingPlan[] = [
     featuresAr: [
       "عطاءات ومستندات بلا حد",
       "200 غيغابايت · 20 مليون رمز شهرياً",
+      "مقاعد بلا حد",
       "سلسلة اعتماد وأدوار مراجعين",
       "جميع صيغ التصدير · دعم مخصص",
       "عند الطلب: الدخول الموحد · وكلاء مخصصون · تصدير سجل التدقيق",

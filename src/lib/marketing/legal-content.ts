@@ -341,11 +341,13 @@ export const billingContent = {
       titleEn: "Plans and quotas",
       titleAr: "الباقات والحصص",
       paragraphsEn: [
-        "Published packages (Starter, Professional, Enterprise) include seat, project, document, and agent-run quotas enforced at upload and agent start.",
+        "Published packages (Starter, Professional, Enterprise) include seat, document, proposal, storage, and AI-usage quotas. Seats are enforced when a member is invited, document and storage quotas when a file is uploaded, and proposal and AI-usage quotas when an agent run starts.",
+        "New accounts start on a 30-day Starter trial. When the trial ends, agent runs and uploads are paused until a package is chosen; existing documents remain accessible.",
         "Enterprise may include custom limits agreed in writing.",
       ],
       paragraphsAr: [
-        "تشمل الباقات المنشورة (المبتدئ، الاحترافي، المؤسسات) حصص مقاعد ومشاريع ومستندات وتشغيل وكلاء تُفرض عند الرفع وبدء الوكيل.",
+        "تشمل الباقات المنشورة (المبتدئ، الاحترافي، المؤسسات) حصص المقاعد والمستندات والعروض والتخزين واستخدام الذكاء الاصطناعي. تُفرض حصة المقاعد عند دعوة عضو، وحصتا المستندات والتخزين عند رفع ملف، وحصتا العروض واستخدام الذكاء الاصطناعي عند بدء تشغيل الوكيل.",
+        "تبدأ الحسابات الجديدة بفترة تجريبية لباقة المبتدئ مدتها 30 يوماً. عند انتهائها تتوقف عمليات تشغيل الوكلاء والرفع حتى اختيار باقة، وتبقى المستندات الحالية متاحة.",
         "قد تتضمن باقة المؤسسات حدوداً مخصصة باتفاق مكتوب.",
       ],
     },
@@ -363,11 +365,13 @@ export const billingContent = {
       titleEn: "Renewals and cancellation",
       titleAr: "التجديد والإلغاء",
       paragraphsEn: [
-        "Plans renew according to the selected billing cycle until canceled from the workspace billing settings or by written request to support@arabclue.com.",
+        "A subscription set up with automatic renewal is charged again through MyFatoorah at the end of each billing cycle until renewal is canceled from the workspace billing screen or by written request to support@arabclue.com.",
+        "A one-time payment covers a single billing cycle and does not renew by itself; access ends with that cycle unless a new payment is made. Paying again before the cycle ends adds the full cycle to the current end date.",
         "Cancellation stops future renewals; access continues through the paid period already settled.",
       ],
       paragraphsAr: [
-        "تتجدد الباقات وفق دورة الفوترة المختارة حتى الإلغاء من إعدادات الفوترة داخل مساحة العمل أو بطلب كتابي إلى support@arabclue.com.",
+        "يُخصم الاشتراك المُفعَّل بالتجديد التلقائي مرة أخرى عبر ماي فاتورة في نهاية كل دورة فوترة حتى إلغاء التجديد من شاشة الفوترة داخل مساحة العمل أو بطلب كتابي إلى support@arabclue.com.",
+        "تغطي الدفعة لمرة واحدة دورة فوترة واحدة ولا تتجدد من تلقاء نفسها؛ وينتهي الوصول بانتهاء تلك الدورة ما لم تُسدَّد دفعة جديدة. والدفع مجدداً قبل انتهاء الدورة يضيف دورة كاملة إلى تاريخ الانتهاء الحالي.",
         "يوقف الإلغاء التجديدات المستقبلية؛ ويستمر الوصول حتى نهاية الفترة المدفوعة.",
       ],
     },

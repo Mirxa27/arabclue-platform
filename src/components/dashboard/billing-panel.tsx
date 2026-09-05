@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { useLocale } from "@/lib/store";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { getDynamicTranslationKey, tr } from "@/lib/i18n";
+import type { Locale } from "@/lib/types";
+import { clearIntendedPlan, readIntendedPlan } from "@/lib/intended-plan";
 import {
   CreditCard,
   Loader2,
@@ -26,7 +30,7 @@ import {
   QueryState,
   ConfirmDialog,
 } from "@/components/patterns";
-import { apiJson } from "@/lib/api-client";
+import { ApiClientError, apiJson } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import {
   billingCycleLabel,
@@ -52,16 +56,30 @@ type Subscription = {
   status: string;
   billingCycle: string;
   currentPeriodEnd: string;
+  trialEndsAt?: string | null;
   proposalsUsed: number;
   documentsUsed: number;
   tokensUsed: number;
   plan: Plan;
 } | null;
 
+/** Read-time classification the server derives; see resolveEntitlementState. */
+type Entitlement = "ACTIVE" | "TRIAL" | "TRIAL_ENDED" | "INACTIVE";
+
+type TrialInfo = {
+  active: boolean;
+  endsAt: string | null;
+  daysLeft: number | null;
+};
+
+type RecurringState = "DRAFT" | "ACTIVE" | "SUSPENDED" | "CANCELLED";
+
 type RecurringProfile = {
   id: string;
   recurringId: string;
   status: string;
+  /** Normalized state; the server maps legacy spellings such as CANCELED. */
+  state: RecurringState | null;
   recurringType: string | null;
   intervalDays: number | null;
   amount: number | null;
@@ -76,6 +94,8 @@ type RecurringProfile = {
 };
 
 type BillingPayload = {
+  entitlement?: Entitlement;
+  trial?: TrialInfo;
   plans: Plan[];
   subscription: Subscription;
   records: Array<{
@@ -100,11 +120,42 @@ type CheckoutInput = {
   billingMode?: "recurring" | "single";
 };
 
+type CheckoutResponse = { paymentUrl: string; billingMode?: string };
+
+/**
+ * Failures that mean "the merchant account cannot set up renewal right now",
+ * not "this payment is wrong". Each is retried once as a one-cycle checkout so
+ * the customer can still pay; the toast tells them renewal will be manual.
+ */
+const RECURRING_FALLBACK_CODES = new Set([
+  "RECURRING_UNAVAILABLE",
+  "RECURRING_PROFILE_EXISTS",
+  "NO_PAYMENT_METHODS",
+]);
+
+/** Days left at which the trial notice becomes a banner, not just a header line. */
+const TRIAL_BANNER_DAYS = 7;
+
+function postCheckout(input: Required<CheckoutInput>, locale: Locale) {
+  return apiJson<CheckoutResponse>("/api/billing/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, locale }),
+  });
+}
+
 export function BillingPanel() {
   const { locale } = useLocale();
+  const { data: session } = useSession();
+  const isPlatformAdmin =
+    session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [cycle, setCycle] = useState<"MONTHLY" | "YEARLY">("MONTHLY");
+  /** Plan card the marketing site asked us to bring into view, if any. */
+  const [highlightedPlanId, setHighlightedPlanId] = useState<string | null>(null);
+  const planCardRefs = useRef(new Map<string, HTMLDivElement>());
+  const plansSectionRef = useRef<HTMLDivElement | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["billing"],
@@ -128,16 +179,24 @@ export function BillingPanel() {
       billingCycle,
       billingMode = "recurring",
     }: CheckoutInput) => {
-      return apiJson<{ paymentUrl: string }>("/api/billing/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          planId,
-          billingCycle,
-          billingMode,
-          locale,
-        }),
-      });
+      try {
+        return await postCheckout({ planId, billingCycle, billingMode }, locale);
+      } catch (err) {
+        const code = err instanceof ApiClientError ? err.code : undefined;
+        if (billingMode !== "recurring" || !code || !RECURRING_FALLBACK_CODES.has(code)) {
+          throw err;
+        }
+        // Renewal cannot be set up; take the payment for one cycle instead of
+        // sending the customer away with a 503.
+        toast({
+          title: tr("billing_recurring_fallback_title", locale),
+          description: tr("billing_recurring_fallback_body", locale),
+        });
+        return await postCheckout(
+          { planId, billingCycle, billingMode: "single" },
+          locale
+        );
+      }
     },
     onSuccess: (res) => {
       if (res.paymentUrl) {
@@ -195,20 +254,51 @@ export function BillingPanel() {
     },
   });
 
-  const plans = data?.plans ?? [];
+  // A zero-priced plan (pay-as-you-go until per-proposal metering ships) is
+  // not something a customer can buy here; showing it as "Free · unlimited"
+  // beside the paid tiers misled trial users. It stays visible only while the
+  // user is actually on it, so the row is never orphaned.
+  const plans = (data?.plans ?? []).filter(
+    (plan) =>
+      Number(plan.priceMonthly) > 0 || data?.subscription?.plan?.id === plan.id
+  );
   const sub = data?.subscription;
   const records = data?.records ?? [];
   const recurringProfiles = recurringData?.profiles ?? [];
-  const activeRecurringProfile = recurringProfiles.find((p) => p.status === "ACTIVE");
+  const entitlement: Entitlement = data?.entitlement ?? (sub ? "ACTIVE" : "INACTIVE");
+  const trial = data?.trial ?? null;
+  const trialDaysLeft = trial?.active ? trial.daysLeft : null;
   const latestFailedRecord = records[0]?.status === "FAILED" ? records[0] : null;
   const failedCheckout = parseCheckoutMetadata(latestFailedRecord?.metadata);
-  const retryCheckout: CheckoutInput | null = sub
-    ? {
-        planId: sub.plan.id,
-        billingCycle: sub.billingCycle === "YEARLY" ? "YEARLY" : "MONTHLY",
-      }
-    : failedCheckout;
+  // Retry the purchase that failed, not whatever plan the row currently holds:
+  // a trial user whose Pro checkout failed was being offered Starter again.
+  const retryCheckout: CheckoutInput | null =
+    failedCheckout ??
+    (sub
+      ? {
+          planId: sub.plan.id,
+          billingCycle: sub.billingCycle === "YEARLY" ? "YEARLY" : "MONTHLY",
+        }
+      : null);
   const hasBillingFailure = sub?.status === "PAST_DUE" || Boolean(latestFailedRecord);
+  const dateLocale = locale === "ar" ? "ar-SA" : "en-US";
+
+  // The marketing site records the plan a visitor picked before signing up.
+  // Once the plans have loaded, honour it once: select the cycle, bring the
+  // card into view, and forget the key so a later visit is not steered again.
+  useEffect(() => {
+    if (plans.length === 0) return;
+    const intended = readIntendedPlan();
+    if (!intended) return;
+    clearIntendedPlan();
+    const target = plans.find((plan) => plan.name === intended.plan);
+    if (!target) return;
+    setCycle(intended.cycle === "yearly" ? "YEARLY" : "MONTHLY");
+    setHighlightedPlanId(target.id);
+    planCardRefs.current
+      .get(target.id)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [plans]);
 
   return (
     <div className="space-y-4">
@@ -217,9 +307,11 @@ export function BillingPanel() {
         tone="primary"
         title={locale === "ar" ? "الاشتراك والاستخدام" : "Subscription & usage"}
         subtitle={
-          locale === "ar"
-            ? "ادفع عبر مي فاتورة (مدى، فيزا، STC Pay)"
-            : "Pay via MyFatoorah (mada, Visa, STC Pay)"
+          trialDaysLeft !== null
+            ? tr("billing_trial_ends_in", locale, { days: trialDaysLeft })
+            : locale === "ar"
+              ? "ادفع عبر مي فاتورة (مدى، فيزا، STC Pay)"
+              : "Pay via MyFatoorah (mada, Visa, STC Pay)"
         }
         actions={
           <div className="flex gap-1 rounded-lg border border-border/60 p-0.5">
@@ -253,6 +345,58 @@ export function BillingPanel() {
           empty={null}
         >
           <div className="p-4 space-y-4">
+            {entitlement === "TRIAL_ENDED" && (
+              <Alert variant="destructive" className="items-center">
+                <AlertCircle className="size-4" />
+                <AlertTitle>{tr("billing_trial_ended_title", locale)}</AlertTitle>
+                <AlertDescription className="sm:flex sm:items-center sm:justify-between sm:gap-3">
+                  <span>{tr("billing_trial_ended_body", locale)}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    className="mt-2 sm:mt-0"
+                    onClick={() =>
+                      plansSectionRef.current?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      })
+                    }
+                  >
+                    {tr("billing_choose_plan", locale)}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {trialDaysLeft !== null && trialDaysLeft <= TRIAL_BANNER_DAYS && trial?.endsAt && (
+              <Alert className="items-center border-amber-500/40 bg-amber-500/5 text-amber-900 dark:text-amber-200">
+                <CalendarClock className="size-4" />
+                <AlertTitle>{tr("billing_trial_banner_title", locale)}</AlertTitle>
+                <AlertDescription className="sm:flex sm:items-center sm:justify-between sm:gap-3">
+                  <span>
+                    {tr("billing_trial_banner_body", locale, {
+                      date: new Date(trial.endsAt).toLocaleDateString(dateLocale),
+                    })}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 sm:mt-0 border-amber-500/40"
+                    onClick={() =>
+                      plansSectionRef.current?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      })
+                    }
+                  >
+                    {tr("billing_choose_plan", locale)}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {hasBillingFailure && (
               <Alert variant="destructive" className="items-center">
                 <AlertCircle className="size-4" />
@@ -306,34 +450,54 @@ export function BillingPanel() {
                     variant="outline"
                     className={cn(
                       "text-[10px]",
-                      sub.status === "PAST_DUE"
-                        ? "bg-destructive/10 text-destructive border-destructive/20"
-                        : "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                      subscriptionBadgeClass(sub.status, entitlement)
                     )}
                   >
-                    {subscriptionStatusLabel(sub.status, locale)}
+                    {entitlement === "TRIAL" && trialDaysLeft !== null
+                      ? tr("billing_trial_days_left_badge", locale, { days: trialDaysLeft })
+                      : subscriptionStatusLabel(sub.status, locale)}
                   </Badge>
                 </div>
                 <UsageBar
                   label={locale === "ar" ? "العطاءات" : "Proposals"}
                   used={sub.proposalsUsed}
                   max={sub.plan.maxProposals}
+                  locale={locale}
+                  onUpgrade={() =>
+                    plansSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
                 />
                 <UsageBar
                   label={locale === "ar" ? "المستندات" : "Documents"}
                   used={sub.documentsUsed}
                   max={sub.plan.maxDocuments}
+                  locale={locale}
+                  onUpgrade={() =>
+                    plansSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
                 />
                 <UsageBar
                   label={locale === "ar" ? "الرموز" : "Tokens"}
                   used={sub.tokensUsed}
                   max={sub.plan.maxTokensPerMonth}
+                  locale={locale}
+                  onUpgrade={() =>
+                    plansSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  {locale === "ar" ? "ينتهي" : "Renews"}{" "}
-                  {new Date(sub.currentPeriodEnd).toLocaleDateString(
-                    locale === "ar" ? "ar-SA" : "en-US"
-                  )}
+                  {entitlement === "TRIAL" || entitlement === "TRIAL_ENDED"
+                    ? locale === "ar"
+                      ? "تنتهي الفترة التجريبية"
+                      : "Trial ends"
+                    : locale === "ar"
+                      ? "ينتهي"
+                      : "Renews"}{" "}
+                  {new Date(
+                    (entitlement === "TRIAL" || entitlement === "TRIAL_ENDED") && trial?.endsAt
+                      ? trial.endsAt
+                      : sub.currentPeriodEnd
+                  ).toLocaleDateString(dateLocale)}
                 </p>
               </div>
             ) : (
@@ -381,25 +545,43 @@ export function BillingPanel() {
 
             {!data?.myfatoorahConfigured && (
               <p className="text-[11px] text-muted-foreground">
-                {locale === "ar"
-                  ? "لم يُضبط مفتاح مي فاتورة بعد — أضفه من لوحة المسؤول ← البيئة."
-                  : "MyFatoorah API key is not configured — add it in Admin → Environment."}
+                {isPlatformAdmin
+                  ? locale === "ar"
+                    ? "لم يُضبط مفتاح مي فاتورة بعد — أضفه من لوحة المسؤول ← البيئة."
+                    : "MyFatoorah API key is not configured — add it in Admin → Environment."
+                  : locale === "ar"
+                    ? "الدفع الإلكتروني قيد التفعيل — تواصل مع الدعم لإتمام الاشتراك."
+                    : "Online payment is being set up — contact support to complete your subscription."}
               </p>
             )}
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div
+              ref={plansSectionRef}
+              id="billing-plans"
+              className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            >
               {plans.map((plan) => {
                 const price =
                   cycle === "YEARLY" ? plan.priceYearly : plan.priceMonthly;
                 const isCurrent = sub?.plan.id === plan.id;
+                // Only a paid, active subscription makes a plan "current" in the
+                // sense of "nothing to buy". A trial on Starter still needs to
+                // be paid for, so its card must stay purchasable.
+                const isPaidCurrent = isCurrent && entitlement === "ACTIVE";
+                const isHighlighted = highlightedPlanId === plan.id;
                 return (
                   <div
                     key={plan.id}
+                    ref={(node) => {
+                      if (node) planCardRefs.current.set(plan.id, node);
+                      else planCardRefs.current.delete(plan.id);
+                    }}
                     className={cn(
                       "rounded-xl border p-4 space-y-3",
                       isCurrent
                         ? "border-primary/40 bg-primary/5"
-                        : "border-border/50"
+                        : "border-border/50",
+                      isHighlighted && "ring-2 ring-primary/50 ring-offset-2 ring-offset-background"
                     )}
                   >
                     <div>
@@ -463,7 +645,7 @@ export function BillingPanel() {
                         size="sm"
                         className="w-full gap-1.5"
                         disabled={
-                          isCurrent ||
+                          isPaidCurrent ||
                           checkout.isPending ||
                           !data?.myfatoorahConfigured
                         }
@@ -479,13 +661,15 @@ export function BillingPanel() {
                         ) : (
                           <ExternalLink className="size-3.5" />
                         )}
-                        {isCurrent
+                        {isPaidCurrent
                           ? locale === "ar"
                             ? "الباقة الحالية"
                             : "Current plan"
-                          : locale === "ar"
-                            ? "ادفع عبر مي فاتورة"
-                            : "Pay with MyFatoorah"}
+                          : isCurrent
+                            ? tr("billing_plan_activate", locale)
+                            : locale === "ar"
+                              ? "ادفع عبر مي فاتورة"
+                              : "Pay with MyFatoorah"}
                       </Button>
                     )}
                   </div>
@@ -559,8 +743,16 @@ function RecurringProfileCard({
   // A single stray click used to permanently cancel auto-renewal — gate it
   // behind an explicit confirmation.
   const [confirmingCancel, setConfirmingCancel] = useState(false);
-  const isActive = profile.status === "ACTIVE";
-  const isCanceled = profile.status === "CANCELED";
+  // Decide from the normalized state the server derives, never from the raw
+  // column: the server writes "CANCELLED" while older rows carry "CANCELED",
+  // and Resume used to test the one spelling that never occurs.
+  const state = profile.state;
+  const isActive = state === "ACTIVE";
+  const canResume = state === "SUSPENDED";
+  const canCancel = state === "ACTIVE" || state === "DRAFT" || state === "SUSPENDED";
+  const stateLabel = state
+    ? tr(getDynamicTranslationKey("recurringProfileState", state), locale as Locale)
+    : profile.status;
   const intervalLabel =
     profile.intervalDays && profile.intervalDays >= 365
       ? locale === "ar"
@@ -580,12 +772,14 @@ function RecurringProfileCard({
               "text-[9px]",
               isActive
                 ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
-                : isCanceled
+                : state === "CANCELLED"
                   ? "bg-muted text-muted-foreground"
-                  : "bg-amber-500/10 text-amber-700 border-amber-500/20"
+                  : state === "SUSPENDED"
+                    ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
+                    : "bg-sky-500/10 text-sky-700 border-sky-500/20"
             )}
           >
-            {profile.status}
+            {stateLabel}
           </Badge>
           <span className="text-[11px] text-muted-foreground">{intervalLabel}</span>
         </div>
@@ -617,7 +811,7 @@ function RecurringProfileCard({
       )}
 
       <div className="flex gap-2 pt-1">
-        {isActive && (
+        {canCancel && (
           <Button
             size="sm"
             variant="outline"
@@ -633,7 +827,7 @@ function RecurringProfileCard({
             {locale === "ar" ? "إلغاء التجديد" : "Cancel"}
           </Button>
         )}
-        {isCanceled && (
+        {canResume && (
           <Button
             size="sm"
             variant="outline"
@@ -661,11 +855,7 @@ function RecurringProfileCard({
             ? "إلغاء التجديد التلقائي؟"
             : "Cancel automatic renewal?"
         }
-        description={
-          locale === "ar"
-            ? "سيتوقف الاشتراك عن التجديد في نهاية دورة الفوترة الحالية. يمكنك الاستئناف لاحقًا، لكن قد تحتاج إلى إعادة عملية الدفع."
-            : "The subscription will stop renewing at the end of the current billing cycle. You can resume later, but you may need to restart checkout."
-        }
+        description={tr("billing_cancel_renewal_body", locale as Locale)}
         confirmLabel={
           locale === "ar" ? "نعم، إلغاء التجديد" : "Yes, cancel renewal"
         }
@@ -681,29 +871,96 @@ function RecurringProfileCard({
   );
 }
 
+/** Share of an allowance at which the bar turns amber and offers an upgrade. */
+const USAGE_WARN_PCT = 80;
+
 function UsageBar({
   label,
   used,
   max,
+  locale,
+  onUpgrade,
 }: {
   label: string;
   used: number;
   max: number;
+  locale: Locale;
+  onUpgrade: () => void;
 }) {
   const unlimited = max < 0;
-  const pct = unlimited ? 0 : Math.min(100, Math.round((used / Math.max(max, 1)) * 100));
+  // Unclamped for the tone: 100 % and 140 % are both "over", and both must
+  // read red rather than looking like a bar that is merely full.
+  const ratio = unlimited ? 0 : (used / Math.max(max, 1)) * 100;
+  const pct = Math.min(100, Math.round(ratio));
+  const tone = unlimited
+    ? "ok"
+    : ratio >= 100
+      ? "over"
+      : ratio >= USAGE_WARN_PCT
+        ? "warn"
+        : "ok";
   return (
     <div>
-      <div className="flex justify-between text-[10px] mb-1">
+      <div className="flex justify-between gap-2 text-[10px] mb-1">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-mono">
-          {used}
-          {unlimited ? "" : ` / ${max}`}
+        <span className="flex items-center gap-2">
+          {tone !== "ok" && (
+            <button
+              type="button"
+              onClick={onUpgrade}
+              className={cn(
+                "font-medium underline-offset-2 hover:underline",
+                tone === "over" ? "text-destructive" : "text-amber-700 dark:text-amber-300"
+              )}
+            >
+              {tr("billing_usage_upgrade", locale)}
+            </button>
+          )}
+          <span
+            className={cn(
+              "font-mono",
+              tone === "over" && "text-destructive font-semibold",
+              tone === "warn" && "text-amber-700 dark:text-amber-300"
+            )}
+          >
+            {used}
+            {unlimited ? "" : ` / ${max}`}
+          </span>
         </span>
       </div>
-      {!unlimited && <Progress value={pct} className="h-1.5" />}
+      {!unlimited && (
+        <Progress
+          value={pct}
+          className={cn(
+            "h-1.5",
+            tone === "over" && "[&>[data-slot=progress-indicator]]:bg-destructive",
+            tone === "warn" && "[&>[data-slot=progress-indicator]]:bg-amber-500"
+          )}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * Badge tone for the subscription status. `entitlement` wins for a trial so a
+ * legacy `ACTIVE` Starter row that is really a trial reads as one.
+ */
+function subscriptionBadgeClass(status: string, entitlement: Entitlement): string {
+  if (entitlement === "TRIAL" || status === "TRIALING") {
+    return "bg-sky-500/10 text-sky-700 border-sky-500/20";
+  }
+  if (entitlement === "TRIAL_ENDED" || status === "CANCELLED" || status === "EXPIRED") {
+    return "bg-muted text-muted-foreground";
+  }
+  if (status === "PAST_DUE") {
+    return "bg-amber-500/10 text-amber-700 border-amber-500/20";
+  }
+  if (status === "ACTIVE") {
+    return "bg-emerald-500/10 text-emerald-700 border-emerald-500/20";
+  }
+  // PENDING and anything unknown: neutral outline only.
+  return "";
 }
 
 function parseCheckoutMetadata(metadata?: string | null): CheckoutInput | null {

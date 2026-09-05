@@ -22,7 +22,11 @@ import {
   getTenantContext,
   type TenantContext,
 } from "@/lib/workspace-context";
-import { QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
+import {
+  QUOTA_UPGRADE_PATH,
+  QuotaExceededError,
+  quotaFailureCode,
+} from "@/lib/quotas";
 import {
   ApiError,
   AuthenticationRequiredError,
@@ -141,7 +145,10 @@ export function toErrorResponse(err: unknown, label: string): NextResponse {
     // reader learns which limit they hit and that an upgrade is the fix.
     return jsonFailure({
       status: 402,
-      body: legacyFailureBody(quotaFailureCode(err)),
+      body: {
+        ...legacyFailureBody(quotaFailureCode(err)),
+        upgradePath: QUOTA_UPGRADE_PATH,
+      },
     });
   }
 

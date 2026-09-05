@@ -31,6 +31,7 @@ export async function PATCH(
         maxWorkspaces: body.maxWorkspaces,
         maxTokensPerMonth: body.maxTokensPerMonth,
         maxStorageGb: body.maxStorageGb,
+        maxSeats: body.maxSeats,
         featuresJson: body.featuresJson,
         isActive: body.isActive,
         isPublic: body.isPublic,
@@ -57,10 +58,9 @@ export async function DELETE(
     await db.subscriptionPlan.delete({ where: { id } });
     await audit({
       userId: session.user.id,
-      action: AUDIT_ACTIONS.PLAN_UPDATE,
+      action: AUDIT_ACTIONS.PLAN_DELETE,
       resource: "SubscriptionPlan",
       resourceId: id,
-      details: { action: "DELETE" },
       severity: "WARN",
     });
     return NextResponse.json({ ok: true });

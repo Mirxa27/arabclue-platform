@@ -31,6 +31,8 @@ export type ApiFailure = Readonly<{
   migration?: string;
   /** Capability names blocked while that migration is unapplied. */
   capabilities?: readonly string[];
+  /** Where a 402 (spent allowance, lapsed trial) sends the reader. */
+  upgradePath?: string;
 }>;
 
 function isBilingualMessage(value: unknown): value is BilingualMessage {

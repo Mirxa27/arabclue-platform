@@ -241,10 +241,10 @@ describe("profile state model (criteria 9.5, 9.6, 9.11)", () => {
     expect(normalizeRecurringProfileState(null)).toBeNull();
   });
 
-  test("permits a member cancel only from ACTIVE and a resume only from SUSPENDED", () => {
+  test("permits a member cancel from every state but CANCELLED and a resume only from SUSPENDED", () => {
     for (const state of RECURRING_PROFILE_STATES) {
-      expect(canMemberCancel(state)).toBe(state === "ACTIVE");
-      expect(canMemberResume(state)).toBe(state === "SUSPENDED");
+      expect(canMemberCancel(state), state).toBe(state !== "CANCELLED");
+      expect(canMemberResume(state), state).toBe(state === "SUSPENDED");
     }
   });
 
@@ -788,11 +788,37 @@ describe("state transitions and derived reads (criteria 9.3, 9.5, 9.6)", () => {
     expect(fixture.repository.snapshot().profiles[0].nextChargeAt).toBeNull();
   });
 
+  test("cancels a draft or suspended profile too: both could still charge the member", async () => {
+    // A draft is a first invoice the member has decided not to pay; a suspended
+    // profile is one resume away from charging again. Hiding Cancel for either
+    // left the member with no way out short of support.
+    for (const status of ["DRAFT", "SUSPENDED"] as const) {
+      const fixture = scenario();
+      const profile = storedProfile(fixture.repository, {
+        subscriptionId: fixture.subscription.id,
+        workspaceId: WORKSPACE,
+        status,
+        nextChargeAt: new Date("2026-04-01T00:00:00.000Z"),
+      });
+
+      const result = await fixture.service.transitionProfile({
+        profile,
+        trigger: "MEMBER_CANCELLED",
+        occurredAt: new Date(NOW),
+      });
+
+      expect(result.ok, status).toBe(true);
+      if (!result.ok) continue;
+      expect(result.profile.state).toBe("CANCELLED");
+      expect(result.profile.cancelAllowed).toBe(false);
+      expect(result.profile.resumeAllowed).toBe(false);
+      expect(fixture.repository.snapshot().profiles[0].nextChargeAt).toBeNull();
+    }
+  });
+
   test("rejects a member cancel and resume that the stored state does not permit", async () => {
     const fixture = scenario();
     for (const [status, trigger] of [
-      ["DRAFT", "MEMBER_CANCELLED"],
-      ["SUSPENDED", "MEMBER_CANCELLED"],
       ["CANCELLED", "MEMBER_CANCELLED"],
       ["ACTIVE", "MEMBER_RESUMED"],
       ["DRAFT", "MEMBER_RESUMED"],
@@ -916,7 +942,8 @@ describe("state transitions and derived reads (criteria 9.3, 9.5, 9.6)", () => {
     expect(view.state).toBe("SUSPENDED");
     expect(view.stateLabelKey).toBe("recurring_state_suspended");
     expect(view.nextChargeAt).toEqual(new Date(createdAt.getTime() + 365 * DAY_MS));
-    expect(view.cancelAllowed).toBe(false);
+    // A suspended profile is one resume away from charging; both exits are open.
+    expect(view.cancelAllowed).toBe(true);
     expect(view.resumeAllowed).toBe(true);
   });
 

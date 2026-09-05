@@ -22,6 +22,12 @@ export async function GET(req: Request) {
         id: p.id,
         recurringId: p.recurringId,
         status: p.status,
+        /**
+         * Stored status normalized onto DRAFT | ACTIVE | SUSPENDED | CANCELLED
+         * (legacy spellings such as "CANCELED" included), or null when unknown.
+         * The panel decides Cancel/Resume from this, never from raw `status`.
+         */
+        state: p.state,
         recurringType: p.recurringType,
         intervalDays: p.intervalDays,
         amount: p.amount,

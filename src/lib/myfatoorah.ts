@@ -597,6 +597,20 @@ export type WebhookV2Body = {
 };
 
 /**
+ * Whether a webhook may pass with no secret configured.
+ *
+ * No secret means the sender cannot be authenticated, so the answer is no.
+ * "Any environment but production" used to pass, which let a staging or
+ * preview deploy activate entitlements from a forged payment event. The test
+ * runner and an explicit local opt-in are the only exceptions.
+ */
+export function allowUnsignedWebhook(
+  env: Readonly<Record<string, string | undefined>> = process.env
+): boolean {
+  return env.NODE_ENV === "test" || env.MYFATOORAH_ALLOW_UNSIGNED_WEBHOOKS === "1";
+}
+
+/**
  * Verify MyFatoorah Webhook V2 signature using event-specific canonical fields.
  * Falls back to legacy raw-body HMAC only when Event.Name is absent (V1).
  */
@@ -609,7 +623,7 @@ export async function verifyWebhookSignature(
     await getDecryptedEnv("MYFATOORAH_WEBHOOK_SECRET")
   ).trim();
   if (!webhookSecret) {
-    return process.env.NODE_ENV !== "production";
+    return allowUnsignedWebhook();
   }
   if (!signatureHeader) return false;
 

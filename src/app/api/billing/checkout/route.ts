@@ -14,6 +14,10 @@ import { startRecurringProfile, RecurringBillingError } from "@/lib/recurring-bi
 import { isCompletionErrorCode } from "@/lib/i18n";
 import { resolveEmailVerifiedClaim } from "@/lib/email-verification-policy";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
+import {
+  analyticsRequestOrigin,
+  recordActivationAnalyticsEvent,
+} from "@/lib/analytics-collector";
 import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +42,7 @@ async function markCheckoutFailed(
 
 // POST /api/billing/checkout — create MyFatoorah invoice and return payment URL
 export async function POST(req: NextRequest) {
-  return withTenant("session", async ({ session }) => {
+  return withTenant("session", async ({ session, workspace }) => {
     if (!resolveEmailVerifiedClaim(session.user.emailVerified)) {
       throw new ApiError(
         "Email verification required",
@@ -117,43 +121,37 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Funnel: the checkout row is the committed mutation; the response stays
+    // unchanged whatever the append does (recordCommittedAnalyticsEvent never throws).
+    await recordActivationAnalyticsEvent({
+      eventType: "checkout_started",
+      entityId: checkout.id,
+      mutationRef: checkout.id,
+      origin: analyticsRequestOrigin({
+        tenantWorkspaceId: workspace.id,
+        actorUserId: session.user.id,
+      }),
+      metadata: {
+        planId: plan.id,
+        billingCycle,
+        checkoutId: checkout.id,
+        ...(locale ? { locale } : {}),
+      },
+    });
+
     try {
-      const invoice = await sendPayment({
-        customerName: session.user.name || session.user.email,
-        customerEmail: session.user.email,
-        invoiceValue: moneyNumber(amount),
-        currencyIso: plan.currency || "SAR",
-        customerReference,
-        callBackUrl: `${callBackUrl}&ref=${customerReference}`,
-        errorUrl: `${errorUrl}&ref=${customerReference}`,
-        language: locale === "en" ? "EN" : "AR",
-        userDefinedField: checkout.id,
-        webhookUrl,
-        invoiceItems: [
-          {
-            ItemName: `Arabclue ${plan.name} — ${billingCycle}`,
-            Quantity: 1,
-            UnitPrice: moneyNumber(amount),
-          },
-        ],
-      });
-
-      await db.paymentCheckout.update({
-        where: { id: checkout.id },
-        data: {
-          invoiceId: invoice.invoiceId,
-          paymentUrl: invoice.invoiceUrl,
-        },
-      });
-      await db.billingRecord.update({
-        where: { id: billingRecord.id },
-        data: { externalInvoiceId: invoice.invoiceId },
-      });
-
       // Recurring setup is required for MONTHLY/YEARLY unless the client
       // explicitly opts into single-cycle (`billingMode: "single"`). Soft-fail
       // fallthrough to single-cycle is not allowed — surface a stable code.
+      //
+      // Exactly one invoice is created either way. A recurring checkout is paid
+      // through the recurring profile's own initial invoice: that is the one
+      // whose payment activates the profile at MyFatoorah. Creating a separate
+      // one-time invoice as well sent the customer to pay the wrong one, so the
+      // profile stayed DRAFT forever and blocked every later checkout.
       let recurringProfileId: string | null = null;
+      let invoiceId: string;
+      let paymentUrl: string;
       const wantsRecurring =
         billingMode === "recurring" &&
         (billingCycle === "MONTHLY" || billingCycle === "YEARLY");
@@ -188,11 +186,20 @@ export async function POST(req: NextRequest) {
             planId: plan.id,
             interval: billingCycle,
             customerReference,
-            initialInvoiceId: invoice.invoiceId,
             customerName: session.user.name || session.user.email,
             customerEmail: session.user.email,
+            language: locale === "en" ? "EN" : "AR",
           });
+          if (!profile.initialInvoiceId || !profile.paymentUrl) {
+            throw new RecurringBillingError(
+              "MyFatoorah returned a recurring profile without a payable invoice",
+              "RECURRING_UNAVAILABLE",
+              503
+            );
+          }
           recurringProfileId = profile.id;
+          invoiceId = profile.initialInvoiceId;
+          paymentUrl = profile.paymentUrl;
 
           await audit({
             userId: session.user.id,
@@ -202,6 +209,7 @@ export async function POST(req: NextRequest) {
             details: {
               recurringProfileId: profile.id,
               recurringId: profile.recurringId,
+              initialInvoiceId: profile.initialInvoiceId,
               message: "Recurring billing profile created",
             },
           });
@@ -237,7 +245,40 @@ export async function POST(req: NextRequest) {
             "RECURRING_UNAVAILABLE"
           );
         }
+      } else {
+        const invoice = await sendPayment({
+          customerName: session.user.name || session.user.email,
+          customerEmail: session.user.email,
+          invoiceValue: moneyNumber(amount),
+          currencyIso: plan.currency || "SAR",
+          customerReference,
+          callBackUrl: `${callBackUrl}&ref=${customerReference}`,
+          errorUrl: `${errorUrl}&ref=${customerReference}`,
+          language: locale === "en" ? "EN" : "AR",
+          userDefinedField: checkout.id,
+          webhookUrl,
+          invoiceItems: [
+            {
+              ItemName: `Arabclue ${plan.name} — ${billingCycle}`,
+              Quantity: 1,
+              UnitPrice: moneyNumber(amount),
+            },
+          ],
+        });
+        invoiceId = invoice.invoiceId;
+        paymentUrl = invoice.invoiceUrl;
       }
+
+      // The checkout carries the invoice the customer is sent to pay, so the
+      // webhook and the callback both resolve this row from it.
+      await db.paymentCheckout.update({
+        where: { id: checkout.id },
+        data: { invoiceId, paymentUrl },
+      });
+      await db.billingRecord.update({
+        where: { id: billingRecord.id },
+        data: { externalInvoiceId: invoiceId },
+      });
 
       await audit({
         userId: session.user.id,
@@ -249,15 +290,15 @@ export async function POST(req: NextRequest) {
           billingCycle,
           billingMode,
           amount,
-          invoiceId: invoice.invoiceId,
+          invoiceId,
           recurringProfileId,
         },
       });
 
       return jsonOk({
         checkoutId: checkout.id,
-        paymentUrl: invoice.invoiceUrl,
-        invoiceId: invoice.invoiceId,
+        paymentUrl,
+        invoiceId,
         amount,
         currency: plan.currency || "SAR",
         billingMode,

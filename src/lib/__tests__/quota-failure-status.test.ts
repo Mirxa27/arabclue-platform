@@ -34,10 +34,12 @@ describe("every quota failure code resolves to 402", () => {
     // assertions, which looks exactly like the check passing.
     expect(entries.map(([kind]) => kind).sort()).toEqual([
       "DOCUMENTS",
+      "EXPORT_FORMAT",
       "INACTIVE",
       "PROPOSALS",
       "STORAGE",
       "TOKENS",
+      "TRIAL_ENDED",
     ]);
   });
 

@@ -3,15 +3,23 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useLocale } from "@/lib/store";
 import { apiErrorText } from "@/lib/api-failure-message";
 
+/**
+ * The billing screen, by its own route. `/app?view=billing` landed on Overview
+ * because the dashboard reads the view from the path, not the query string.
+ */
+const BILLING_PATH = "/app/billing";
+
 export default function BillingCallbackPage() {
   const params = useSearchParams();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { locale } = useLocale();
   const { status: authStatus } = useSession();
   const [state, setState] = useState<"loading" | "ok" | "fail">("loading");
@@ -64,8 +72,13 @@ export default function BillingCallbackPage() {
         // act on.
         setState("fail");
         setBody(null);
+      })
+      .finally(() => {
+        // Whatever the gateway said, the billing screen must not show the
+        // cached pre-payment subscription when the payer lands back on it.
+        void queryClient.invalidateQueries({ queryKey: ["billing"] });
       });
-  }, [authStatus, params, router]);
+  }, [authStatus, params, router, queryClient]);
 
   // `error` on this contract is a bilingual object, and `res.json()` hands it
   // back as `any` — so it used to be assigned straight into a string state and
@@ -106,7 +119,7 @@ export default function BillingCallbackPage() {
             </h1>
             <p className="text-sm text-muted-foreground">{message}</p>
             <Button asChild>
-              <Link href="/app?view=billing">{locale === "ar" ? "فتح الفوترة" : "Open billing"}</Link>
+              <Link href={BILLING_PATH}>{locale === "ar" ? "فتح الفوترة" : "Open billing"}</Link>
             </Button>
           </>
         )}
@@ -118,7 +131,7 @@ export default function BillingCallbackPage() {
             </h1>
             <p className="text-sm text-muted-foreground">{message}</p>
             <Button asChild variant="outline">
-              <Link href="/app?view=billing">{locale === "ar" ? "الرجوع إلى الفوترة" : "Back to billing"}</Link>
+              <Link href={BILLING_PATH}>{locale === "ar" ? "الرجوع إلى الفوترة" : "Back to billing"}</Link>
             </Button>
           </>
         )}

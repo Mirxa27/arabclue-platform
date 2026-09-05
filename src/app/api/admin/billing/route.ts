@@ -5,6 +5,7 @@ import { parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { moneyNumber, withPublicMoney, AMOUNT_MONEY_KEYS, PLAN_MONEY_KEYS } from "@/lib/money";
 import { adminBillingCreateSchema } from "@/lib/validation";
+import { adjustUsageForManualRecord } from "@/lib/billing";
 
 export const dynamic = "force-dynamic";
 
@@ -85,14 +86,23 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Increment the user's subscription usage counters for topups
-  if (body.type === "TOPUP" || body.type === "USAGE") {
-    await db.subscription.updateMany({
+  // USAGE spends the user's allowance; TOPUP restores it. Incrementing on a
+  // top-up (the previous behaviour) consumed the quota the admin meant to add.
+  const subscription = await db.subscription.findUnique({
+    where: { userId: body.userId },
+    select: { proposalsUsed: true, tokensUsed: true },
+  });
+  const adjusted = subscription
+    ? adjustUsageForManualRecord(subscription, {
+        type: record.type,
+        proposalsIncluded: record.proposalsIncluded,
+        tokensIncluded: record.tokensIncluded,
+      })
+    : null;
+  if (adjusted) {
+    await db.subscription.update({
       where: { userId: body.userId },
-      data: {
-        proposalsUsed: { increment: body.proposalsIncluded ?? 0 },
-        tokensUsed: { increment: body.tokensIncluded ?? 0 },
-      },
+      data: adjusted,
     });
   }
 

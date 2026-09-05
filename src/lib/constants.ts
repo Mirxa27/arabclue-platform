@@ -449,6 +449,17 @@ export function isSecretEnvKey(key: string): boolean {
   return !NON_SECRET_ENV_KEYS.includes(key.trim());
 }
 
+/**
+ * Keys whose write or delete takes the platform down or unseals every stored
+ * secret. Both the POST and the DELETE admin env routes gate these to
+ * SUPER_ADMIN; one definition so the two gates cannot drift.
+ */
+export const CRITICAL_ENV_KEYS: ReadonlySet<string> = new Set([
+  "ARABCLUE_ENC_KEY",
+  "NEXTAUTH_SECRET",
+  "DATABASE_URL",
+]);
+
 // ─── Admin: Default subscription plans ───────────────────────────────────────
 
 export const DEFAULT_PLANS = [
@@ -463,6 +474,8 @@ export const DEFAULT_PLANS = [
     maxWorkspaces: 1,
     maxTokensPerMonth: 500000,
     maxStorageGb: 5,
+    // Seats: read by readSeatAllowance (invitation-service-prisma.ts); null = unlimited.
+    maxSeats: 2,
     featuresJson: JSON.stringify(["basic_agents", "pdf_export", "email_support"]),
   },
   {
@@ -476,6 +489,7 @@ export const DEFAULT_PLANS = [
     maxWorkspaces: 3,
     maxTokensPerMonth: 3000000,
     maxStorageGb: 25,
+    maxSeats: 10,
     featuresJson: JSON.stringify(["all_agents", "pptx_pdf_xlsx_export", "brand_customization", "priority_support", "rag_corpus"]),
   },
   {
@@ -489,6 +503,7 @@ export const DEFAULT_PLANS = [
     maxWorkspaces: 20,
     maxTokensPerMonth: 20000000,
     maxStorageGb: 200,
+    maxSeats: null,
     featuresJson: JSON.stringify(["all_agents", "all_exports", "brand_customization", "dedicated_support", "rag_corpus", "rbac", "audit_trail", "sso", "custom_agents"]),
   },
   {
@@ -502,6 +517,7 @@ export const DEFAULT_PLANS = [
     maxWorkspaces: 1,
     maxTokensPerMonth: -1,
     maxStorageGb: 10,
+    maxSeats: null,
     featuresJson: JSON.stringify(["all_agents", "all_exports", "pay_per_proposal"]),
   },
 ];
