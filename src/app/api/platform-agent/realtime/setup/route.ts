@@ -32,6 +32,8 @@ export async function POST(req: Request) {
 
   // Voice sessions cost real money (~$0.06/min minimum). Bound how often a
   // workspace can mint fresh live-voice credentials to catch abuse loops.
+  // No tenant, no mint: the limit is keyed by workspace, so a caller whose
+  // tenant cannot be resolved would otherwise mint unmetered credentials.
   try {
     const tenant = await getTenantContext(session.user.id);
     const blocked = await checkAiRateLimit({
@@ -43,8 +45,7 @@ export async function POST(req: Request) {
     if (blocked) return blocked;
   } catch (tenantErr) {
     console.error("[platform-agent/realtime/setup] tenant", tenantErr);
-    // Fall through — if we can't identify the workspace we still enforce
-    // auth above, and mintVoiceLiveSession will error cleanly below.
+    return jsonApiFailure("LIVE_VOICE_START_FAILED");
   }
 
   try {

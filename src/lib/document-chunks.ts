@@ -3,7 +3,7 @@
  */
 
 import { db } from "./db";
-import { embedText } from "./llm";
+import { embedText, embedTexts } from "./llm";
 import { retrieveRelevant, type RagDocument } from "./rag";
 
 const CHUNK_SIZE = 900;
@@ -44,20 +44,19 @@ export async function indexDocumentChunks(opts: {
   await db.documentChunk.deleteMany({ where: { documentId: opts.documentId } });
   if (parts.length === 0) return 0;
 
-  for (let i = 0; i < parts.length; i++) {
-    const content = parts[i];
-    const embedding = await embedText(`${opts.title}\n${content}`);
-    await db.documentChunk.create({
-      data: {
-        documentId: opts.documentId,
-        workspaceId: opts.workspaceId,
-        projectId: opts.projectId,
-        chunkIndex: i,
-        content,
-        embeddingJson: embedding ? JSON.stringify(embedding) : null,
-      },
-    });
-  }
+  // One provider lookup and one request per batch, instead of one of each per
+  // window; the vectors come back aligned with `parts`.
+  const embeddings = await embedTexts(parts.map((content) => `${opts.title}\n${content}`));
+  await db.documentChunk.createMany({
+    data: parts.map((content, i) => ({
+      documentId: opts.documentId,
+      workspaceId: opts.workspaceId,
+      projectId: opts.projectId,
+      chunkIndex: i,
+      content,
+      embeddingJson: embeddings[i] ? JSON.stringify(embeddings[i]) : null,
+    })),
+  });
   return parts.length;
 }
 

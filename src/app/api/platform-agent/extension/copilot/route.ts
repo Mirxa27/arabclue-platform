@@ -1,5 +1,6 @@
 import { validationFailure } from "@/lib/api-failure";
-import { jsonApiFailure, jsonFailure } from "@/lib/api-controller";
+import { jsonApiFailure, jsonFailure, toErrorResponse } from "@/lib/api-controller";
+import { assertWithinQuota, bumpUsage } from "@/lib/quotas";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
     );
     const { getTenantContext } = await import("@/lib/workspace-context");
     const tenant = await getTenantContext(session.user.id);
+    await assertWithinQuota(session.user.id, "tokens");
     const locale = session.user.locale === "en" ? "en" : "ar";
     const mission = await getOrCreateMission({
       workspaceId: tenant.workspace.id,
@@ -105,6 +107,13 @@ export async function POST(req: Request) {
       timeout: 110_000,
     });
 
+    const used = result.totalUsage?.totalTokens ?? 0;
+    if (used > 0) {
+      await bumpUsage(session.user.id, "tokens", used).catch((err) =>
+        console.warn("[extension/copilot] token usage not recorded", err)
+      );
+    }
+
     const reply = String(result.text || "").trim();
     const assistantMessage = {
       id: `ext-assistant-${Date.now()}`,
@@ -129,9 +138,9 @@ export async function POST(req: Request) {
       missionUrl: `/app?view=copilot&mission=${encodeURIComponent(missionId)}`,
     });
   } catch (err) {
-    // The reason stays server-side: the extension renders the response body
-    // text to the reader.
-    console.error("[extension/copilot]", err);
-    return jsonApiFailure("INTERNAL_ERROR");
+    // The reason stays server-side (redacted log): the extension renders the
+    // response body text to the reader. A missing provider is 503
+    // AI_PROVIDER_UNAVAILABLE, not a generic 500.
+    return toErrorResponse(err, "extension/copilot");
   }
 }

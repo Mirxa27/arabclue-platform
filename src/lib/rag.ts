@@ -15,8 +15,50 @@ export interface RagDocument {
   embedding?: number[] | null;
 }
 
+/** Which similarity produced a hit's score; the two live on different scales. */
+export type RagScoreMode = "embedding" | "lexical";
+
 export interface RagHit extends RagDocument {
   score: number;
+  mode?: RagScoreMode;
+}
+
+/**
+ * Relevance floors per score mode. Sparse TF cosine over short summaries
+ * rarely exceeds 0.3 even for a real match, so 0.18 is a meaningful floor
+ * there; dense cosine (text-embedding-3-small and peers) sits around 0.2–0.3
+ * for unrelated texts, so the same number admitted everything. Heuristic
+ * cut-offs, tuned on the tender corpus rather than derived.
+ */
+export const RAG_RELEVANCE_FLOOR: Readonly<Record<RagScoreMode, number>> = {
+  embedding: 0.3,
+  lexical: 0.18,
+};
+
+/** Score bands for the technical agent's experience class, per mode. */
+export const RAG_EXPERIENCE_BANDS: Readonly<
+  Record<RagScoreMode, { exact: number; analogous: number }>
+> = {
+  embedding: { exact: 0.6, analogous: 0.42 },
+  lexical: { exact: 0.45, analogous: 0.22 },
+};
+
+/** A hit produced without a tagged mode was scored lexically (legacy callers). */
+export function hitMode(hit: Pick<RagHit, "mode">): RagScoreMode {
+  return hit.mode ?? "lexical";
+}
+
+export function isRelevantHit(hit: RagHit): boolean {
+  return hit.score >= RAG_RELEVANCE_FLOOR[hitMode(hit)];
+}
+
+export function experienceClassFor(
+  hit: RagHit
+): "exact" | "analogous" | "proposed" {
+  const bands = RAG_EXPERIENCE_BANDS[hitMode(hit)];
+  if (hit.score >= bands.exact) return "exact";
+  if (hit.score >= bands.analogous) return "analogous";
+  return "proposed";
 }
 
 function tokenize(text: string): string[] {
@@ -73,14 +115,19 @@ export function retrieveLexical(
     .map((d) => {
       const text = `${d.title} ${d.summary} ${d.sector ?? ""} ${d.tags ?? ""} ${d.clientName ?? ""}`;
       const score = cosineSparse(qTf, tf(tokenize(text)));
-      return { ...d, score };
+      return { ...d, score, mode: "lexical" as const };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
     .filter((h) => h.score > 0);
 }
 
-/** Embedding retrieval when query + doc embeddings are available */
+/**
+ * Embedding retrieval when query + doc embeddings are available. A zero (or
+ * negative) cosine is "no relation", not a weak hit, and used to be returned
+ * as one — padding the top-K with unrelated chunks whenever the corpus was
+ * small.
+ */
 export function retrieveByEmbedding(
   queryEmbedding: number[],
   docs: RagDocument[],
@@ -91,12 +138,19 @@ export function retrieveByEmbedding(
     .map((d) => ({
       ...d,
       score: cosineDense(queryEmbedding, d.embedding!),
+      mode: "embedding" as const,
     }))
+    .filter((h) => h.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
 }
 
-/** Hybrid: embeddings first; fall back to lexical */
+/**
+ * Hybrid: dense hits over embedded documents, merged with lexical hits over
+ * the documents that have no embedding yet (an indexing pass that ran while
+ * no embedding provider answered leaves those behind, and they were invisible
+ * to a dense query). Without a query vector, lexical over everything.
+ */
 export function retrieveRelevant(
   query: string,
   docs: RagDocument[],
@@ -104,8 +158,11 @@ export function retrieveRelevant(
 ): RagHit[] {
   const topK = opts?.topK ?? 5;
   if (opts?.queryEmbedding && opts.queryEmbedding.length > 0) {
-    const hits = retrieveByEmbedding(opts.queryEmbedding, docs, topK);
-    if (hits.length > 0) return hits;
+    const dense = retrieveByEmbedding(opts.queryEmbedding, docs, topK);
+    const unembedded = docs.filter((d) => !d.embedding || d.embedding.length === 0);
+    const sparse = unembedded.length ? retrieveLexical(query, unembedded, topK) : [];
+    const merged = [...dense, ...sparse].slice(0, topK);
+    if (merged.length > 0) return merged;
   }
   return retrieveLexical(query, docs, topK);
 }

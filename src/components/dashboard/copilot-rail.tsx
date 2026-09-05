@@ -211,12 +211,16 @@ export function CopilotRail({
 
   useEffect(() => {
     if (paused) return;
+    // After a failed pass — no provider, rate limit, stream error — the idle
+    // timer stays quiet until the writer asks explicitly (Review now or a
+    // question). Re-firing every pause would hit the same wall each time.
+    if (state.kind === "error") return;
     if (changedChars(markdown, reviewedRef.current) < MIN_DELTA_CHARS) return;
     const timer = setTimeout(() => {
       void review();
     }, IDLE_MS);
     return () => clearTimeout(timer);
-  }, [markdown, paused, review]);
+  }, [markdown, paused, review, state.kind]);
 
   // A rejection outlives the tab. `suggestionId` is content-addressed so that a
   // pass over unchanged text re-proposes the same card; without this the rail

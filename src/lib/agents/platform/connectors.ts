@@ -146,6 +146,50 @@ async function fetchAllowingSafeRedirectsOnly(
   throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
 }
 
+/** Largest remote attachment accepted, before and while the body streams. */
+export const MAX_REMOTE_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+
+function remoteFileTooLarge(): Error {
+  return new Error("Remote file too large (max 15MB)");
+}
+
+/**
+ * Read a response body up to the cap, aborting the moment the running total
+ * exceeds it. `arrayBuffer()` would first buffer whatever the server sends —
+ * a hostile host could hold gigabytes in this function's memory before the
+ * old post-hoc length check ran.
+ */
+async function readBodyWithinLimit(
+  res: Response,
+  limit: number
+): Promise<Buffer> {
+  const declared = Number(res.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > limit) {
+    await res.body?.cancel().catch(() => undefined);
+    throw remoteFileTooLarge();
+  }
+  if (!res.body) return Buffer.alloc(0);
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel().catch(() => undefined);
+        throw remoteFileTooLarge();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, total);
+}
+
 export async function fetchUrlAsAttachment(rawUrl: string): Promise<{
   originalName: string;
   mimeType: string;
@@ -159,10 +203,7 @@ export async function fetchUrlAsAttachment(rawUrl: string): Promise<{
     throw new Error(`URL fetch failed (${res.status})`);
   }
   const mimeType = res.headers.get("content-type") || "text/plain";
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > 15 * 1024 * 1024) {
-    throw new Error("Remote file too large (max 15MB)");
-  }
+  const buf = await readBodyWithinLimit(res, MAX_REMOTE_ATTACHMENT_BYTES);
   const pathName =
     finalUrl.pathname.split("/").filter(Boolean).pop() || "url-import";
   const textPreview = mimeType.startsWith("text/")

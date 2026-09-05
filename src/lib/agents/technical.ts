@@ -1,5 +1,11 @@
 import { EXECUTION_METHODOLOGY, VISION_2030_PILLARS } from "../constants";
-import { retrieveRelevant, formatRagContext, type RagDocument } from "../rag";
+import {
+  experienceClassFor,
+  formatRagContext,
+  isRelevantHit,
+  retrieveRelevant,
+  type RagDocument,
+} from "../rag";
 import type { IngestionEntities, TechnicalArchitectOutput } from "../types";
 import {
   isQualityMilestoneName,
@@ -45,9 +51,7 @@ export function runTechnicalArchitect(opts: {
   const pastHits = retrieveRelevant(defaultQuery, opts.pastProjects, {
     topK: 5,
     queryEmbedding: opts.queryEmbedding,
-  }).filter(
-    (h) => isQualityPastProjectTitle(h.title) && h.score >= 0.18
-  );
+  }).filter((h) => isQualityPastProjectTitle(h.title) && isRelevantHit(h));
 
   const tenderHits = retrieveRelevant(defaultQuery, opts.tenderCorpus ?? [], {
     topK: 8,
@@ -76,11 +80,7 @@ export function runTechnicalArchitect(opts: {
     why: ar
       ? `درجة الصلة ${h.score.toFixed(2)} — ${h.summary.slice(0, 160)}`
       : `Relevance ${h.score.toFixed(2)} — ${h.summary.slice(0, 160)}`,
-    experienceClass: (h.score >= 0.45
-      ? "exact"
-      : h.score >= 0.22
-        ? "analogous"
-        : "proposed") as "exact" | "analogous" | "proposed",
+    experienceClass: experienceClassFor(h),
   }));
 
   const pillar =

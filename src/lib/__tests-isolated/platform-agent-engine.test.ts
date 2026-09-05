@@ -39,6 +39,7 @@ const gatewayStub = Object.assign(mock(() => ({})), {
 mock.module("ai", () => ({
   gateway: gatewayStub,
   embed: mock(() => Promise.resolve({ embedding: [] })),
+  embedMany: mock(() => Promise.resolve({ embeddings: [] })),
   generateText: mock(() => Promise.resolve({ text: "", usage: {} })),
   streamObject: mock(() => ({
     elementStream: (async function* () {})(),

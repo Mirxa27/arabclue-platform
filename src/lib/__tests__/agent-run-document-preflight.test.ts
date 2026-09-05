@@ -26,15 +26,14 @@ const RUNS_PREFLIGHT = /\bassertProjectHasDocuments\s*\(/;
 /**
  * Creators whose project provably holds a document by the time they reach the
  * write. Each entry names the statement that puts it there so a reviewer can
- * re-check the claim in one step.
+ * re-check the claim in one step. Empty since every entry point — the REST
+ * route, the platform agent's tools, both autopilots — creates its run through
+ * `src/lib/agents/launch-pipeline.ts`, which runs the preflight itself.
  */
-const GUARANTEED_BY_CONSTRUCTION: Readonly<Record<string, string>> = {
-  // Links the staged attachment's own document to the project a few lines
-  // above the create (autopilot.ts:210-213), and Prisma throws P2025 when that
-  // row is missing — so every path that reaches the create has count >= 1.
-  "src/lib/agents/platform/autopilot.ts":
-    "uploadedDocument.update({ data: { projectId } }) above the create",
-};
+const GUARANTEED_BY_CONSTRUCTION: Readonly<Record<string, string>> = {};
+
+/** Every path that queues a run has to go through this module. */
+const SHARED_LAUNCHER = "src/lib/agents/launch-pipeline.ts";
 
 /**
  * Comments are stripped first: this file and the modules it guards both name
@@ -63,10 +62,23 @@ describe("every agent run is preceded by a document preflight", () => {
     }))
     .filter((f) => CREATES_RUN.test(f.source));
 
-  test("the scan still finds the modules that create a run", () => {
+  test("the scan still finds the module that creates a run", () => {
     // Without this, renaming the Prisma model turns the check below into zero
     // assertions, which looks exactly like the check passing.
-    expect(creators.length).toBeGreaterThanOrEqual(4);
+    expect(creators.map((f) => f.path)).toEqual([SHARED_LAUNCHER]);
+  });
+
+  test("every entry point launches through the shared module", () => {
+    for (const path of [
+      "src/app/api/agents/run/route.ts",
+      "src/app/api/platform-agent/missions/[id]/autopilot/route.ts",
+      "src/lib/agents/platform/tools.ts",
+      "src/lib/agents/platform/autopilot.ts",
+    ]) {
+      const source = stripComments(readFileSync(join(REPO_ROOT, path), "utf8"));
+      expect(source, path).toMatch(/launch-pipeline"/);
+      expect(source, path).not.toMatch(CREATES_RUN);
+    }
   });
 
   test("every exemption still names a module that creates a run", () => {

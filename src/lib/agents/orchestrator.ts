@@ -6,6 +6,7 @@ import type { AgentState, AgentId, IngestionEntities, ComplianceMatrixRow, Finan
 import {
   classifyRunFailure,
   isTransientRunFailure,
+  llmFailureKindOf,
   retryFindingLine,
   transientRetryDelayMs,
   type AgentRunFailureKind,
@@ -141,6 +142,8 @@ export interface PreparedContext {
   coverage: CoveragePlan;
   brand: { tagline: string | null; taglineAr: string | null; vision2030Alignment: string | null } | null;
   workspaceIdentity: { name: string; nameAr: string | null } | null;
+  /** Target sectors the workspace declared, read with the identity lookup. */
+  sectors: string[];
   /** Active restriction texts, in the order the stages used to read them. */
   restrictions: string[];
   restrictionsText: string;
@@ -250,6 +253,7 @@ function draftingInputsFrom(ctx: PreparedContext, locale: Locale): Omit<DraftPro
     vision2030: ctx.brand?.vision2030Alignment ?? "thriving-economy",
     locale,
     restrictions: ctx.restrictionsText,
+    sectors: ctx.sectors,
   };
 }
 
@@ -330,7 +334,7 @@ async function settleStageFailure(
   const kind = classifyRunFailure(err);
   console.error("[orchestrator]", err);
 
-  if (isTransientRunFailure(kind) && attempt.attempt < attempt.maxAttempts) {
+  if (isTransientRunFailure(kind, llmFailureKindOf(err)) && attempt.attempt < attempt.maxAttempts) {
     if (opts.agentId) {
       const state = recorder.states.find((s) => s.id === opts.agentId);
       try {
@@ -558,12 +562,15 @@ export async function runPreparationStage(
       if (Array.isArray(refined.refinementNotes)) {
         entities.evidence.push(...refined.refinementNotes.map((n) => `AI: ${n}`).slice(0, 5));
       }
-      entities.evidence.push(
-        ingestionAi.fallback
-          ? "Ingestion AI skill unavailable — deterministic parse used"
-          : `Ingestion AI skill applied via ${ingestionAi.provider}`
-      );
     }
+    // Outside the data check: `fallback: true` always means `data === null`,
+    // so a label written inside it could never say "unavailable", and a
+    // permissive deploy showed deterministic output as if a model had written it.
+    entities.evidence.push(
+      ingestionAi.fallback
+        ? "Ingestion AI skill unavailable — deterministic parse used"
+        : `Ingestion AI skill applied via ${ingestionAi.provider}`
+    );
 
     const summary = buildIngestionSummary(
       entities,
@@ -668,16 +675,16 @@ export async function runPreparationStage(
         };
       });
       const extra = (complianceAi.data.findings as string[]) ?? [];
-      cFindings = [
-        ...cFindings,
-        ...extra,
-        complianceAi.fallback
-          ? "Compliance AI skill unavailable — rule matrix used"
-          : `Compliance AI skill applied via ${complianceAi.provider}`,
-      ];
+      cFindings = [...cFindings, ...extra];
       const compliant = rows.filter((r) => r.status === "COMPLIANT").length;
       score = rows.length ? Math.round((compliant / rows.length) * 100) : score;
     }
+    cFindings = [
+      ...cFindings,
+      complianceAi.fallback
+        ? "Compliance AI skill unavailable — rule matrix used"
+        : `Compliance AI skill applied via ${complianceAi.provider}`,
+    ];
 
     // Upsert compliance checks from matrix
     for (const row of rows) {
@@ -754,7 +761,12 @@ export async function runPreparationStage(
     });
     const workspaceIdentity = await db.workspace.findUnique({
       where: { id: input.workspaceId },
-      select: { name: true, nameAr: true },
+      select: {
+        name: true,
+        nameAr: true,
+        // Same query: the draft names the bidder's sectors without another read.
+        targetSectors: { select: { sector: true }, take: 12 },
+      },
     });
     const reviewedWhere = {
       approved: true,
@@ -969,15 +981,18 @@ export async function runPreparationStage(
           20,
           technical.evaluationAlignment
         ),
-        findings: [
-          ...technical.findings,
-          ...((d.findings as string[]) ?? []),
-          technicalAi.fallback
-            ? "Technical AI skill unavailable — RAG template used"
-            : `Technical AI skill applied via ${technicalAi.provider}`,
-        ],
+        findings: [...technical.findings, ...((d.findings as string[]) ?? [])],
       };
     }
+    technical = {
+      ...technical,
+      findings: [
+        ...technical.findings,
+        technicalAi.fallback
+          ? "Technical AI skill unavailable — RAG template used"
+          : `Technical AI skill applied via ${technicalAi.provider}`,
+      ],
+    };
 
     await mark("TECHNICAL_ARCHITECT", {
       status: "completed",
@@ -1047,15 +1062,18 @@ export async function runPreparationStage(
           ...((d.notes as string[]) ?? []),
           ...(typeof d.narrative === "string" ? [d.narrative] : []),
         ].slice(0, 20),
-        findings: [
-          ...financial.findings,
-          ...((d.findings as string[]) ?? []),
-          financialAi.fallback
-            ? "Financial AI skill unavailable — deterministic QLR/BoQ used"
-            : `Financial AI skill applied via ${financialAi.provider}`,
-        ],
+        findings: [...financial.findings, ...((d.findings as string[]) ?? [])],
       };
     }
+    financial = {
+      ...financial,
+      findings: [
+        ...financial.findings,
+        financialAi.fallback
+          ? "Financial AI skill unavailable — deterministic QLR/BoQ used"
+          : `Financial AI skill applied via ${financialAi.provider}`,
+      ],
+    };
 
     const finDuration = logger.endTimer("financial");
     decision(logger, {
@@ -1133,6 +1151,7 @@ export async function runPreparationStage(
         workspaceIdentity: workspaceIdentity
           ? { name: workspaceIdentity.name, nameAr: workspaceIdentity.nameAr }
           : null,
+        sectors: workspaceIdentity?.targetSectors.map((s) => s.sector) ?? [],
         restrictions: restrictions.map((r) => r.text),
         restrictionsText,
         evidenceDocIds: ragDocs.map((d) => d.id),

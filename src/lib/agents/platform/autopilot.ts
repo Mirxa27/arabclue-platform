@@ -1,13 +1,11 @@
 import { db } from "@/lib/db";
-import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { AGENTS } from "@/lib/constants";
-import { tr } from "@/lib/i18n";
-import { seedComplianceChecks } from "@/lib/bootstrap";
-import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
-import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
-import { assertOnboardingReady } from "@/lib/onboarding";
-import { ApiError } from "@/lib/api-controller";
-import type { AgentState, IngestionEntities } from "@/lib/types";
+import { apiFailure } from "@/lib/api-failure";
+import { computeOnboardingSteps } from "@/lib/onboarding";
+import {
+  launchProjectPipeline,
+  type LaunchPipelineFailure,
+} from "@/lib/agents/launch-pipeline";
+import type { IngestionEntities } from "@/lib/types";
 import type { ClassificationDecision } from "./classify-attachment";
 import { AUTOPILOT_CONFIDENCE } from "./classify-attachment";
 
@@ -27,7 +25,37 @@ export type AutopilotResult =
       mode: "routed";
       projectId: string | null;
       message: string;
+    }
+  | {
+      /**
+       * The file was staged but the platform refused to act on it: onboarding
+       * is incomplete, no AI provider is usable, the plan allowance is spent.
+       * `code` is a registered completion code so the attachments route can
+       * answer with it (and its bilingual message) instead of a clarifying
+       * question that hides the real reason.
+       */
+      mode: "blocked";
+      code: LaunchPipelineFailure["code"];
+      message: { ar: string; en: string };
+      attachmentId: string;
+      projectId: string | null;
+      missing?: string[];
     };
+
+function blockedResult(
+  failure: LaunchPipelineFailure,
+  attachmentId: string,
+  projectId: string | null
+): AutopilotResult {
+  return {
+    mode: "blocked",
+    code: failure.code,
+    message: apiFailure(failure.code).message,
+    attachmentId,
+    projectId,
+    ...(failure.code === "ONBOARDING_INCOMPLETE" ? { missing: failure.missing } : {}),
+  };
+}
 
 export type AutopilotProjectCreateData = {
   workspaceId: string;
@@ -183,17 +211,20 @@ export async function maybeAutopilotAfterIngest(opts: {
 
   if (opts.decision.createProject || opts.decision.category === "RFP") {
     if (!projectId) {
-      try {
-        await assertOnboardingReady(opts.workspaceId);
-      } catch (e) {
-        if (e instanceof ApiError) {
-          return {
-            mode: "clarify",
-            question: e.message,
-            attachmentId: opts.attachmentId,
-          };
-        }
-        throw e;
+      // The launcher below re-checks onboarding before any run, but a project
+      // must not be created from an unconfigured workspace either.
+      const onboarding = await computeOnboardingSteps(opts.workspaceId);
+      if (!onboarding.readyForProposals) {
+        return blockedResult(
+          {
+            ok: false,
+            code: "ONBOARDING_INCOMPLETE",
+            missing: onboarding.missing,
+            readyForProposals: false,
+          },
+          opts.attachmentId,
+          null
+        );
       }
 
       const entities = await loadDocumentEntities(opts.documentId);
@@ -237,88 +268,33 @@ export async function maybeAutopilotAfterIngest(opts: {
     };
   }
 
-  try {
-    await assertWithinQuota(opts.userId, "proposal");
-  } catch (e) {
-    if (e instanceof QuotaExceededError) {
-      return {
-        mode: "clarify",
-        question: e.message,
-        attachmentId: opts.attachmentId,
-      };
-    }
-    throw e;
-  }
-
-  const active = await db.agentRun.findFirst({
-    where: {
-      projectId,
-      status: { in: ["QUEUED", "RUNNING"] },
-    },
-  });
-  if (active) {
-    return {
-      mode: "routed",
-      projectId,
-      message: `File linked. Pipeline already running (${active.id}).`,
-    };
-  }
-
-  await seedComplianceChecks(projectId);
-  await db.tenderProject.update({
-    where: { id: projectId },
-    data: { status: "PARSING" },
-  });
-
-  const agentStates: AgentState[] = AGENTS.map((a) => ({
-    id: a.id,
-    name: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "en"),
-    nameAr: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "ar"),
-    status: "pending",
-    progress: 0,
-  }));
-
-  const run = await db.agentRun.create({
-    data: {
-      projectId,
-      triggeredById: opts.userId,
-      status: "QUEUED",
-      overallProgress: 0,
-      agentStates: JSON.stringify(agentStates),
-      configJson: JSON.stringify({
-        locale: opts.locale,
-        workspaceId: opts.workspaceId,
-        userId: opts.userId,
-        projectId,
-        regenerateMode: null,
-        targetProposalId: null,
-        via: "mission-autopilot",
-      }),
-    },
-  });
-
-  await audit({
-    userId: opts.userId,
-    action: AUDIT_ACTIONS.AGENT_RUN,
-    resource: "AgentRun",
-    resourceId: run.id,
-    details: { projectId, via: "mission-autopilot" },
-  });
-
-  await scheduleAgentPipeline({
-    runId: run.id,
-    projectId,
+  // Same launcher as `POST /api/agents/run`: onboarding, quota, provider
+  // preflight, document preflight, concurrency (with the transactional
+  // re-check) and the run row. Autopilot used to create the row itself
+  // without the onboarding gate or the race check.
+  const launch = await launchProjectPipeline({
     workspaceId: opts.workspaceId,
     userId: opts.userId,
+    projectId,
     locale: opts.locale,
-    targetProposalId: null,
-    logLabel: "[mission-autopilot]",
+    source: "mission-autopilot",
   });
+
+  if (!launch.ok) {
+    if (launch.code === "AGENT_RUN_IN_PROGRESS") {
+      return {
+        mode: "routed",
+        projectId,
+        message: `File linked. Pipeline already running (${launch.runId}).`,
+      };
+    }
+    return blockedResult(launch, opts.attachmentId, projectId);
+  }
 
   return {
     mode: "autopilot",
     projectId,
-    runId: run.id,
-    message: `Autopilot started pipeline ${run.id} for project ${projectId}.`,
+    runId: launch.runId,
+    message: `Autopilot started pipeline ${launch.runId} for project ${projectId}.`,
   };
 }

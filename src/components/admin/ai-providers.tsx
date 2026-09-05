@@ -79,7 +79,7 @@ export function AdminAIProviders() {
       const res = await fetch("/api/admin/ai-providers");
       if (!res.ok) throw new Error("failed");
       return res.json() as Promise<{
-        providers: ApiAIProvider[];
+        providers: Array<ApiAIProvider & { credentialResolved?: boolean }>;
         presets: Preset[];
         engines: EngineMeta[];
         providerTypes: string[];
@@ -166,7 +166,8 @@ export function AdminAIProviders() {
     },
   });
 
-  const providers: ApiAIProvider[] = data?.providers ?? [];
+  const providers: Array<ApiAIProvider & { credentialResolved?: boolean }> =
+    data?.providers ?? [];
   const presets = data?.presets ?? [];
   const engines = data?.engines ?? [];
   const activeByEngine = data?.activeByEngine ?? {};
@@ -376,6 +377,27 @@ export function AdminAIProviders() {
                           className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-0.5"
                         >
                           <Check className="size-2.5" /> ACTIVE
+                        </Badge>
+                      )}
+                      {typeof p.credentialResolved === "boolean" && (
+                        // Whether the row's key resolves on this deploy; an
+                        // active row with a missing key is exactly the
+                        // "every engine degraded" state /api/ready reports.
+                        <Badge
+                          variant="outline"
+                          data-testid="provider-credential-state"
+                          className={cn(
+                            "text-[9px] gap-0.5",
+                            p.credentialResolved
+                              ? "bg-sky-500/10 text-sky-700 border-sky-500/20 dark:text-sky-300"
+                              : "bg-red-500/10 text-red-700 border-red-500/30 dark:text-red-300"
+                          )}
+                        >
+                          {p.credentialResolved
+                            ? tr("admin_ai_key_resolved", locale)
+                            : tr("admin_ai_key_missing", locale, {
+                                envKey: p.apiKeyEnvKey || "API key",
+                              })}
                         </Badge>
                       )}
                       {(p.engines && p.engines.length > 0

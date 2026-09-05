@@ -16,9 +16,9 @@ import {
 } from "../guardrails";
 import {
   type AgentEngine,
-  providerServesEngine,
   requireConfiguredModelId,
 } from "./model-catalog";
+import { isRealAiOnlyStrict } from "../real-ai-only";
 import {
   isOpenAiCompatibleChatProvider,
   providerAuthHeaders,
@@ -34,9 +34,10 @@ import {
 import {
   GATEWAY_MODEL_ID,
   callGateway,
-  embedViaGateway,
+  embedManyViaGateway,
   gatewayAvailable,
 } from "./gateway";
+import { selectUsableProvider } from "./provider-failover";
 
 export type { LLMFailureKind } from "./resilience";
 
@@ -57,28 +58,70 @@ export async function getActiveProvider(): Promise<AIProviderConfig | null> {
   return getProviderForEngine("DEFAULT");
 }
 
+async function listActiveProviders(): Promise<AIProviderConfig[]> {
+  return db.aIProviderConfig.findMany({
+    where: { isActive: true },
+    orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+  });
+}
+
 /**
- * Resolve active provider for an agent engine.
- * Matches providers that list the engine in enginesJson (or legacy engine field).
- * Falls back to DEFAULT active provider, then any active provider.
+ * Active provider for an agent engine whose credential resolves.
+ * Candidates are ranked: rows listing the engine in enginesJson (or the legacy
+ * engine field), then DEFAULT rows, then any active row. A row whose key does
+ * not resolve is skipped (once, with a warning naming it) in favour of the next
+ * candidate that can actually be called; only when none can is the top-ranked
+ * row returned, so the caller still reports `missing_key` for the right row.
  */
 export async function getProviderForEngine(
   engine: AgentEngine = "DEFAULT"
 ): Promise<AIProviderConfig | null> {
-  const actives = await db.aIProviderConfig.findMany({
-    where: { isActive: true },
-    orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
-  });
-
-  const forEngine = actives.find((p) => providerServesEngine(p, engine));
-  if (forEngine) return forEngine;
-
-  if (engine !== "DEFAULT") {
-    const fallback = actives.find((p) => providerServesEngine(p, "DEFAULT"));
-    if (fallback) return fallback;
+  const selection = await selectUsableProvider(
+    await listActiveProviders(),
+    engine,
+    resolveProviderApiKey
+  );
+  if (selection.usable && selection.skipped.length > 0) {
+    console.warn(
+      `[llm] ${engine}: skipped ${selection.skipped.join(", ")} — API key did not resolve; using ${selection.provider!.name} (${selection.provider!.provider})`
+    );
   }
+  return selection.provider;
+}
 
-  return actives[0] ?? null;
+export type ProviderPreflight =
+  | { ok: true }
+  | { ok: false; failureKind: LLMFailureKind; provider: string | null };
+
+/**
+ * Whether a completion for each of these engines could reach a model right now.
+ * Runs before an agent run is queued so a workspace with no usable provider is
+ * told so immediately (503) instead of after the pipeline has retried a
+ * missing key for a minute. Mirrors `generateCompletion`'s own decision order:
+ * deterministic mode, then the gateway, then a tenant row with a resolvable key.
+ */
+export async function preflightProviders(
+  engines: readonly AgentEngine[]
+): Promise<ProviderPreflight> {
+  if (process.env.ARABCLUE_LLM_DETERMINISTIC === "1") {
+    // Deterministic output is a stand-in, not a model; a strict deploy refuses
+    // to queue work that can only ever produce it.
+    return isRealAiOnlyStrict()
+      ? { ok: false, failureKind: "deterministic_mode", provider: null }
+      : { ok: true };
+  }
+  if (gatewayAvailable()) return { ok: true };
+  const actives = await listActiveProviders();
+  for (const engine of engines) {
+    const selection = await selectUsableProvider(actives, engine, resolveProviderApiKey);
+    if (selection.usable) continue;
+    return {
+      ok: false,
+      failureKind: selection.provider ? "missing_key" : "no_provider",
+      provider: selection.provider?.provider ?? null,
+    };
+  }
+  return { ok: true };
 }
 
 export interface LLMResult {
@@ -318,7 +361,10 @@ export async function generateCompletion(
 
     if (useGateway) {
       return await runTransport(
-        () => callGateway(filteredMessages, temperature, maxTokens),
+        () =>
+          callGateway(filteredMessages, temperature, maxTokens, {
+            timeoutMs: provider.timeoutMs || 60000,
+          }),
         0.93
       );
     }
@@ -565,6 +611,19 @@ async function callAnthropic(
   }
 }
 
+/** Vendors documenting an OpenAI-shaped `/embeddings` that accepts `input: string[]`. */
+const REMOTE_EMBED_PROVIDERS = new Set([
+  "openai",
+  "openai_compatible",
+  "ollama",
+  "azure_openai",
+  "google",
+  "mistral",
+]);
+
+/** Inputs per `/embeddings` request; well under every vendor's ceiling. */
+const EMBED_BATCH_SIZE = 64;
+
 /**
  * Embed text via the EMBEDDING engine provider, then via the AI Gateway.
  *
@@ -574,75 +633,98 @@ async function callAnthropic(
  * lexical TF cosine when the query embedding is null.
  */
 export async function embedText(text: string): Promise<number[] | null> {
-  const trimmed = text.slice(0, 8000);
+  const [embedding] = await embedTexts([text]);
+  return embedding ?? null;
+}
+
+/**
+ * Embed many texts with one provider lookup and one request per batch of
+ * `EMBED_BATCH_SIZE` — indexing a 40-chunk document used to look the provider
+ * up and call `/embeddings` forty times. The result is aligned with `texts`;
+ * an entry is `null` when nothing answered for it.
+ */
+export async function embedTexts(texts: string[]): Promise<Array<number[] | null>> {
+  const trimmed = texts.map((t) => t.slice(0, 8000));
+  if (trimmed.length === 0) return [];
+  const out: Array<number[] | null> = trimmed.map(() => null);
+
+  // Bedrock's OpenAI-compatible surface documents chat completions only.
+  let remote: { base: string; headers: Record<string, string>; model: string; timeoutMs: number } | null = null;
   try {
+    // "No embedding available" is an answer, never an exception: an
+    // unreachable provider table or an unconfigured model degrade to lexical
+    // retrieval exactly like a missing key does.
     const provider = await getProviderForEngine("EMBEDDING");
-    if (provider) {
-      const pid = provider.provider.toLowerCase();
-      // Vendors documenting an OpenAI-shaped `/embeddings`: OpenAI, Azure v1
-      // (in its spec), Gemini's compat layer, Mistral, Ollama and the gateways.
-      // Bedrock's OpenAI-compatible surface documents chat completions only.
-      const supportsRemoteEmbed =
-        pid === "openai" ||
-        pid === "openai_compatible" ||
-        pid === "ollama" ||
-        pid === "azure_openai" ||
-        pid === "google" ||
-        pid === "mistral";
-
-      if (supportsRemoteEmbed) {
-        const key = await resolveProviderApiKey(
-          provider.provider,
-          provider.apiKeyEnvKey
-        );
-        if (key || pid === "ollama") {
-          const target = resolveOpenAiCompatibleTarget(provider);
-          const base = target.base;
-          const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            ...providerAuthHeaders(pid, key),
-          };
-
-          const controller = new AbortController();
-          const timer = setTimeout(
-            () => controller.abort(),
-            provider.timeoutMs || 30000
-          );
-          let res: Response;
-          try {
-            res = await fetch(`${base}/embeddings`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                model: requireConfiguredModelId(target.modelId),
-                input: trimmed,
-              }),
-              signal: controller.signal,
-            });
-          } finally {
-            clearTimeout(timer);
-          }
-          if (res.ok) {
-            const data = await res.json();
-            const emb = data.data?.[0]?.embedding as number[] | undefined;
-            if (emb?.length) return emb;
-          }
-        }
+    const pid = provider?.provider.toLowerCase() ?? "";
+    if (provider && REMOTE_EMBED_PROVIDERS.has(pid)) {
+      const key = await resolveProviderApiKey(provider.provider, provider.apiKeyEnvKey);
+      if (key || pid === "ollama") {
+        const target = resolveOpenAiCompatibleTarget(provider);
+        remote = {
+          base: target.base,
+          headers: { "Content-Type": "application/json", ...providerAuthHeaders(pid, key) },
+          model: requireConfiguredModelId(target.modelId),
+          timeoutMs: provider.timeoutMs || 30000,
+        };
       }
     }
   } catch {
-    /* fall through to the gateway */
+    remote = null;
   }
 
-  if (gatewayAvailable()) {
-    try {
-      const emb = await embedViaGateway(trimmed);
-      if (emb.length) return emb;
-    } catch {
-      /* nothing left to try */
+  for (let offset = 0; offset < trimmed.length; offset += EMBED_BATCH_SIZE) {
+    const batch = trimmed.slice(offset, offset + EMBED_BATCH_SIZE);
+    let vectors: Array<number[] | null> | null = null;
+
+    if (remote) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), remote.timeoutMs);
+        let res: Response;
+        try {
+          res = await fetch(`${remote.base}/embeddings`, {
+            method: "POST",
+            headers: remote.headers,
+            body: JSON.stringify({ model: remote.model, input: batch }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        if (res.ok) {
+          const data = (await res.json()) as {
+            data?: Array<{ index?: number; embedding?: number[] }>;
+          };
+          const byIndex: Array<number[] | null> = batch.map(() => null);
+          (data.data ?? []).forEach((row, i) => {
+            const at = typeof row.index === "number" ? row.index : i;
+            if (row.embedding?.length && at >= 0 && at < byIndex.length) {
+              byIndex[at] = row.embedding;
+            }
+          });
+          if (byIndex.some((v) => v)) vectors = byIndex;
+        }
+      } catch {
+        /* fall through to the gateway */
+      }
+    }
+
+    if (!vectors && gatewayAvailable()) {
+      try {
+        const embs = await embedManyViaGateway(batch);
+        vectors = batch.map((_, i) => (embs[i]?.length ? embs[i] : null));
+      } catch {
+        /* nothing left to try */
+      }
+    }
+
+    if (vectors) {
+      vectors.forEach((v, i) => {
+        out[offset + i] = v;
+      });
     }
   }
-  return null;
+  return out;
 }
 
 function estimateTokens(text: string): number {

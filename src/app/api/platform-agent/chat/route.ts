@@ -1,5 +1,6 @@
-import { jsonApiFailure } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import { createAgentUIStreamResponse } from "ai";
+import { assertWithinQuota, bumpUsage } from "@/lib/quotas";
 import { requireSession } from "@/lib/auth";
 import { createPlatformAgent } from "@/lib/agents/platform/main-agent";
 import {
@@ -71,6 +72,9 @@ export async function POST(req: Request) {
       windowMs: 60_000,
     });
     if (blocked) return blocked;
+    // Plan allowance for model tokens; QuotaExceededError maps to a bilingual
+    // 402 in `toErrorResponse` below.
+    await assertWithinQuota(session.user.id, "tokens");
 
     // The language on screen, falling back to the profile's.
     const locale = resolveRequestLocale(
@@ -121,6 +125,14 @@ export async function POST(req: Request) {
       uiMessages: messages,
       originalMessages: messages as never,
       abortSignal: req.signal,
+      onStepEnd: async (step) => {
+        const used = step.usage?.totalTokens ?? 0;
+        if (used > 0) {
+          await bumpUsage(session.user.id, "tokens", used).catch((err) =>
+            console.warn("[platform-agent/chat] token usage not recorded", err)
+          );
+        }
+      },
       onEnd: async ({ messages: finalMessages }) => {
         try {
           await syncMissionTranscript({
@@ -138,10 +150,10 @@ export async function POST(req: Request) {
       },
     });
   } catch (err) {
-    // The internal reason stays in the server log: it can name a provider,
-    // a table, or a document body, and the console renders the response text
-    // to the reader verbatim.
-    console.error("[platform-agent/chat]", err);
-    return jsonApiFailure("INTERNAL_ERROR");
+    // The central mapper answers a missing provider with 503
+    // AI_PROVIDER_UNAVAILABLE, an exhausted plan with 402, and everything else
+    // with the generic bilingual 500; the internal reason stays in the server
+    // log, redacted, because the console renders the response text verbatim.
+    return toErrorResponse(err, "platform-agent/chat");
   }
 }

@@ -3,8 +3,9 @@ import { db } from "@/lib/db";
 import { requireWriter } from "@/lib/auth";
 import { getTenantContext, assertWorkspaceMatch } from "@/lib/workspace-context";
 import { parseJsonBody, copilotSuggestSchema } from "@/lib/validation";
-import { jsonApiFailure } from "@/lib/api-controller";
+import { jsonApiFailure, toErrorResponse } from "@/lib/api-controller";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
+import { assertWithinQuota } from "@/lib/quotas";
 import { openCopilotSuggestionStream } from "@/lib/ai/copilot-suggestions";
 import type { Locale } from "@/lib/types";
 
@@ -46,6 +47,11 @@ export async function POST(
     windowMs: 60_000,
   });
   if (limited) return limited;
+  try {
+    await assertWithinQuota(session.user.id, "tokens");
+  } catch (err) {
+    return toErrorResponse(err, "proposals/copilot");
+  }
 
   const { id } = await params;
   const parsed = await parseJsonBody(req, copilotSuggestSchema);
@@ -72,7 +78,7 @@ export async function POST(
       // through this same resource, and a client-chosen framing would let a
       // caller ask for contract review of a bid.
       docKind: proposal.type === "CONTRACT" ? "contract" : "proposal",
-    });
+    }, { abortSignal: req.signal });
     return new Response(stream, {
       headers: {
         "Content-Type": "application/x-ndjson; charset=utf-8",
@@ -80,10 +86,11 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error("[proposals/copilot] Error:", error);
     // Reaching a provider is settled before the stream opens, so this is still
-    // an honest status code. No deterministic fallback by design: a fabricated
-    // edit pointing at real text in a real bid is worse than an empty rail.
-    return jsonApiFailure("AI_PROVIDER_UNAVAILABLE");
+    // an honest status code: the resolver throws ProviderUnavailableError,
+    // which maps to 503 AI_PROVIDER_UNAVAILABLE. No deterministic fallback by
+    // design: a fabricated edit pointing at real text in a real bid is worse
+    // than an empty rail.
+    return toErrorResponse(error, "proposals/copilot");
   }
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { parseJsonBody, withTenant } from "@/lib/api-controller";
 import { draftContractWithAi } from "@/lib/ai/contract-drafting-assistant";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
+import { assertWithinQuota } from "@/lib/quotas";
 import type { ContractTemplateKey } from "@/lib/document-templates/contract-templates";
 import type { IngestionEntities, ComplianceMatrixRow } from "@/lib/types";
 
@@ -29,7 +30,7 @@ const requestSchema = z.object({
 export async function POST(request: NextRequest) {
   return withTenant(
     "session",
-    async ({ workspace }) => {
+    async ({ workspace, userId }) => {
       const blocked = await checkAiRateLimit({
         route: "ai.contract-draft",
         identifier: workspace.id,
@@ -37,6 +38,8 @@ export async function POST(request: NextRequest) {
         windowMs: 60_000,
       });
       if (blocked) return blocked;
+      // Plan token allowance; QuotaExceededError is mapped to 402 by withTenant.
+      await assertWithinQuota(userId, "tokens");
 
       const data = await parseJsonBody(request, requestSchema);
 

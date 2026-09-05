@@ -19,6 +19,7 @@ import {
   resolveOpenAiCompatibleTarget,
 } from "@/lib/llm/provider-wire";
 import { GATEWAY_MODEL_ID, gatewayAvailable } from "@/lib/llm/gateway";
+import { ProviderUnavailableError } from "@/lib/ai/provider-unavailable";
 
 /**
  * `engine` names the kind of work, so an admin who configured a connection for
@@ -41,11 +42,16 @@ export async function resolvePlatformAgentModel(
     };
   }
 
+  // Every refusal below is a `ProviderUnavailableError`: `mapErrorToApiFailure`
+  // recognises it by name and answers 503 AI_PROVIDER_UNAVAILABLE with the
+  // bilingual "connect a provider" copy. A plain Error here became a generic
+  // 500 INTERNAL_ERROR in production, so the console could only say "retry".
   const provider = await getProviderForEngine(engine);
   if (!provider) {
-    throw new Error(
-      "No active AI provider. Configure one under Admin → AI Providers, or set AI_GATEWAY_API_KEY."
-    );
+    throw new ProviderUnavailableError({
+      context: `platform-agent:${engine}`,
+      llmFailureKind: "no_provider",
+    });
   }
 
   const modelId = requireConfiguredModelId(provider.modelId);
@@ -57,7 +63,11 @@ export async function resolvePlatformAgentModel(
 
   if (pid === "anthropic") {
     if (!key) {
-      throw new Error("Anthropic API key missing for platform agent.");
+      throw new ProviderUnavailableError({
+        context: `platform-agent:${engine}`,
+        llmFailureKind: "missing_key",
+        provider: provider.provider,
+      });
     }
     const anthropic = createAnthropic({ apiKey: key });
     return {
@@ -69,9 +79,12 @@ export async function resolvePlatformAgentModel(
 
   if (isOpenAiCompatibleChatProvider(pid)) {
     if (!key && pid !== "ollama") {
-      throw new Error(
-        `API key missing for ${provider.provider} (${provider.apiKeyEnvKey || "default env"}).`
-      );
+      throw new ProviderUnavailableError({
+        context: `platform-agent:${engine}`,
+        llmFailureKind: "missing_key",
+        provider: provider.provider,
+        detail: `API key missing for ${provider.provider} (${provider.apiKeyEnvKey || "default env"})`,
+      });
     }
     const target = resolveOpenAiCompatibleTarget(provider);
     const openai = createOpenAI({
@@ -92,7 +105,10 @@ export async function resolvePlatformAgentModel(
     };
   }
 
-  throw new Error(
-    `Provider type "${provider.provider}" is not supported for the platform agent. Use OpenAI-compatible, Anthropic, or AI Gateway.`
-  );
+  throw new ProviderUnavailableError({
+    context: `platform-agent:${engine}`,
+    llmFailureKind: "invalid_response",
+    provider: provider.provider,
+    detail: `Provider type "${provider.provider}" is not supported for the platform agent. Use OpenAI-compatible, Anthropic, or AI Gateway.`,
+  });
 }

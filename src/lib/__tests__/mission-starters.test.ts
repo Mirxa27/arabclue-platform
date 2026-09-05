@@ -33,7 +33,9 @@ describe("mission starters", () => {
 
   test("the console sends the starter instead of asking the user to retype it", () => {
     const source = read("src/components/dashboard/platform-agent-console.tsx");
-    expect(source).toContain("MISSION_STARTERS");
+    // Starters are resolved against onboarding readiness, so "Run the agents"
+    // reads "Finish setup…" and is disabled instead of answering 403.
+    expect(source).toContain("resolveMissionStarters(locale, readiness)");
     expect(source).toContain("onStarter");
   });
 

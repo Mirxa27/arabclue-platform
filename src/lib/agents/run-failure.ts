@@ -56,11 +56,35 @@ export function runFailureCopyKey(kind: string | null | undefined): string {
 }
 
 /**
+ * LLM-layer reasons that no amount of waiting fixes: there is no provider row,
+ * its key does not resolve, or the deploy is in deterministic mode. A run that
+ * hit one of these used to be queued, retried twice at 20 s, and fail after
+ * 40 s+ with the same message it could have given at once.
+ */
+const CONFIGURATION_FAILURE_KINDS: ReadonlySet<string> = new Set([
+  "missing_key",
+  "no_provider",
+  "deterministic_mode",
+]);
+
+/** The provider error's own classification, when the thrown value carries one. */
+export function llmFailureKindOf(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null;
+  const kind = (err as { llmFailureKind?: unknown }).llmFailureKind;
+  return typeof kind === "string" ? kind : null;
+}
+
+/**
  * Kinds that a durable stage retries after a delay instead of failing the run:
  * the provider was busy, slow, or briefly down, and nothing about the tender
- * changed. Bad input and our own bugs are not helped by waiting.
+ * changed. Bad input, our own bugs, and a provider that is not configured at
+ * all are not helped by waiting.
  */
-export function isTransientRunFailure(kind: AgentRunFailureKind): boolean {
+export function isTransientRunFailure(
+  kind: AgentRunFailureKind,
+  llmFailureKind?: string | null
+): boolean {
+  if (llmFailureKind && CONFIGURATION_FAILURE_KINDS.has(llmFailureKind)) return false;
   return kind === "RATE_LIMIT" || kind === "TIMEOUT" || kind === "PROVIDER_UNAVAILABLE";
 }
 

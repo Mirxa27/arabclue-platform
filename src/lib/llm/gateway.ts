@@ -9,7 +9,7 @@
  * up with a working copilot and a dead agent pipeline.
  */
 
-import { embed, gateway, generateText } from "ai";
+import { embed, embedMany, gateway, generateText } from "ai";
 import type { LLMMessage } from "../guardrails";
 
 /** Live gateway sonnet id (fetched 2026-07-22 from ai-gateway.vercel.sh/v1/models). */
@@ -38,7 +38,8 @@ export function gatewayAvailable(): boolean {
 export async function callGateway(
   messages: LLMMessage[],
   temperature: number,
-  maxTokens: number
+  maxTokens: number,
+  opts?: { timeoutMs?: number }
 ): Promise<{ text: string; tokensUsed: number; truncated: boolean }> {
   const system = messages
     .filter((m) => m.role === "system")
@@ -56,6 +57,9 @@ export async function callGateway(
       : [{ role: "user" as const, content: system }],
     temperature,
     maxOutputTokens: maxTokens,
+    // The tenant row's budget applies here as it does to every other
+    // transport; without it a stalled gateway call ran until the function died.
+    ...(opts?.timeoutMs ? { abortSignal: AbortSignal.timeout(opts.timeoutMs) } : {}),
   });
 
   return {
@@ -76,4 +80,13 @@ export async function embedViaGateway(text: string): Promise<number[]> {
     value: text,
   });
   return embedding;
+}
+
+/** One request for a batch of chunks; same contract as `embedViaGateway`. */
+export async function embedManyViaGateway(values: string[]): Promise<number[][]> {
+  const { embeddings } = await embedMany({
+    model: gateway.textEmbeddingModel(GATEWAY_EMBEDDING_MODEL_ID),
+    values,
+  });
+  return embeddings;
 }

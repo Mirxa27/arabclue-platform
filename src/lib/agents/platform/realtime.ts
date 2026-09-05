@@ -15,6 +15,7 @@ import {
 } from "@/lib/llm/model-catalog";
 import { buildPlatformAgentInstructions } from "./instructions";
 import { buildPlatformAgentContext } from "./main-agent";
+import { requiresConfirmationResult, toolCallNeedsApproval } from "./tool-approval";
 import { createPlatformTools } from "./tools";
 import type { Session } from "next-auth";
 import type {
@@ -274,7 +275,14 @@ export async function executeVoiceLiveTool(
   if (!tool?.execute) {
     throw new Error(`Unknown or non-executable tool: ${toolName}`);
   }
-  return tool.execute(validateVoiceToolInput(toolName, tool, args), {
+  const input = validateVoiceToolInput(toolName, tool, args);
+  // The voice session dispatches straight to `execute`, so the agent loop's
+  // approval step never runs here. Privileged actions are refused with a
+  // structured result the agent speaks, rather than performed unconfirmed.
+  if (toolCallNeedsApproval(toolName, input)) {
+    return requiresConfirmationResult(toolName, ctx.locale);
+  }
+  return tool.execute(input, {
     toolCallId: `voice-${crypto.randomUUID()}`,
     messages: [],
   });

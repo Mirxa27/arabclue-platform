@@ -19,6 +19,8 @@ import {
   parseProviderEngines,
 } from "@/lib/llm/model-catalog";
 import { providerConnectionGuardError } from "@/lib/llm/provider-connection-guard";
+import { resolveProviderApiKey } from "@/lib/env-settings";
+import { providerNeedsCredential } from "@/lib/llm/provider-failover";
 import {
   deactivateConflictingProviders,
   enginesPayloadFromBody,
@@ -46,8 +48,19 @@ export async function GET() {
         ?.id ?? null;
   }
 
+  // Whether each row's credential resolves right now (env or sealed setting),
+  // so the console can show "key missing" before anyone activates the row and
+  // finds out from a failed completion. The value itself never leaves here.
+  const credentialResolved = await Promise.all(
+    providers.map(async (p) =>
+      providerNeedsCredential(p)
+        ? Boolean(await resolveProviderApiKey(p.provider, p.apiKeyEnvKey))
+        : true
+    )
+  );
+
   return NextResponse.json({
-    providers: providers.map((p) => {
+    providers: providers.map((p, i) => {
       const engines = parseProviderEngines(p);
       return {
         ...p,
@@ -55,6 +68,7 @@ export async function GET() {
         engine: engines[0] ?? p.engine ?? "DEFAULT",
         modelsCache: parseModelsCache(p.modelsCacheJson),
         modelsFetchedAt: p.modelsFetchedAt?.toISOString() ?? null,
+        credentialResolved: credentialResolved[i],
       };
     }),
     // Connection templates only — no model IDs
@@ -118,6 +132,16 @@ export async function POST(req: NextRequest) {
   if (guardError) return guardError;
 
   if (activate) {
+    const envKey = body.apiKeyEnvKey ?? (defaultApiKeyEnvKey(provider) || null);
+    if (
+      providerNeedsCredential({ provider }) &&
+      !(await resolveProviderApiKey(provider, envKey))
+    ) {
+      return jsonApiFailure("API_KEY_MISSING", {
+        status: 400,
+        values: { envKey: envKey || "API key" },
+      });
+    }
     await deactivateConflictingProviders(engines);
   }
 

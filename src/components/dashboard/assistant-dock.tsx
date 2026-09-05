@@ -11,7 +11,13 @@
 
 import { useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+} from "ai";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { sdkErrorText, selectApiFailureCode } from "@/lib/api-failure-message";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -197,9 +203,22 @@ function RunPulse({
   );
 }
 
+/** The stable code inside an AI SDK transport error, when its body is ours. */
+function sdkErrorCode(error: unknown): string | null {
+  const raw = error instanceof Error ? error.message : "";
+  try {
+    return selectApiFailureCode(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
 export function AssistantDock() {
   const { locale } = useLocale();
   const ar = locale === "ar";
+  const { data: session } = useSession();
+  const isAdmin =
+    session?.user?.role === "ADMIN" || session?.user?.role === "SUPER_ADMIN";
   const { view, activeProjectId, setActiveProjectId, setView } = useUI();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -218,8 +237,12 @@ export function AssistantDock() {
     [activeProjectId, view, locale]
   );
 
-  const { messages, sendMessage, status, stop, error } =
-    useChat<PlatformAgentUIMessage>({ transport });
+  const { messages, sendMessage, status, stop, error, addToolApprovalResponse } =
+    useChat<PlatformAgentUIMessage>({
+      transport,
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    });
+  const errorCode = error ? sdkErrorCode(error) : null;
 
   const busy = status === "submitted" || status === "streaming";
 
@@ -392,10 +415,77 @@ export function AssistantDock() {
               })
             )}
 
+            {messages.flatMap((message) =>
+              message.role !== "assistant"
+                ? []
+                : message.parts.flatMap((part) => {
+                    const toolPart = part as {
+                      type: string;
+                      toolName?: string;
+                      state?: string;
+                      approval?: { id: string; isAutomatic?: boolean };
+                    };
+                    if (
+                      toolPart.state !== "approval-requested" ||
+                      !toolPart.approval ||
+                      toolPart.approval.isAutomatic
+                    ) {
+                      return [];
+                    }
+                    const name =
+                      toolPart.toolName ?? toolPart.type.replace(/^tool-/, "");
+                    return [
+                      <div
+                        key={toolPart.approval.id}
+                        className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px]"
+                        role="group"
+                        data-testid="tool-approval-request"
+                      >
+                        <span className="min-w-0 flex-1">
+                          {ar ? "يطلب الوكيل موافقتك: " : "The agent asks your approval: "}
+                          <span className="font-medium">{humanActionLabel(name, ar)}</span>
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-6 rounded-full px-2.5 text-[10px]"
+                          onClick={() =>
+                            addToolApprovalResponse({ id: toolPart.approval!.id, approved: true })
+                          }
+                        >
+                          {ar ? "موافقة" : "Approve"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-6 rounded-full px-2.5 text-[10px]"
+                          onClick={() =>
+                            addToolApprovalResponse({ id: toolPart.approval!.id, approved: false })
+                          }
+                        >
+                          {ar ? "رفض" : "Reject"}
+                        </Button>
+                      </div>,
+                    ];
+                  })
+            )}
+
             {error ? (
-              <div className="flex items-start gap-1.5 text-[11px] text-destructive">
+              <div className="flex flex-wrap items-start gap-1.5 text-[11px] text-destructive" role="alert">
                 <AlertCircle className="size-3.5 shrink-0 mt-px" />
-                <span>{error.message}</span>
+                {/* The transport throws the JSON failure body as `message`;
+                    this reads the reader's locale out of it instead of
+                    rendering the raw body. */}
+                <span className="min-w-0 flex-1">{sdkErrorText(error, locale)}</span>
+                {isAdmin && errorCode === "AI_PROVIDER_UNAVAILABLE" ? (
+                  <Link
+                    href="/app/admin/ai"
+                    className="shrink-0 font-medium underline underline-offset-2"
+                  >
+                    {ar ? "فتح مزوّدي الذكاء الاصطناعي" : "Open AI providers"}
+                  </Link>
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -32,6 +32,7 @@ const gatewayStub = Object.assign(mock(() => ({})), {
 mock.module("ai", () => ({
   gateway: gatewayStub,
   embed: mock(() => Promise.resolve({ embedding: [] })),
+  embedMany: mock(() => Promise.resolve({ embeddings: [] })),
   generateText: mock(() => Promise.resolve({ text: "", usage: {} })),
   streamObject: mock(() => ({ elementStream: (async function* () {})() })),
 }));
@@ -82,6 +83,20 @@ describe("resolvePlatformAgentModel picks the API each vendor serves", () => {
       apiBase: "https://contoso.openai.azure.com",
     });
     expect(model.provider).toBe("openai.responses");
+  });
+
+  test("Azure AI Foundry endpoint serves the Responses API too", async () => {
+    // `RESOURCE.services.ai.azure.com/openai/v1/responses` answered 200 for
+    // gpt-6-astra (probed 2026-09-05); the platform DEFAULT connection.
+    const { model, modelId } = await resolveFor({
+      provider: "azure_openai",
+      modelId: "gpt-6-astra",
+      apiKeyEnvKey: "AZURE_OPENAI_API_KEY",
+      apiBase: "https://contoso.services.ai.azure.com",
+    });
+    expect(model.provider).toBe("openai.responses");
+    expect(model.modelId).toBe("gpt-6-astra");
+    expect(modelId).toBe("gpt-6-astra");
   });
 
   test.each([

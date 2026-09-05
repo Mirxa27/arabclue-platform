@@ -29,16 +29,30 @@ export type DraftProposalOptions = {
   tenderTypeName: string;
   entities: IngestionEntities | null;
   complianceRows: ComplianceMatrixRow[];
-  technical: TechnicalArchitectOutput & { ragContext: string };
+  technical: TechnicalArchitectOutput & { ragContext: string; tenderContext?: string };
   financial: FinancialExtract;
   coverage: CoveragePlan;
   brandTagline: string;
   vision2030: string;
   locale?: Locale;
   restrictions?: string;
+  /** Target sectors the workspace declared, as labels. */
+  sectors?: string[];
   /** Receives the draft as the model writes it; the result is unchanged. */
   onDelta?: (text: string) => void;
 };
+
+/** The bidder's own description, for the drafting prompt. */
+export function describeBidder(
+  opts: Pick<DraftProposalOptions, "brandTagline" | "vision2030" | "sectors">
+): string {
+  const lines = [
+    `Company: ${opts.brandTagline}`,
+    `Vision 2030 alignment: ${opts.vision2030}`,
+  ];
+  if (opts.sectors?.length) lines.push(`Target sectors: ${opts.sectors.join(", ")}`);
+  return lines.join("\n");
+}
 
 /** The system and user turns the draft is written from; the continuation reuses both. */
 export function buildDraftingMessages(opts: Omit<DraftProposalOptions, "onDelta">): { system: string; user: string } {
@@ -109,6 +123,10 @@ export function buildDraftingMessages(opts: Omit<DraftProposalOptions, "onDelta"
     coverageJson,
     ragContext,
     restrictions: opts.restrictions,
+    // Already retrieved by the technical agent; the draft used to receive only
+    // the past-project corpus and never the tender's own wording.
+    tenderContext: (opts.technical.tenderContext ?? "").slice(0, MAX_PROMPT_CHARS / 3),
+    bidderProfile: describeBidder(opts),
   });
 
   return { system: systemDrafting(locale), user };
@@ -300,7 +318,7 @@ export function buildDeterministicProposal(opts: {
   tenderTypeName: string;
   entities: IngestionEntities | null;
   complianceRows: ComplianceMatrixRow[];
-  technical: TechnicalArchitectOutput & { ragContext: string };
+  technical: TechnicalArchitectOutput & { ragContext: string; tenderContext?: string };
   financial: FinancialExtract;
   coverage: CoveragePlan;
   brandTagline: string;

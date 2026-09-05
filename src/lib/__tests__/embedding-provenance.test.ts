@@ -52,13 +52,16 @@ describe("the gateway can serve embeddings", () => {
     );
   });
 
-  test("embedText consults the gateway before giving up", () => {
+  test("embedTexts consults the gateway before giving up", () => {
+    // `embedText` is `embedTexts([text])[0]`; the batch path is where the
+    // gateway is consulted, and `return out;` is where it gives up (nulls).
     const source = read("src/lib/llm/index.ts");
-    const gatewayAt = source.indexOf("embedViaGateway(");
-    const giveUpAt = source.lastIndexOf("return null;");
+    const gatewayAt = source.indexOf("embedManyViaGateway(");
+    const giveUpAt = source.lastIndexOf("return out;");
     expect(gatewayAt).toBeGreaterThan(-1);
     expect(giveUpAt).toBeGreaterThan(-1);
     expect(gatewayAt).toBeLessThan(giveUpAt);
+    expect(source).toMatch(/export async function embedText\(/);
   });
 });
 

@@ -203,7 +203,8 @@ export function buildCopilotPrompt(input: CopilotPromptInput): string {
  * it wrong.
  */
 export async function openCopilotSuggestionStream(
-  input: CopilotGenerationInput
+  input: CopilotGenerationInput,
+  opts?: { abortSignal?: AbortSignal }
 ): Promise<ReadableStream<Uint8Array>> {
   // Proposing replacement text for a sentence is section rewriting, so this
   // asks for the engine that describes the job rather than the platform
@@ -213,6 +214,13 @@ export async function openCopilotSuggestionStream(
   const { model, providerLabel, modelId } =
     await resolvePlatformAgentModel("REWRITE");
 
+  // Closing the tab, or the rail starting a newer pass, aborts the request;
+  // without the signal the model kept generating for a reader who had left.
+  const abort = new AbortController();
+  const onCallerAbort = () => abort.abort();
+  if (opts?.abortSignal?.aborted) abort.abort();
+  opts?.abortSignal?.addEventListener("abort", onCallerAbort, { once: true });
+
   const result = streamObject({
     model,
     output: "array",
@@ -221,10 +229,15 @@ export async function openCopilotSuggestionStream(
     system: copilotSystemPrompt(input.locale, input.docKind),
     temperature: 0.2,
     prompt: buildCopilotPrompt(input),
+    abortSignal: abort.signal,
   });
 
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
+    cancel() {
+      abort.abort();
+      opts?.abortSignal?.removeEventListener("abort", onCallerAbort);
+    },
     async start(controller) {
       const send = (frame: CopilotFrame) =>
         controller.enqueue(encoder.encode(encodeFrame(frame)));
@@ -240,13 +253,21 @@ export async function openCopilotSuggestionStream(
           if (kept >= MAX_SUGGESTIONS) break;
         }
       } catch (error) {
-        // The status line went out with the first frame, so a failure here can
-        // only be reported in-band. Closing quietly would leave the rail
-        // spinning on a pass that is already over.
-        console.error("[copilot] stream failed:", error);
-        send({ type: "error", code: "COPILOT_STREAM_FAILED" });
+        // An aborted pass has no reader; anything else is reported in-band,
+        // because the status line went out with the first frame and closing
+        // quietly would leave the rail spinning on a pass that is already over.
+        if (!abort.signal.aborted) {
+          console.error("[copilot] stream failed:", error);
+          send({ type: "error", code: "COPILOT_STREAM_FAILED" });
+        }
+      } finally {
+        opts?.abortSignal?.removeEventListener("abort", onCallerAbort);
       }
-      controller.close();
+      try {
+        controller.close();
+      } catch {
+        // Already cancelled by the consumer.
+      }
     },
   });
 }

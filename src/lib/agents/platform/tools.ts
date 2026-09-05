@@ -2,20 +2,17 @@ import { tool } from "ai";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { AGENTS } from "@/lib/constants";
-import { tr } from "@/lib/i18n";
-import { seedComplianceChecks } from "@/lib/bootstrap";
-import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
 import { assertWorkspaceMatch } from "@/lib/workspace-context";
-import { assertWithinQuota, QuotaExceededError } from "@/lib/quotas";
-import { assertOnboardingReady } from "@/lib/onboarding";
-import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
-import { ApiError } from "@/lib/api-controller";
+import { apiFailure } from "@/lib/api-failure";
+import {
+  launchProjectPipeline as launchSharedPipeline,
+  type LaunchPipelineSource,
+} from "@/lib/agents/launch-pipeline";
 import {
   decideProposalReview,
   ProposalReviewDecisionError,
 } from "@/lib/proposal-review-service";
-import type { AgentState } from "@/lib/types";
+import { wrapUntrustedDocument } from "./tool-approval";
 import {
   DASHBOARD_VIEWS,
   type PlatformAgentContext,
@@ -61,153 +58,58 @@ async function requireProject(
   return project;
 }
 
+export {
+  PRIVILEGED_TOOL_NAMES,
+  requiresConfirmationResult,
+  toolCallNeedsApproval,
+  wrapUntrustedDocument,
+  type PrivilegedToolName,
+} from "./tool-approval";
+
 /**
- * Shared pipeline launcher — commands the full 6-agent team for a project.
- * Used by both `startAgentPipeline` and `orchestrateTenderPackage`.
- * Enforces onboarding, quota, uploaded documents, and single-run concurrency;
- * returns a structured result (never throws for the expected
- * onboarding/quota/preflight/conflict cases).
+ * Shared pipeline launcher — the same helper `POST /api/agents/run` and both
+ * autopilots use — adapted to a tool result: registered code, a sentence in
+ * the user's language for the model to relay, and the UI follow-along hints.
  */
 async function launchProjectPipeline(
   ctx: PlatformAgentContext,
   projectId: string,
-  opts?: { tenderType?: string; budget?: number }
+  opts?: { tenderType?: string; budget?: number; source?: LaunchPipelineSource }
 ) {
-  try {
-    await assertOnboardingReady(ctx.workspace.id);
-  } catch (e) {
-    if (e instanceof ApiError) {
-      return { ok: false as const, error: e.message, code: e.code };
-    }
-    throw e;
-  }
-  try {
-    await assertWithinQuota(ctx.userId, "proposal");
-  } catch (e) {
-    if (e instanceof QuotaExceededError) {
-      return { ok: false as const, error: e.message, code: e.code };
-    }
-    throw e;
-  }
-
-  let project = await requireProject(ctx, projectId);
-  if (!project) return { ok: false as const, error: "project not found" };
-
-  // Same order as `POST /api/agents/run` (route.ts:104-118): a project with no
-  // documents is refused before the concurrency check, so the copilot cannot
-  // queue a run that the REST route would have rejected.
-  const documentPreflight = assertProjectHasDocuments(
-    await db.uploadedDocument.count({ where: { projectId: project.id } })
-  );
-  if (!documentPreflight.ok) return documentPreflight;
-
-  const active = await db.agentRun.findFirst({
-    where: {
-      projectId: project.id,
-      status: { in: ["QUEUED", "RUNNING"] },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  if (active) {
-    return {
-      ok: false as const,
-      error: "An agent run is already in progress",
-      runId: active.id,
-      status: active.status,
-      uiAction: "navigate" as const,
-      view: "agents" as const,
-      projectId: project.id,
-    };
-  }
-
-  if (opts?.tenderType && opts.tenderType !== project.category) {
-    project = await db.tenderProject.update({
-      where: { id: project.id },
-      data: {
-        category: opts.tenderType,
-        ...(opts.budget != null ? { budget: opts.budget } : {}),
-      },
-    });
-  }
-
-  await seedComplianceChecks(project.id);
-  await db.tenderProject.update({
-    where: { id: project.id },
-    data: { status: "PARSING" },
-  });
-
-  const locale = ctx.locale;
-  const agentStates: AgentState[] = AGENTS.map((a) => ({
-    id: a.id,
-    name: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "en"),
-    nameAr: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "ar"),
-    status: "pending",
-    progress: 0,
-  }));
-
-  const run = await db.$transaction(async (tx) => {
-    const racing = await tx.agentRun.findFirst({
-      where: {
-        projectId: project.id,
-        status: { in: ["QUEUED", "RUNNING"] },
-      },
-    });
-    if (racing) return { conflict: true as const, run: racing };
-    const created = await tx.agentRun.create({
-      data: {
-        projectId: project.id,
-        triggeredById: ctx.userId,
-        status: "QUEUED",
-        overallProgress: 0,
-        agentStates: JSON.stringify(agentStates),
-        configJson: JSON.stringify({
-          locale,
-          workspaceId: ctx.workspace.id,
-          userId: ctx.userId,
-          projectId: project.id,
-          regenerateMode: null,
-          targetProposalId: null,
-        }),
-      },
-    });
-    return { conflict: false as const, run: created };
-  });
-
-  if (run.conflict) {
-    return {
-      ok: false as const,
-      error: "An agent run is already in progress",
-      runId: run.run.id,
-      status: run.run.status,
-    };
-  }
-
-  await audit({
-    userId: ctx.userId,
-    action: AUDIT_ACTIONS.AGENT_RUN,
-    resource: "AgentRun",
-    resourceId: run.run.id,
-    details: { projectId: project.id, source: "platform-agent" },
-  });
-
-  await scheduleAgentPipeline({
-    runId: run.run.id,
-    projectId: project.id,
+  const result = await launchSharedPipeline({
     workspaceId: ctx.workspace.id,
     userId: ctx.userId,
-    locale,
-    targetProposalId: null,
-    logLabel: "[platform-agent pipeline]",
+    projectId,
+    locale: ctx.locale,
+    source: opts?.source ?? "platform-agent",
+    tenderType: opts?.tenderType,
+    budget: opts?.budget,
   });
-
+  if (result.ok) {
+    return {
+      ...result,
+      uiAction: "navigate" as const,
+      view: "agents" as const,
+    };
+  }
+  const message = apiFailure(result.code).message;
+  if (result.code === "AGENT_RUN_IN_PROGRESS") {
+    return {
+      ok: false as const,
+      code: result.code,
+      error: message[ctx.locale],
+      runId: result.runId,
+      status: result.status,
+      uiAction: "navigate" as const,
+      view: "agents" as const,
+      projectId,
+    };
+  }
   return {
-    ok: true as const,
-    runId: run.run.id,
-    projectId: project.id,
-    status: "QUEUED" as const,
-    agentStates,
-    uiAction: "navigate" as const,
-    view: "agents" as const,
+    ok: false as const,
+    code: result.code,
+    error: message[ctx.locale],
+    ...(result.code === "ONBOARDING_INCOMPLETE" ? { missing: result.missing } : {}),
   };
 }
 
@@ -468,7 +370,9 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         title: z.string().optional(),
         titleAr: z.string().optional(),
         category: z.string().optional(),
-        status: z.string().optional(),
+        status: z
+          .enum(["DRAFT", "PARSING", "DRAFTING", "REVIEW", "SUBMITTED", "ARCHIVED"])
+          .optional(),
         budget: z.number().nullable().optional(),
         submissionDeadline: z.string().nullable().optional(),
         saudizationTarget: z.number().optional(),
@@ -569,7 +473,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
             parseStatus: doc.parseStatus,
             docCategory: doc.docCategory,
             createdAt: doc.createdAt,
-            excerpt: text,
+            excerpt: wrapUntrustedDocument(text),
             excerptLength: text.length,
           },
         };
@@ -647,7 +551,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         return {
           ok: true as const,
           title: proposal.title,
-          content: content.slice(0, 1500),
+          content: wrapUntrustedDocument(content.slice(0, 1500)),
           proposal: {
             id: proposal.id,
             type: proposal.type,
@@ -657,7 +561,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
             version: proposal.version,
             project: proposal.project,
             createdAt: proposal.createdAt,
-            excerpt: content.slice(0, 1500),
+            excerpt: wrapUntrustedDocument(content.slice(0, 1500)),
             contentLength: content.length,
             articleCount: artifacts.articles?.length ?? 0,
             research: research
@@ -949,6 +853,7 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         const result = await launchProjectPipeline(ctx, pid, {
           tenderType,
           budget,
+          source: "orchestrate",
         });
 
         return {
@@ -1528,7 +1433,11 @@ export function createPlatformTools(ctx: PlatformAgentContext) {
         });
         return {
           ok: true as const,
-          hits: result.hits,
+          hits: result.hits.map((h) => ({
+            ...h,
+            content: wrapUntrustedDocument(h.content),
+            excerpt: wrapUntrustedDocument(h.excerpt),
+          })),
           totalIndexed: result.totalIndexed,
           mode: result.mode,
         };

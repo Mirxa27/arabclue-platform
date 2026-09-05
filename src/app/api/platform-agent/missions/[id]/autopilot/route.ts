@@ -1,5 +1,4 @@
-import { ApiError, jsonApiFailure, jsonFailure } from "@/lib/api-controller";
-import { mapErrorToApiFailure } from "@/lib/api-failure";
+import { jsonApiFailure } from "@/lib/api-controller";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession, canWriteRole } from "@/lib/auth";
 import {
@@ -8,16 +7,9 @@ import {
 } from "@/lib/workspace-context";
 import { getOrCreateMission } from "@/lib/agents/platform/mission";
 import { db } from "@/lib/db";
-import { audit, AUDIT_ACTIONS } from "@/lib/audit";
-import { AGENTS } from "@/lib/constants";
-import { tr } from "@/lib/i18n";
-import { seedComplianceChecks } from "@/lib/bootstrap";
-import { scheduleAgentPipeline } from "@/lib/agents/schedule-pipeline";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
-import { assertWithinQuota, QuotaExceededError, quotaFailureCode } from "@/lib/quotas";
-import { assertOnboardingReady } from "@/lib/onboarding";
-import { assertProjectHasDocuments } from "@/lib/agents/run-preflight";
-import type { AgentState } from "@/lib/types";
+import { launchProjectPipeline } from "@/lib/agents/launch-pipeline";
+import { computeOnboardingSteps } from "@/lib/onboarding";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -74,22 +66,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     activeProjectId?: string | null;
   };
 
-  try {
-    await assertOnboardingReady(tenant.workspace.id);
-  } catch (e) {
-    if (e instanceof ApiError) {
-      return jsonFailure(mapErrorToApiFailure(e));
-    }
-    throw e;
-  }
-
-  try {
-    await assertWithinQuota(session.user.id, "proposal");
-  } catch (e) {
-    if (e instanceof QuotaExceededError) {
-      return jsonApiFailure(quotaFailureCode(e));
-    }
-    throw e;
+  // The launcher below gates the run on onboarding too, but a project must not
+  // be created from an unconfigured workspace either.
+  const onboarding = await computeOnboardingSteps(tenant.workspace.id);
+  if (!onboarding.readyForProposals) {
+    return jsonApiFailure("ONBOARDING_INCOMPLETE");
   }
 
   const tenderRef = body.tenderRef?.trim() || null;
@@ -165,91 +146,37 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     });
   }
 
-  // Counted after the link above, so freshly attached documents count. A
-  // mission whose attachments carry no document still reaches here, and the
-  // agents have nothing to read — `POST /api/agents/run` refuses that same
-  // case with the same code and status (route.ts:109-118).
-  const documentPreflight = assertProjectHasDocuments(
-    await db.uploadedDocument.count({ where: { projectId } })
-  );
-  if (!documentPreflight.ok) {
-    return jsonApiFailure(documentPreflight.code);
-  }
-
-  const active = await db.agentRun.findFirst({
-    where: {
-      projectId,
-      status: { in: ["QUEUED", "RUNNING"] },
-    },
-  });
-  if (active) {
-    return NextResponse.json({
-      ok: true,
-      mode: "already_running",
-      projectId,
-      agentRunId: active.id,
-      missionId: mission.id,
-      message: `Pipeline already running (${active.id})`,
-    });
-  }
-
-  await seedComplianceChecks(projectId);
-  await db.tenderProject.update({
-    where: { id: projectId },
-    data: { status: "PARSING" },
-  });
-
-  const agentStates: AgentState[] = AGENTS.map((a) => ({
-    id: a.id,
-    name: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "en"),
-    nameAr: tr(`agent_${a.id}_name` as Parameters<typeof tr>[0], "ar"),
-    status: "pending",
-    progress: 0,
-  }));
-
-  const run = await db.agentRun.create({
-    data: {
-      projectId,
-      triggeredById: session.user.id,
-      status: "QUEUED",
-      overallProgress: 0,
-      agentStates: JSON.stringify(agentStates),
-      configJson: JSON.stringify({
-        locale,
-        workspaceId: tenant.workspace.id,
-        userId: session.user.id,
-        projectId,
-        regenerateMode: null,
-        targetProposalId: null,
-        via: "extension-autopilot",
-        tenderRef,
-        message: body.message?.slice(0, 2000) ?? null,
-      }),
-    },
-  });
-
-  await audit({
-    userId: session.user.id,
-    action: AUDIT_ACTIONS.AGENT_RUN,
-    resource: "AgentRun",
-    resourceId: run.id,
-    details: { via: "extension-autopilot", projectId, tenderRef },
-  });
-
-  await scheduleAgentPipeline({
-    runId: run.id,
-    projectId,
+  // Onboarding, quota, provider preflight, document preflight (counted after
+  // the link above, so freshly attached documents count), concurrency and the
+  // run row: the same launcher as `POST /api/agents/run`.
+  const launch = await launchProjectPipeline({
     workspaceId: tenant.workspace.id,
     userId: session.user.id,
+    projectId,
     locale,
-    logLabel: "[extension-autopilot] pipeline",
+    source: "extension-autopilot",
+    extra: { tenderRef, message: body.message?.slice(0, 2000) ?? null },
   });
+
+  if (!launch.ok) {
+    if (launch.code === "AGENT_RUN_IN_PROGRESS") {
+      return NextResponse.json({
+        ok: true,
+        mode: "already_running",
+        projectId,
+        agentRunId: launch.runId,
+        missionId: mission.id,
+        message: `Pipeline already running (${launch.runId})`,
+      });
+    }
+    return jsonApiFailure(launch.code);
+  }
 
   return NextResponse.json({
     ok: true,
     mode: "autopilot",
     projectId,
-    agentRunId: run.id,
+    agentRunId: launch.runId,
     missionId: mission.id,
     message: "Proposal pipeline started",
   });

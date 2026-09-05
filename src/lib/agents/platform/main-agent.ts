@@ -15,6 +15,7 @@ import type { Session } from "next-auth";
 import { resolveCurrentView, type PlatformAgentContext } from "./context";
 import { buildPlatformAgentInstructions } from "./instructions";
 import { resolvePlatformAgentModel } from "./model";
+import { toolCallNeedsApproval } from "./tool-approval";
 import { createPlatformTools, type PlatformTools } from "./tools";
 
 export type PlatformAgentUIMessage = UIMessage<
@@ -98,6 +99,13 @@ export async function createPlatformAgent(
       currentView: ctx.currentView,
     }),
     tools,
+    // Privileged tools (approve a review, change a project's status, cancel a
+    // run, orchestrate a whole package) stop the loop with an approval request
+    // the console renders as Approve / Reject; the tool runs only on approval.
+    toolApproval: ({ toolCall }) =>
+      toolCallNeedsApproval(toolCall.toolName, toolCall.input)
+        ? "user-approval"
+        : undefined,
     stopWhen: stepCountIs(AGENT_CONFIG.PLATFORM.toolLoopMaxSteps),
     temperature: AGENT_CONFIG.PLATFORM.toolLoopTemperature,
   });

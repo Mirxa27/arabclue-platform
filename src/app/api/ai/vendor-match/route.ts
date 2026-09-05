@@ -3,6 +3,7 @@ import { z } from "zod";
 import { parseJsonBody, withTenant } from "@/lib/api-controller";
 import { matchVendorsWithPrediction } from "@/lib/ai/vendor-matching-engine";
 import { checkAiRateLimit } from "@/lib/ai-rate-limit";
+import { assertWithinQuota } from "@/lib/quotas";
 import type { IngestionEntities } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,7 @@ const requestSchema = z.object({
 export async function POST(request: NextRequest) {
   return withTenant(
     "session",
-    async ({ workspace }) => {
+    async ({ workspace, userId }) => {
       const blocked = await checkAiRateLimit({
         route: "ai.vendor-match",
         identifier: workspace.id,
@@ -45,6 +46,8 @@ export async function POST(request: NextRequest) {
         windowMs: 60_000,
       });
       if (blocked) return blocked;
+      // Plan token allowance; QuotaExceededError is mapped to 402 by withTenant.
+      await assertWithinQuota(userId, "tokens");
 
       const data = await parseJsonBody(request, requestSchema);
 

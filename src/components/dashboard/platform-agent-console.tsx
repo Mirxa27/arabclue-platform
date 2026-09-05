@@ -1,8 +1,18 @@
 "use client";
 
-import { apiErrorText, sdkErrorText } from "@/lib/api-failure-message";
+import {
+  apiErrorText,
+  sdkErrorText,
+  selectApiFailureCode,
+} from "@/lib/api-failure-message";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+} from "ai";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { browserStorage } from "@/lib/browser-storage";
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useLocale, useUI, type DashboardView } from "@/lib/store";
 import { viewLabel } from "@/lib/i18n";
@@ -26,6 +36,7 @@ import type { PlatformAgentUIMessage } from "@/lib/agents/platform/main-agent";
 import type { VoiceLiveConfigResponse } from "@/lib/agents/platform/voice-types";
 import {
   extractTheaterTools,
+  humanActionLabel,
   isToolRunning,
   summarizeStoredOutput,
   summarizeToolOutput,
@@ -37,7 +48,7 @@ import {
   type LiveTransport,
 } from "@/lib/agents/platform/agent-status";
 import { providerDisplayName } from "@/lib/ai/provider-label";
-import { MISSION_STARTERS, starterCommand } from "@/lib/mission-starters";
+import { resolveMissionStarters, type MissionReadiness } from "@/lib/mission-starters";
 import { LiveVoiceSession } from "./live-voice-session";
 import { MissionAttachmentTray } from "./mission-attachment-tray";
 import { MissionPerformanceStage } from "./mission-performance-fx";
@@ -73,6 +84,65 @@ function getSpeechRecognitionCtor():
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+/** Where the console remembers which mode the person last worked in. */
+const MODE_STORAGE_KEY = "arabclue:mission:mode";
+
+/** The stable code inside an AI SDK transport error, when its body is ours. */
+function sdkErrorCode(error: unknown): string | null {
+  const raw = error instanceof Error ? error.message : "";
+  try {
+    return selectApiFailureCode(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+type PendingApproval = {
+  approvalId: string;
+  toolName: string;
+  input: unknown;
+};
+
+/**
+ * Privileged tool calls the agent loop paused on (`toolApproval` in
+ * main-agent.ts). The tool runs only after Approve; Reject sends the denial
+ * back so the model can carry on without it.
+ */
+function pendingApprovals(messages: PlatformAgentUIMessage[]): PendingApproval[] {
+  const out: PendingApproval[] = [];
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    for (const part of message.parts) {
+      if (!part.type.startsWith("tool-") && part.type !== "dynamic-tool") continue;
+      const toolPart = part as {
+        type: string;
+        toolName?: string;
+        state?: string;
+        input?: unknown;
+        approval?: { id: string; isAutomatic?: boolean };
+      };
+      if (toolPart.state !== "approval-requested" || !toolPart.approval) continue;
+      if (toolPart.approval.isAutomatic) continue;
+      out.push({
+        approvalId: toolPart.approval.id,
+        toolName: toolPart.toolName ?? toolPart.type.replace(/^tool-/, ""),
+        input: toolPart.input,
+      });
+    }
+  }
+  return out;
+}
+
+/** One line naming what the tool is about to do, from its parsed input. */
+function describeApprovalInput(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  return Object.entries(input as Record<string, unknown>)
+    .filter(([, v]) => v != null && v !== "" && typeof v !== "object")
+    .slice(0, 4)
+    .map(([k, v]) => `${k}: ${String(v).slice(0, 60)}`)
+    .join(" · ");
+}
+
 function partText(message: PlatformAgentUIMessage): string {
   return message.parts
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -86,6 +156,9 @@ export function PlatformAgentConsole() {
   const ar = locale === "ar";
   const { toast } = useToast();
   const { setView, setActiveProjectId, activeProjectId } = useUI();
+  const { data: session } = useSession();
+  const isAdmin =
+    session?.user?.role === "ADMIN" || session?.user?.role === "SUPER_ADMIN";
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
   const [voiceOut, setVoiceOut] = useState(true);
@@ -94,7 +167,15 @@ export function PlatformAgentConsole() {
   const [liveConfig, setLiveConfig] = useState<VoiceLiveConfigResponse | null>(
     null
   );
-  const [mode, setMode] = useState<"live" | "classic">("live");
+  // Chat by default: a first-time visitor used to land in Live with the text
+  // box disabled and a "disconnected — press Connect" status under copy that
+  // said "speak or type". Live is restored only for someone who connected it
+  // before (persisted below).
+  const [mode, setMode] = useState<"live" | "classic">("classic");
+  const chooseMode = useCallback((next: "live" | "classic") => {
+    setMode(next);
+    browserStorage()?.setItem(MODE_STORAGE_KEY, next);
+  }, []);
   const [missionId, setMissionId] = useState<string | null>(null);
   const [missionError, setMissionError] = useState<string | null>(null);
   const [missionCreating, setMissionCreating] = useState(false);
@@ -125,7 +206,11 @@ export function PlatformAgentConsole() {
       .then((data: VoiceLiveConfigResponse) => {
         if (cancelled) return;
         setLiveConfig(data);
-        setMode(data.enabled ? "live" : "classic");
+        setMode(
+          data.enabled && browserStorage()?.getItem(MODE_STORAGE_KEY) === "live"
+            ? "live"
+            : "classic"
+        );
       })
       .catch(() => {
         if (!cancelled) {
@@ -154,11 +239,23 @@ export function PlatformAgentConsole() {
     [missionId, activeProjectId, locale]
   );
 
-  const { messages, sendMessage, status, stop, error, setMessages } =
-    useChat<PlatformAgentUIMessage>({
-      transport,
-      onError: (err) => console.error("[platform-agent]", err),
-    });
+  const {
+    messages,
+    sendMessage,
+    status,
+    stop,
+    error,
+    setMessages,
+    addToolApprovalResponse,
+  } = useChat<PlatformAgentUIMessage>({
+    transport,
+    onError: (err) => console.error("[platform-agent]", err),
+    // After the person answers every pending approval, the turn resumes on its
+    // own: approved tools run, denied ones are reported back to the model.
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+  });
+  const approvals = useMemo(() => pendingApprovals(messages), [messages]);
+  const errorCode = error ? sdkErrorCode(error) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -370,6 +467,12 @@ export function PlatformAgentConsole() {
   }>({ transport: "disconnected", tools: [], performing: false });
 
   const liveMode = mode === "live" && Boolean(liveConfig?.enabled);
+  useEffect(() => {
+    // Connecting Live once is the signal that this person wants to land in it.
+    if (liveMode && liveState.transport === "connected") {
+      browserStorage()?.setItem(MODE_STORAGE_KEY, "live");
+    }
+  }, [liveMode, liveState.transport]);
   const agentStatus = resolveAgentStatus({
     live: liveMode,
     liveTransport: liveState.transport,
@@ -533,12 +636,32 @@ export function PlatformAgentConsole() {
     stopListening();
     setInput("");
     setInterim("");
+    // A typed or dictated message is a chat turn; the reply lands on the chat
+    // stage, so the console follows it there.
+    if (liveMode) chooseMode("classic");
     await sendMessage({ text });
-  }, [input, interim, busy, sendMessage, stopListening]);
+  }, [input, interim, busy, sendMessage, stopListening, liveMode, chooseMode]);
 
+  // "Run the agents" is refused server-side until onboarding is complete, so
+  // the starter says so instead of inviting a click that answers 403.
+  const [readiness, setReadiness] = useState<MissionReadiness | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/onboarding")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { readyForProposals?: boolean } | null) => {
+        if (!cancelled && data && typeof data.readyForProposals === "boolean") {
+          setReadiness({ readyForProposals: data.readyForProposals });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const starters = useMemo(
-    () => MISSION_STARTERS.map((starter) => starterCommand(starter, locale)),
-    [locale]
+    () => resolveMissionStarters(locale, readiness),
+    [locale, readiness]
   );
 
   const sendStarter = useCallback(
@@ -595,7 +718,7 @@ export function PlatformAgentConsole() {
           : "Speak or type — the agent runs platform tools and shows every step clearly."
       }
       mode={mode}
-      onModeChange={setMode}
+      onModeChange={chooseMode}
       liveEnabled={Boolean(liveConfig?.enabled)}
       liveHint={
         liveConfig && !liveConfig.enabled ? liveConfig.reason : null
@@ -781,15 +904,67 @@ export function PlatformAgentConsole() {
         </>
       }
       composer={
-        mode === "live" && liveConfig?.enabled ? undefined : (
+        // In Live the socket's own box takes over once connected; until then
+        // the text box stays here, enabled, and typing switches to Chat.
+        liveMode && liveState.transport === "connected" ? undefined : (
           <div className="flex w-full min-w-0 max-w-full flex-col gap-2.5">
+            {approvals.map((approval) => (
+              <div
+                key={approval.approvalId}
+                className="flex flex-wrap items-center gap-2 rounded-[12px] border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-900 dark:text-amber-100"
+                role="group"
+                aria-label={ar ? "طلب موافقة" : "Approval request"}
+                data-testid="tool-approval-request"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="font-semibold">
+                    {ar ? "يطلب الوكيل موافقتك: " : "The agent asks your approval: "}
+                    {humanActionLabel(approval.toolName, ar)}
+                  </span>
+                  {describeApprovalInput(approval.input) ? (
+                    <span className="block truncate font-mono text-[11px] opacity-80">
+                      {describeApprovalInput(approval.input)}
+                    </span>
+                  ) : null}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 rounded-full text-[11px]"
+                  onClick={() =>
+                    addToolApprovalResponse({ id: approval.approvalId, approved: true })
+                  }
+                >
+                  {ar ? "موافقة" : "Approve"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 rounded-full text-[11px]"
+                  onClick={() =>
+                    addToolApprovalResponse({ id: approval.approvalId, approved: false })
+                  }
+                >
+                  {ar ? "رفض" : "Reject"}
+                </Button>
+              </div>
+            ))}
             {error ? (
               <div
-                className="rounded-[12px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300"
+                className="flex flex-wrap items-center gap-2 rounded-[12px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-700 dark:text-red-300"
                 role="alert"
                 aria-live="assertive"
               >
-                {sdkErrorText(error, locale)}
+                <span className="min-w-0 flex-1">{sdkErrorText(error, locale)}</span>
+                {isAdmin && errorCode === "AI_PROVIDER_UNAVAILABLE" ? (
+                  <Link
+                    href="/app/admin/ai"
+                    className="shrink-0 rounded-full border border-red-500/30 px-2.5 py-1 text-[11px] font-medium underline-offset-2 hover:underline"
+                  >
+                    {ar ? "فتح مزوّدي الذكاء الاصطناعي" : "Open AI providers"}
+                  </Link>
+                ) : null}
               </div>
             ) : null}
             {!missionId ? (
@@ -834,7 +1009,10 @@ export function PlatformAgentConsole() {
             <div className="relative">
               <Textarea
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  if (liveMode && e.target.value) chooseMode("classic");
+                }}
                 placeholder={ar ? "اكتب أمراً… مثل: اعرض مشاريعي، أنشئ مناقصة، شغّل الوكلاء" : "Type a command… e.g. list projects, create a tender, run agents"}
                 rows={2}
                 className="min-h-[72px] sm:min-h-[76px] resize-none rounded-[14px] border-zinc-200/70 dark:border-white/10 bg-white/80 dark:bg-black/20 backdrop-blur text-[13px] sm:text-[14px] focus-visible:ring-teal-500/30 focus-visible:border-teal-500/30"

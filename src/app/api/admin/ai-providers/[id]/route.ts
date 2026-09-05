@@ -8,10 +8,13 @@ import {
   type AdminAiProviderWrite,
 } from "@/lib/validation";
 import {
+  defaultApiKeyEnvKey,
   inferModelCapabilities,
   parseProviderEngines,
 } from "@/lib/llm/model-catalog";
 import { providerConnectionGuardError } from "@/lib/llm/provider-connection-guard";
+import { resolveProviderApiKey } from "@/lib/env-settings";
+import { providerNeedsCredential } from "@/lib/llm/provider-failover";
 import {
   deactivateConflictingProviders,
   enginesPayloadFromBody,
@@ -122,6 +125,27 @@ export async function PATCH(
   // Active connections must always have a selected model from live fetch
   if (willBeActive && !nextModelId) {
     return jsonApiFailure("model_required", { status: 400 });
+  }
+
+  // Activating a connection whose credential does not resolve — env variable
+  // unset, or a stored value sealed with a superseded ARABCLUE_ENC_KEY — used
+  // to succeed and then fail every completion with `missing_key`. Refuse here,
+  // naming the variable to set.
+  if (data.isActive === true) {
+    const nextProvider = String(data.provider ?? existing.provider);
+    const nextEnvKey =
+      (data.apiKeyEnvKey !== undefined
+        ? (data.apiKeyEnvKey as string | null)
+        : existing.apiKeyEnvKey) ?? null;
+    if (
+      providerNeedsCredential({ provider: nextProvider }) &&
+      !(await resolveProviderApiKey(nextProvider, nextEnvKey))
+    ) {
+      return jsonApiFailure("API_KEY_MISSING", {
+        status: 400,
+        values: { envKey: nextEnvKey || defaultApiKeyEnvKey(nextProvider) || "API key" },
+      });
+    }
   }
 
   // Activation / engine change: only one active provider per served engine
