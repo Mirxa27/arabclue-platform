@@ -97,6 +97,8 @@ describe("structure-aware chunking", () => {
     expect(sla?.sectionHeading).toBe("3.1 Service levels");
     expect(sla?.pageRef).toBe("2");
     expect(sla?.language).toBe("en");
+    // A trailing form feed (pdf-parse appends the joiner after the last page) adds no page.
+    expect(chunkDocument(arabicRfp + "\n\f\n\n").length).toBe(parts.length);
   });
 
   test("chunks stay near the target size and long unstructured text still splits", () => {
@@ -120,6 +122,8 @@ describe("structure-aware chunking", () => {
     expect(looksLikeHeading("البند 5 الغرامات")).toBe(true);
     expect(looksLikeHeading("TECHNICAL REQUIREMENTS")).toBe(true);
     expect(looksLikeHeading("The contractor shall deliver the platform within 12 weeks.")).toBe(false);
+    // A mostly Arabic line is not an ALL-CAPS heading because of one Latin phrase in it.
+    expect(looksLikeHeading("عيّنة تدريبية / SAMPLE ONLY — وثيقة وهمية لأغراض العرض والتجربة")).toBe(false);
     expect(detectLanguage("نص عربي بالكامل")).toBe("ar");
     expect(detectLanguage("Plain English text")).toBe("en");
     expect(detectLanguage("Service level اتفاقية مستوى الخدمة SLA")).toBe("mixed");
@@ -148,6 +152,14 @@ describe("retrieval evaluation harness", () => {
     const { arabicStemVariant } = await import("../rag-search");
     expect(arabicStemVariant("غرامات")).toBe("غرام");
     expect(arabicStemVariant("اسبوعيه")).toBe("اسبوع");
+    expect(arabicStemVariant("موظفين")).toBe("موظف");
+    // Ta-marbuta singular → sound plural, a precise prefix; never the generic stem.
+    expect(arabicStemVariant("غرامه")).toBe("غرامات");
+    expect(arabicStemVariant("سعوده")).toBe("سعودات");
+    expect(searchTerms("السعودة")).not.toContain("سعود");
+    // Short stems and nisba adjectives are left as typed (prefix match covers their inflections).
+    expect(arabicStemVariant("تامين")).toBeNull();
+    expect(arabicStemVariant("محلي")).toBeNull();
     expect(arabicStemVariant("امن")).toBeNull();
     expect(arabicStemVariant("controls")).toBeNull();
   });

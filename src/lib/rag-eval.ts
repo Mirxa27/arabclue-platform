@@ -43,47 +43,55 @@ export function indexTokens(text: string): string[] {
 
 type IndexedChunk = { doc: string; tokens: Map<string, number>; length: number };
 
-function buildIndex(docs: readonly EvalDocument[]): { chunks: IndexedChunk[]; df: Map<string, number>; avgLen: number } {
+function buildIndex(docs: readonly EvalDocument[]): { chunks: IndexedChunk[]; avgLen: number } {
   const chunks: IndexedChunk[] = [];
-  const df = new Map<string, number>();
   for (const doc of docs) {
     for (const part of chunkDocument(doc.text)) {
       const tokens = new Map<string, number>();
       const all = indexTokens(`${part.sectionHeading ?? ""} ${part.content}`);
       for (const t of all) tokens.set(t, (tokens.get(t) ?? 0) + 1);
-      for (const t of tokens.keys()) df.set(t, (df.get(t) ?? 0) + 1);
       chunks.push({ doc: doc.id, tokens, length: all.length });
     }
   }
   const avgLen = chunks.reduce((s, c) => s + c.length, 0) / Math.max(1, chunks.length);
-  return { chunks, df, avgLen };
+  return { chunks, avgLen };
 }
 
-/** BM25 with prefix matching, the closest offline analogue of `to_tsquery(':*')` + ts_rank_cd. */
+/**
+ * BM25 with prefix matching, the closest offline analogue of `to_tsquery(':*')` +
+ * ts_rank_cd. b = 0 because ts_rank_cd applies no length normalization either
+ * (and chunks are already bounded to ~1000-1400 chars).
+ */
 function scoreChunk(
   chunk: IndexedChunk,
-  terms: readonly string[],
-  df: Map<string, number>,
-  n: number,
+  terms: ReadonlyArray<{ term: string; idf: number }>,
   avgLen: number
 ): number {
   const k1 = 1.2;
-  const b = 0.75;
+  const b = 0;
   let score = 0;
-  for (const term of terms) {
+  for (const { term, idf } of terms) {
     let tf = 0;
-    let docFreq = 0;
     for (const [token, count] of chunk.tokens) {
-      if (token === term || token.startsWith(term)) {
-        tf += count;
-        docFreq = Math.max(docFreq, df.get(token) ?? 0);
-      }
+      if (token === term || token.startsWith(term)) tf += count;
     }
     if (tf === 0) continue;
-    const idf = Math.log(1 + (n - docFreq + 0.5) / (docFreq + 0.5));
     score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * chunk.length) / avgLen)));
   }
   return score;
+}
+
+/**
+ * A prefix term's document frequency is the number of chunks holding any
+ * token with that prefix — a property of the term, computed once, not of
+ * the chunk being scored.
+ */
+function weightTerms(index: ReturnType<typeof buildIndex>, terms: readonly string[]) {
+  const n = index.chunks.length;
+  return terms.map((term) => {
+    const docFreq = index.chunks.filter((c) => [...c.tokens.keys()].some((t) => t === term || t.startsWith(term))).length;
+    return { term, idf: Math.log(1 + (n - docFreq + 0.5) / (docFreq + 0.5)) };
+  });
 }
 
 /** Ranks documents for a query by their best chunk. */
@@ -91,10 +99,10 @@ export function rankDocuments(
   index: ReturnType<typeof buildIndex>,
   query: string
 ): Array<{ doc: string; score: number }> {
-  const terms = searchTerms(query);
+  const terms = weightTerms(index, searchTerms(query));
   const best = new Map<string, number>();
   for (const chunk of index.chunks) {
-    const s = scoreChunk(chunk, terms, index.df, index.chunks.length, index.avgLen);
+    const s = scoreChunk(chunk, terms, index.avgLen);
     if (s > (best.get(chunk.doc) ?? 0)) best.set(chunk.doc, s);
   }
   return [...best.entries()]

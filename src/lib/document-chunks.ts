@@ -46,7 +46,9 @@ export function looksLikeHeading(line: string): boolean {
   if (t.length < 3 || t.length > 120) return false;
   if (/[.؟?!،,;:]$/.test(t) && !/^\d/.test(t)) return false;
   if (HEADING_PATTERNS.some((re) => re.test(t))) return true;
-  // ALL CAPS Latin line of a few words
+  // ALL CAPS Latin line of a few words. Not for lines that carry Arabic: a
+  // mostly Arabic sentence with one "SAMPLE ONLY" in it is not a heading.
+  if (/[\u0600-\u06FF]/.test(t)) return false;
   const latin = t.replace(/[^A-Za-z\s]/g, "").trim();
   if (latin.length >= 6 && latin === latin.toUpperCase() && latin.split(/\s+/).length <= 8) return true;
   return false;
@@ -72,7 +74,9 @@ export function detectLanguage(text: string): "ar" | "en" | "mixed" {
  * longer than CHUNK_HARD_MAX (scanned text without line structure).
  */
 export function chunkDocument(text: string): DocumentChunkPart[] {
-  const pages = text.split(/\f/);
+  // pdf-parse appends the joiner after every page, so a trailing form feed
+  // would otherwise count as an empty last page.
+  const pages = text.replace(/\f\s*$/, "").split(/\f/);
   const parts: DocumentChunkPart[] = [];
   let heading: string | null = null;
   let buffer: string[] = [];

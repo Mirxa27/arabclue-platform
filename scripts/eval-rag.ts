@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { extractTextFromBuffer } from "../src/lib/agents/ingestion";
 import { evaluateRetrieval, SAMPLE_EVAL_QUERIES, type EvalDocument } from "../src/lib/rag-eval";
 
-export const RAG_EVAL_MRR_FLOOR = 0.85;
+export const RAG_EVAL_MRR_FLOOR = 0.9;
 
 export async function loadSampleCorpus(dir = join(process.cwd(), "public", "samples")): Promise<EvalDocument[]> {
   const files = readdirSync(dir).filter((f) => f.toLowerCase().endsWith(".pdf")).sort();

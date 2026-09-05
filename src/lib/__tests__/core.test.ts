@@ -13,6 +13,10 @@ describe("sanitizeText", () => {
   test("strips control characters", () => {
     expect(sanitizeText("hello\u0000world\u0007")).toBe("hello world ");
   });
+
+  test("keeps form feeds so page breaks survive to the chunker", () => {
+    expect(sanitizeText("page one\fpage two")).toBe("page one\fpage two");
+  });
 });
 
 describe("parseTenderText", () => {

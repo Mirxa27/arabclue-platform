@@ -37,18 +37,34 @@ export function normalizeForSearch(text: string): string {
 }
 
 /**
- * Arabic suffixes whose removal yields a usable prefix: plural/feminine and
- * attached pronouns. "غرامات" → "غرام" so it meets "غرامة"; "الأسبوعية" →
- * "اسبوع" so it meets "أسبوع". Query-side only — the index keeps whole words
- * — so this widens recall without touching stored rows.
+ * Query-side Arabic variants; the index keeps whole words, so this widens
+ * recall without touching stored rows. Each rule: suffix, replacement,
+ * minimum stem length. Plurals, duals and attached pronouns fold to the stem
+ * ("غرامات" → "غرام" meets "غرامة"; "موظفين" → "موظف"). A ta-marbuta
+ * singular becomes its sound plural instead of a bare stem, because the stem
+ * is often a far more generic prefix: "سعودة" (Saudization) → "سعودات", not
+ * "سعود", which would meet every "سعودية" in the corpus. Short stems stay
+ * untouched ("تأمين" is not "تأم" + "ين").
  */
-const ARABIC_STEM_SUFFIXES = ["يات", "ات", "ية", "يه", "ين", "ون", "ان", "ها", "هم", "كم", "نا", "ه", "ي"];
+const ARABIC_STEM_RULES: ReadonlyArray<readonly [suffix: string, replacement: string, minStem: number]> = [
+  ["يات", "", 3],
+  ["ات", "", 3],
+  ["يه", "", 3],
+  ["ين", "", 4],
+  ["ون", "", 4],
+  ["ان", "", 4],
+  ["ها", "", 4],
+  ["هم", "", 4],
+  ["كم", "", 4],
+  ["نا", "", 4],
+  ["ه", "ات", 3],
+];
 
 export function arabicStemVariant(word: string): string | null {
   if (!new RegExp(`^[${ARABIC_RANGE}]+$`, "u").test(word)) return null;
-  for (const suffix of ARABIC_STEM_SUFFIXES) {
-    if (word.length - suffix.length >= 3 && word.endsWith(suffix)) {
-      return word.slice(0, -suffix.length);
+  for (const [suffix, replacement, minStem] of ARABIC_STEM_RULES) {
+    if (word.endsWith(suffix) && word.length - suffix.length >= minStem) {
+      return word.slice(0, -suffix.length) + replacement;
     }
   }
   return null;

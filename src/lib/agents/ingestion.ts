@@ -13,9 +13,13 @@ import {
   STANDARD_DELIVERY_MILESTONES,
 } from "../text-quality";
 
-/** Strip C0 control chars that break JSON round-trips in some clients */
+/**
+ * Strip C0 control chars that break JSON round-trips in some clients.
+ * Form feed (\f) is kept: it is JSON-escapable and marks page breaks for the
+ * chunker (see document-chunks.ts).
+ */
 export function sanitizeText(text: string): string {
-  return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, " ");
+  return text.replace(/[\u0000-\u0008\u000B\u000E-\u001F]/g, " ");
 }
 
 export async function extractTextFromBuffer(
@@ -53,14 +57,16 @@ export async function extractTextFromBuffer(
       const PDFParse = (
         mod as unknown as {
           PDFParse: new (opts: { data: Uint8Array }) => {
-            getText: () => Promise<{ text: string }>;
+            getText: (params?: { pageJoiner?: string }) => Promise<{ text: string }>;
             destroy: () => Promise<void>;
           };
         }
       ).PDFParse;
       const parser = new PDFParse({ data: new Uint8Array(bytes) });
       try {
-        const result = await parser.getText();
+        // Pages separated by form feed so chunks keep a page reference; the
+        // default joiner is a "-- 1 of 3 --" line that would pollute chunk text.
+        const result = await parser.getText({ pageJoiner: "\f" });
         // Presentation-form PDFs come back in visual order; see the module.
         return sanitizeText(restoreLogicalArabic(result.text || ""));
       } finally {
