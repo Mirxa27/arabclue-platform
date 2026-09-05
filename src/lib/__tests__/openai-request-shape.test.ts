@@ -91,6 +91,24 @@ describe("openAiCompatibleRequestBody", () => {
     expect("temperature" in body).toBe(false);
   });
 
+  test("GPT-6 and later generations are reasoning models", () => {
+    // Azure AI Foundry `gpt-6-astra` rejected `temperature: 0.2` and
+    // `max_tokens` with the GPT-5 wording; a `gpt-5`-only match sent both.
+    for (const modelId of ["gpt-6-astra", "gpt-7", "gpt-10-mini"]) {
+      const body = openAiCompatibleRequestBody({
+        provider: "azure_openai",
+        modelId,
+        messages,
+        temperature: 0.2,
+        maxTokens: 2048,
+      });
+      expect(body.max_completion_tokens, modelId).toBe(2048 + REASONING_TOKEN_HEADROOM);
+      expect(body.reasoning_effort, modelId).toBe("low");
+      expect("temperature" in body, modelId).toBe(false);
+      expect("max_tokens" in body, modelId).toBe(false);
+    }
+  });
+
   test("other OpenAI-compatible vendors keep the classic shape", () => {
     for (const [provider, modelId] of [
       ["openai_compatible", "deepseek-v4-pro"],

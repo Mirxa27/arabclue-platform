@@ -26,7 +26,13 @@ export type OpenAiCompatibleBody = {
 };
 
 const OPENAI_FIRST_PARTY = new Set(["openai", "azure_openai"]);
-const OPENAI_REASONING_MODEL = /^(gpt-5|o\d)/i;
+/**
+ * GPT-5 and every later generation, plus the o-series. Pinned to `gpt-5` alone
+ * this missed `gpt-6-astra` on Azure AI Foundry, which answered the classic
+ * shape with the same two 400s (`temperature … only the default (1)`,
+ * `max_tokens … use max_completion_tokens`; probed 2026-09-05).
+ */
+const OPENAI_REASONING_MODEL = /^(gpt-(?:[5-9]|\d{2,})|o\d)/i;
 
 /**
  * Reasoning tokens are billed against `max_completion_tokens` alongside the
