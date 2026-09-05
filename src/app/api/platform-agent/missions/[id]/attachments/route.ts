@@ -1,6 +1,8 @@
+import { z } from "zod";
 import { validationFailure } from "@/lib/api-failure";
 import { jsonApiFailure, jsonFailure } from "@/lib/api-controller";
 import { NextRequest, NextResponse } from "next/server";
+import { computeOnboardingSteps } from "@/lib/onboarding";
 import { requireSession, canWriteRole } from "@/lib/auth";
 import { getTenantContext } from "@/lib/workspace-context";
 import { getOrCreateMission } from "@/lib/agents/platform/mission";
@@ -14,6 +16,71 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 type Ctx = { params: Promise<{ id: string }> };
+
+/**
+ * The tray's Autopilot switch. Absent means on, which is what every caller
+ * before the switch was wired got — so an old client keeps its behaviour.
+ */
+const autopilotFlagSchema = z.boolean().default(true);
+
+const jsonBodySchema = z.object({
+  url: z.string().optional(),
+  text: z.string().optional(),
+  fileName: z.string().optional(),
+  source: z.string().optional(),
+  activeProjectId: z.string().nullable().optional(),
+  mimeType: z.string().optional(),
+  autopilot: autopilotFlagSchema,
+});
+
+/** Multipart carries strings: only an explicit "false" turns autopilot off. */
+function autopilotFromForm(value: FormDataEntryValue | null): boolean {
+  return autopilotFlagSchema.parse(value === "false" ? false : true);
+}
+
+type StagedResult = Awaited<ReturnType<typeof stageMissionAttachment>>;
+
+function isOnboardingBlock(autopilot: Record<string, unknown>): boolean {
+  if (autopilot.code === "ONBOARDING_INCOMPLETE") return true;
+  if (autopilot.reason === "ONBOARDING_INCOMPLETE") return true;
+  // Today `maybeAutopilotAfterIngest` answers the onboarding gate with a
+  // clarify whose question is `assertOnboardingReady`'s sentence.
+  return (
+    typeof autopilot.question === "string" &&
+    autopilot.question.startsWith("Complete account onboarding")
+  );
+}
+
+/**
+ * Adds `started` (and `reason` + `missing` when the run is waiting on account
+ * setup) to the autopilot outcome without dropping the fields the console
+ * already reads (`mode`, `projectId`, `runId`, `message`, `question`).
+ * The upload itself succeeded, so this stays a 200.
+ */
+async function describeAutopilot(
+  result: StagedResult,
+  requested: boolean,
+  workspaceId: string
+) {
+  const raw = result.autopilot as Record<string, unknown> | null;
+  if (!requested || !raw) return { ...result, autopilot: raw };
+  if (raw.mode === "autopilot") return { ...result, autopilot: { ...raw, started: true } };
+  if (!isOnboardingBlock(raw)) return { ...result, autopilot: { ...raw, started: false } };
+  // A `mode: "blocked"` result already names the steps; older clarify-shaped
+  // results do not, so ask the onboarding computation once.
+  const missing = Array.isArray(raw.missing)
+    ? raw.missing
+    : ((await computeOnboardingSteps(workspaceId).catch(() => null))?.missing ?? []);
+  return {
+    ...result,
+    autopilot: {
+      ...raw,
+      started: false,
+      reason: "ONBOARDING_INCOMPLETE" as const,
+      missing,
+    },
+  };
+}
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   const session = await requireSession();
@@ -59,6 +126,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const activeProjectId = form.get("activeProjectId")
         ? String(form.get("activeProjectId"))
         : mission.activeProjectId;
+      const autopilot = autopilotFromForm(form.get("autopilot"));
       const bytes = Buffer.from(await file.arrayBuffer());
       const result = await stageMissionAttachment({
         missionId: mission.id,
@@ -71,19 +139,18 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         mimeType: file.type || "application/octet-stream",
         bytes,
         source,
-        autoRoute: true,
+        autoRoute: autopilot,
       });
-      return NextResponse.json(result);
+      return NextResponse.json(
+        await describeAutopilot(result, autopilot, tenant.workspace.id)
+      );
     }
 
-    const body = (await req.json().catch(() => ({}))) as {
-      url?: string;
-      text?: string;
-      fileName?: string;
-      source?: string;
-      activeProjectId?: string | null;
-      mimeType?: string;
-    };
+    const parsedBody = jsonBodySchema.safeParse(await req.json().catch(() => ({})));
+    if (!parsedBody.success) {
+      return jsonFailure(validationFailure(["file", "url", "text"]));
+    }
+    const body = parsedBody.data;
 
     if (body.url) {
       const fetched = await fetchUrlAsAttachment(body.url);
@@ -99,9 +166,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         bytes: fetched.bytes,
         source: "url",
         textPreview: fetched.textPreview,
-        autoRoute: true,
+        autoRoute: body.autopilot,
       });
-      return NextResponse.json(result);
+      return NextResponse.json(
+        await describeAutopilot(result, body.autopilot, tenant.workspace.id)
+      );
     }
 
     if (body.text && body.text.trim()) {
@@ -118,9 +187,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         bytes,
         source: normalizeAttachmentSource(body.source, "paste"),
         textPreview: body.text.slice(0, 4000),
-        autoRoute: true,
+        autoRoute: body.autopilot,
       });
-      return NextResponse.json(result);
+      return NextResponse.json(
+        await describeAutopilot(result, body.autopilot, tenant.workspace.id)
+      );
     }
 
     return jsonFailure(validationFailure(["file", "url", "text"]));

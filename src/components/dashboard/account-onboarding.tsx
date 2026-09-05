@@ -974,17 +974,73 @@ function SimpleCrudPanel({
 function SectorsPanel() {
   const { locale } = useLocale();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [sector, setSector] = useState("GOV");
   const [entity, setEntity] = useState("");
   const [outcome, setOutcome] = useState("WIN");
 
   const sectors = useQuery({
     queryKey: ["sectors"],
-    queryFn: async () => (await fetch("/api/sectors")).json(),
+    queryFn: () => fetchJson("/api/sectors", locale),
   });
   const history = useQuery({
     queryKey: ["bid-history"],
-    queryFn: async () => (await fetch("/api/bid-history")).json(),
+    queryFn: () => fetchJson("/api/bid-history", locale),
+  });
+
+  // Same shape as StaffPanel: the raw `await fetch(...)` these replaced never
+  // read `res.ok`, so a 4xx invalidated the lists and showed nothing.
+  const addSector = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/sectors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sector }),
+      });
+      await assertOk(res, locale);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sectors"] });
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
+      toast({ title: locale === "ar" ? "تمت إضافة القطاع" : "Sector added" });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذرت إضافة القطاع" : "Could not add sector"
+        ),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addBid = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/bid-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityName: entity, outcome }),
+      });
+      await assertOk(res, locale);
+    },
+    onSuccess: () => {
+      setEntity("");
+      qc.invalidateQueries({ queryKey: ["bid-history"] });
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
+      toast({ title: locale === "ar" ? "تمت إضافة سجل العطاء" : "Bid record added" });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذرت إضافة سجل العطاء" : "Could not add bid record"
+        ),
+        variant: "destructive",
+      });
+    },
   });
 
   return (
@@ -1002,16 +1058,9 @@ function SectorsPanel() {
               ))}
             </select>
             <Button
-              onClick={async () => {
-                await fetch("/api/sectors", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ sector }),
-                });
-                qc.invalidateQueries({ queryKey: ["sectors"] });
-                qc.invalidateQueries({ queryKey: ["onboarding"] });
-      qc.invalidateQueries({ queryKey: ["business-profile"] });
-              }}
+              onClick={() => addSector.mutate()}
+              disabled={addSector.isPending}
+              aria-label={locale === "ar" ? "إضافة القطاع" : "Add sector"}
             >
               <Plus className="size-4" />
             </Button>
@@ -1036,18 +1085,8 @@ function SectorsPanel() {
             ))}
           </select>
           <Button
-            onClick={async () => {
-              await fetch("/api/bid-history", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ entityName: entity, outcome }),
-              });
-              setEntity("");
-              qc.invalidateQueries({ queryKey: ["bid-history"] });
-              qc.invalidateQueries({ queryKey: ["onboarding"] });
-      qc.invalidateQueries({ queryKey: ["business-profile"] });
-            }}
-            disabled={!entity}
+            onClick={() => addBid.mutate()}
+            disabled={!entity || addBid.isPending}
           >
             <Plus className="size-4 me-1" />
             Add
@@ -1229,12 +1268,67 @@ function ApprovalPanel() {
 function RestrictionsPanel() {
   const { locale } = useLocale();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [text, setText] = useState("");
   const [type, setType] = useState("COMPETITOR_NAME");
 
   const { data } = useQuery({
     queryKey: ["restrictions"],
-    queryFn: async () => (await fetch("/api/restrictions")).json(),
+    queryFn: () => fetchJson("/api/restrictions", locale),
+  });
+
+  const addRestriction = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/restrictions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restrictionType: type, text }),
+      });
+      await assertOk(res, locale);
+    },
+    onSuccess: () => {
+      setText("");
+      qc.invalidateQueries({ queryKey: ["restrictions"] });
+      toast({ title: locale === "ar" ? "تمت إضافة القيد" : "Restriction added" });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذرت إضافة القيد" : "Could not add restriction"
+        ),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // The onboarding gate reads this flag; an unchecked PATCH left the step
+  // "missing" while the button looked like it had worked.
+  const markReviewed = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/onboarding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restrictionsReviewed: true }),
+      });
+      await assertOk(res, locale);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+      qc.invalidateQueries({ queryKey: ["business-profile"] });
+      toast({
+        title: locale === "ar" ? "تم تسجيل مراجعة القيود" : "Restrictions marked reviewed",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: apiErrorMessage(
+          err,
+          locale === "ar" ? "تعذر تسجيل المراجعة" : "Could not mark restrictions reviewed"
+        ),
+        variant: "destructive",
+      });
+    },
   });
 
   return (
@@ -1252,16 +1346,9 @@ function RestrictionsPanel() {
           </select>
           <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Text" />
           <Button
-            onClick={async () => {
-              await fetch("/api/restrictions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ restrictionType: type, text }),
-              });
-              setText("");
-              qc.invalidateQueries({ queryKey: ["restrictions"] });
-            }}
-            disabled={!text}
+            onClick={() => addRestriction.mutate()}
+            disabled={!text || addRestriction.isPending}
+            aria-label={locale === "ar" ? "إضافة القيد" : "Add restriction"}
           >
             <Plus className="size-4" />
           </Button>
@@ -1276,15 +1363,8 @@ function RestrictionsPanel() {
         </ul>
         <Button
           variant="secondary"
-          onClick={async () => {
-            await fetch("/api/onboarding", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ restrictionsReviewed: true }),
-            });
-            qc.invalidateQueries({ queryKey: ["onboarding"] });
-      qc.invalidateQueries({ queryKey: ["business-profile"] });
-          }}
+          onClick={() => markReviewed.mutate()}
+          disabled={markReviewed.isPending}
         >
           <CheckCircle2 className="size-4 me-1" />
           {locale === "ar" ? "تم مراجعة القيود" : "Mark restrictions reviewed"}

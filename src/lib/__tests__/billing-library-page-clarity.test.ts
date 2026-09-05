@@ -123,6 +123,16 @@ describe("header action rows wrap on a phone", () => {
   });
 });
 
+describe("progress bars fill from the reading start in both directions", () => {
+  test("the indicator is sized by width, not slid with translateX", () => {
+    // In RTL a translateX(-N%) indicator leaves the LEFT part of the track
+    // visible, i.e. the bar fills from the wrong end (seen on Projects in Arabic).
+    const src = read("src/components/ui/progress.tsx");
+    expect(src).not.toMatch(/translateX\(/);
+    expect(src).toMatch(/style=\{\{ width: `\$\{/);
+  });
+});
+
 describe("library pages do not repeat their own page header", () => {
   test("clause browser: the page shell owns the title and subtitle", () => {
     const src = read("src/components/dashboard/clause-browser.tsx");

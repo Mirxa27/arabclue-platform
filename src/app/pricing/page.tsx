@@ -56,7 +56,7 @@ function PricingContent() {
             asChild
             className="rounded-none bg-[oklch(0.72_0.12_195)] text-[oklch(0.14_0.02_240)] hover:bg-[oklch(0.78_0.12_195)] font-semibold"
           >
-            <Link href="/login">{ar ? "ادخل مساحة العمل" : "Enter workspace"}</Link>
+            <Link href="/register">{ar ? "ابدأ تجربتك المجانية" : "Start your free trial"}</Link>
           </Button>
           <Button
             asChild

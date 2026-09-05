@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
-import { useQuery } from "@tanstack/react-query";
+import { apiErrorText } from "@/lib/api-failure-message";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ScrollText,
   ShieldCheck,
@@ -148,22 +149,39 @@ function formatDetails(raw: string | null): string {
   }
 }
 
+/** Page size; `adminAuditQuerySchema` caps `limit` at AUDIT_LIMIT_MAX. */
+const AUDIT_PAGE_SIZE = 100;
+const AUDIT_LIMIT_MAX = 500;
+
 export function AdminAudit() {
   const { locale } = useLocale();
   const [actionFilter, setActionFilter] = useState<string>("ALL");
   const [severityFilter, setSeverityFilter] = useState<string>("ALL");
+  const [limit, setLimit] = useState(AUDIT_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const { data, isLoading, isError, refetch } = useQuery<AuditResponse>({
-    queryKey: ["admin-audit"],
+  // The route filters by `action` and `severity` itself; fetching 200 rows
+  // and filtering in the browser hid every older match. The summary block is
+  // global regardless of filter, so the breakdown stays whole.
+  const { data, isLoading, isError, isFetching, refetch } = useQuery<AuditResponse>({
+    queryKey: ["admin-audit", actionFilter, severityFilter, limit],
     queryFn: async () => {
-      const res = await fetch("/api/admin/audit?limit=200");
-      if (!res.ok) throw new Error("failed");
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (actionFilter !== "ALL") params.set("action", actionFilter);
+      if (severityFilter !== "ALL") params.set("severity", severityFilter);
+      const res = await fetch(`/api/admin/audit?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
       return res.json();
     },
+    placeholderData: keepPreviousData,
   });
 
   const logs = data?.logs ?? [];
+  // The route returns at most `limit` rows and has no cursor, so a full page
+  // means there may be more; the next page simply asks for a larger limit.
+  const canLoadMore = logs.length >= limit && limit < AUDIT_LIMIT_MAX;
   const summary = data?.summary ?? {
     total: 0,
     byAction: [],
@@ -357,7 +375,13 @@ export function AdminAudit() {
           <Filter className="size-2.5" />
           {locale === "ar" ? "تصفية" : "Filter"}:
         </span>
-        <Select value={actionFilter} onValueChange={setActionFilter}>
+        <Select
+          value={actionFilter}
+          onValueChange={(v) => {
+            setActionFilter(v);
+            setLimit(AUDIT_PAGE_SIZE);
+          }}
+        >
           <SelectTrigger size="sm" className="h-7 text-[10px] w-[180px]">
             <SelectValue placeholder={tr("admin_audit_action", locale)} />
           </SelectTrigger>
@@ -372,7 +396,13 @@ export function AdminAudit() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={severityFilter} onValueChange={setSeverityFilter}>
+        <Select
+          value={severityFilter}
+          onValueChange={(v) => {
+            setSeverityFilter(v);
+            setLimit(AUDIT_PAGE_SIZE);
+          }}
+        >
           <SelectTrigger size="sm" className="h-7 text-[10px] w-[140px]">
             <SelectValue placeholder={tr("admin_audit_severity", locale)} />
           </SelectTrigger>
@@ -395,6 +425,7 @@ export function AdminAudit() {
             onClick={() => {
               setActionFilter("ALL");
               setSeverityFilter("ALL");
+              setLimit(AUDIT_PAGE_SIZE);
             }}
           >
             <X className="size-2.5" />
@@ -402,7 +433,7 @@ export function AdminAudit() {
           </Button>
         )}
         <span className="ms-auto text-[10px] text-muted-foreground font-mono">
-          {filtered.length}/{logs.length}
+          {filtered.length}/{summary.total}
         </span>
       </div>
 
@@ -478,6 +509,22 @@ export function AdminAudit() {
           </Table>
         )}
       </div>
+      {canLoadMore ? (
+        <div className="px-5 py-3 border-t border-border/60 flex justify-center">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[11px]"
+            disabled={isFetching}
+            onClick={() =>
+              setLimit((l) => Math.min(AUDIT_LIMIT_MAX, l + AUDIT_PAGE_SIZE))
+            }
+          >
+            {isFetching ? <Loader2 className="size-3 animate-spin" /> : null}
+            {locale === "ar" ? "تحميل المزيد" : "Load more"}
+          </Button>
+        </div>
+      ) : null}
     </Card>
   );
 }

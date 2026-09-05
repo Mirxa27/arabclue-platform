@@ -19,6 +19,10 @@ import type { ApiCertificate, ApiStaffMember } from "@/lib/api-types";
 import { readApiError } from "@/lib/http-error";
 import { useToast } from "@/hooks/use-toast";
 import { ListSkeleton } from "./loading-skeletons";
+import { focusUploadDropzone } from "./file-ingestion";
+
+/** Anchor for the per-document "Requirements matrix" button on the same page. */
+export const REQUIREMENTS_MATRIX_ID = "requirements-matrix";
 
 type LinkType =
   | "CERTIFICATE"
@@ -193,356 +197,363 @@ export function RequirementsMatrix() {
     titleAr?: string | null;
   }[];
 
+  // This panel lives on the Documents page under the drop zone, so the action
+  // takes the reader to the drop zone rather than re-selecting the same view.
+  const openUpload = () =>
+    focusUploadDropzone(() => startTransition(() => setView("documents")));
+
   return (
-    <Panel
-      icon={ClipboardList}
-      title={ar ? "مصفوفة المتطلبات" : "Requirements matrix"}
-      subtitle={
-        ar
-          ? `${summary.COVERED} مغطى · ${summary.IN_PROGRESS} قيد الإنجاز · ${summary.MISSING} غير مغطى`
-          : `${summary.COVERED} covered · ${summary.IN_PROGRESS} in progress · ${summary.MISSING} missing`
-      }
-      actions={
-        <Button size="sm" variant="outline" onClick={() => startTransition(() => setView("documents"))}>
-          {ar ? "المستندات" : "Documents"}
-        </Button>
-      }
-    >
-      <QueryState
-        isLoading={isLoading}
-        isError={isError}
-        isEmpty={items.length === 0}
-        onRetry={() => refetch()}
-        locale={locale}
-        loading={<ListSkeleton rows={3} />}
-        empty={
-          <EmptyState
-            icon={ClipboardList}
-            title={
-              ar
-                ? "لا متطلبات مستخرجة بعد"
-                : "No requirements extracted yet"
-            }
-            description={
-              ar
-                ? "شغّل الوكلاء لاستخراج المتطلبات من كراسة الشروط، ثم اربط الأدلة من حسابك."
-                : "Run agents to extract requirements from the RFP, then link evidence from your account."
-            }
-            action={
-              <Button size="sm" onClick={() => startTransition(() => setView("agents"))}>
-                {ar ? "الوكلاء" : "Agents"}
-              </Button>
-            }
-          />
+    <div id={REQUIREMENTS_MATRIX_ID} className="scroll-mt-4">
+      <Panel
+        icon={ClipboardList}
+        title={ar ? "مصفوفة المتطلبات" : "Requirements matrix"}
+        subtitle={
+          ar
+            ? `${summary.COVERED} مغطى · ${summary.IN_PROGRESS} قيد الإنجاز · ${summary.MISSING} غير مغطى`
+            : `${summary.COVERED} covered · ${summary.IN_PROGRESS} in progress · ${summary.MISSING} missing`
+        }
+        actions={
+          <Button size="sm" variant="outline" onClick={openUpload}>
+            {ar ? "رفع مستندات" : "Upload documents"}
+          </Button>
         }
       >
-        <div className="overflow-x-auto">
-          {evidenceUnavailable ? (
-            <div
-              className="mx-3 mt-3 mb-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-100"
-              role="status"
-            >
-              {ar
-                ? "تعذر تحميل بعض أدلة الحساب. قوائم الربط قد تكون غير مكتملة."
-                : "Some account evidence failed to load. Link dropdowns may be incomplete."}{" "}
-              <button
-                type="button"
-                className="underline underline-offset-2 font-medium"
-                onClick={() => {
-                  void refetchCerts();
-                  void refetchStaff();
-                  void refetchLibrary();
-                  void refetchMethodologies();
-                }}
+        <QueryState
+          isLoading={isLoading}
+          isError={isError}
+          isEmpty={items.length === 0}
+          onRetry={() => refetch()}
+          locale={locale}
+          loading={<ListSkeleton rows={3} />}
+          empty={
+            <EmptyState
+              icon={ClipboardList}
+              title={
+                ar
+                  ? "لا متطلبات مستخرجة بعد"
+                  : "No requirements extracted yet"
+              }
+              description={
+                ar
+                  ? "شغّل الوكلاء لاستخراج المتطلبات من كراسة الشروط، ثم اربط الأدلة من حسابك."
+                  : "Run agents to extract requirements from the RFP, then link evidence from your account."
+              }
+              action={
+                <Button size="sm" onClick={() => startTransition(() => setView("agents"))}>
+                  {ar ? "الوكلاء" : "Agents"}
+                </Button>
+              }
+            />
+          }
+        >
+          <div className="overflow-x-auto">
+            {evidenceUnavailable ? (
+              <div
+                className="mx-3 mt-3 mb-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-100"
+                role="status"
               >
-                {ar ? "إعادة المحاولة" : "Retry"}
-              </button>
-            </div>
-          ) : null}
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-start text-muted-foreground">
-                <th className="p-3 font-medium">#</th>
-                {/* The requirement is the row's content; it gets the width.
-                    Auto-sized columns squeezed it into a tall sliver beside
-                    two generous select columns. */}
-                <th className="p-3 font-medium w-[46%] min-w-[16rem]">
-                  {ar ? "المتطلب" : "Requirement"}
-                </th>
-                <th className="p-3 font-medium">{ar ? "المرجع" : "Ref"}</th>
-                <th className="p-3 font-medium w-40">{ar ? "الحالة" : "Status"}</th>
-                <th className="p-3 font-medium min-w-[220px]">
-                  {ar ? "دليل الحساب" : "Account evidence"}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((r, i) => (
-                <tr
-                  key={r.id}
-                  className="border-b border-border/40 align-top"
+                {ar
+                  ? "تعذر تحميل بعض أدلة الحساب. قوائم الربط قد تكون غير مكتملة."
+                  : "Some account evidence failed to load. Link dropdowns may be incomplete."}{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 font-medium"
+                  onClick={() => {
+                    void refetchCerts();
+                    void refetchStaff();
+                    void refetchLibrary();
+                    void refetchMethodologies();
+                  }}
                 >
-                  <td className="p-3 text-muted-foreground">{i + 1}</td>
-                  <td className="p-3 max-w-md">{r.text}</td>
-                  <td className="p-3 whitespace-nowrap text-xs">
-                    {r.sectionRef && <div>§{r.sectionRef}</div>}
-                    {r.pageRef && <div>p.{r.pageRef}</div>}
-                  </td>
-                  <td className="p-3">
-                    <Select
-                      value={r.status}
-                      onValueChange={(status) =>
-                        patch.mutate({ id: r.id, status })
-                      }
-                    >
-                      <SelectTrigger className="w-[140px] h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="COVERED">
-                          {ar ? STATUS_LABEL.COVERED.ar : STATUS_LABEL.COVERED.en}
-                        </SelectItem>
-                        <SelectItem value="IN_PROGRESS">
-                          {ar
-                            ? STATUS_LABEL.IN_PROGRESS.ar
-                            : STATUS_LABEL.IN_PROGRESS.en}
-                        </SelectItem>
-                        <SelectItem value="MISSING">
-                          {ar ? STATUS_LABEL.MISSING.ar : STATUS_LABEL.MISSING.en}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="p-3 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                  {ar ? "إعادة المحاولة" : "Retry"}
+                </button>
+              </div>
+            ) : null}
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-start text-muted-foreground">
+                  <th className="p-3 font-medium">#</th>
+                  {/* The requirement is the row's content; it gets the width.
+                      Auto-sized columns squeezed it into a tall sliver beside
+                      two generous select columns. */}
+                  <th className="p-3 font-medium w-[46%] min-w-[16rem]">
+                    {ar ? "المتطلب" : "Requirement"}
+                  </th>
+                  <th className="p-3 font-medium">{ar ? "المرجع" : "Ref"}</th>
+                  <th className="p-3 font-medium w-40">{ar ? "الحالة" : "Status"}</th>
+                  <th className="p-3 font-medium min-w-[220px]">
+                    {ar ? "دليل الحساب" : "Account evidence"}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((r, i) => (
+                  <tr
+                    key={r.id}
+                    className="border-b border-border/40 align-top"
+                  >
+                    <td className="p-3 text-muted-foreground">{i + 1}</td>
+                    <td className="p-3 max-w-md">{r.text}</td>
+                    <td className="p-3 whitespace-nowrap text-xs">
+                      {r.sectionRef && <div>§{r.sectionRef}</div>}
+                      {r.pageRef && <div>p.{r.pageRef}</div>}
+                    </td>
+                    <td className="p-3">
                       <Select
-                        value={(r.linkedResourceType as LinkType) || "none"}
-                        onValueChange={(v) => {
-                          const linkedResourceType =
-                            v === "none" ? null : (v as Exclude<LinkType, "">);
-                          patch.mutate({
-                            id: r.id,
-                            linkedResourceType,
-                            linkedResourceId: null,
-                            ...(linkedResourceType
-                              ? { status: "IN_PROGRESS" }
-                              : {}),
-                          });
-                        }}
+                        value={r.status}
+                        onValueChange={(status) =>
+                          patch.mutate({ id: r.id, status })
+                        }
                       >
-                        <SelectTrigger className="h-8 w-[140px] text-[11px]">
-                          <SelectValue
-                            placeholder={ar ? "نوع الدليل" : "Evidence type"}
-                          />
+                        <SelectTrigger className="w-[140px] h-8">
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">
-                            {ar ? "بدون ربط" : "Unlinked"}
+                          <SelectItem value="COVERED">
+                            {ar ? STATUS_LABEL.COVERED.ar : STATUS_LABEL.COVERED.en}
                           </SelectItem>
-                          <SelectItem value="CERTIFICATE">
-                            {ar ? "شهادة" : "Certificate"}
+                          <SelectItem value="IN_PROGRESS">
+                            {ar
+                              ? STATUS_LABEL.IN_PROGRESS.ar
+                              : STATUS_LABEL.IN_PROGRESS.en}
                           </SelectItem>
-                          <SelectItem value="STAFF">
-                            {ar ? "كادر / سيرة ذاتية" : "Staff / CV"}
-                          </SelectItem>
-                          <SelectItem value="LIBRARY">
-                            {ar ? "مكتبة" : "Library"}
-                          </SelectItem>
-                          <SelectItem value="METHODOLOGY">
-                            {ar ? "منهجية" : "Methodology"}
+                          <SelectItem value="MISSING">
+                            {ar ? STATUS_LABEL.MISSING.ar : STATUS_LABEL.MISSING.en}
                           </SelectItem>
                         </SelectContent>
                       </Select>
-                      {r.linkedResourceType ? (
-                        <Badge variant="outline" className="text-[10px] gap-1">
-                          <Link2 className="size-2.5" />
-                          {r.linkedResourceType}
-                        </Badge>
-                      ) : null}
-                      {r.linkedResourceId ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2"
-                          title={ar ? "إلغاء الربط" : "Unlink"}
-                          onClick={() =>
+                    </td>
+                    <td className="p-3 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Select
+                          value={(r.linkedResourceType as LinkType) || "none"}
+                          onValueChange={(v) => {
+                            const linkedResourceType =
+                              v === "none" ? null : (v as Exclude<LinkType, "">);
                             patch.mutate({
                               id: r.id,
-                              linkedResourceType: null,
+                              linkedResourceType,
                               linkedResourceId: null,
+                              ...(linkedResourceType
+                                ? { status: "IN_PROGRESS" }
+                                : {}),
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-[140px] text-[11px]">
+                            <SelectValue
+                              placeholder={ar ? "نوع الدليل" : "Evidence type"}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">
+                              {ar ? "بدون ربط" : "Unlinked"}
+                            </SelectItem>
+                            <SelectItem value="CERTIFICATE">
+                              {ar ? "شهادة" : "Certificate"}
+                            </SelectItem>
+                            <SelectItem value="STAFF">
+                              {ar ? "كادر / سيرة ذاتية" : "Staff / CV"}
+                            </SelectItem>
+                            <SelectItem value="LIBRARY">
+                              {ar ? "مكتبة" : "Library"}
+                            </SelectItem>
+                            <SelectItem value="METHODOLOGY">
+                              {ar ? "منهجية" : "Methodology"}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {r.linkedResourceType ? (
+                          <Badge variant="outline" className="text-[10px] gap-1">
+                            <Link2 className="size-2.5" />
+                            {r.linkedResourceType}
+                          </Badge>
+                        ) : null}
+                        {r.linkedResourceId ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2"
+                            title={ar ? "إلغاء الربط" : "Unlink"}
+                            onClick={() =>
+                              patch.mutate({
+                                id: r.id,
+                                linkedResourceType: null,
+                                linkedResourceId: null,
+                              })
+                            }
+                          >
+                            <Unlink className="size-3" />
+                          </Button>
+                        ) : null}
+                      </div>
+                      {r.linkedResourceType === "CERTIFICATE" ? (
+                        <Select
+                          value={r.linkedResourceId ?? ""}
+                          onValueChange={(linkedResourceId) =>
+                            patch.mutate({
+                              id: r.id,
+                              linkedResourceType: "CERTIFICATE",
+                              linkedResourceId,
+                              status: "COVERED",
                             })
                           }
                         >
-                          <Unlink className="size-3" />
-                        </Button>
+                          <SelectTrigger className="h-8 text-[11px]">
+                            <SelectValue
+                              placeholder={
+                                ar ? "اختر شهادة" : "Pick certificate"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {certificates.length === 0 ? (
+                              <SelectItem value="__none" disabled>
+                                {ar
+                                  ? "أضف شهادات من الحساب"
+                                  : "Add certificates in Account"}
+                              </SelectItem>
+                            ) : (
+                              certificates.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {c.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
                       ) : null}
-                    </div>
-                    {r.linkedResourceType === "CERTIFICATE" ? (
-                      <Select
-                        value={r.linkedResourceId ?? ""}
-                        onValueChange={(linkedResourceId) =>
-                          patch.mutate({
-                            id: r.id,
-                            linkedResourceType: "CERTIFICATE",
-                            linkedResourceId,
-                            status: "COVERED",
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-[11px]">
-                          <SelectValue
-                            placeholder={
-                              ar ? "اختر شهادة" : "Pick certificate"
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {certificates.length === 0 ? (
-                            <SelectItem value="__none" disabled>
-                              {ar
-                                ? "أضف شهادات من الحساب"
-                                : "Add certificates in Account"}
-                            </SelectItem>
-                          ) : (
-                            certificates.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.name}
+                      {r.linkedResourceType === "STAFF" ? (
+                        <Select
+                          value={r.linkedResourceId ?? ""}
+                          onValueChange={(linkedResourceId) =>
+                            patch.mutate({
+                              id: r.id,
+                              linkedResourceType: "STAFF",
+                              linkedResourceId,
+                              status: "COVERED",
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-[11px]">
+                            <SelectValue
+                              placeholder={ar ? "اختر موظفاً" : "Pick staff"}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {staff.length === 0 ? (
+                              <SelectItem value="__none" disabled>
+                                {ar
+                                  ? "أضف كوادر من الحساب"
+                                  : "Add staff in Account"}
                               </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    ) : null}
-                    {r.linkedResourceType === "STAFF" ? (
-                      <Select
-                        value={r.linkedResourceId ?? ""}
-                        onValueChange={(linkedResourceId) =>
-                          patch.mutate({
-                            id: r.id,
-                            linkedResourceType: "STAFF",
-                            linkedResourceId,
-                            status: "COVERED",
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-[11px]">
-                          <SelectValue
-                            placeholder={ar ? "اختر موظفاً" : "Pick staff"}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {staff.length === 0 ? (
-                            <SelectItem value="__none" disabled>
-                              {ar
-                                ? "أضف كوادر من الحساب"
-                                : "Add staff in Account"}
-                            </SelectItem>
-                          ) : (
-                            staff.map((s) => (
-                              <SelectItem key={s.id} value={s.id}>
-                                {locale === "ar"
-                                  ? s.nameAr ?? s.name
-                                  : s.name}
+                            ) : (
+                              staff.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  {locale === "ar"
+                                    ? s.nameAr ?? s.name
+                                    : s.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      ) : null}
+                      {r.linkedResourceType === "LIBRARY" ? (
+                        <Select
+                          value={r.linkedResourceId ?? ""}
+                          onValueChange={(linkedResourceId) =>
+                            patch.mutate({
+                              id: r.id,
+                              linkedResourceType: "LIBRARY",
+                              linkedResourceId,
+                              status: "COVERED",
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-[11px]">
+                            <SelectValue
+                              placeholder={
+                                ar ? "اختر من المكتبة" : "Pick library item"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {library.length === 0 ? (
+                              <SelectItem value="__none" disabled>
+                                {ar
+                                  ? "أضف عناصر للمكتبة"
+                                  : "Add library items first"}
                               </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    ) : null}
-                    {r.linkedResourceType === "LIBRARY" ? (
-                      <Select
-                        value={r.linkedResourceId ?? ""}
-                        onValueChange={(linkedResourceId) =>
-                          patch.mutate({
-                            id: r.id,
-                            linkedResourceType: "LIBRARY",
-                            linkedResourceId,
-                            status: "COVERED",
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-[11px]">
-                          <SelectValue
-                            placeholder={
-                              ar ? "اختر من المكتبة" : "Pick library item"
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {library.length === 0 ? (
-                            <SelectItem value="__none" disabled>
-                              {ar
-                                ? "أضف عناصر للمكتبة"
-                                : "Add library items first"}
-                            </SelectItem>
-                          ) : (
-                            library.map((l) => (
-                              <SelectItem key={l.id} value={l.id}>
-                                {l.title}
+                            ) : (
+                              library.map((l) => (
+                                <SelectItem key={l.id} value={l.id}>
+                                  {l.title}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      ) : null}
+                      {r.linkedResourceType === "METHODOLOGY" ? (
+                        <Select
+                          value={r.linkedResourceId ?? ""}
+                          onValueChange={(linkedResourceId) =>
+                            patch.mutate({
+                              id: r.id,
+                              linkedResourceType: "METHODOLOGY",
+                              linkedResourceId,
+                              status: "COVERED",
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-[11px]">
+                            <SelectValue
+                              placeholder={
+                                ar ? "اختر منهجية" : "Pick methodology"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {methodologies.length === 0 ? (
+                              <SelectItem value="__none" disabled>
+                                {ar
+                                  ? "أضف منهجيات من الحساب"
+                                  : "Add methodologies in Account"}
                               </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    ) : null}
-                    {r.linkedResourceType === "METHODOLOGY" ? (
-                      <Select
-                        value={r.linkedResourceId ?? ""}
-                        onValueChange={(linkedResourceId) =>
-                          patch.mutate({
-                            id: r.id,
-                            linkedResourceType: "METHODOLOGY",
-                            linkedResourceId,
-                            status: "COVERED",
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-[11px]">
-                          <SelectValue
-                            placeholder={
-                              ar ? "اختر منهجية" : "Pick methodology"
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {methodologies.length === 0 ? (
-                            <SelectItem value="__none" disabled>
-                              {ar
-                                ? "أضف منهجيات من الحساب"
-                                : "Add methodologies in Account"}
-                            </SelectItem>
-                          ) : (
-                            methodologies.map((m) => (
-                              <SelectItem key={m.id} value={m.id}>
-                                {ar ? m.titleAr ?? m.title : m.title}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    ) : null}
-                    {r.linkedResourceType === "PAST_PROJECT" ? (
-                      <p className="text-[10px] text-muted-foreground">
-                        {ar
-                          ? "الأعمال السابقة تُدار من الحساب. سيتم إدراجها تلقائياً في العرض."
-                          : "Past projects are managed in Account; they will appear automatically in the proposal."}
-                      </p>
-                    ) : null}
-                    {!r.linkedResourceType ? (
-                      <p className="text-[10px] text-muted-foreground">
-                        {ar
-                          ? "اربط شهادة أو كادر أو نص مكتبة أو منهجية كدليل."
-                          : "Link a certificate, staff CV, library text, or methodology as evidence."}
-                      </p>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </QueryState>
-    </Panel>
+                            ) : (
+                              methodologies.map((m) => (
+                                <SelectItem key={m.id} value={m.id}>
+                                  {ar ? m.titleAr ?? m.title : m.title}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      ) : null}
+                      {r.linkedResourceType === "PAST_PROJECT" ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          {ar
+                            ? "الأعمال السابقة تُدار من الحساب. سيتم إدراجها تلقائياً في العرض."
+                            : "Past projects are managed in Account; they will appear automatically in the proposal."}
+                        </p>
+                      ) : null}
+                      {!r.linkedResourceType ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          {ar
+                            ? "اربط شهادة أو كادر أو نص مكتبة أو منهجية كدليل."
+                            : "Link a certificate, staff CV, library text, or methodology as evidence."}
+                        </p>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </QueryState>
+      </Panel>
+    </div>
   );
 }

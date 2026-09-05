@@ -118,7 +118,7 @@ function normalizeStatus(s: string | undefined): AgentState["status"] {
 
 export function AgentWorkflow() {
   const { locale } = useLocale();
-  const { tenderType, activeProjectId, setActiveProjectId, setView, autopilot } = useUI();
+  const { activeProjectId, setActiveProjectId, setView, autopilot } = useUI();
   const reduceMotion = useReducedMotion();
   const autopilotOpenRef = useRef<number | null>(null);
   // Shares the `["projects"]` query `app-shell` already runs, so this costs no
@@ -372,7 +372,10 @@ export function AgentWorkflow() {
       const res = await fetch("/api/agents/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: activeProjectId, tenderType, locale }),
+        // No `tenderType`: the run route used to overwrite project.category
+        // with this store-held value (the wizard's last pick, "IT" by default),
+        // so running the agents silently re-categorised the project.
+        body: JSON.stringify({ projectId: activeProjectId, locale }),
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as {
@@ -499,6 +502,13 @@ export function AgentWorkflow() {
       qc.invalidateQueries({ queryKey: ["agent-runs"] });
       toast({
         title: locale === "ar" ? "تم الإلغاء" : "Run cancelled",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "تعذر إيقاف التشغيل" : "Could not stop the run",
+        description: err.message,
+        variant: "destructive",
       });
     },
   });

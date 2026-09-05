@@ -2,7 +2,7 @@
 
 import { apiErrorText } from "@/lib/api-failure-message";
 
-import { useId, useMemo, useRef, useState } from "react";
+import { startTransition, useId, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,11 +27,28 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { ToastAction } from "@/components/ui/toast";
+import { useToast } from "@/hooks/use-toast";
+import { tr } from "@/lib/i18n";
+import { ONBOARDING_STEPS } from "@/lib/onboarding-steps";
 import { cn } from "@/lib/utils";
 import { useUI } from "@/lib/store";
-import { Camera, ChevronDown, FileUp, Globe2, Link2, Loader2, Mail, Puzzle, Undo2, Sparkles, Cloud, HardDrive } from "lucide-react";
+import { Camera, ChevronDown, FileUp, Globe2, Link2, Loader2, Mail, Puzzle, Undo2, Sparkles, Cloud } from "lucide-react";
 import { MISSION_CONNECTORS } from "@/lib/agents/platform/connectors";
 import { EXTENSION_WIZARD_OPEN_EVENT } from "./mission-extension-bridge";
+
+/** The route's autopilot outcome, as far as the tray needs to read it. */
+type UploadAutopilotOutcome = {
+  started?: boolean;
+  reason?: string;
+  missing?: string[];
+};
+
+function readAutopilotOutcome(payload: unknown): UploadAutopilotOutcome | null {
+  if (!payload || typeof payload !== "object") return null;
+  const autopilot = (payload as { autopilot?: unknown }).autopilot;
+  return autopilot && typeof autopilot === "object" ? (autopilot as UploadAutopilotOutcome) : null;
+}
 
 type AttachmentRow = {
   id: string;
@@ -85,18 +102,50 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
   // lands here starts the agents when it is on.
   const autopilot = useUI((s) => s.autopilot);
   const setAutopilot = useUI((s) => s.setAutopilot);
+  const setView = useUI((s) => s.setView);
+  const { toast } = useToast();
   const importCanSubmit = Boolean(importText.trim() || (importSource !== "browser" && importFile));
+
+  /**
+   * The upload landed; only the run is waiting. The route says so with
+   * `autopilot.started === false` + `reason`, so the reader is told which
+   * setup steps are missing and given the one action that unblocks it.
+   */
+  function announceUpload(data: unknown) {
+    onUploaded(data);
+    const outcome = readAutopilotOutcome(data);
+    if (!outcome || outcome.started !== false || outcome.reason !== "ONBOARDING_INCOMPLETE") return;
+    const steps = (outcome.missing ?? [])
+      .map((key) => {
+        const step = ONBOARDING_STEPS.find((s) => s.key === key);
+        return step ? (ar ? step.labelAr : step.labelEn) : key;
+      })
+      .join(" · ");
+    toast({
+      title: tr("autopilot_blocked_onboarding_title", locale),
+      description: tr("autopilot_blocked_onboarding_description", locale, { steps }),
+      action: (
+        <ToastAction
+          altText={tr("autopilot_open_guided_setup", locale)}
+          onClick={() => startTransition(() => setView("setup"))}
+        >
+          {tr("autopilot_open_guided_setup", locale)}
+        </ToastAction>
+      ),
+    });
+  }
 
   async function stageFile(file: File, source: string) {
     if (!missionId) return;
     const form = new FormData();
     form.set("file", file);
     form.set("source", source);
+    form.set("autopilot", String(autopilot));
     if (activeProjectId) form.set("activeProjectId", activeProjectId);
     const res = await fetch(`/api/platform-agent/missions/${missionId}/attachments`, { method: "POST", body: form });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(apiErrorText(data, locale));
-    onUploaded(data);
+    announceUpload(data);
   }
 
   async function stageText(text: string, source: PasteImportSource | "paste") {
@@ -108,12 +157,13 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
         text,
         source,
         activeProjectId,
+        autopilot,
         fileName: source === "browser" ? "browser-capture.txt" : source === "email" ? "email-import.txt" : source === "google_drive" ? "google-drive-import.txt" : source === "onedrive" ? "onedrive-import.txt" : "pasted-content.txt",
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(apiErrorText(data, locale));
-    onUploaded(data);
+    announceUpload(data);
   }
 
   async function uploadFile(file: File, source: string) {
@@ -136,12 +186,12 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
       const res = await fetch(`/api/platform-agent/missions/${missionId}/attachments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), activeProjectId }),
+        body: JSON.stringify({ url: url.trim(), activeProjectId, autopilot }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(apiErrorText(data, locale));
       setUrl("");
-      onUploaded(data);
+      announceUpload(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "URL import failed");
     } finally {
@@ -228,8 +278,9 @@ export function MissionAttachmentTray({ locale, missionId, activeProjectId, atta
                   <DropdownMenuItem onSelect={() => cameraRef.current?.click()} className="gap-2 text-[12px]"><Camera className="size-3.5" />{ar ? "الكاميرا" : "Camera"}</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => openImportDialog("browser")} className="gap-2 text-[12px]"><Globe2 className="size-3.5" />{ar ? "نص من صفحة متصفح" : "Text from a browser page"}</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => openImportDialog("email")} className="gap-2 text-[12px]"><Mail className="size-3.5" />{ar ? "بريد إلكتروني" : "Email"}</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => openImportDialog("google_drive")} className="gap-2 text-[12px]"><Cloud className="size-3.5" />Google Drive</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => openImportDialog("onedrive")} className="gap-2 text-[12px]"><HardDrive className="size-3.5" />OneDrive</DropdownMenuItem>
+                  {/* One item, honestly named: there is no Drive/OneDrive connector,
+                      only the paste dialog (which lets the reader pick which). */}
+                  <DropdownMenuItem onSelect={() => openImportDialog("google_drive")} className="gap-2 text-[12px]"><Cloud className="size-3.5" />{ar ? "الصق تصديراً من Drive/OneDrive" : "Paste a Drive/OneDrive export"}</DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent(EXTENSION_WIZARD_OPEN_EVENT))} className="gap-2 text-[12px] text-muted-foreground">
                     <Puzzle className="size-3.5" />

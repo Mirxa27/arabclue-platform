@@ -96,8 +96,13 @@ export function TenderSetupWizard({ open, onOpenChange }: Props) {
         body: JSON.stringify(body),
       });
     },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["projects"] });
+    onSuccess: async (data) => {
+      // Wait for the list to contain the new project before making it active.
+      // `useEnsureActiveProject` reconciles the active id against the cached
+      // list; selecting an id the stale list did not have made it fall back to
+      // the old first project — or, in a fresh workspace, to no project — and
+      // the Documents view then bounced back to Projects.
+      await qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["stats"] });
       setTenderType(category);
       onOpenChange(false);

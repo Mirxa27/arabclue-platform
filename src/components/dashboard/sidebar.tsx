@@ -11,6 +11,7 @@ import { tr } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { useToast } from "@/hooks/use-toast";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -446,6 +447,7 @@ function WorkspaceSwitcher({
 }) {
   const qc = useQueryClient();
   const { update: updateSession } = useSession();
+  const { toast } = useToast();
   const switchMutation = useMutation({
     mutationFn: async (workspaceId: string) => {
       const res = await fetch("/api/workspaces", {
@@ -453,13 +455,22 @@ function WorkspaceSwitcher({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(apiErrorText(data, locale));
-      return data as { workspaceId?: string };
+      return (data ?? {}) as { workspaceId?: string };
     },
     onSuccess: async (data, workspaceId) => {
       await updateSession({ workspaceId: data.workspaceId || workspaceId });
       qc.invalidateQueries();
+    },
+    onError: (err: Error) => {
+      // The <select> already snapped back to the active membership on
+      // re-render; without this the failed switch was silent.
+      toast({
+        title: locale === "ar" ? "تعذر تبديل مساحة العمل" : "Could not switch workspace",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 

@@ -31,7 +31,44 @@ import { ListSkeleton } from "./loading-skeletons";
 import { DocumentFileViewer } from "./document-file-viewer";
 import { useEnsureActiveProject } from "@/hooks/use-ensure-active-project";
 import { Switch } from "@/components/ui/switch";
+import { ToastAction } from "@/components/ui/toast";
 import { shouldAutopilotRun, RUN_STARTED_EVENT } from "@/lib/agents/autopilot";
+import { ONBOARDING_STEPS } from "@/lib/onboarding-steps";
+
+/**
+ * Stable id of the upload drop zone, so a "Upload documents" button elsewhere
+ * on the Documents page can bring the reader here instead of re-selecting the
+ * view they are already on.
+ */
+export const UPLOAD_DROPZONE_ID = "file-ingestion-dropzone";
+
+/**
+ * Scrolls to and focuses the drop zone when it is on screen; otherwise opens
+ * the Documents view, which mounts it.
+ */
+export function focusUploadDropzone(openDocumentsView: () => void) {
+  const zone =
+    typeof document !== "undefined"
+      ? document.getElementById(UPLOAD_DROPZONE_ID)
+      : null;
+  if (!(zone instanceof HTMLElement)) {
+    openDocumentsView();
+    return;
+  }
+  zone.scrollIntoView({ behavior: "smooth", block: "center" });
+  zone.focus({ preventScroll: true });
+}
+
+/** Human labels for the onboarding steps a run is blocked on, in the reader's language. */
+function onboardingStepLabels(missing: unknown, locale: "ar" | "en"): string {
+  if (!Array.isArray(missing)) return "";
+  return missing
+    .map((key) => {
+      const step = ONBOARDING_STEPS.find((s) => s.key === key);
+      return step ? (locale === "ar" ? step.labelAr : step.labelEn) : String(key);
+    })
+    .join(" · ");
+}
 
 interface UploadedFile {
   id: string;
@@ -80,7 +117,7 @@ function formatBytes(bytes: number): string {
 
 export function FileIngestion() {
   const { locale } = useLocale();
-  const { activeProjectId, setActiveProjectId, setView, autopilot, setAutopilot, tenderType } =
+  const { activeProjectId, setActiveProjectId, setView, autopilot, setAutopilot } =
     useUI();
   // One autopilot run per upload batch, however many files it holds.
   const autopilotKickedRef = useRef(false);
@@ -156,12 +193,33 @@ export function FileIngestion() {
         const res = await fetch("/api/agents/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, tenderType, locale }),
+          // No `tenderType`: the run route overwrote project.category with it.
+          body: JSON.stringify({ projectId, locale }),
         });
         const body = (await res.json().catch(() => ({}))) as {
           runId?: string;
           code?: string;
+          missing?: string[];
         };
+        if (!res.ok && body.code === "ONBOARDING_INCOMPLETE") {
+          // The document is saved; only the run is waiting. Name the steps and
+          // offer the one action that unblocks it.
+          toast({
+            title: tr("autopilot_blocked_onboarding_title", locale),
+            description: tr("autopilot_blocked_onboarding_description", locale, {
+              steps: onboardingStepLabels(body.missing, locale),
+            }),
+            action: (
+              <ToastAction
+                altText={tr("autopilot_open_guided_setup", locale)}
+                onClick={() => startTransition(() => setView("setup"))}
+              >
+                {tr("autopilot_open_guided_setup", locale)}
+              </ToastAction>
+            ),
+          });
+          return;
+        }
         if (!res.ok) {
           toast({
             title: locale === "ar" ? "لم يبدأ الطيار الآلي" : "Autopilot did not start",
@@ -190,7 +248,7 @@ export function FileIngestion() {
         });
       }
     },
-    [locale, setView, tenderType, toast]
+    [locale, setView, toast]
   );
 
   const handleFiles = useCallback(
@@ -452,6 +510,7 @@ export function FileIngestion() {
       {/* Drop zone */}
       <div className="px-5 pb-4">
         <div
+          id={UPLOAD_DROPZONE_ID}
           role="button"
           tabIndex={0}
           aria-label={tr("ingest_title", locale)}

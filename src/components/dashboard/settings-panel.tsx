@@ -106,6 +106,7 @@ export function SettingsPanel() {
   }
 
   async function saveLocale(next: Locale) {
+    const previous = locale;
     setLocale(next);
     setProfileBusy(true);
     try {
@@ -114,10 +115,13 @@ export function SettingsPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locale: next }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(apiErrorText(data, locale));
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(apiErrorText(data, previous));
       await update?.({ locale: next } as never);
     } catch (e) {
+      // The UI flipped before the request; a failed save must flip it back or
+      // the screen shows a language the account does not have.
+      setLocale(previous);
       toast({
         title: e instanceof Error ? e.message : "Error",
         variant: "destructive",

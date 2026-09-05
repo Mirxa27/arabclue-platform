@@ -38,6 +38,8 @@ import type { ApiDocument } from "@/lib/api-types";
 import { EmptyState, QueryState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
 import { DocumentFileViewer } from "./document-file-viewer";
+import { focusUploadDropzone } from "./file-ingestion";
+import { REQUIREMENTS_MATRIX_ID } from "./requirements-matrix";
 function fileIcon(name: string, mime: string) {
   if (mime.includes("sheet") || name.endsWith(".xlsx") || name.endsWith(".xls")) return FileSpreadsheet;
   if (mime.includes("zip") || name.endsWith(".zip")) return FileArchive;
@@ -178,7 +180,13 @@ export function DocumentMatrix() {
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
-                    onClick={() => startTransition(() => setView("documents"))}
+                    onClick={() =>
+                      // Already on Documents: go to the drop zone above
+                      // instead of re-selecting the view (a dead click).
+                      focusUploadDropzone(() =>
+                        startTransition(() => setView("documents"))
+                      )
+                    }
                   >
                     {locale === "ar" ? "رفع مستندات" : "Upload documents"}
                   </Button>
@@ -297,7 +305,13 @@ export function DocumentMatrix() {
                             title={locale === "ar" ? "مصفوفة المتطلبات" : "Requirements matrix"}
                             onClick={() => {
                               if (d.projectId) setActiveProjectId(d.projectId);
-                              startTransition(() => setView("documents"));
+                              // The matrix is further down this same page.
+                              const matrix = document.getElementById(REQUIREMENTS_MATRIX_ID);
+                              if (matrix) {
+                                matrix.scrollIntoView({ behavior: "smooth", block: "start" });
+                              } else {
+                                startTransition(() => setView("documents"));
+                              }
                             }}
                           >
                             <Eye className="size-3" />

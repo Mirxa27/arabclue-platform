@@ -2,7 +2,7 @@
 
 import { apiErrorText } from "@/lib/api-failure-message";
 
-import { useEffect, useMemo, useState, startTransition } from "react";
+import { useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useUI } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
@@ -123,6 +123,7 @@ export function OnboardingWizard() {
   const [draftTenderTitle, setDraftTenderTitle] = useState("");
   const [draftTenderTitleAr, setDraftTenderTitleAr] = useState("");
   const [draftEtimadRef, setDraftEtimadRef] = useState("");
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   // These three prefill the form below, and the save handlers PATCH the drafts
   // straight back with the optional fields as `|| null`. A read that fails
@@ -167,7 +168,11 @@ export function OnboardingWizard() {
           apiErrorText(await r.json().catch(() => null), locale, ar ? "تعذر تحميل حالة الإعداد" : "Could not load your setup status")
         );
       }
-      return r.json() as Promise<{ readyForProposals: boolean; missing: string[] }>;
+      return r.json() as Promise<{
+        readyForProposals: boolean;
+        missing: string[];
+        steps?: Record<string, boolean>;
+      }>;
     },
   });
 
@@ -197,6 +202,72 @@ export function OnboardingWizard() {
       if (brandData.brand.primaryColor) setDraftColor(brandData.brand.primaryColor);
     }
   }, [brandData, draftTagline, draftTaglineAr]);
+
+  // Seed once from what is already saved. The wizard's step slots only ever
+  // filled from this session's saves, so a reload opened at "Step 1 · 0%"
+  // over a workspace whose brand, CR and approval chain were all persisted.
+  // `/api/onboarding` overwrites `completedSteps` with derived flags on every
+  // read, so nothing durable records the wizard position itself; the first
+  // step whose persisted signal is missing is the honest place to resume.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current) return;
+    if (!wsData?.workspace || !brandData || !onboardingStatus) return;
+    seeded.current = true;
+
+    const persisted = onboardingStatus.steps ?? {};
+    const ws = wsData.workspace;
+    const brandSaved = persisted.brand === true;
+    const legalSaved = persisted.legal === true;
+    const connectSaved = persisted.approvalChain === true && persisted.restrictions === true;
+    // Role and sector live only in this wizard, so the profile step has no
+    // persisted marker of its own. A later step being saved proves it was
+    // passed: the wizard only advances after a successful save.
+    const profileSaved = brandSaved || legalSaved || connectSaved;
+
+    const seedProfile: WizardProfile | null = profileSaved
+      ? {
+          name: session?.user?.name ?? "",
+          role: "FOUNDER_EXEC",
+          workspaceName: ws.name ?? "",
+          workspaceNameAr: ws.nameAr ?? "",
+          sector: "GOV",
+        }
+      : null;
+    const seedBrand: WizardBrand | null = brandSaved
+      ? {
+          tagline: brandData.brand?.tagline ?? "",
+          taglineAr: brandData.brand?.taglineAr ?? "",
+          primaryColor: brandData.brand?.primaryColor ?? "#0F766E",
+        }
+      : null;
+    const seedLegal: WizardLegal | null = legalSaved
+      ? { crNumber: ws.crNumber ?? "", vatNumber: ws.vatNumber ?? "" }
+      : null;
+    const seedConnect: WizardConnectState = connectSaved
+      ? {
+          ...EMPTY_CONNECT,
+          reviewerIds: wsData.members?.slice(0, 1).map((m) => m.user.id) ?? [],
+          restrictionsAcknowledged: true,
+        }
+      : EMPTY_CONNECT;
+
+    const done = wizardStepCompletion({
+      profile: seedProfile,
+      brand: seedBrand,
+      legal: seedLegal,
+      connect: seedConnect,
+      mission: null,
+    });
+    setProfile(done.profile ? seedProfile : null);
+    setBrand(done.brand ? seedBrand : null);
+    setLegal(done.legal ? seedLegal : null);
+    setConnect(done.connect ? seedConnect : EMPTY_CONNECT);
+    const firstIncomplete = ONBOARDING_WIZARD_STEPS.findIndex(
+      (meta) => meta.id !== "launch" && !done[meta.id]
+    );
+    setStep(firstIncomplete === -1 ? ONBOARDING_WIZARD_STEPS.length - 1 : firstIncomplete);
+  }, [wsData, brandData, onboardingStatus, session?.user?.name]);
 
   const completion = useMemo(
     () => wizardStepCompletion({ profile, brand, legal, connect, mission }),
@@ -310,20 +381,40 @@ export function OnboardingWizard() {
   }
 
   async function saveConnect(): Promise<boolean> {
+    setConnectError(null);
     if (!connect.restrictionsAcknowledged) {
       toast({ title: ar ? "أقر بقواعد التعامل للمتابعة" : "Acknowledge handling rules to continue", variant: "destructive" });
+      return false;
+    }
+    // "Track your first Etimad tender" is a promise to create a project; with
+    // the fields blank it used to be skipped without a word.
+    if (draftTrack && (draftTenderTitle.trim().length < 2 || draftEtimadRef.trim().length < 3)) {
+      setConnectError(
+        ar
+          ? "أدخل عنوان المناقصة ورقم مرجع اعتماد، أو ألغِ تحديد التتبع."
+          : "Enter the tender title and its Etimad reference, or untick tracking."
+      );
       return false;
     }
     setBusy(true);
     try {
       // Restrictions
-      await fetch("/api/onboarding", {
+      const rr = await fetch("/api/onboarding", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ restrictionsReviewed: true }),
       });
+      if (!rr.ok) {
+        throw new Error(
+          apiErrorText(
+            await rr.json().catch(() => null),
+            locale,
+            ar ? "تعذر تسجيل مراجعة القيود" : "Could not record the restrictions review"
+          )
+        );
+      }
       // Track tender -> create project
-      if (draftTrack && draftTenderTitle.trim() && draftEtimadRef.trim()) {
+      if (draftTrack) {
         const pr = await fetch("/api/projects", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -358,6 +449,7 @@ export function OnboardingWizard() {
       });
       qc.invalidateQueries({ queryKey: ["workspace"] });
       qc.invalidateQueries({ queryKey: ["onboarding"] });
+      if (draftTrack) qc.invalidateQueries({ queryKey: ["projects"] });
       return true;
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : "Error", variant: "destructive" });
@@ -587,8 +679,11 @@ export function OnboardingWizard() {
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Etimad ref</Label>
-                        <Input value={draftEtimadRef} onChange={(e) => setDraftEtimadRef(e.target.value)} placeholder="ETM-2026-..." dir="ltr" className="font-mono" />
+                        <Input value={draftEtimadRef} onChange={(e) => setDraftEtimadRef(e.target.value)} placeholder="ETM-2026-..." dir="ltr" className="font-mono" aria-invalid={Boolean(connectError)} />
                       </div>
+                      {connectError ? (
+                        <p role="alert" className="text-xs text-destructive">{connectError}</p>
+                      ) : null}
                     </div>
                   )}
                   <div className="rounded-lg border p-3 space-y-2">

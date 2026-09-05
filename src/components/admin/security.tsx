@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { useLocale } from "@/lib/store";
 import { tr } from "@/lib/i18n";
+import { apiErrorText } from "@/lib/api-failure-message";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -23,7 +24,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -62,6 +62,10 @@ import {
 import { cn } from "@/lib/utils";
 
 type AdminRole = "SUPER_ADMIN" | "ADMIN" | "BIDDER" | "REVIEWER" | "FINANCE";
+
+/** Mirrors `adminUserCreateSchema.password` (validation.ts) so the form refuses what the server would. */
+const ADMIN_PASSWORD_MIN_LENGTH = 10;
+const ADMIN_PASSWORD_MAX_LENGTH = 200;
 
 const ROLES: AdminRole[] = [
   "SUPER_ADMIN",
@@ -162,7 +166,9 @@ export function AdminSecurity() {
     queryKey: ["admin-users"],
     queryFn: async () => {
       const res = await fetch("/api/admin/users");
-      if (!res.ok) throw new Error("failed");
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
       return res.json();
     },
   });
@@ -171,7 +177,9 @@ export function AdminSecurity() {
     queryKey: ["admin-plans"],
     queryFn: async () => {
       const res = await fetch("/api/admin/plans");
-      if (!res.ok) throw new Error("failed");
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
       return res.json();
     },
   });
@@ -207,7 +215,9 @@ export function AdminSecurity() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("failed");
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -217,9 +227,10 @@ export function AdminSecurity() {
         title: locale === "ar" ? "تم تحديث المستخدم" : "User updated",
       });
     },
-    onError: () => {
+    onError: (err: Error) => {
       toast({
         title: locale === "ar" ? "فشل التحديث" : "Update failed",
+        description: err.message,
         variant: "destructive",
       });
     },
@@ -228,7 +239,9 @@ export function AdminSecurity() {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("failed");
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
@@ -237,9 +250,10 @@ export function AdminSecurity() {
         title: locale === "ar" ? "تم إلغاء تنشيط المستخدم" : "User deactivated",
       });
     },
-    onError: () => {
+    onError: (err: Error) => {
       toast({
         title: locale === "ar" ? "فشل الإلغاء" : "Deactivation failed",
+        description: err.message,
         variant: "destructive",
       });
     },
@@ -805,16 +819,19 @@ function CreateUserForm({
   const { locale } = useLocale();
   const qc = useQueryClient();
   const { toast } = useToast();
+  // No `mfaEnabled` here: POST /api/admin/users answers 400 MFA_NOT_SET_UP
+  // when it is requested on, because the second factor is enrolled by the
+  // user from their own device — an admin cannot switch it on for them.
   const [form, setForm] = useState({
     name: "",
     email: "",
     role: "BIDDER" as AdminRole,
-    mfaEnabled: true,
     locale: "ar",
     password: "",
     planId: "",
     billingCycle: "MONTHLY" as "MONTHLY" | "YEARLY",
   });
+  const passwordTooShort = form.password.length < ADMIN_PASSWORD_MIN_LENGTH;
 
   const create = useMutation({
     mutationFn: async () => {
@@ -822,20 +839,21 @@ function CreateUserForm({
         name: form.name,
         email: form.email,
         role: form.role,
-        mfaEnabled: form.mfaEnabled,
         locale: form.locale,
-        password: form.password || undefined,
+        password: form.password,
       };
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("failed");
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
       const data = await res.json();
       // Assign plan if chosen
       if (form.planId && data.user?.id) {
-        await fetch(`/api/admin/users/${data.user.id}`, {
+        const planRes = await fetch(`/api/admin/users/${data.user.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -843,6 +861,20 @@ function CreateUserForm({
             billingCycle: form.billingCycle,
           }),
         });
+        if (!planRes.ok) {
+          // The account exists at this point; say so, and say why the plan
+          // did not follow, instead of a bare "Create failed".
+          qc.invalidateQueries({ queryKey: ["admin-users"] });
+          const reason = apiErrorText(
+            await planRes.json().catch(() => null),
+            locale
+          );
+          throw new Error(
+            locale === "ar"
+              ? `تم إنشاء المستخدم لكن تعذر تعيين الخطة: ${reason}`
+              : `User created, but the plan was not assigned: ${reason}`
+          );
+        }
       }
     },
     onSuccess: () => {
@@ -850,9 +882,10 @@ function CreateUserForm({
       toast({ title: locale === "ar" ? "تم إنشاء المستخدم" : "User created" });
       onDone();
     },
-    onError: () => {
+    onError: (err: Error) => {
       toast({
         title: locale === "ar" ? "فشل الإنشاء" : "Create failed",
+        description: err.message,
         variant: "destructive",
       });
     },
@@ -972,30 +1005,40 @@ function CreateUserForm({
 
       <Separator />
 
-      <div className="flex items-center justify-between p-2 rounded-md border border-border/60 bg-background">
-        <div className="flex items-center gap-2">
-          <KeyRound className="size-3.5 text-chart-5" />
-          <span className="text-[11px] font-medium">
-            {locale === "ar" ? "المصادقة الثنائية (MFA)" : "MFA (2FA)"}
-          </span>
-        </div>
-        <Switch
-          checked={form.mfaEnabled}
-          onCheckedChange={(v) => setForm({ ...form, mfaEnabled: v })}
-          className="scale-75"
-        />
+      <div className="flex items-center gap-2 p-2 rounded-md border border-border/60 bg-background">
+        <KeyRound className="size-3.5 text-chart-5 shrink-0" />
+        <span className="text-[11px] text-muted-foreground">
+          {locale === "ar"
+            ? "المصادقة الثنائية يفعّلها المستخدم بنفسه من إعداداته بعد أول دخول."
+            : "MFA is enrolled by the user from their own settings after first sign-in."}
+        </span>
       </div>
 
       <div>
-        <Label className="text-[10px]">
-          {locale === "ar" ? "كلمة المرور المؤقتة" : "Temp Password"}
+        <Label className="text-[10px] flex items-center justify-between gap-2">
+          <span>{locale === "ar" ? "كلمة المرور المؤقتة" : "Temp password"}</span>
+          <span className="font-normal text-muted-foreground">
+            {tr("account_password_requirements", locale, {
+              min: ADMIN_PASSWORD_MIN_LENGTH,
+              max: ADMIN_PASSWORD_MAX_LENGTH,
+            })}
+          </span>
         </Label>
         <Input
           type="password"
+          required
+          minLength={ADMIN_PASSWORD_MIN_LENGTH}
+          maxLength={ADMIN_PASSWORD_MAX_LENGTH}
+          autoComplete="new-password"
           value={form.password}
           onChange={(e) => setForm({ ...form, password: e.target.value })}
           className="h-8 text-xs mt-1"
-          placeholder={locale === "ar" ? "اتركها فارغة للقيمة الافتراضية" : "Leave blank for default"}
+          placeholder={
+            locale === "ar"
+              ? `${ADMIN_PASSWORD_MIN_LENGTH} أحرف على الأقل`
+              : `At least ${ADMIN_PASSWORD_MIN_LENGTH} characters`
+          }
+          aria-invalid={form.password.length > 0 && passwordTooShort}
         />
       </div>
 
@@ -1004,7 +1047,9 @@ function CreateUserForm({
           size="sm"
           className="gap-1.5"
           onClick={() => create.mutate()}
-          disabled={create.isPending || !form.name || !form.email}
+          disabled={
+            create.isPending || !form.name || !form.email || passwordTooShort
+          }
         >
           {create.isPending ? (
             <Loader2 className="size-3.5 animate-spin" />

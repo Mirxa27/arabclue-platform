@@ -145,6 +145,7 @@ export const localizationRegistry = {
     ar: "نسبة التغيّر في النشاط الجديد خلال آخر 7 أيام مقارنة بالـ 7 أيام السابقة — لا تعكس الرقم الإجمالي أعلاه",
     en: "Change in new activity over the last 7 days vs the prior 7 days — not the total shown above",
   },
+  stat_compliance_no_checks: { ar: "لا توجد فحوصات بعد", en: "No checks yet" },
 
   // File ingestion
   ingest_title: { ar: "أسحب وأفلت ملفات المناقصة هنا", en: "Drag & drop tender files here" },
@@ -367,6 +368,17 @@ export const localizationRegistry = {
   VERIFICATION_EMAIL_RESEND_ACCEPTED: {
     ar: "إذا كان هذا البريد مسجلاً وغير مؤكد فستصلك رسالة تحقق جديدة",
     en: "If this email is registered and unverified, a new verification message is on the way",
+  },
+  // Resend outcomes that are not a delivery. Both are true for every address
+  // (an unconfigured transport is platform-wide; a refused send names no
+  // account), so they stay non-committal while telling the reader who can help.
+  auth_resend_undeliverable_unconfigured: {
+    ar: "خدمة البريد غير مهيأة على هذا الخادم، فلا يمكن إرسال رسالة تحقق — تواصل مع مسؤول المنصة لتأكيد البريد يدوياً",
+    en: "Email delivery is not configured on this server, so no verification message can be sent — contact the platform administrator to have the address verified manually",
+  },
+  auth_resend_undeliverable_failed: {
+    ar: "تعذر إرسال رسالة التحقق الآن — أعد المحاولة بعد قليل، أو اطلب من مسؤول المنصة تأكيد البريد يدوياً",
+    en: "The verification message could not be sent right now — try again shortly, or ask the platform administrator to verify the address manually",
   },
   VERIFICATION_RESEND_INVALID: {
     ar: "البريد الإلكتروني المُدخل غير صالح",
@@ -643,6 +655,21 @@ export const localizationRegistry = {
   event_document_version_created: { ar: "تم إنشاء إصدار مستند", en: "Document Version Created" },
   event_template_used: { ar: "تم استخدام القالب", en: "Template Used" },
   event_section_added: { ar: "تمت إضافة قسم", en: "Section Added" },
+  event_account_registered: { ar: "تم إنشاء الحساب", en: "Account Registered" },
+  event_email_verified: { ar: "تم تأكيد البريد", en: "Email Verified" },
+  event_project_created: { ar: "تم إنشاء المشروع", en: "Project Created" },
+  event_checkout_started: { ar: "بدأت عملية الدفع", en: "Checkout Started" },
+  event_checkout_completed: { ar: "اكتملت عملية الدفع", en: "Checkout Completed" },
+  // Analytics: review outcomes and the activation funnel
+  metric_proposals_approved: { ar: "عروض معتمدة", en: "Proposals Approved" },
+  metric_proposals_rejected: { ar: "عروض مرفوضة", en: "Proposals Rejected" },
+  analytics_funnel_title: { ar: "مسار التفعيل", en: "Activation funnel" },
+  funnel_stage_registered: { ar: "حسابات مسجلة", en: "Accounts registered" },
+  funnel_stage_verified: { ar: "بريد مؤكد", en: "Emails verified" },
+  funnel_stage_first_project: { ar: "مشاريع أُنشئت", en: "Projects created" },
+  funnel_stage_first_document: { ar: "مستندات رُفعت", en: "Documents uploaded" },
+  funnel_stage_first_run: { ar: "تشغيلات بدأت", en: "Agent runs started" },
+  funnel_stage_first_export: { ar: "عروض صُدّرت", en: "Proposals exported" },
 
   // Contract Template Authoring (Req 6)
   RESERVED_TEMPLATE_KEY: {
@@ -945,6 +972,47 @@ export const localizationRegistry = {
   NO_PAYMENT_METHODS: {
     ar: "لا توجد وسائل دفع متاحة للفوترة المتكررة",
     en: "No payment methods available for recurring billing",
+  },
+
+  // Billing panel: trial urgency, usage urgency, and renewal fallback copy.
+  billing_trial_ends_in: {
+    ar: "تنتهي الفترة التجريبية خلال {{days}} يوم",
+    en: "Trial ends in {{days}} days",
+  },
+  billing_trial_days_left_badge: {
+    ar: "تجريبي · {{days}} يوم متبقٍ",
+    en: "Trial · {{days}} days left",
+  },
+  billing_trial_banner_title: {
+    ar: "فترتك التجريبية تنتهي قريبًا",
+    en: "Your trial is ending soon",
+  },
+  billing_trial_banner_body: {
+    ar: "اختر باقة قبل {{date}} لتستمر عمليات تشغيل الوكلاء والرفع دون انقطاع.",
+    en: "Choose a plan before {{date}} so agent runs and uploads continue without interruption.",
+  },
+  billing_trial_ended_title: {
+    ar: "انتهت الفترة التجريبية",
+    en: "Your free trial has ended",
+  },
+  billing_trial_ended_body: {
+    ar: "اختر باقة للمتابعة. مستنداتك الحالية محفوظة.",
+    en: "Choose a plan to continue. Your existing documents are kept.",
+  },
+  billing_choose_plan: { ar: "اختيار باقة", en: "Choose a plan" },
+  billing_plan_activate: { ar: "تفعيل الباقة", en: "Activate" },
+  billing_usage_upgrade: { ar: "رقِّ الباقة", en: "Upgrade" },
+  billing_recurring_fallback_title: {
+    ar: "التجديد التلقائي غير متاح الآن",
+    en: "Automatic renewal unavailable right now",
+  },
+  billing_recurring_fallback_body: {
+    ar: "سنُكمل الدفع لدورة واحدة؛ ستحتاج إلى تجديد الاشتراك يدويًا عند انتهائها.",
+    en: "Continuing with a one-time payment; you will need to renew manually when this cycle ends.",
+  },
+  billing_cancel_renewal_body: {
+    ar: "سيتوقف التجديد التلقائي الآن. يستمر وصولك حتى نهاية الفترة المدفوعة، وللتجديد لاحقًا ستبدأ عملية دفع جديدة.",
+    en: "Automatic renewal stops now. Your access continues to the end of the paid period; to renew later you will start a new checkout.",
   },
 
   // Payment Reconciliation (Req 10)
@@ -1525,6 +1593,29 @@ export const localizationRegistry = {
     ar: "لم يكتمل تشغيل الوكلاء لمشروع «{{projectTitle}}». افتح صفحة الوكلاء لمعرفة السبب وابدأ تشغيلاً جديداً عندما تكون مستعداً.",
     en: "The agent run for “{{projectTitle}}” did not finish. Open the agents page to see why, and start a new run when you are ready.",
   },
+  notification_trial_ending_subject: {
+    ar: "تنتهي فترتك التجريبية خلال {{days}} يوم — اختر خطة",
+    en: "Your trial ends in {{days}} day(s) — choose a plan",
+  },
+  notification_trial_ending_body: {
+    ar: "تنتهي الفترة التجريبية لمساحة العمل في {{endsOn}}. اختر خطة من صفحة الفوترة لتستمر العروض والوكلاء دون انقطاع.",
+    en: "The workspace trial ends on {{endsOn}}. Choose a plan on the billing page so proposals and agent runs continue without interruption.",
+  },
+  notification_deadline_reminder_subject: {
+    ar: "موعد التقديم خلال {{days}} يوم: {{projectTitle}}",
+    en: "Submission deadline in {{days}} day(s): {{projectTitle}}",
+  },
+  notification_deadline_reminder_body: {
+    ar: "موعد تقديم مناقصة «{{projectTitle}}» هو {{deadline}}. راجع العرض وأكمل التصدير قبل الموعد.",
+    en: "The submission deadline for “{{projectTitle}}” is {{deadline}}. Review the proposal and finish the export before then.",
+  },
+  // Derived bell alerts (composed per poll, not persisted)
+  notification_cert_expired_title: { ar: "شهادة منتهية: {{name}}", en: "Certificate expired: {{name}}" },
+  notification_cert_expiring_title: { ar: "شهادة تنتهي خلال {{days}} يوم: {{name}}", en: "Certificate expires in {{days}}d: {{name}}" },
+  notification_review_pending_title: { ar: "مراجعة بانتظارك: {{proposalTitle}}", en: "Review pending: {{proposalTitle}}" },
+  notification_review_pending_body: { ar: "الخطوة {{step}} ({{role}})", en: "Step {{step}} ({{role}})" },
+  notification_onboarding_title: { ar: "أكمل إعداد الحساب", en: "Complete account onboarding" },
+  notification_onboarding_body: { ar: "ناقص: {{missing}}", en: "Missing: {{missing}}" },
 
   // Platform completion: account and invitation surfaces
   account_registration_success: { ar: "تم إنشاء الحساب ومساحة العمل بنجاح", en: "Account and workspace created successfully" },
@@ -1553,6 +1644,26 @@ export const localizationRegistry = {
   invitation_delivery_sent: { ar: "تم الإرسال", en: "Sent" },
   invitation_delivery_unconfigured: { ar: "خدمة البريد غير مهيأة", en: "Email not configured" },
   invitation_delivery_failed: { ar: "فشل الإرسال", en: "Delivery failed" },
+  invitation_resend_action: { ar: "إعادة الإرسال", en: "Resend" },
+  invitation_resent: { ar: "أُعيد إرسال الدعوة", en: "Invitation resent" },
+  // Team panel: members list and membership management
+  team_panel_title: { ar: "الفريق", en: "Team" },
+  team_panel_summary: { ar: "{{members}} عضو · {{pending}} دعوة معلقة", en: "{{members}} member(s) · {{pending}} pending" },
+  team_members_title: { ar: "الأعضاء", en: "Members" },
+  team_member_you: { ar: "أنت", en: "You" },
+  team_member_role_owner: { ar: "مالك", en: "Owner" },
+  team_member_role_admin: { ar: "مدير", en: "Admin" },
+  team_member_role_member: { ar: "عضو", en: "Member" },
+  team_member_role_updated: { ar: "تم تحديث دور العضو", en: "Member role updated" },
+  team_member_remove_action: { ar: "إزالة", en: "Remove" },
+  team_member_remove_confirm: { ar: "إزالة {{email}} من مساحة العمل؟", en: "Remove {{email}} from the workspace?" },
+  team_member_removed: { ar: "تمت إزالة العضو", en: "Member removed" },
+  team_invite_send_action: { ar: "إرسال دعوة", en: "Send invitation" },
+  // Membership management failures (ApiError codes)
+  WORKSPACE_MEMBER_NOT_FOUND: { ar: "العضو غير موجود في مساحة العمل هذه", en: "Member not found in this workspace" },
+  CANNOT_CHANGE_OWN_MEMBERSHIP: { ar: "لا يمكنك تغيير عضويتك بنفسك — اطلب ذلك من مدير آخر", en: "You cannot change your own membership — ask another manager" },
+  WORKSPACE_LAST_OWNER: { ar: "يجب أن تحتفظ مساحة العمل بمالك واحد على الأقل", en: "A workspace must keep at least one owner" },
+  MEMBER_ROLE_FORBIDDEN: { ar: "المالك فقط يمكنه منح دور المالك أو سحبه", en: "Only an owner can grant or revoke the owner role" },
   invitation_email_subject: { ar: "دعوة للانضمام إلى مساحة عمل في أراب كلاو", en: "Invitation to join an Arabclue workspace" },
   invitation_email_heading: { ar: "دعوة مساحة عمل", en: "Workspace invitation" },
   invitation_email_intro: { ar: "تمت دعوتك للانضمام إلى مساحة العمل {{workspaceName}} بدور {{role}}.", en: "You have been invited to join workspace {{workspaceName}} with the role {{role}}." },
@@ -2138,6 +2249,14 @@ export const localizationRegistry = {
     ar: "اشتراكك غير نشط. جدِّد الاشتراك لمتابعة العمل",
     en: "Your subscription is not active. Renew it to continue",
   },
+  TRIAL_ENDED: {
+    ar: "انتهت فترتك التجريبية المجانية — اختر باقة للمتابعة",
+    en: "Your free trial has ended — choose a plan to continue",
+  },
+  EXPORT_FORMAT_NOT_IN_PLAN: {
+    ar: "صيغة التصدير هذه غير مشمولة في باقتك. رقِّ الباقة لفتحها",
+    en: "This export format is not included in your plan. Upgrade to unlock it",
+  },
 
   // Structured proposal snapshots. These rejections used to be English strings
   // written at the call site in the snapshot route, which meant an Arabic
@@ -2329,6 +2448,15 @@ export const localizationRegistry = {
   AI_PROVIDER_NOT_FOUND: {
     ar: "لم يتم العثور على مزوّد الذكاء الاصطناعي",
     en: "The AI provider was not found",
+  },
+  API_KEY_MISSING: {
+    ar: "لا يمكن تفعيل هذا الاتصال لأن مفتاح {{envKey}} غير متاح. أضفه في إعدادات البيئة ثم أعد المحاولة",
+    en: "This connection cannot be activated because the {{envKey}} key does not resolve. Set it under Environment and retry",
+  },
+  admin_ai_key_resolved: { ar: "المفتاح متاح", en: "Key resolved" },
+  admin_ai_key_missing: {
+    ar: "المفتاح مفقود — أضف {{envKey}} في إعدادات البيئة",
+    en: "Key missing — set {{envKey}} in Environment",
   },
   AI_PROVIDER_MODELS_FETCH_FAILED: {
     ar: "لم تستجب نقطة نهاية النماذج لدى المزوّد",
@@ -2569,6 +2697,38 @@ export const localizationRegistry = {
   error_action_download_proposal: { ar: "تعذر تنزيل ملف العطاء", en: "Unable to download the bid document" },
   error_action_sign_in: { ar: "تعذر تسجيل الدخول", en: "Unable to sign in" },
   error_action_update_profile: { ar: "تعذر تحديث الملف الشخصي", en: "Unable to update the profile" },
+
+  // Autopilot blocked by account setup (upload saved, run waiting)
+  autopilot_blocked_onboarding_title: {
+    ar: "تم حفظ الرفع. الطيار الآلي ينتظر إكمال إعداد الحساب",
+    en: "Upload saved. Autopilot is waiting for account setup",
+  },
+  autopilot_blocked_onboarding_description: {
+    ar: "المطلوب: {{steps}}",
+    en: "Missing: {{steps}}",
+  },
+  autopilot_open_guided_setup: { ar: "افتح الإعداد الموجّه", en: "Open guided setup" },
+
+  // Topbar search
+  search_no_results: { ar: "لا نتائج مطابقة", en: "No results" },
+
+  // Etimad cockpit
+  etimad_checklist_device_only: {
+    ar: "محفوظ على هذا الجهاز فقط — لا يراه بقية الفريق",
+    en: "Saved on this device only — teammates do not see these ticks",
+  },
+  etimad_deadline_saved: { ar: "تم حفظ موعد التقديم", en: "Submission deadline saved" },
+  etimad_deadline_save_failed: { ar: "تعذر حفظ موعد التقديم", en: "Could not save the deadline" },
+
+  // Registration handoff from pricing
+  auth_register_trial_hint: {
+    ar: "تجربة مجانية 30 يوماً — يلزم تأكيد البريد قبل الاستخدام",
+    en: "30-day free trial — email verification required before use",
+  },
+  auth_register_intended_plan: {
+    ar: "ستبدأ تجربة مجانية لمدة 30 يوماً؛ ستكون باقة {{plan}} محددة مسبقاً في الفوترة",
+    en: "You're starting a 30-day free trial; {{plan}} will be preselected in Billing",
+  },
 } as const satisfies Dict;
 
 /** Compatibility alias for existing callers that index the dictionary with API codes. */
@@ -2672,6 +2832,11 @@ export const DYNAMIC_TRANSLATION_KEY_MANIFEST = {
     DOCUMENT_VERSION_CREATED: "event_document_version_created",
     TEMPLATE_USED: "event_template_used",
     SECTION_ADDED: "event_section_added",
+    ACCOUNT_REGISTERED: "event_account_registered",
+    EMAIL_VERIFIED: "event_email_verified",
+    PROJECT_CREATED: "event_project_created",
+    CHECKOUT_STARTED: "event_checkout_started",
+    CHECKOUT_COMPLETED: "event_checkout_completed",
   },
   invitationDelivery: {
     PENDING: "invitation_delivery_pending",
@@ -3196,6 +3361,8 @@ export const COMPLETION_ERROR_CONTRACTS = {
   QUOTA_STORAGE_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_STORAGE_EXCEEDED" },
   QUOTA_TOKENS_EXCEEDED: { actionKey: "error_action_complete_request", messageKey: "QUOTA_TOKENS_EXCEEDED" },
   SUBSCRIPTION_INACTIVE: { actionKey: "error_action_complete_request", messageKey: "SUBSCRIPTION_INACTIVE" },
+  TRIAL_ENDED: { actionKey: "error_action_complete_request", messageKey: "TRIAL_ENDED" },
+  EXPORT_FORMAT_NOT_IN_PLAN: { actionKey: "error_action_complete_request", messageKey: "EXPORT_FORMAT_NOT_IN_PLAN" },
   SNAPSHOT_BODY_TOO_LARGE: { actionKey: "error_action_save_proposal_snapshot", messageKey: "SNAPSHOT_BODY_TOO_LARGE" },
   INVALID_SNAPSHOT_JSON: { actionKey: "error_action_save_proposal_snapshot", messageKey: "INVALID_SNAPSHOT_JSON" },
   INVALID_SNAPSHOT_REQUEST: { actionKey: "error_action_save_proposal_snapshot", messageKey: "INVALID_SNAPSHOT_REQUEST" },
@@ -3240,6 +3407,7 @@ export const COMPLETION_ERROR_CONTRACTS = {
   AGENT_RUN_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AGENT_RUN_NOT_FOUND" },
   AGENT_RUN_STREAM_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AGENT_RUN_STREAM_NOT_FOUND" },
   AI_PROVIDER_NOT_FOUND: { actionKey: "error_action_access_resource", messageKey: "AI_PROVIDER_NOT_FOUND" },
+  API_KEY_MISSING: { actionKey: "error_action_complete_request", messageKey: "API_KEY_MISSING" },
   AI_PROVIDER_MODELS_FETCH_FAILED: { actionKey: "error_action_complete_request", messageKey: "AI_PROVIDER_MODELS_FETCH_FAILED" },
   SUPER_ADMIN_REQUIRED: { actionKey: "error_action_access_resource", messageKey: "SUPER_ADMIN_REQUIRED" },
   ENV_KEY_PROTECTED: { actionKey: "error_action_complete_request", messageKey: "ENV_KEY_PROTECTED" },

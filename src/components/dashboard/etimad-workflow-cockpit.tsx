@@ -1,15 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { apiJson } from "@/lib/api-client";
+import { tr } from "@/lib/i18n";
+import type { ApiProject } from "@/lib/api-types";
 import { cn } from "@/lib/utils";
 import {
   CalendarClock,
   FileStack,
   Landmark,
+  Loader2,
   Package,
+  Pencil,
   Shield,
 } from "lucide-react";
 
@@ -83,18 +91,67 @@ function storageKey(projectId: string) {
   return `arabclue-etimad-cockpit:${projectId}`;
 }
 
+/** `datetime-local` wants local wall-clock time without an offset. */
+function toLocalInputValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function EtimadWorkflowCockpit({
   projectId,
   locale,
-  deadline,
-  etimadRef,
 }: {
   projectId: string | null;
   locale: "ar" | "en";
-  deadline?: string | null;
-  etimadRef?: string | null;
 }) {
   const ar = locale === "ar";
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  // The projects list is the source of truth for reference and deadline: it
+  // is what the project card below renders, so the two can never disagree.
+  // (A store-held copy went stale across reloads and showed "not set" here
+  // while the card showed the date.)
+  const { data: projectsData } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => apiJson<{ projects: ApiProject[] }>("/api/projects"),
+    staleTime: 5_000,
+  });
+  const project = projectId
+    ? (projectsData?.projects ?? []).find((p) => p.id === projectId) ?? null
+    : null;
+  const deadline = project?.submissionDeadline ?? null;
+  const etimadRef = project?.etimadRef ?? null;
+
+  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [deadlineDraft, setDeadlineDraft] = useState("");
+
+  const saveDeadline = useMutation({
+    mutationFn: async (value: string) => {
+      if (!projectId) throw new Error("no project");
+      const submissionDeadline = value ? new Date(value).toISOString() : null;
+      return apiJson<{ project: ApiProject }>(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionDeadline }),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      setEditingDeadline(false);
+      toast({ title: tr("etimad_deadline_saved", locale) });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: tr("etimad_deadline_save_failed", locale),
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
   const [checks, setChecks] = useState<Record<ChecklistKey, boolean>>({
     deadlineLogged: false,
     clarifications: false,
@@ -153,8 +210,8 @@ export function EtimadWorkflowCockpit({
         timeStyle: "short",
       })
     : ar
-      ? "غير محدد — حدّثه من إعداد المناقصة"
-      : "Not set — update in tender setup";
+      ? "غير محدد"
+      : "Not set";
 
   return (
     <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
@@ -188,20 +245,72 @@ export function EtimadWorkflowCockpit({
         </div>
       </div>
 
-      <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2 text-xs">
+      <div className="px-4 py-3 border-b border-border/40 flex flex-wrap items-center gap-2 text-xs">
         <CalendarClock className="size-3.5 text-teal-700 shrink-0" />
         <span className="text-muted-foreground">
           {ar ? "موعد التقديم:" : "Submission deadline:"}
         </span>
-        <span
-          className={cn(
-            "font-medium",
-            !deadline && "text-amber-700 dark:text-amber-400"
-          )}
-        >
-          {deadlineLabel}
-        </span>
+        {editingDeadline ? (
+          <form
+            className="flex flex-wrap items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveDeadline.mutate(deadlineDraft);
+            }}
+          >
+            <Input
+              type="datetime-local"
+              value={deadlineDraft}
+              onChange={(e) => setDeadlineDraft(e.target.value)}
+              className="h-8 w-auto text-xs"
+              dir="ltr"
+              aria-label={ar ? "موعد التقديم" : "Submission deadline"}
+            />
+            <Button type="submit" size="sm" className="h-8" disabled={saveDeadline.isPending}>
+              {saveDeadline.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {ar ? "حفظ" : "Save"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-8"
+              disabled={saveDeadline.isPending}
+              onClick={() => setEditingDeadline(false)}
+            >
+              {ar ? "إلغاء" : "Cancel"}
+            </Button>
+          </form>
+        ) : (
+          <>
+            <span
+              className={cn(
+                "font-medium",
+                !deadline && "text-amber-700 dark:text-amber-400"
+              )}
+            >
+              {deadlineLabel}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-[11px] gap-1"
+              onClick={() => {
+                setDeadlineDraft(toLocalInputValue(deadline));
+                setEditingDeadline(true);
+              }}
+            >
+              <Pencil className="size-3" />
+              {deadline ? (ar ? "تعديل" : "Edit") : ar ? "تحديد الموعد" : "Set deadline"}
+            </Button>
+          </>
+        )}
       </div>
+
+      <p className="px-4 pt-2 text-[10px] text-muted-foreground">
+        {tr("etimad_checklist_device_only", locale)}
+      </p>
 
       <ul className="divide-y divide-border/40">
         {KEYS.map((item) => {
@@ -236,22 +345,4 @@ export function EtimadWorkflowCockpit({
       </ul>
     </div>
   );
-}
-
-/** Fetch project meta for the cockpit when only id is known. */
-export function useProjectEtimadMeta(projectId: string | null) {
-  return useQuery({
-    queryKey: ["project-etimad", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}`);
-      if (!res.ok) throw new Error("project");
-      return res.json() as Promise<{
-        project?: {
-          submissionDeadline?: string | null;
-          etimadRef?: string | null;
-        };
-      }>;
-    },
-  });
 }

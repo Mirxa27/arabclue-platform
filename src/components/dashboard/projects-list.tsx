@@ -155,6 +155,9 @@ export function ProjectsList() {
             <div className="divide-y divide-border/40">
               {projects.map((p) => {
                 const selected = p.id === activeProjectId;
+                // No checks yet means no score — not 0 %. The API sends 0 for
+                // an empty sample, which read as a failing project.
+                const hasComplianceSample = (p._count?.complianceChecks ?? 0) > 0;
                 const compliancePct = formatPercent(p.complianceScore);
                 const agentPct = formatPercent(
                   p.latestAgentRun?.overallProgress
@@ -230,11 +233,11 @@ export function ProjectsList() {
                           <div className="flex justify-between text-[10px] text-muted-foreground">
                             <span>{ar ? "الامتثال" : "Compliance"}</span>
                             <span className="font-mono font-semibold">
-                              {compliancePct}%
+                              {hasComplianceSample ? `${compliancePct}%` : "—"}
                             </span>
                           </div>
                           <Progress
-                            value={Number(compliancePct)}
+                            value={hasComplianceSample ? Number(compliancePct) : 0}
                             className="h-1"
                           />
                         </div>

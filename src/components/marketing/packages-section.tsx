@@ -17,8 +17,28 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePublicLocale } from "@/components/marketing/public-shell";
-import { MARKETING_PLANS, formatSar } from "@/lib/marketing-plans";
+import { MARKETING_PLANS, formatSar, type MarketingPlan } from "@/lib/marketing-plans";
+import { contactChannels } from "@/lib/marketing/company-content";
 import { cn } from "@/lib/utils";
+
+export type BillingCycleParam = "monthly" | "yearly";
+
+/**
+ * Where a plan card sends the reader. The plan and the toggle's cycle ride
+ * along so Billing can preselect them after sign-up; every card used to point
+ * at /login, which asked a prospect to sign in to an account they do not have.
+ */
+export function registerHref(plan: MarketingPlan["code"], cycle: BillingCycleParam): string {
+  return `/register?plan=${plan}&cycle=${cycle}`;
+}
+
+/** No dedicated sales inbox exists yet; product support is the staffed one. */
+const SALES_EMAIL = contactChannels[0].email;
+
+export function talkToSalesHref(locale: "ar" | "en"): string {
+  const subject = locale === "ar" ? "استفسار عن باقة المؤسسات" : "Enterprise plan inquiry";
+  return `mailto:${SALES_EMAIL}?subject=${encodeURIComponent(subject)}`;
+}
 
 export function PackagesSection({
   id = "packages",
@@ -31,6 +51,7 @@ export function PackagesSection({
   const ar = locale === "ar";
   const CtaIcon = ar ? ArrowLeft : ArrowRight;
   const [yearly, setYearly] = useState(false);
+  const cycle: BillingCycleParam = yearly ? "yearly" : "monthly";
 
   return (
     <section
@@ -103,10 +124,13 @@ export function PackagesSection({
                   -17%
                 </span>
               </button>
+              {/* Positioned from the reading start, so in RTL the pill sits
+                  under the active label instead of the inactive one; `layout`
+                  animates the move. A bare `left` was LTR-only. */}
               <motion.div
                 layout
                 className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-full bg-white shadow"
-                animate={{ left: yearly ? "calc(50% + 2px)" : "4px" }}
+                style={{ insetInlineStart: yearly ? "calc(50% + 2px)" : "4px" }}
                 transition={{ type: "spring", stiffness: 320, damping: 26 }}
               />
             </div>
@@ -122,6 +146,7 @@ export function PackagesSection({
           {MARKETING_PLANS.map((plan, i) => {
             const isStarter = plan.code === "STARTER";
             const isPro = plan.code === "PRO";
+            const isEnterprise = plan.code === "ENTERPRISE";
             const Icon = isPro ? Crown : isStarter ? Zap : Building2;
             const price = yearly ? plan.priceYearly : plan.priceMonthly;
             const priceLabel = yearly ? (ar ? "/ سنة" : "/ year") : ar ? "/ شهر" : "/ mo";
@@ -242,9 +267,14 @@ export function PackagesSection({
                             : "bg-white/[0.08] text-white hover:bg-white/[0.12] border border-white/10 hover:border-white/15"
                         )}
                       >
-                        <Link href="/login" className="inline-flex items-center justify-center gap-2">
+                        <Link
+                          href={isEnterprise ? talkToSalesHref(locale) : registerHref(plan.code, cycle)}
+                          className="inline-flex items-center justify-center gap-2"
+                        >
                           <span className="relative z-10 flex items-center gap-2">
-                            {ar ? "ابدأ الآن" : "Start now"}
+                            {isEnterprise
+                              ? ar ? "تحدث مع المبيعات" : "Talk to sales"
+                              : ar ? "ابدأ التجربة المجانية" : "Start free trial"}
                             <CtaIcon className="h-4 w-4 transition-transform group-hover/btn:translate-x-0.5" />
                           </span>
                           {plan.highlight && (
@@ -257,9 +287,22 @@ export function PackagesSection({
                           )}
                         </Link>
                       </Button>
-                      <p className="mt-3 text-center text-[11px] leading-relaxed text-white/25">
-                        {ar ? "بدون بطاقة • إلغاء أي وقت" : "No card • Cancel anytime"}
-                      </p>
+                      {isEnterprise ? (
+                        <p className="mt-3 text-center text-[11px] leading-relaxed text-white/40">
+                          <Link
+                            href={registerHref(plan.code, cycle)}
+                            className="underline underline-offset-4 hover:text-white/70"
+                          >
+                            {ar ? "أو ابدأ تجربة مجانية 30 يوماً" : "Or start a 30-day free trial"}
+                          </Link>
+                        </p>
+                      ) : (
+                        <p className="mt-3 text-center text-[11px] leading-relaxed text-white/25">
+                          {ar
+                            ? "تجربة مجانية 30 يوماً • بدون بطاقة • إلغاء أي وقت"
+                            : "30-day free trial • No card • Cancel anytime"}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -280,7 +323,10 @@ export function PackagesSection({
               { en: "PDPL & NCA", ar: "PDPL و NCA" },
               { en: "Bilingual export", ar: "تصدير ثنائي" },
               { en: "Pricing guard", ar: "حارس التسعير" },
-              { en: "Audit log", ar: "سجل تدقيق" },
+              // "Audit log" is platform-admin only (AuditLog has no workspace
+              // scope), so a customer never sees it; version history is what
+              // every workspace gets.
+              { en: "Version history", ar: "سجل الإصدارات" },
             ].map((t) => (
               <span key={t.en} className="inline-flex items-center gap-1 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/50">
                 <Check className="h-3 w-3 text-emerald-300/60" />

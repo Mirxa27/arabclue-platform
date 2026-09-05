@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/store";
+import { isAppPath, resolveAppPath } from "@/lib/dashboard-routes";
 import { tr } from "@/lib/i18n";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
@@ -41,6 +43,7 @@ import { ErrorState } from "@/components/patterns";
 
 export function DashboardTopbar() {
   const { locale, toggle } = useLocale();
+  const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
   const { setView, setMobileNavOpen, setActiveProjectId } = useUI();
   const { data: session } = useSession();
@@ -136,6 +139,30 @@ export function DashboardTopbar() {
   const notifications = (notifData?.items ?? []) as ApiNotification[];
   const visibleNotifications = useMemo(() => notifications.filter((n) => !isDismissed(n.id)), [notifications, isDismissed]);
 
+  /**
+   * Notifications carry three href shapes: `?view=x` / `/app?view=x` from the
+   * derived alerts, and canonical `/app/projects/<id>/proposals` paths from
+   * agent runs. Only the first two used to do anything; a run notification
+   * was a dead click.
+   */
+  const openNotification = (href: string | undefined) => {
+    if (!href) return;
+    if (href.includes("view=")) {
+      const v = href.split("view=")[1] as DashboardView;
+      if (v) startTransition(() => setView(v));
+      return;
+    }
+    const pathname = href.split(/[?#]/)[0];
+    if (!isAppPath(pathname)) return;
+    const resolved = resolveAppPath(pathname);
+    if (resolved.matched) {
+      if (resolved.projectId) setActiveProjectId(resolved.projectId);
+      startTransition(() => setView(resolved.view));
+      return;
+    }
+    router.push(href);
+  };
+
   return (
     <header className="h-[56px] sm:h-[60px] shrink-0 border-b border-[var(--hairline)] bg-[var(--surface-1)]/90 backdrop-blur-[16px] backdrop-saturate-[1.2] flex items-center gap-2 sm:gap-3 px-3 sm:px-4 lg:px-6 z-30">
       <Button
@@ -166,8 +193,13 @@ export function DashboardTopbar() {
         <kbd className="absolute end-2 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1 text-[11px] font-mono text-foreground/30 bg-foreground/[0.06] border border-foreground/10 px-1.5 py-1 rounded-[6px]">
           <Command className="size-3" />K
         </kbd>
-        {searchOpen && hits.length > 0 && (
+        {searchOpen && (hits.length > 0 || q.trim().length > 0) && (
           <div className="absolute top-full mt-2 inset-x-0 rounded-[12px] border border-[var(--hairline)] bg-[var(--surface-2)] shadow-[0_16px_40px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.06)_inset] z-50 max-h-[320px] overflow-y-auto backdrop-blur-xl">
+            {hits.length === 0 ? (
+              <div className="px-3.5 py-2.5 text-[12.5px] text-foreground/45" role="status">
+                {tr("search_no_results", locale)}
+              </div>
+            ) : null}
             {hits.map((h, i) => (
               <button
                 key={`${h.type}-${h.label}-${i}`}
@@ -307,12 +339,7 @@ export function DashboardTopbar() {
                   <button
                     type="button"
                     className="min-w-0 flex-1 text-start px-4 py-3"
-                    onClick={() => {
-                      if (n.href?.includes("view=")) {
-                        const v = n.href.split("view=")[1] as DashboardView;
-                        if (v) startTransition(() => setView(v));
-                      }
-                    }}
+                    onClick={() => openNotification(n.href)}
                   >
                     <div className="text-[12.5px] font-[500] text-foreground/80 leading-[1.4]">{locale === "ar" ? n.titleAr : n.title}</div>
                     <div className="text-[11.5px] text-foreground/45 truncate mt-0.5">{locale === "ar" ? n.bodyAr : n.body}</div>

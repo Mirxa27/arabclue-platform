@@ -218,7 +218,9 @@ function BrandForm({
           logoUrl: payload.logoUrl,
         }),
       });
-      if (!res.ok) throw new Error("save failed");
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -226,6 +228,13 @@ function BrandForm({
       qc.invalidateQueries({ queryKey: ["onboarding"] });
       qc.invalidateQueries({ queryKey: ["business-profile"] });
       toast({ title: locale === "ar" ? "تم حفظ الهوية" : "Brand saved" });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "تعذر حفظ الهوية" : "Brand not saved",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -500,13 +509,22 @@ function PastProjectsPanel({ pastProjects }: { pastProjects: ApiPastProject[] })
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...payload, contractValue: Number(payload.contractValue) || 0 }),
       });
-      if (!res.ok) throw new Error("add failed");
+      if (!res.ok) {
+        throw new Error(apiErrorText(await res.json().catch(() => null), locale));
+      }
       return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["brand"] });
       setNewProject({ title: "", titleAr: "", clientName: "", sector: "GOV", contractValue: "", summary: "", tags: "" });
       toast({ title: locale === "ar" ? "تمت إضافة المشروع" : "Past project added" });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: locale === "ar" ? "تعذرت إضافة المشروع" : "Past project not added",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 

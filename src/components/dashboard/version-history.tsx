@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import type { ApiDocument, ApiDocumentVersion, ApiProposal, ApiProposalVersion } from "@/lib/api-types";
 import { EmptyState, QueryState } from "@/components/patterns";
 import { ListSkeleton } from "./loading-skeletons";
+import { focusUploadDropzone } from "./file-ingestion";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -457,8 +458,15 @@ export function VersionHistory() {
       description={tr("version_history_empty_description", locale)}
       action={
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => startTransition(() => setView("documents"))}>
-            {tr("nav_documents", locale)}
+          <Button
+            size="sm"
+            onClick={() =>
+              // Version history sits beside the drop zone on Documents; a
+              // `setView("documents")` there was a no-op.
+              focusUploadDropzone(() => startTransition(() => setView("documents")))
+            }
+          >
+            {locale === "ar" ? "رفع مستندات" : "Upload documents"}
           </Button>
           <Button
             size="sm"
