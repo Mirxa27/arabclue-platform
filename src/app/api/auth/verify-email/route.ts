@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonApiFailure, jsonOk, withPublicRoute } from "@/lib/api-controller";
 import { createPrismaAccountService } from "@/lib/account-service-prisma";
 import type { AccountService } from "@/lib/account-service";
+import {
+  noopActivationAnalytics,
+  productionActivationAnalytics,
+  type ActivationAnalyticsRecorder,
+} from "@/lib/activation-analytics";
 import { tr } from "@/lib/i18n";
+import { extractClientIp } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +25,12 @@ export const dynamic = "force-dynamic";
 export type VerifyEmailRouteDependencies = Readonly<{
   /** The Account_Service; the production service is used when omitted. */
   service: AccountService;
+  /**
+   * Post-commit funnel analytics. The production recorder is used only when no
+   * dependencies are injected at all; a test that injects a service records
+   * nothing unless it also injects a recorder.
+   */
+  analytics: ActivationAnalyticsRecorder;
 }>;
 
 export async function handleVerifyEmail(
@@ -26,6 +38,9 @@ export async function handleVerifyEmail(
   dependencies?: Partial<VerifyEmailRouteDependencies>
 ): Promise<NextResponse> {
   const service = dependencies?.service ?? createPrismaAccountService();
+  const analytics =
+    dependencies?.analytics ??
+    (dependencies ? noopActivationAnalytics : productionActivationAnalytics);
   return withPublicRoute("auth/verify-email", async () => {
     const payload = await readJsonBodyOrNull(req);
     const token =
@@ -35,7 +50,7 @@ export async function handleVerifyEmail(
 
     const result = await service.verifyEmail({
       token,
-      sourceAddress: getClientIp(req),
+      sourceAddress: extractClientIp(req.headers),
     });
 
     if (!result.ok) {
@@ -45,6 +60,14 @@ export async function handleVerifyEmail(
           : {}),
       });
     }
+
+    // The token was consumed and the user marked verified; the funnel's second
+    // event. One bounded attempt that never throws and never changes this
+    // response (criterion 4.4).
+    await analytics.emailVerified({
+      userId: result.userId,
+      verifiedAt: result.verifiedAt,
+    });
 
     return jsonOk(
       {
@@ -63,12 +86,6 @@ export async function POST(req: NextRequest) {
   return handleVerifyEmail(req);
 }
 
-/** Best-effort source address for the rolling per-address rate limit (1.8). */
-function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip")?.trim() ?? "unknown";
-}
 
 /**
  * Reads the JSON body, returning null for an unreadable body. A missing or

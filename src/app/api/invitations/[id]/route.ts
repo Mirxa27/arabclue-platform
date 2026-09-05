@@ -9,14 +9,10 @@
 import { NextRequest } from "next/server";
 import { jsonApiFailure, jsonOk, withTenant } from "@/lib/api-controller";
 import { createPrismaInvitationService } from "@/lib/invitation-service-prisma";
+import { extractClientIpOrNull } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
-function clientAddress(req: NextRequest): string | null {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() ?? null;
-  return req.headers.get("x-real-ip")?.trim() ?? null;
-}
 
 export async function DELETE(
   req: NextRequest,
@@ -34,7 +30,7 @@ export async function DELETE(
         },
         workspace: { id: ctx.workspace.id, name: ctx.workspace.name },
         invitationId: id,
-        sourceAddress: clientAddress(req),
+        sourceAddress: extractClientIpOrNull(req.headers),
       });
 
       if (!result.ok) {

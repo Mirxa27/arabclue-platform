@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
+import { isPrismaMissingTable } from "@/lib/prisma-missing-table";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,18 @@ export async function POST(req: NextRequest) {
         })
       )
     );
+
+    // A dismissed inbox row is also a read one. Derived ids (cert-…, review-…,
+    // onboarding-…) match no row and are simply skipped; the table may not
+    // exist yet before the platform-completion migration.
+    try {
+      await db.inAppNotification.updateMany({
+        where: { userId, id: { in: ids }, isRead: false },
+        data: { isRead: true },
+      });
+    } catch (err) {
+      if (!isPrismaMissingTable(err)) throw err;
+    }
 
     return jsonOk({ ok: true, count: ids.length });
   }, "notification-dismiss");

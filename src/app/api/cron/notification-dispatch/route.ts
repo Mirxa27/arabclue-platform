@@ -2,7 +2,10 @@ import { redactSensitiveText } from "@/lib/api-failure";
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCron } from "@/lib/cron-auth";
 import { isEmailConfigured } from "@/lib/email";
-import { dispatchPendingNotificationEmails } from "@/lib/notification-service";
+import {
+  NOTIFICATION_DISPATCH_BUDGET_MS,
+  dispatchPendingNotificationEmails,
+} from "@/lib/notification-service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,10 +13,11 @@ export const maxDuration = 60;
 /**
  * POST /api/cron/notification-dispatch
  *
- * Claims PENDING NotificationDelivery email outbox rows and sends them via
- * Resend with a 10-second provider timeout and at most three attempts within
- * the 30-minute delivery deadline (requirements 17.4–17.6). Protected by
- * CRON_SECRET.
+ * Daily sweep of the NotificationDelivery email outbox: rows the inline
+ * post-commit attempt could not deliver are claimed and sent with a 10-second
+ * provider timeout, at most three attempts within the 26-hour delivery
+ * deadline (requirements 17.4–17.6). The sweep stops claiming after 45 seconds
+ * so it always returns inside maxDuration. Protected by CRON_SECRET.
  */
 export async function POST(req: NextRequest) {
   const denied = authorizeCron(req);
@@ -23,6 +27,7 @@ export async function POST(req: NextRequest) {
     const summary = await dispatchPendingNotificationEmails({
       batchSize: 50,
       workerId: `vercel-cron-${crypto.randomUUID()}`,
+      budgetMs: NOTIFICATION_DISPATCH_BUDGET_MS,
     });
 
     return NextResponse.json({

@@ -6,6 +6,9 @@
  * (202, code `VERIFICATION_EMAIL_UNCONFIGURED` or `VERIFICATION_EMAIL_SEND_FAILED`).
  * Reading only `res.ok` therefore sent the user to the "check your inbox"
  * screen to wait for a message nothing was configured to send.
+ *
+ * `POST /api/auth/resend-verification` answers with the same `emailDelivery`
+ * field, so the verify-email page reads its resend result through here too.
  */
 export type RegistrationOutcome =
   /** Verification pending and the message is on its way. */

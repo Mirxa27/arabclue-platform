@@ -10,6 +10,7 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
+  ANALYTICS_ACTIVATION_EVENT_TYPES,
   ANALYTICS_AGENT_RUN_EVENT_TYPES,
   ANALYTICS_AGENT_TERMINAL_EVENT_TYPES,
   ANALYTICS_DOCUMENT_EVENT_TYPES,
@@ -91,6 +92,7 @@ describe("closed analytics event vocabulary (criterion 4.10)", () => {
       ...ANALYTICS_AGENT_RUN_EVENT_TYPES,
       ...ANALYTICS_DOCUMENT_EVENT_TYPES,
       ...ANALYTICS_TEMPLATE_EVENT_TYPES,
+      ...ANALYTICS_ACTIVATION_EVENT_TYPES,
     ]);
     expect(new Set(ANALYTICS_EVENT_TYPES).size).toBe(ANALYTICS_EVENT_TYPES.length);
   });

@@ -83,19 +83,17 @@ describe("isSeatAllowanceExhausted", () => {
 });
 
 describe("every membership-creating path enforces capacity", () => {
-  test("the direct-add endpoint checks before creating", () => {
+  test("the direct-add endpoint is gone: /api/workspaces creates no membership", () => {
+    // It attached any existing account by email without consent and answered
+    // 404 for an unknown address. Adding a member now goes through
+    // POST /api/invitations, which carries the seat check with it.
     const source = readFileSync(
       join(REPO_ROOT, "src/app/api/workspaces/route.ts"),
       "utf8"
     );
-    expect(source).toContain("isSeatAllowanceExhausted");
-    expect(source).toContain("SEAT_LIMIT_REACHED");
-
-    const checkAt = source.indexOf("isSeatAllowanceExhausted");
-    const createAt = source.indexOf("db.workspaceMember.create(");
-    expect(checkAt).toBeGreaterThan(-1);
-    expect(createAt).toBeGreaterThan(-1);
-    expect(checkAt).toBeLessThan(createAt);
+    expect(source).not.toContain("db.workspaceMember.create(");
+    expect(source).not.toMatch(/export async function POST/);
+    expect(source).toContain("POST /api/invitations");
   });
 
   test("the invitation service uses the same shared predicate", () => {

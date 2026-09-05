@@ -5,6 +5,7 @@ import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { jsonApiFailure, parseJsonBody, withAdmin } from "@/lib/api-controller";
 import { toPublicAdminUser } from "@/lib/admin-user-public";
 import { unsealMfaSecret } from "@/lib/mfa-secret";
+import type { Role } from "@/lib/types";
 import { adminUserPatchSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,14 @@ export async function PATCH(
 
   const before = await db.user.findUnique({
     where: { id },
-    select: { role: true, active: true, email: true, mfaSecret: true, mfaEnabled: true },
+    select: {
+      role: true,
+      active: true,
+      email: true,
+      mfaSecret: true,
+      mfaEnabled: true,
+      emailVerified: true,
+    },
   });
   if (!before) {
     return jsonApiFailure("USER_NOT_FOUND", { status: 404 });
@@ -36,6 +44,18 @@ export async function PATCH(
     return jsonApiFailure("SUPER_ADMIN_REQUIRED", { status: 403 });
   }
 
+  // The same rank rule that decides whether a role can be granted decides
+  // whether the holder of that role can be touched at all: an ADMIN may not
+  // deactivate, demote, or strip MFA from a peer ADMIN, only a SUPER_ADMIN may.
+  if (!canGrantRole(session.user.role, before.role as Role)) {
+    return jsonApiFailure("ROLE_GRANT_FORBIDDEN", { status: 403 });
+  }
+
+  // Deactivating yourself is the same lockout DELETE already refuses.
+  if (body.active === false && id === session.user.id) {
+    return jsonApiFailure("CANNOT_DEACTIVATE_OWN_ACCOUNT", { status: 400 });
+  }
+
   if (body.role) {
     const targetRole = body.role;
     if (!canGrantRole(session.user.role, targetRole)) {
@@ -47,6 +67,11 @@ export async function PATCH(
     return jsonApiFailure("MFA_NOT_SET_UP", { status: 400 });
   }
 
+  // Manual verification rescues a user whose verification email never arrived;
+  // clearing it re-imposes the gate. Both are recorded on their own audit row.
+  const emailVerifiedChanged =
+    body.emailVerified !== undefined && body.emailVerified !== before.emailVerified;
+
   const updated = await db.user.update({
     where: { id },
     data: {
@@ -54,8 +79,29 @@ export async function PATCH(
       active: body.active ?? undefined,
       mfaEnabled: body.mfaEnabled ?? undefined,
       locale: body.locale ?? undefined,
+      ...(emailVerifiedChanged
+        ? {
+            emailVerified: body.emailVerified,
+            emailVerifiedAt: body.emailVerified ? new Date() : null,
+          }
+        : {}),
     },
   });
+
+  if (emailVerifiedChanged) {
+    await audit({
+      userId: session.user.id,
+      action: AUDIT_ACTIONS.EMAIL_VERIFICATION_OVERRIDE,
+      resource: "User",
+      resourceId: id,
+      details: {
+        email: before.email,
+        before: { emailVerified: before.emailVerified },
+        after: { emailVerified: updated.emailVerified },
+      },
+      severity: "CRITICAL",
+    });
+  }
 
   const privilegeChanged =
     (body.role !== undefined && body.role !== before.role) ||

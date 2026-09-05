@@ -16,14 +16,10 @@ import {
   describeRateLimitDenial,
   rateLimitAsync as rateLimit,
 } from "@/lib/rate-limit";
+import { extractClientIpOrNull } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
-function clientAddress(req: NextRequest): string | null {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() ?? null;
-  return req.headers.get("x-real-ip")?.trim() ?? null;
-}
 
 export async function POST(req: NextRequest) {
   return withPublicRoute("invitations accept", async () => {
@@ -31,7 +27,7 @@ export async function POST(req: NextRequest) {
     // random bytes, so this is not about guessing it — acceptInvitation runs a
     // serializable transaction, and an unauthenticated caller must not be able
     // to open an unbounded number of them.
-    const address = clientAddress(req) ?? "unknown";
+    const address = extractClientIpOrNull(req.headers) ?? "unknown";
     const rl = await rateLimit({
       key: `invitations:accept:${address}`,
       limit: 10,
@@ -57,7 +53,7 @@ export async function POST(req: NextRequest) {
     const result = await createPrismaInvitationService().acceptInvitation({
       payload,
       session: sessionUser,
-      sourceAddress: clientAddress(req),
+      sourceAddress: extractClientIpOrNull(req.headers),
     });
 
     if (!result.ok) {

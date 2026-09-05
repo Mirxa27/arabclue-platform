@@ -276,6 +276,15 @@ mock.module("../email", () => ({
   await import("../notification-service"));
 });
 
+/**
+ * Schedules without the inline provider attempt. The cron-path tests below
+ * assert the sweep's own claim/retry/terminal behaviour, so the row has to
+ * still be PENDING when the sweep starts.
+ */
+function queue(input: Parameters<typeof sendTransactionalNotification>[0]) {
+  return sendTransactionalNotification(input, { inlineEmailDispatch: false });
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("notification after-commit delivery dispatcher", () => {
@@ -283,8 +292,9 @@ describe("notification after-commit delivery dispatcher", () => {
     resetState();
   });
 
-  test("after-commit scheduling: in-app SENT synchronously, email queued as PENDING", async () => {
+  test("after-commit: in-app SENT, outbox row committed, then one inline send marks it SENT", async () => {
     emailConfigured = true;
+    sendBehavior = "ok";
     const result = await sendTransactionalNotification({
       eventId: "evt-001",
       recipients: [
@@ -294,7 +304,7 @@ describe("notification after-commit delivery dispatcher", () => {
       subjectKey: "notification_review_requested_subject",
       bodyKey: "notification_review_requested_body",
       bodyParams: { proposalTitle: "P1", projectTitle: "T1" },
-      href: "/app?view=reviews",
+      href: "/app/reviews",
       workspaceId: "ws1",
     });
 
@@ -303,15 +313,67 @@ describe("notification after-commit delivery dispatcher", () => {
     expect(inAppDelivery).toBeDefined();
     expect(inAppDelivery!.status).toBe("SENT");
 
-    // Email should be PENDING (queued for async dispatch)
+    // The outbox row was committed with a deadline, then delivered inline.
     const emailDelivery = findDelivery("evt-001", "u1", "email");
     expect(emailDelivery).toBeDefined();
-    expect(emailDelivery!.status).toBe("PENDING");
+    expect(emailDelivery!.status).toBe("SENT");
     expect(emailDelivery!.recipientEmail).toBe("u1@example.com");
     expect(emailDelivery!.deliveryDeadlineAt).not.toBeNull();
-    expect(emailDelivery!.nextAttemptAt).not.toBeNull();
+    expect(emailDelivery!.attemptCount).toBe(1);
+    expect(emailDelivery!.providerMessageId).not.toBeNull();
+    expect(sendCalls).toBe(1);
 
-    // The DeliveryResult for email should be PENDING
+    const emailResult = result.deliveries.find((d) => d.channel === "email");
+    expect(emailResult?.status).toBe("SENT");
+    expect(emailResult?.emailId).toBe(emailDelivery!.providerMessageId);
+  });
+
+  test("after-commit: a failed inline send leaves the row PENDING for the cron sweep", async () => {
+    emailConfigured = true;
+    sendBehavior = "fail";
+    const result = await sendTransactionalNotification({
+      eventId: "evt-001b",
+      recipients: [{ userId: "u1", email: "u1@example.com", locale: "ar" }],
+      type: "REVIEW_REQUESTED",
+      subjectKey: "notification_review_requested_subject",
+      bodyKey: "notification_review_requested_body",
+      workspaceId: "ws1",
+    });
+
+    const emailDelivery = findDelivery("evt-001b", "u1", "email")!;
+    expect(emailDelivery.status).toBe("PENDING");
+    expect(emailDelivery.attemptCount).toBe(1);
+    expect(emailDelivery.errorCode).toBe("EMAIL_SEND_FAILED");
+    expect(emailDelivery.nextAttemptAt).not.toBeNull();
+
+    const emailResult = result.deliveries.find((d) => d.channel === "email");
+    expect(emailResult?.status).toBe("PENDING");
+    expect(emailResult?.reason).toBe("QUEUED_FOR_DISPATCH");
+
+    // The sweep picks it up from where the inline attempt left off.
+    const summary = await dispatchPendingNotificationEmails({
+      now: new Date(Date.now() + 120_000),
+      send: async () => ({ ok: true, id: "re-late", provider: "resend" }),
+    });
+    expect(summary.sent).toBe(1);
+    expect(findDelivery("evt-001b", "u1", "email")!.status).toBe("SENT");
+  });
+
+  test("scheduling only: with the inline attempt disabled the email is queued as PENDING", async () => {
+    emailConfigured = true;
+    const result = await queue({
+      eventId: "evt-001c",
+      recipients: [{ userId: "u1", email: "u1@example.com", locale: "ar" }],
+      type: "REVIEW_REQUESTED",
+      subjectKey: "notification_review_requested_subject",
+      bodyKey: "notification_review_requested_body",
+      workspaceId: "ws1",
+    });
+
+    expect(sendCalls).toBe(0);
+    const emailDelivery = findDelivery("evt-001c", "u1", "email")!;
+    expect(emailDelivery.status).toBe("PENDING");
+    expect(emailDelivery.attemptCount).toBe(0);
     const emailResult = result.deliveries.find((d) => d.channel === "email");
     expect(emailResult?.status).toBe("PENDING");
     expect(emailResult?.reason).toBe("QUEUED_FOR_DISPATCH");
@@ -321,7 +383,7 @@ describe("notification after-commit delivery dispatcher", () => {
     emailConfigured = true;
     sendBehavior = "ok";
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-002",
       recipients: [{ userId: "u2", email: "u2@example.com", locale: "en" }],
       type: "REVIEW_DECISION",
@@ -354,7 +416,7 @@ describe("notification after-commit delivery dispatcher", () => {
     emailConfigured = true;
     sendBehavior = "fail";
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-003",
       recipients: [{ userId: "u3", email: "u3@example.com", locale: "ar" }],
       type: "SUBSCRIPTION_FAILED",
@@ -406,7 +468,7 @@ describe("notification after-commit delivery dispatcher", () => {
   test("idempotency: already-SENT email is not re-delivered by cron", async () => {
     emailConfigured = true;
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-004",
       recipients: [{ userId: "u4", email: "u4@example.com", locale: "ar" }],
       type: "REVIEW_REQUESTED",
@@ -477,7 +539,7 @@ describe("notification after-commit delivery dispatcher", () => {
   test("cron marks PENDING rows SKIPPED when email becomes unconfigured", async () => {
     emailConfigured = true;
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-007",
       recipients: [{ userId: "u7", email: "u7@example.com", locale: "ar" }],
       type: "REVIEW_REQUESTED",
@@ -501,7 +563,7 @@ describe("notification after-commit delivery dispatcher", () => {
   test("status transitions: PENDING → SENT on success", async () => {
     emailConfigured = true;
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-008",
       recipients: [{ userId: "u8", email: "u8@example.com", locale: "en" }],
       type: "REVIEW_REQUESTED",
@@ -525,7 +587,7 @@ describe("notification after-commit delivery dispatcher", () => {
   test("status transitions: PENDING → FAILED after max retries", async () => {
     emailConfigured = true;
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-009",
       recipients: [{ userId: "u9", email: "u9@example.com", locale: "ar" }],
       type: "REVIEW_REQUESTED",
@@ -549,7 +611,7 @@ describe("notification after-commit delivery dispatcher", () => {
   test("claim lease prevents concurrent double-send", async () => {
     emailConfigured = true;
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-010",
       recipients: [{ userId: "u10", email: "u10@example.com", locale: "ar" }],
       type: "REVIEW_REQUESTED",
@@ -580,7 +642,7 @@ describe("notification after-commit delivery dispatcher", () => {
   test("provider timeout is caught and treated as retryable failure", async () => {
     emailConfigured = true;
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-011",
       recipients: [{ userId: "u11", email: "u11@example.com", locale: "ar" }],
       type: "REVIEW_REQUESTED",
@@ -606,7 +668,7 @@ describe("notification after-commit delivery dispatcher", () => {
   test("multiple recipients: each gets its own in-app and email delivery row", async () => {
     emailConfigured = true;
 
-    await sendTransactionalNotification({
+    await queue({
       eventId: "evt-012",
       recipients: [
         { userId: "uA", email: "a@example.com", locale: "ar" },

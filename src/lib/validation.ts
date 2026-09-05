@@ -7,6 +7,7 @@ import {
   type FailureOptions,
 } from "./api-failure";
 import type { CompletionErrorCode } from "./i18n";
+import type { DocCategory } from "./types";
 
 /** Zod 4: prefer top-level z.email() over deprecated z.string().email() */
 export const emailSchema = z.email();
@@ -40,6 +41,8 @@ export const adminUserPatchSchema = z
   .object({
     role: roleSchema.optional(),
     active: z.boolean().optional(),
+    /** Rescue for a user whose verification email never arrived. */
+    emailVerified: z.boolean().optional(),
     mfaEnabled: z.boolean().optional(),
     locale: localeSchema.optional(),
     planId: z.string().min(1).max(64).optional(),
@@ -59,6 +62,8 @@ export const adminPlanWriteSchema = z.object({
   maxWorkspaces: z.number().int().min(-1).optional(),
   maxTokensPerMonth: z.number().int().min(-1).optional(),
   maxStorageGb: z.number().int().min(-1).optional(),
+  /** Seat cap enforced at invitation time; null = unlimited. */
+  maxSeats: z.number().int().min(1).nullable().optional(),
   featuresJson: z.string().max(20_000).optional(),
   isActive: z.boolean().optional(),
   isPublic: z.boolean().optional(),
@@ -218,6 +223,24 @@ export const projectPatchSchema = z
     submissionDeadline: z.string().datetime().nullable().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: "no allowed fields" });
+
+/** Canonical upload categories; mirrors the `DocCategory` union in types.ts. */
+export const DOC_CATEGORIES = [
+  "RFP",
+  "TECHNICAL_SPECS",
+  "IT_CONTRACT",
+  "EA_COMPLIANCE",
+  "QUALIFICATION",
+  "FINANCIAL",
+  "BRAND_ASSET",
+  "OTHER",
+] as const satisfies readonly DocCategory[];
+
+/**
+ * Upload form field: an unknown or missing category files the document under
+ * OTHER instead of persisting whatever string the form carried.
+ */
+export const docCategorySchema = z.enum(DOC_CATEGORIES).catch("OTHER");
 
 export const documentPatchSchema = z
   .object({

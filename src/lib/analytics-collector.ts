@@ -74,6 +74,20 @@ export const ANALYTICS_TEMPLATE_EVENT_TYPES = [
 ] as const;
 
 /**
+ * Top-of-funnel transitions: the account, its verification, its first project,
+ * and the checkout that turns a trial into a plan. Without these the funnel
+ * started at "proposal created" and nothing could say how many sign-ups never
+ * reached it.
+ */
+export const ANALYTICS_ACTIVATION_EVENT_TYPES = [
+  "account_registered",
+  "email_verified",
+  "project_created",
+  "checkout_started",
+  "checkout_completed",
+] as const;
+
+/**
  * The closed event-type vocabulary. Nothing outside this tuple may be appended
  * and no aggregate may report an event type absent from it (criterion 4.10).
  */
@@ -82,6 +96,7 @@ export const ANALYTICS_EVENT_TYPES = [
   ...ANALYTICS_AGENT_RUN_EVENT_TYPES,
   ...ANALYTICS_DOCUMENT_EVENT_TYPES,
   ...ANALYTICS_TEMPLATE_EVENT_TYPES,
+  ...ANALYTICS_ACTIVATION_EVENT_TYPES,
 ] as const;
 
 export type AnalyticsProposalEventType =
@@ -92,6 +107,8 @@ export type AnalyticsDocumentEventType =
   (typeof ANALYTICS_DOCUMENT_EVENT_TYPES)[number];
 export type AnalyticsTemplateEventType =
   (typeof ANALYTICS_TEMPLATE_EVENT_TYPES)[number];
+export type AnalyticsActivationEventType =
+  (typeof ANALYTICS_ACTIVATION_EVENT_TYPES)[number];
 export type AnalyticsEventType = (typeof ANALYTICS_EVENT_TYPES)[number];
 
 /** The single Zod source every writer and reader validates against. */
@@ -142,6 +159,9 @@ export const ANALYTICS_ENTITY_TYPES = [
   "document",
   "template",
   "section",
+  "account",
+  "project",
+  "checkout",
 ] as const;
 
 export type AnalyticsEntityType = (typeof ANALYTICS_ENTITY_TYPES)[number];
@@ -165,6 +185,11 @@ const ANALYTICS_ENTITY_TYPE_BY_EVENT = Object.freeze({
   document_version_created: "document",
   template_used: "template",
   section_added: "section",
+  account_registered: "account",
+  email_verified: "account",
+  project_created: "project",
+  checkout_started: "checkout",
+  checkout_completed: "checkout",
 }) satisfies Record<AnalyticsEventType, AnalyticsEntityType>;
 
 export function analyticsEntityTypeFor(
@@ -192,6 +217,11 @@ const ANALYTICS_LABEL_MEMBER_BY_EVENT = Object.freeze({
   document_version_created: "DOCUMENT_VERSION_CREATED",
   template_used: "TEMPLATE_USED",
   section_added: "SECTION_ADDED",
+  account_registered: "ACCOUNT_REGISTERED",
+  email_verified: "EMAIL_VERIFIED",
+  project_created: "PROJECT_CREATED",
+  checkout_started: "CHECKOUT_STARTED",
+  checkout_completed: "CHECKOUT_COMPLETED",
 }) satisfies Record<
   AnalyticsEventType,
   DynamicTranslationMember<"analyticsEvent">
@@ -303,10 +333,28 @@ const templateMetadataSchema = z
   })
   .strict();
 
+/** Billing cycles a checkout may name; mirrors Subscription.billingCycle. */
+export const ANALYTICS_BILLING_CYCLES = ["MONTHLY", "YEARLY"] as const;
+
+/**
+ * Activation payloads carry identifiers and closed values only: the plan and
+ * cycle a checkout is for, never its amount (criterion 4.6 still applies).
+ */
+const activationMetadataSchema = z
+  .object({
+    locale: localeSchema.optional(),
+    tenderType: optionalIdentifierSchema,
+    planId: optionalIdentifierSchema,
+    billingCycle: z.enum(ANALYTICS_BILLING_CYCLES).optional(),
+    checkoutId: optionalIdentifierSchema,
+  })
+  .strict();
+
 export type AnalyticsProposalMetadata = z.input<typeof proposalMetadataSchema>;
 export type AnalyticsAgentRunMetadata = z.input<typeof agentRunMetadataSchema>;
 export type AnalyticsDocumentMetadata = z.input<typeof documentMetadataSchema>;
 export type AnalyticsTemplateMetadata = z.input<typeof templateMetadataSchema>;
+export type AnalyticsActivationMetadata = z.input<typeof activationMetadataSchema>;
 
 /** Persisted payload shape: identifiers, closed values, counts, and nulls only. */
 export type AnalyticsEventMetadata = Readonly<
@@ -862,6 +910,39 @@ export function buildTemplateAnalyticsEvent(input: {
   );
 }
 
+/**
+ * Activation-funnel transition. `entityId` is the user for account events, the
+ * project for `project_created`, and the checkout for the two checkout events;
+ * `mutationRef` is the persisted record that committed (the user, the
+ * verification token, the project, the checkout or its payment).
+ */
+export function buildActivationAnalyticsEvent(input: {
+  readonly eventType: AnalyticsActivationEventType;
+  readonly entityId: string;
+  readonly mutationRef: string | number;
+  readonly origin: AnalyticsProvenanceInput;
+  readonly metadata?: AnalyticsActivationMetadata;
+  readonly occurredAt?: Date;
+  readonly clock?: UtcClock;
+}): AnalyticsEventBuild {
+  const parsed = activationMetadataSchema.safeParse(input.metadata ?? {});
+  if (!parsed.success) {
+    return rejectBuild("metadata_invalid", metadataFieldPaths(parsed.error));
+  }
+
+  return buildDraft(
+    {
+      eventType: input.eventType,
+      entityId: input.entityId,
+      mutationRef: input.mutationRef,
+      origin: input.origin,
+      occurredAt: input.occurredAt,
+      clock: input.clock,
+    },
+    parsed.data,
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* One bounded post-commit append attempt (criteria 4.4, 4.12)                 */
 /* -------------------------------------------------------------------------- */
@@ -1109,6 +1190,63 @@ export function recordTemplateAnalyticsEvent(
     buildTemplateAnalyticsEvent(input),
     options,
   );
+}
+
+/** Builds and appends one activation-funnel transition. */
+export function recordActivationAnalyticsEvent(
+  input: Parameters<typeof buildActivationAnalyticsEvent>[0],
+  options?: RecordCommittedAnalyticsEventOptions,
+): Promise<AnalyticsAppendResult> {
+  return recordCommittedAnalyticsEvent(
+    buildActivationAnalyticsEvent(input),
+    options,
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Activation funnel (read side)                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The funnel stages in order, each named by the vocabulary value that marks a
+ * workspace reaching it. Counts are event counts for the period, so for a
+ * single workspace the early stages read as "did this happen" and the later
+ * ones as volume.
+ */
+export const ANALYTICS_ACTIVATION_FUNNEL = [
+  { key: "registered", eventType: "account_registered" },
+  { key: "verified", eventType: "email_verified" },
+  { key: "first_project", eventType: "project_created" },
+  { key: "first_document", eventType: "document_uploaded" },
+  { key: "first_run", eventType: "agent_run_started" },
+  { key: "first_export", eventType: "proposal_exported" },
+] as const satisfies readonly { key: string; eventType: AnalyticsEventType }[];
+
+export type AnalyticsFunnelStageKey =
+  (typeof ANALYTICS_ACTIVATION_FUNNEL)[number]["key"];
+
+export type AnalyticsFunnelStage = Readonly<{
+  key: AnalyticsFunnelStageKey;
+  eventType: AnalyticsEventType;
+  count: number;
+  /** Share of the first stage that reached this one; null when nothing registered. */
+  conversion: number | null;
+}>;
+
+/** Funnel counts for a period from already-aggregated per-type counts. */
+export function activationFunnelFromCounts(
+  countsByType: Readonly<Partial<Record<AnalyticsEventType, number>>>,
+): readonly AnalyticsFunnelStage[] {
+  const base = countsByType[ANALYTICS_ACTIVATION_FUNNEL[0].eventType] ?? 0;
+  return ANALYTICS_ACTIVATION_FUNNEL.map((stage) => {
+    const count = countsByType[stage.eventType] ?? 0;
+    return Object.freeze({
+      key: stage.key,
+      eventType: stage.eventType,
+      count,
+      conversion: base > 0 ? Math.min(1, count / base) : null,
+    });
+  });
 }
 
 /* -------------------------------------------------------------------------- */

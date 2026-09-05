@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
+import {
+  analyticsRequestOrigin,
+  recordActivationAnalyticsEvent,
+} from "@/lib/analytics-collector";
 import { parseJsonBody, projectCreateSchema } from "@/lib/validation";
 import { withTenant, jsonOk } from "@/lib/api-controller";
 
@@ -104,6 +108,21 @@ export async function POST(req: NextRequest) {
       resourceId: project.id,
       details: { title: project.title, etimadRef: project.etimadRef },
     });
+
+    // The project has committed: the funnel's "first project" stage. One
+    // bounded append that never throws and never changes this response
+    // (requirements 4.4, 4.5). The category is a closed value, never the title.
+    await recordActivationAnalyticsEvent({
+      eventType: "project_created",
+      entityId: project.id,
+      mutationRef: project.id,
+      origin: analyticsRequestOrigin({
+        tenantWorkspaceId: workspace.id,
+        actorUserId: session.user.id,
+      }),
+      metadata: { tenderType: project.category },
+    });
+
     return jsonOk({ project });
   }, "projects POST");
 }

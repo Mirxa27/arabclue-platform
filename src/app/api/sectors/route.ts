@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
 import { targetSectorSchema, parseJsonBody } from "@/lib/validation";
 import { computeOnboardingSteps } from "@/lib/onboarding";
+import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  return withTenant("writer", async ({ workspace }) => {
+  return withTenant("writer", async ({ workspace, userId }) => {
     const id = req.nextUrl.searchParams.get("id");
     if (!id) throw new ApiError("id required", 400);
     const existing = await db.targetSector.findFirst({
@@ -46,6 +47,14 @@ export async function DELETE(req: NextRequest) {
     });
     if (!existing) throw new ApiError("not found", 404);
     await db.targetSector.delete({ where: { id } });
+    await audit({
+      userId,
+      action: AUDIT_ACTIONS.CONFIG_CHANGE,
+      resource: "TargetSector",
+      resourceId: id,
+      details: { workspaceId: workspace.id, operation: "delete" },
+      severity: "WARN",
+    });
     await computeOnboardingSteps(workspace.id);
     return jsonOk({ ok: true });
   }, "sectors");

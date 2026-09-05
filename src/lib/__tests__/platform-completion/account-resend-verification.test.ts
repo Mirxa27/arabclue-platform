@@ -19,6 +19,8 @@ import {
   selectApiFailureCode,
   selectApiFailureMessage,
 } from "../../api-failure-message";
+import { tr } from "../../i18n";
+import { readRegistrationOutcome } from "../../registration-outcome";
 import {
   VERIFICATION_RESEND_RATE_LIMIT,
   VERIFICATION_TOKEN_TTL_MS,
@@ -115,6 +117,7 @@ describe("resending a verification email", () => {
       ok: true,
       status: 202,
       code: "VERIFICATION_EMAIL_RESEND_ACCEPTED",
+      emailDelivery: "SENT",
     });
     expect(email.messages).toHaveLength(2);
     expect(email.messages[1].to).toBe(VALID_PAYLOAD.email);
@@ -194,10 +197,12 @@ describe("resending a verification email", () => {
       sourceAddress: SOURCE,
     });
 
+    // Same body as a delivered resend: nothing here says the address is unknown.
     expect(result).toEqual({
       ok: true,
       status: 202,
       code: "VERIFICATION_EMAIL_RESEND_ACCEPTED",
+      emailDelivery: "SENT",
     });
     expect(email.messages).toHaveLength(0);
   });
@@ -219,8 +224,30 @@ describe("resending a verification email", () => {
       ok: true,
       status: 202,
       code: "VERIFICATION_EMAIL_RESEND_ACCEPTED",
+      emailDelivery: "SENT",
     });
     expect(email.messages).toHaveLength(1);
+  });
+
+  test("an unconfigured transport is reported for every address alike", async () => {
+    const { service } = createHarness({
+      emailBehavior: { kind: "unconfigured" },
+    });
+    await register(service);
+
+    const registered = await service.resendVerificationEmail({
+      email: VALID_PAYLOAD.email,
+      sourceAddress: SOURCE,
+    });
+    const unknown = await service.resendVerificationEmail({
+      email: "stranger@example.com",
+      sourceAddress: SOURCE,
+    });
+
+    // The outcome is platform-wide, so reporting it reveals nothing about the
+    // address — and the reader is no longer told to wait for an inbox message.
+    expect(registered).toEqual(unknown);
+    expect(registered.ok && registered.emailDelivery).toBe("UNCONFIGURED");
   });
 
   test("rejects a submission that cannot be an address", async () => {
@@ -305,7 +332,7 @@ describe("resending a verification email", () => {
     expect(resent[0].resource).toBe("VerificationToken");
   });
 
-  test("records a delivery failure and still answers 202", async () => {
+  test("records a delivery failure and still answers 202, naming the failed delivery", async () => {
     const { service, audit, email } = createHarness();
     await register(service);
     email.setBehavior({ kind: "failed" });
@@ -315,11 +342,14 @@ describe("resending a verification email", () => {
       sourceAddress: SOURCE,
     });
 
-    // The caller must not learn that this address exists, even on failure.
+    // Status and code stay identical to every other accepted answer; only the
+    // delivery outcome differs, so the reader is not sent to wait for a
+    // message that was never sent.
     expect(result).toEqual({
       ok: true,
       status: 202,
       code: "VERIFICATION_EMAIL_RESEND_ACCEPTED",
+      emailDelivery: "FAILED",
     });
     const failures = audit.entries.filter(
       (entry) => entry.action === "EMAIL_VERIFICATION_SEND_FAILED"
@@ -370,8 +400,29 @@ describe("resend route maps domain results to the shared contract", () => {
     expect(res.status).toBe(202);
     expect(body.ok).toBe(true);
     expect(body.code).toBe("VERIFICATION_EMAIL_RESEND_ACCEPTED");
+    expect(body.emailDelivery).toBe("SENT");
     expect(body.message.ar.trim().length).toBeGreaterThan(0);
     expect(body.message.en.trim().length).toBeGreaterThan(0);
+  });
+
+  test("an undeliverable resend says so instead of 'check your inbox'", async () => {
+    const { service, email } = createHarness();
+    await register(service);
+    email.setBehavior({ kind: "failed" });
+
+    const res = await handleResendVerification(
+      resendRequest({ email: VALID_PAYLOAD.email }),
+      { service }
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(202);
+    expect(body.emailDelivery).toBe("FAILED");
+    // The page branches on this the same way the register page does.
+    expect(readRegistrationOutcome(body)).toBe("undeliverable");
+    expect(body.message.en).toBe(tr("auth_resend_undeliverable_failed", "en"));
+    expect(body.message.ar).toBe(tr("auth_resend_undeliverable_failed", "ar"));
+    expect(body.message.en).not.toContain("on the way");
   });
 
   test("maps a malformed address to the shared bilingual failure", async () => {

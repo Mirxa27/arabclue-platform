@@ -15,6 +15,7 @@ import {
   selectApiFailureCode,
   selectApiFailureMessage,
 } from "@/lib/api-failure-message";
+import { readRegistrationOutcome } from "@/lib/registration-outcome";
 
 function VerifyInner() {
   const searchParams = useSearchParams();
@@ -88,21 +89,32 @@ function VerifyInner() {
           body: JSON.stringify({ email: resendEmail.trim() }),
         });
         const data = await res.json().catch(() => ({}));
-        setResendNotice(
-          res.ok
-            ? {
-                ok: true,
-                // Deliberately non-committal: the endpoint answers the same way
-                // for a registered and an unknown address.
-                text: tr("VERIFICATION_EMAIL_RESEND_ACCEPTED", locale),
-              }
-            : {
-                ok: false,
-                text:
-                  selectApiFailureMessage(data, locale) ??
-                  tr("auth_verify_failed", locale),
-              }
-        );
+        if (!res.ok) {
+          setResendNotice({
+            ok: false,
+            text:
+              selectApiFailureMessage(data, locale) ??
+              tr("auth_verify_failed", locale),
+          });
+          return;
+        }
+        // Accepted, but "check your inbox" is only true when a message left the
+        // server. `emailDelivery` says so; the server's own text names the reason
+        // and who can fix it. The wording stays non-committal about whether the
+        // address is registered.
+        if (readRegistrationOutcome(data) === "undeliverable") {
+          setResendNotice({
+            ok: false,
+            text:
+              selectApiFailureMessage(data, locale) ??
+              tr("auth_resend_undeliverable_failed", locale),
+          });
+          return;
+        }
+        setResendNotice({
+          ok: true,
+          text: tr("VERIFICATION_EMAIL_RESEND_ACCEPTED", locale),
+        });
       } catch {
         setResendNotice({ ok: false, text: tr("auth_network_error", locale) });
       } finally {

@@ -102,6 +102,56 @@ export async function computeOnboardingSteps(workspaceId: string): Promise<{
   return { steps, restrictionsReviewed, readyForProposals, missing };
 }
 
+export type StoredOnboardingStatus = Readonly<{
+  readyForProposals: boolean;
+  missing: OnboardingStepKey[];
+}>;
+
+/** Required steps still open, derived from a stored completedSteps record. */
+export function missingRequiredSteps(
+  completedSteps: Readonly<Partial<Record<string, boolean>>>
+): OnboardingStepKey[] {
+  return ONBOARDING_STEPS.filter(
+    (step) => step.required && completedSteps[step.key] !== true
+  ).map((step) => step.key);
+}
+
+function parseCompletedSteps(raw: string): Partial<Record<string, boolean>> {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Partial<Record<string, boolean>>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The onboarding status as last computed, without recomputing it.
+ *
+ * `computeOnboardingSteps` runs a dozen counts and an upsert; the notification
+ * bell polls every minute, so it must not pay that on every poll. Every
+ * knowledge/brand/approval write already refreshes the stored row, and
+ * GET /api/onboarding recomputes on demand. A workspace that has never been
+ * computed is computed once here so a brand-new account is not told it is
+ * ready.
+ */
+export async function readStoredOnboardingStatus(
+  workspaceId: string
+): Promise<StoredOnboardingStatus> {
+  const stored = await db.onboardingProgress.findUnique({
+    where: { workspaceId },
+    select: { completedSteps: true, readyForProposals: true },
+  });
+  if (!stored) {
+    const computed = await computeOnboardingSteps(workspaceId);
+    return { readyForProposals: computed.readyForProposals, missing: computed.missing };
+  }
+  const missing = missingRequiredSteps(parseCompletedSteps(stored.completedSteps));
+  return { readyForProposals: missing.length === 0, missing };
+}
+
 export async function assertOnboardingReady(workspaceId: string): Promise<void> {
   const status = await computeOnboardingSteps(workspaceId);
   if (!status.readyForProposals) {

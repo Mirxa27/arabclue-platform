@@ -93,6 +93,15 @@ export function isEmailConfigured(): boolean {
   return selectEmailTransport(process.env).kind !== "none";
 }
 
+/**
+ * Whether a transport exists at all. `sendEmail` logs and answers `skipped`
+ * when there is none; modules that decide *before* composing a message (should
+ * a resend be offered, should a cron even select rows) read this instead.
+ */
+export function emailTransportConfigured(): boolean {
+  return isEmailConfigured();
+}
+
 /** Cap on the operator-facing failure detail persisted in an audit row. */
 export const EMAIL_FAILURE_DETAIL_MAX = 300;
 

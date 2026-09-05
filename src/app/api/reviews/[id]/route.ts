@@ -83,6 +83,7 @@ export async function PATCH(
             proposalTitle: proposal.titleAr || proposal.title,
             decision: parsed.data.status as "APPROVED" | "REJECTED",
             workspaceId: workspace.id,
+            reviewId: id,
           });
         }
       })

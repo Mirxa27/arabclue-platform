@@ -1,23 +1,22 @@
 import { db } from "@/lib/db";
+import { withTenant, jsonOk, ApiError } from "@/lib/api-controller";
 import {
-  withTenant,
-  jsonOk,
-  jsonError,
-  ApiError,
-} from "@/lib/api-controller";
-import {
-  parseJsonBody,
   workspaceSwitchSchema,
   workspaceProfileSchema,
-  workspaceInviteSchema,
 } from "@/lib/validation";
 import { setActiveWorkspace } from "@/lib/workspace-context";
 import { audit, AUDIT_ACTIONS } from "@/lib/audit";
 import { isWorkspaceManager } from "@/lib/auth";
-import { isSeatAllowanceExhausted } from "@/lib/invitation-service";
-import { readSeatUsage } from "@/lib/invitation-service-prisma";
+import { computeOnboardingSteps } from "@/lib/onboarding";
 
 export const dynamic = "force-dynamic";
+
+// Membership changes live elsewhere:
+// - adding someone: POST /api/invitations (consent, seat check, audit, email);
+// - changing a role or removing: PATCH/DELETE /api/workspaces/members/[id].
+// The former POST here attached any existing account by email without the
+// person's consent and answered 404 for an unknown address — a registry of who
+// has an account. It is gone rather than gated.
 
 // GET /api/workspaces — active workspace, members, and all memberships
 export async function GET() {
@@ -141,80 +140,11 @@ export async function PATCH(req: Request) {
       },
     });
 
+    // The legal step of onboarding reads crNumber/vatNumber. The stored
+    // OnboardingProgress row is what the notification bell now reads, so it is
+    // refreshed here rather than on every poll. Never fails the save.
+    await computeOnboardingSteps(workspace.id).catch(() => undefined);
+
     return jsonOk({ workspace: updated });
   }, "workspaces PATCH");
-}
-
-// POST /api/workspaces — invite existing user by email
-export async function POST(req: Request) {
-  return withTenant("writer", async ({ session, workspace, membershipRole }) => {
-    if (!isWorkspaceManager(membershipRole, session.user.role)) {
-      throw new ApiError("Only workspace owners/admins can invite", 403);
-    }
-
-    const parsed = await parseJsonBody(req, workspaceInviteSchema);
-    if (!parsed.ok) return parsed.response;
-
-    const email = parsed.data.email.toLowerCase();
-    const invitee = await db.user.findUnique({ where: { email } });
-    if (!invitee) {
-      throw new ApiError(
-        "User must have an Arabclue account before invite — ask them to sign in first",
-        404
-      );
-    }
-
-    const existing = await db.workspaceMember.findUnique({
-      where: {
-        workspaceId_userId: {
-          workspaceId: workspace.id,
-          userId: invitee.id,
-        },
-      },
-    });
-    if (existing) {
-      return jsonOk({ member: existing, alreadyMember: true });
-    }
-
-    // Seat capacity is a billing control, so it applies wherever a membership
-    // is created — not only in the invitation flow. This endpoint created the
-    // row directly, so a manager could grow a workspace past its plan
-    // allowance simply by using it instead of sending an invitation.
-    const seatUsage = await readSeatUsage(db, workspace.id, new Date());
-    if (isSeatAllowanceExhausted(seatUsage)) {
-      throw new ApiError(
-        "Workspace seat allowance reached for the active plan",
-        429,
-        "SEAT_LIMIT_REACHED"
-      );
-    }
-
-    const member = await db.workspaceMember.create({
-      data: {
-        workspaceId: workspace.id,
-        userId: invitee.id,
-        role: parsed.data.role,
-      },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true, role: true },
-        },
-      },
-    });
-
-    await audit({
-      userId: session.user.id,
-      action: AUDIT_ACTIONS.ROLE_CHANGE,
-      resource: "WorkspaceMember",
-      resourceId: member.id,
-      details: {
-        inviteeId: invitee.id,
-        email,
-        role: parsed.data.role,
-        workspaceId: workspace.id,
-      },
-    });
-
-    return jsonOk({ member, alreadyMember: false });
-  }, "workspaces POST");
 }

@@ -1,22 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
+import { redactSensitiveText } from "@/lib/api-failure";
 import { db } from "@/lib/db";
 import { authorizeCron } from "@/lib/cron-auth";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { getPathForView } from "@/lib/dashboard-routes";
+import {
+  sendTransactionalNotification,
+  type NotificationRecipient,
+} from "@/lib/notification-service";
+import type { Locale } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Wall-clock budget; whatever is left waits for tomorrow's run. */
+const EXPIRY_BUDGET_MS = 45_000;
+
+/** A trial is nudged when it first comes within 7, 3, and 1 day(s) of its end. */
+export const TRIAL_ENDING_THRESHOLDS_DAYS = [7, 3, 1] as const;
+
+/** The tier a trial end falls in today, or null outside the last seven days. */
+export function trialEndingThreshold(daysLeft: number): 7 | 3 | 1 | null {
+  if (daysLeft <= 0) return null;
+  for (const threshold of [...TRIAL_ENDING_THRESHOLDS_DAYS].reverse()) {
+    if (daysLeft <= threshold) return threshold;
+  }
+  return null;
+}
+
 /**
  * POST /api/cron/expiry-notifications
- * Email workspace OWNERs about certificates and subscriptions nearing expiry.
- * Deduped via ExpiryNotificationLog. Skips email when RESEND_API_KEY unset.
+ * Email workspace OWNERs/ADMINs about certificates and subscriptions nearing
+ * expiry; nudge trials to choose a plan at 7/3/1 days before the trial ends.
+ * Deduped via ExpiryNotificationLog. Skips email when no transport is set.
  */
 export async function POST(req: NextRequest) {
   const denied = authorizeCron(req);
   if (denied) return denied;
 
+  const startedAt = Date.now();
+  const overBudget = () => Date.now() - startedAt >= EXPIRY_BUDGET_MS;
   const now = new Date();
-  const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const in30 = new Date(now.getTime() + 30 * DAY_MS);
   const emailReady = isEmailConfigured();
 
   let certScanned = 0;
@@ -25,6 +52,10 @@ export async function POST(req: NextRequest) {
   let subScanned = 0;
   let subEmailed = 0;
   let subSkipped = 0;
+  let trialScanned = 0;
+  let trialNotified = 0;
+  let trialSkipped = 0;
+  let budgetExhausted = false;
   const errors: string[] = [];
 
   // Candidate selection pages forward instead of re-reading a fixed window.
@@ -102,30 +133,30 @@ export async function POST(req: NextRequest) {
     if (!certCursor || batch.length < CERT_PAGE_SIZE) break;
   }
 
+  // One member query for every workspace in the batch, not one per certificate.
+  const certManagersByWorkspace = await managersByWorkspace(
+    [...new Set(certs.map((c) => c.workspaceId))]
+  );
+
   for (const cert of certs) {
     if (!cert.expiresAt) continue;
+    if (overBudget()) {
+      budgetExhausted = true;
+      break;
+    }
     certScanned += 1;
     const resourceId = `${cert.id}:${cert.expiresAt.toISOString().slice(0, 10)}`;
 
-    const owners = await db.workspaceMember.findMany({
-      where: {
-        workspaceId: cert.workspaceId,
-        role: { in: ["OWNER", "ADMIN"] },
-      },
-      include: { user: { select: { email: true, name: true, active: true } } },
-    });
-    const recipients = owners
-      .filter((m) => m.user.active && m.user.email)
-      .map((m) => m.user.email);
+    const recipients = (certManagersByWorkspace.get(cert.workspaceId) ?? []).map(
+      (m) => m.email
+    );
 
     if (recipients.length === 0) {
       certSkipped += 1;
       continue;
     }
 
-    const days = Math.ceil(
-      (cert.expiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)
-    );
+    const days = Math.ceil((cert.expiresAt.getTime() - now.getTime()) / DAY_MS);
     const subject =
       days < 0
         ? `[ArabClue] Certificate expired: ${cert.name}`
@@ -160,39 +191,156 @@ on <strong>${cert.expiresAt.toISOString().slice(0, 10)}</strong>.</p>
     }
   }
 
-  const subs = await db.subscription.findMany({
-    where: {
-      status: { in: ["ACTIVE", "PAST_DUE", "TRIALING"] },
-      currentPeriodEnd: { lte: in30 },
-    },
-    include: {
-      user: { select: { email: true, name: true, active: true } },
-      plan: { select: { name: true } },
-    },
-    take: 100,
-    orderBy: { currentPeriodEnd: "asc" },
-  });
-
-  for (const sub of subs) {
-    subScanned += 1;
-    const resourceId = `${sub.id}:${sub.currentPeriodEnd.toISOString().slice(0, 10)}`;
-    const workspaceId =
-      (await db.workspaceMember.findFirst({
-        where: { userId: sub.userId, role: "OWNER" },
-        select: { workspaceId: true },
-      }))?.workspaceId ?? sub.userId;
-
-    const already = await db.expiryNotificationLog.findUnique({
-      where: {
-        workspaceId_kind_resourceId_channel: {
-          workspaceId,
-          kind: "SUBSCRIPTION_EXPIRY",
-          resourceId,
-          channel: "email",
+  // Paid subscriptions nearing the end of their period, and trials nearing
+  // their end. A trial's end is trialEndsAt when set, else currentPeriodEnd.
+  const subs = budgetExhausted
+    ? []
+    : await db.subscription.findMany({
+        where: {
+          OR: [
+            {
+              status: { in: ["ACTIVE", "PAST_DUE"] },
+              currentPeriodEnd: { lte: in30 },
+            },
+            {
+              status: "TRIALING",
+              OR: [
+                { trialEndsAt: { lte: in30 } },
+                { trialEndsAt: null, currentPeriodEnd: { lte: in30 } },
+              ],
+            },
+          ],
         },
+        include: {
+          user: { select: { email: true, name: true, active: true } },
+          plan: { select: { name: true } },
+        },
+        take: 100,
+        orderBy: { currentPeriodEnd: "asc" },
+      });
+
+  // Batched: one owner-membership query, one log query, one manager query for
+  // the whole batch instead of two or three round trips per subscription.
+  const ownerMemberships = await db.workspaceMember.findMany({
+    where: { userId: { in: subs.map((s) => s.userId) }, role: "OWNER" },
+    select: { userId: true, workspaceId: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const workspaceByUser = new Map<string, string>();
+  for (const m of ownerMemberships) {
+    if (!workspaceByUser.has(m.userId)) workspaceByUser.set(m.userId, m.workspaceId);
+  }
+  const subPlans = subs.map((sub) => {
+    const workspaceId = workspaceByUser.get(sub.userId) ?? sub.userId;
+    if (sub.status === "TRIALING") {
+      const endsAt = sub.trialEndsAt ?? sub.currentPeriodEnd;
+      const daysLeft = Math.ceil((endsAt.getTime() - now.getTime()) / DAY_MS);
+      const threshold = trialEndingThreshold(daysLeft);
+      return {
+        sub,
+        workspaceId,
+        kind: "TRIAL_ENDING" as const,
+        channel: "notification",
+        endsAt,
+        daysLeft,
+        threshold,
+        resourceId: `${sub.id}:${endsAt.toISOString().slice(0, 10)}:${threshold ?? "none"}d`,
+      };
+    }
+    return {
+      sub,
+      workspaceId,
+      kind: "SUBSCRIPTION_EXPIRY" as const,
+      channel: "email",
+      endsAt: sub.currentPeriodEnd,
+      daysLeft: Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / DAY_MS),
+      threshold: null,
+      resourceId: `${sub.id}:${sub.currentPeriodEnd.toISOString().slice(0, 10)}`,
+    };
+  });
+  const [subLogged, trialManagersByWorkspace] = await Promise.all([
+    db.expiryNotificationLog.findMany({
+      where: {
+        kind: { in: ["SUBSCRIPTION_EXPIRY", "TRIAL_ENDING"] },
+        resourceId: { in: subPlans.map((p) => p.resourceId) },
       },
-    });
-    if (already) {
+      select: { workspaceId: true, kind: true, resourceId: true, channel: true },
+    }),
+    managersByWorkspace(
+      subPlans.filter((p) => p.kind === "TRIAL_ENDING").map((p) => p.workspaceId)
+    ),
+  ]);
+  const subLoggedKeys = new Set(
+    subLogged.map((l) => `${l.workspaceId}:${l.kind}:${l.resourceId}:${l.channel}`)
+  );
+
+  for (const plan of subPlans) {
+    if (overBudget()) {
+      budgetExhausted = true;
+      break;
+    }
+    const { sub, workspaceId, resourceId } = plan;
+
+    if (plan.kind === "TRIAL_ENDING") {
+      trialScanned += 1;
+      // Outside the 7/3/1-day tiers, or already nudged for this tier.
+      if (
+        plan.threshold === null ||
+        subLoggedKeys.has(`${workspaceId}:TRIAL_ENDING:${resourceId}:notification`)
+      ) {
+        trialSkipped += 1;
+        continue;
+      }
+      const recipients = trialManagersByWorkspace.get(workspaceId) ?? [];
+      if (recipients.length === 0) {
+        trialSkipped += 1;
+        continue;
+      }
+      try {
+        // Bilingual, in-app plus email, deduped by eventId as well: a trial
+        // is not an expired subscription, so it gets its own words and a
+        // link straight to the plan picker.
+        const result = await sendTransactionalNotification({
+          eventId: `trial_ending_${resourceId}`,
+          recipients,
+          type: "TRIAL_ENDING",
+          subjectKey: "notification_trial_ending_subject",
+          bodyKey: "notification_trial_ending_body",
+          bodyParams: {
+            days: String(plan.daysLeft),
+            endsOn: plan.endsAt.toISOString().slice(0, 10),
+          },
+          href: getPathForView("billing"),
+          workspaceId,
+        });
+        await db.expiryNotificationLog.create({
+          data: {
+            workspaceId,
+            kind: "TRIAL_ENDING",
+            resourceId,
+            channel: "notification",
+            metaJson: JSON.stringify({
+              threshold: plan.threshold,
+              daysLeft: plan.daysLeft,
+              recipients: recipients.length,
+              deliveries: result.deliveries.map((d) => `${d.channel}:${d.status}`),
+              emailReady,
+            }),
+          },
+        });
+        trialNotified += 1;
+      } catch (err) {
+        errors.push(
+          `trial ${sub.id}: ${redactSensitiveText(
+            err instanceof Error ? err.message : String(err)
+          )}`
+        );
+      }
+      continue;
+    }
+
+    subScanned += 1;
+    if (subLoggedKeys.has(`${workspaceId}:SUBSCRIPTION_EXPIRY:${resourceId}:email`)) {
       subSkipped += 1;
       continue;
     }
@@ -202,9 +350,7 @@ on <strong>${cert.expiresAt.toISOString().slice(0, 10)}</strong>.</p>
       continue;
     }
 
-    const days = Math.ceil(
-      (sub.currentPeriodEnd.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)
-    );
+    const days = plan.daysLeft;
     const planName = sub.plan?.name ?? "plan";
     const subject =
       days < 0
@@ -257,6 +403,12 @@ ${days < 0 ? "ended" : `ends`} on
       emailed: subEmailed,
       skipped: subSkipped,
     },
+    trials: {
+      scanned: trialScanned,
+      notified: trialNotified,
+      skipped: trialSkipped,
+    },
+    budgetExhausted,
     errors,
     time: new Date().toISOString(),
   });
@@ -264,6 +416,32 @@ ${days < 0 ? "ended" : `ends`} on
 
 export async function GET(req: NextRequest) {
   return POST(req);
+}
+
+/** Active OWNER/ADMIN members of each workspace, fetched in one query. */
+async function managersByWorkspace(
+  workspaceIds: readonly string[]
+): Promise<Map<string, NotificationRecipient[]>> {
+  const byWorkspace = new Map<string, NotificationRecipient[]>();
+  const distinct = [...new Set(workspaceIds)];
+  if (distinct.length === 0) return byWorkspace;
+  const members = await db.workspaceMember.findMany({
+    where: { workspaceId: { in: distinct }, role: { in: ["OWNER", "ADMIN"] } },
+    include: {
+      user: { select: { id: true, email: true, locale: true, active: true } },
+    },
+  });
+  for (const member of members) {
+    if (!member.user.active || !member.user.email) continue;
+    const list = byWorkspace.get(member.workspaceId) ?? [];
+    list.push({
+      userId: member.user.id,
+      email: member.user.email,
+      locale: (member.user.locale as Locale) || "ar",
+    });
+    byWorkspace.set(member.workspaceId, list);
+  }
+  return byWorkspace;
 }
 
 function escapeHtml(s: string): string {

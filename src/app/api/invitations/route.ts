@@ -24,6 +24,7 @@ import {
   type InvitationActor,
   type InvitationWorkspace,
 } from "@/lib/invitation-service";
+import { extractClientIpOrNull } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -47,11 +48,6 @@ function workspaceOf(ctx: TenantHandlerContext): InvitationWorkspace {
   return { id: ctx.workspace.id, name: ctx.workspace.name };
 }
 
-function clientAddress(req: NextRequest): string | null {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() ?? null;
-  return req.headers.get("x-real-ip")?.trim() ?? null;
-}
 
 export async function GET(req: NextRequest) {
   return withTenant(
@@ -97,7 +93,7 @@ export async function POST(req: NextRequest) {
         actor: actorOf(ctx),
         workspace: workspaceOf(ctx),
         payload,
-        sourceAddress: clientAddress(req),
+        sourceAddress: extractClientIpOrNull(req.headers),
       });
 
       if (!result.ok) {

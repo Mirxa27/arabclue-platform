@@ -3,6 +3,7 @@ import { jsonApiFailure, jsonOk, withPublicRoute } from "@/lib/api-controller";
 import { createPrismaAccountService } from "@/lib/account-service-prisma";
 import type { AccountService } from "@/lib/account-service";
 import { tr } from "@/lib/i18n";
+import { extractClientIp } from "@/lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export async function handleResendVerification(
     const body = await readJsonBodyOrNull(req);
     const result = await service.resendVerificationEmail({
       email: readEmailField(body),
-      sourceAddress: getClientIp(req),
+      sourceAddress: extractClientIp(req.headers),
     });
 
     if (!result.ok) {
@@ -40,27 +41,37 @@ export async function handleResendVerification(
       });
     }
 
+    // The message names the delivery outcome, not the account: an unconfigured
+    // transport or a refused send is a dead end the reader must be told about
+    // ("check your inbox" for a message nothing sent is a permanent lockout).
+    const messageKey = resendMessageKey(result.emailDelivery);
     return jsonOk(
       {
         ok: true as const,
         code: result.code,
-        message: { ar: tr(result.code, "ar"), en: tr(result.code, "en") },
+        emailDelivery: result.emailDelivery,
+        message: { ar: tr(messageKey, "ar"), en: tr(messageKey, "en") },
       },
       { status: result.status }
     );
   });
 }
 
+function resendMessageKey(delivery: "SENT" | "UNCONFIGURED" | "FAILED"): string {
+  switch (delivery) {
+    case "UNCONFIGURED":
+      return "auth_resend_undeliverable_unconfigured";
+    case "FAILED":
+      return "auth_resend_undeliverable_failed";
+    default:
+      return "VERIFICATION_EMAIL_RESEND_ACCEPTED";
+  }
+}
+
 export async function POST(req: NextRequest) {
   return handleResendVerification(req);
 }
 
-/** Best-effort source address for the rolling per-address rate limit. */
-function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip")?.trim() ?? "unknown";
-}
 
 /** Unreadable bodies stay `null`; the domain service rejects them. */
 async function readJsonBodyOrNull(req: NextRequest): Promise<unknown> {

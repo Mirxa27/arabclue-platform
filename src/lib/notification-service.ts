@@ -13,11 +13,12 @@
  * - Never include monetary amounts, bid values, or document content in body
  */
 
+import type { NotificationDelivery, PrismaClient } from "@prisma/client";
 import { db } from "./db";
 import { isEmailConfigured, sendEmail } from "./email";
 import { tr } from "./i18n";
 import { getPathForView } from "./dashboard-routes";
-import { utcDeadline } from "./time";
+import { addUtcMilliseconds } from "./time";
 import type { Locale } from "./types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -27,6 +28,8 @@ export type NotificationType =
   | "REVIEW_DECISION"
   | "SUBSCRIPTION_PAST_DUE"
   | "SUBSCRIPTION_FAILED"
+  | "TRIAL_ENDING"
+  | "DEADLINE_REMINDER"
   | "AGENT_RUN_COMPLETED"
   | "AGENT_RUN_FAILED";
 
@@ -49,7 +52,7 @@ export type SendTransactionalNotificationInput = {
   bodyKey: string;
   /** Optional interpolation values for the body (exclude monetary amounts) */
   bodyParams?: Record<string, string>;
-  /** Link to relevant app view (e.g., "/app?view=reviews") */
+  /** Canonical app path (e.g., getPathForView("reviews")) */
   href?: string;
   /** Workspace ID for InAppNotification */
   workspaceId: string;
@@ -58,12 +61,30 @@ export type SendTransactionalNotificationInput = {
 export type DeliveryResult = {
   recipientId: string;
   channel: "in_app" | "email";
-  /** PENDING means queued for async dispatch by the notification-dispatch cron. */
+  /**
+   * PENDING means the row sits in the outbox for the notification-dispatch
+   * cron: the inline provider attempt did not succeed (or was disabled).
+   */
   status: "SENT" | "FAILED" | "SKIPPED" | "PENDING";
   reason?: string;
   notificationId?: string;
   emailId?: string;
 };
+
+export type SendTransactionalNotificationOptions = Readonly<{
+  /**
+   * Attempt one immediate provider send right after the outbox row commits
+   * (default true). The cron only sweeps once a day, so without this a queued
+   * email waits up to 24 hours. Disabled by tests that exercise the cron path.
+   */
+  inlineEmailDispatch?: boolean;
+  /** Provider send; the production sender is used when omitted. */
+  send?: typeof sendEmail;
+  /** Outbox persistence; the shared Prisma client is used when omitted. */
+  client?: NotificationOutboxClient;
+  /** Commit instant for deadlines and claims; the system clock when omitted. */
+  now?: Date;
+}>;
 
 export type SendTransactionalNotificationResult = {
   eventId: string;
@@ -139,10 +160,12 @@ ${link}
  * Creates InAppNotification + optional email delivery with at-most-once semantics.
  */
 export async function sendTransactionalNotification(
-  input: SendTransactionalNotificationInput
+  input: SendTransactionalNotificationInput,
+  options: SendTransactionalNotificationOptions = {}
 ): Promise<SendTransactionalNotificationResult> {
   const deliveries: DeliveryResult[] = [];
   const emailConfigured = isEmailConfigured();
+  const outboxClient: NotificationOutboxClient = options.client ?? db;
 
   for (const recipient of input.recipients) {
     // Check for existing in_app delivery
@@ -277,37 +300,31 @@ export async function sendTransactionalNotification(
         reason: "EMAIL_UNCONFIGURED",
       });
     } else {
-      // Queue for async dispatch: write a PENDING outbox record.
-      // The /api/cron/notification-dispatch cron claims these rows, sends with a
-      // 10-second provider timeout, and retries up to 3 times within 30 minutes.
-      const deadlineAt = utcDeadline(30 * 60 * 1000);
-      await db.notificationDelivery.create({
-        data: {
-          eventId: input.eventId,
+      // Commit a PENDING outbox row first, so a crash mid-send loses nothing;
+      // then try the provider once, inline. Whatever the inline attempt leaves
+      // PENDING is swept by /api/cron/notification-dispatch (daily) until the
+      // 26-hour deadline or the third attempt.
+      const now = options.now ?? new Date();
+      const row = await outboxClient.notificationDelivery.create({
+        data: buildOutboxRowData(input, recipient, now),
+      });
+
+      if (options.inlineEmailDispatch === false) {
+        deliveries.push({
           recipientId: recipient.userId,
           channel: "email",
           status: "PENDING",
-          workspaceId: input.workspaceId,
-          recipientEmail: recipient.email,
-          recipientLocale: recipient.locale,
-          templateKey: input.subjectKey,
-          payloadJson: {
-            subjectKey: input.subjectKey,
-            bodyKey: input.bodyKey,
-            bodyParams: input.bodyParams ?? {},
-            href: input.href ?? null,
-          },
-          deliveryDeadlineAt: deadlineAt,
-          nextAttemptAt: new Date(),
-        },
-      });
-
-      deliveries.push({
-        recipientId: recipient.userId,
-        channel: "email",
-        status: "PENDING",
-        reason: "QUEUED_FOR_DISPATCH",
-      });
+          reason: "QUEUED_FOR_DISPATCH",
+        });
+      } else {
+        const inline = await attemptInlineEmailDispatch(row, {
+          client: outboxClient,
+          send: options.send ?? sendEmail,
+          now,
+          workerId: `inline-${row.id}`,
+        });
+        deliveries.push(inlineDeliveryResult(recipient.userId, inline));
+      }
     }
   }
 
@@ -341,13 +358,35 @@ export async function getNotificationRecipients(
       return getReviewDecisionRecipients(context);
     case "SUBSCRIPTION_PAST_DUE":
     case "SUBSCRIPTION_FAILED":
+    case "TRIAL_ENDING":
       return getSubscriptionAlertRecipients(context);
+    case "DEADLINE_REMINDER":
+      return getWorkspaceMemberRecipients(context);
     case "AGENT_RUN_COMPLETED":
     case "AGENT_RUN_FAILED":
       return getRunInitiatorRecipient(context);
     default:
       return [];
   }
+}
+
+/** Every active member of the workspace — a submission deadline is everyone's. */
+async function getWorkspaceMemberRecipients(
+  context: GetNotificationRecipientsContext
+): Promise<NotificationRecipient[]> {
+  const members = await db.workspaceMember.findMany({
+    where: { workspaceId: context.workspaceId },
+    include: {
+      user: { select: { id: true, email: true, locale: true, active: true } },
+    },
+  });
+  return members
+    .filter((m) => m.user.active)
+    .map((m) => ({
+      userId: m.user.id,
+      email: m.user.email,
+      locale: (m.user.locale as Locale) || "ar",
+    }));
 }
 
 /** The member who started the run — the one who may have walked away from it. */
@@ -542,9 +581,48 @@ export async function notifyReviewRequested(opts: {
       proposalTitle: opts.proposalTitle,
       projectTitle: opts.projectTitle,
     },
-    href: "/app?view=reviews",
+    href: getPathForView("reviews"),
     workspaceId: opts.workspaceId,
   });
+}
+
+// ─── Dedup keys ──────────────────────────────────────────────────────────────
+//
+// An eventId is the at-most-once key of NotificationDelivery. These used to
+// append crypto.randomUUID(), which made every call a fresh event and so let a
+// retried request or a replayed webhook notify the same person twice. Each key
+// now names the state that changed, so a repeat of the same transition is the
+// SKIPPED/ALREADY_DELIVERED no-op the table was designed for.
+
+/** One notice per review decision; per proposal and outcome when the review id is unknown. */
+export function reviewDecisionEventId(opts: {
+  proposalId: string;
+  decision: "APPROVED" | "REJECTED";
+  reviewId?: string | null;
+}): string {
+  return opts.reviewId
+    ? `proposal_review_decision_${opts.reviewId}`
+    : `proposal_review_decision_${opts.proposalId}_${opts.decision}`;
+}
+
+/** UTC calendar day, the coarsest state a subscription alert is keyed on. */
+function utcDayStamp(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/**
+ * One notice per subscription state transition. `stateRef` names the failed
+ * attempt or the billing period that turned past due; without one, the alert
+ * is keyed to the UTC day so a retry loop cannot page an owner every minute.
+ */
+export function subscriptionAlertEventId(opts: {
+  kind: "past_due" | "failed";
+  subscriptionId: string;
+  stateRef?: string | null;
+  now?: Date;
+}): string {
+  const ref = opts.stateRef?.trim() || utcDayStamp(opts.now ?? new Date());
+  return `subscription_${opts.kind}_${opts.subscriptionId}_${ref}`;
 }
 
 /**
@@ -555,22 +633,21 @@ export async function notifyReviewDecision(opts: {
   proposalTitle: string;
   decision: "APPROVED" | "REJECTED";
   workspaceId: string;
+  /** The decided ProposalReview row; keys the notice to that one decision. */
+  reviewId?: string | null;
 }): Promise<SendTransactionalNotificationResult> {
+  const eventId = reviewDecisionEventId(opts);
   const recipients = await getNotificationRecipients("REVIEW_DECISION", {
     workspaceId: opts.workspaceId,
     proposalId: opts.proposalId,
   });
 
   if (recipients.length === 0) {
-    return {
-      eventId: `proposal_review_decision_${opts.proposalId}`,
-      totalRecipients: 0,
-      deliveries: [],
-    };
+    return { eventId, totalRecipients: 0, deliveries: [] };
   }
 
   return sendTransactionalNotification({
-    eventId: `proposal_review_decision_${opts.proposalId}_${crypto.randomUUID()}`,
+    eventId,
     recipients,
     type: "REVIEW_DECISION",
     subjectKey: "notification_review_decision_subject",
@@ -579,7 +656,7 @@ export async function notifyReviewDecision(opts: {
       proposalTitle: opts.proposalTitle,
       decision: opts.decision === "APPROVED" ? "✓" : "✗",
     },
-    href: "/app?view=proposals",
+    href: getPathForView("proposals"),
     workspaceId: opts.workspaceId,
   });
 }
@@ -591,26 +668,25 @@ export async function notifySubscriptionPastDue(opts: {
   subscriptionId: string;
   workspaceId: string;
   userId: string;
+  /** The billing period that turned past due (e.g. its currentPeriodEnd). */
+  stateRef?: string | null;
 }): Promise<SendTransactionalNotificationResult> {
+  const eventId = subscriptionAlertEventId({ kind: "past_due", ...opts });
   const recipients = await getNotificationRecipients("SUBSCRIPTION_PAST_DUE", {
     workspaceId: opts.workspaceId,
   });
 
   if (recipients.length === 0) {
-    return {
-      eventId: `subscription_past_due_${opts.subscriptionId}`,
-      totalRecipients: 0,
-      deliveries: [],
-    };
+    return { eventId, totalRecipients: 0, deliveries: [] };
   }
 
   return sendTransactionalNotification({
-    eventId: `subscription_past_due_${opts.subscriptionId}_${crypto.randomUUID()}`,
+    eventId,
     recipients,
     type: "SUBSCRIPTION_PAST_DUE",
     subjectKey: "notification_subscription_past_due_subject",
     bodyKey: "notification_subscription_past_due_body",
-    href: "/app?view=billing",
+    href: getPathForView("billing"),
     workspaceId: opts.workspaceId,
   });
 }
@@ -623,43 +699,61 @@ export async function notifySubscriptionFailed(opts: {
   workspaceId: string;
   userId: string;
   reason?: string;
+  /** The failed payment attempt or invoice; keys the notice to that failure. */
+  stateRef?: string | null;
 }): Promise<SendTransactionalNotificationResult> {
+  const eventId = subscriptionAlertEventId({ kind: "failed", ...opts });
   const recipients = await getNotificationRecipients("SUBSCRIPTION_FAILED", {
     workspaceId: opts.workspaceId,
   });
 
   if (recipients.length === 0) {
-    return {
-      eventId: `subscription_failed_${opts.subscriptionId}`,
-      totalRecipients: 0,
-      deliveries: [],
-    };
+    return { eventId, totalRecipients: 0, deliveries: [] };
   }
 
   return sendTransactionalNotification({
-    eventId: `subscription_failed_${opts.subscriptionId}_${crypto.randomUUID()}`,
+    eventId,
     recipients,
     type: "SUBSCRIPTION_FAILED",
     subjectKey: "notification_subscription_past_due_subject",
     bodyKey: "notification_subscription_past_due_body",
-    href: "/app?view=billing",
+    href: getPathForView("billing"),
     workspaceId: opts.workspaceId,
   });
 }
 
-// ─── Outbox dispatcher (cron) ────────────────────────────────────────────────
+// ─── Outbox dispatcher ───────────────────────────────────────────────────────
 
 /** Max provider attempts per delivery row (requirement 17.5). */
 export const NOTIFICATION_MAX_ATTEMPTS = 3;
 
-/** Claim lease so concurrent cron instances do not double-send. */
+/** Claim lease so concurrent dispatchers do not double-send. */
 export const NOTIFICATION_CLAIM_LEASE_MS = 60_000;
 
 /** Provider send timeout (requirement 17.5). */
 export const NOTIFICATION_PROVIDER_TIMEOUT_MS = 10_000;
 
-/** Retry backoff steps after attempt 1 and 2 (within the 30-minute deadline). */
+/**
+ * How long a queued email stays deliverable.
+ *
+ * The dispatch cron runs once a day — a Vercel Hobby plan rejects anything more
+ * frequent — so the deadline has to outlive a full day plus scheduling jitter.
+ * The earlier 30-minute deadline expired long before the cron ever looked, so
+ * almost every queued email sat PENDING forever.
+ */
+export const NOTIFICATION_DELIVERY_DEADLINE_MS = 26 * 60 * 60 * 1000;
+
+/** Wall-clock budget of one sweep; keeps the cron under its 60-second maxDuration. */
+export const NOTIFICATION_DISPATCH_BUDGET_MS = 45_000;
+
+/** Retry backoff after attempt 1 and 2; the daily sweep sends whatever is due. */
 const RETRY_BACKOFF_MS = [60_000, 5 * 60_000] as const;
+
+/**
+ * The slice of the Prisma client the outbox touches. Injected by tests so the
+ * claim/send/record cycle runs against an in-memory fake, never a database.
+ */
+export type NotificationOutboxClient = Pick<PrismaClient, "notificationDelivery">;
 
 export type DispatchPendingNotificationsResult = {
   claimed: number;
@@ -667,6 +761,10 @@ export type DispatchPendingNotificationsResult = {
   failed: number;
   skipped: number;
   retried: number;
+  /** PENDING rows past their deliveryDeadlineAt, closed as FAILED without a send. */
+  expired: number;
+  /** True when the sweep stopped early to stay inside its wall-clock budget. */
+  budgetExhausted: boolean;
   errors: string[];
 };
 
@@ -676,6 +774,35 @@ type OutboxPayload = {
   bodyParams?: Record<string, string>;
   href?: string | null;
 };
+
+/**
+ * The PENDING outbox row for one recipient. Exported so a test can build the
+ * exact row the dispatcher will later claim.
+ */
+export function buildOutboxRowData(
+  input: SendTransactionalNotificationInput,
+  recipient: NotificationRecipient,
+  now: Date
+) {
+  return {
+    eventId: input.eventId,
+    recipientId: recipient.userId,
+    channel: "email",
+    status: "PENDING",
+    workspaceId: input.workspaceId,
+    recipientEmail: recipient.email,
+    recipientLocale: recipient.locale,
+    templateKey: input.subjectKey,
+    payloadJson: {
+      subjectKey: input.subjectKey,
+      bodyKey: input.bodyKey,
+      bodyParams: input.bodyParams ?? {},
+      href: input.href ?? null,
+    },
+    deliveryDeadlineAt: addUtcMilliseconds(now, NOTIFICATION_DELIVERY_DEADLINE_MS),
+    nextAttemptAt: now,
+  };
+}
 
 function parseOutboxPayload(value: unknown): OutboxPayload {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -699,36 +826,296 @@ function parseOutboxPayload(value: unknown): OutboxPayload {
   };
 }
 
+type OutboxDispatchDependencies = Readonly<{
+  client: NotificationOutboxClient;
+  send: typeof sendEmail;
+  now: Date;
+  workerId: string;
+}>;
+
+export type OutboxDispatchOutcome =
+  | { outcome: "not_claimed" }
+  | { outcome: "expired" }
+  | { outcome: "sent"; providerMessageId: string }
+  | { outcome: "skipped"; reason: string }
+  | { outcome: "retried"; error: string }
+  | { outcome: "failed"; error: string };
+
 /**
- * Claim PENDING/retryable email outbox rows and send them via Resend.
- * Uses conditional claim leases (skip-locked style) so multiple cron instances
- * do not double-deliver. Terminal after three attempts or after the 30-minute
- * deliveryDeadlineAt (requirements 17.4–17.6).
+ * One claim → send → record cycle for a single outbox row. Shared by the
+ * inline attempt made right after the row commits and by the cron sweep, so
+ * both paths honour the same lease, attempt cap, and deadline.
+ */
+async function dispatchOutboxRow(
+  row: NotificationDelivery,
+  deps: OutboxDispatchDependencies
+): Promise<OutboxDispatchOutcome> {
+  const { client, now } = deps;
+  const deliveries = client.notificationDelivery;
+
+  // Past the deadline: close the row instead of leaving it PENDING forever.
+  // No claim is needed — a concurrent close writes the same terminal state.
+  if (
+    row.deliveryDeadlineAt !== null &&
+    row.deliveryDeadlineAt.getTime() <= now.getTime()
+  ) {
+    await deliveries.update({
+      where: { id: row.id },
+      data: {
+        status: "FAILED",
+        errorCode: "DELIVERY_DEADLINE_EXCEEDED",
+        errorMessage: `Not delivered within ${NOTIFICATION_DELIVERY_DEADLINE_MS / 3_600_000} hours`,
+        failedAt: now,
+        nextAttemptAt: null,
+        claimedAt: null,
+        claimExpiresAt: null,
+        claimedBy: null,
+      },
+    });
+    return { outcome: "expired" };
+  }
+
+  const claimExpiresAt = new Date(now.getTime() + NOTIFICATION_CLAIM_LEASE_MS);
+  const claimed = await deliveries.updateMany({
+    where: {
+      id: row.id,
+      status: "PENDING",
+      attemptCount: row.attemptCount,
+      OR: [{ claimExpiresAt: null }, { claimExpiresAt: { lte: now } }],
+    },
+    data: {
+      claimedAt: now,
+      claimExpiresAt,
+      claimedBy: deps.workerId,
+      firstAttemptAt: row.firstAttemptAt ?? now,
+      lastAttemptAt: now,
+      attemptCount: { increment: 1 },
+    },
+  });
+  if (claimed.count !== 1) return { outcome: "not_claimed" };
+
+  const attemptNumber = row.attemptCount + 1;
+  const payload = parseOutboxPayload(row.payloadJson);
+  const subjectKey = payload.subjectKey ?? row.templateKey;
+  const bodyKey = payload.bodyKey;
+  const locale = (row.recipientLocale as Locale) || "ar";
+
+  if (!row.recipientEmail || !subjectKey || !bodyKey) {
+    await deliveries.update({
+      where: { id: row.id },
+      data: {
+        status: "FAILED",
+        errorCode: "OUTBOX_PAYLOAD_INVALID",
+        errorMessage: "Missing recipient email or template keys",
+        failedAt: now,
+        claimedAt: null,
+        claimExpiresAt: null,
+        claimedBy: null,
+      },
+    });
+    return { outcome: "failed", error: "OUTBOX_PAYLOAD_INVALID" };
+  }
+
+  const content = composeContent(subjectKey, bodyKey, locale, payload.bodyParams);
+  const subject = content.subject.slice(0, 150);
+  const body = locale === "ar" ? content.bodyAr : content.bodyEn;
+  const html = formatEmailHtml(body, payload.href ?? undefined);
+
+  let sendResult: Awaited<ReturnType<typeof sendEmail>>;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    sendResult = await Promise.race([
+      deps.send({ to: row.recipientEmail, subject, html, text: body }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("NOTIFICATION_PROVIDER_TIMEOUT")),
+          NOTIFICATION_PROVIDER_TIMEOUT_MS
+        );
+      }),
+    ]);
+  } catch (err) {
+    sendResult = {
+      ok: false,
+      skipped: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+
+  // Every timestamp below comes from the injected clock, so a deterministic
+  // test and a real sweep record the same transitions.
+  if (sendResult.ok) {
+    await deliveries.update({
+      where: { id: row.id },
+      data: {
+        status: "SENT",
+        providerMessageId: sendResult.id,
+        deliveredAt: now,
+        errorCode: null,
+        errorMessage: null,
+        claimedAt: null,
+        claimExpiresAt: null,
+        claimedBy: null,
+        nextAttemptAt: null,
+      },
+    });
+    return { outcome: "sent", providerMessageId: sendResult.id };
+  }
+
+  if ("skipped" in sendResult && sendResult.skipped) {
+    await deliveries.update({
+      where: { id: row.id },
+      data: {
+        status: "SKIPPED",
+        errorCode: "EMAIL_UNCONFIGURED",
+        errorMessage: sendResult.reason,
+        failedAt: now,
+        claimedAt: null,
+        claimExpiresAt: null,
+        claimedBy: null,
+      },
+    });
+    return { outcome: "skipped", reason: sendResult.reason };
+  }
+
+  const terminal =
+    attemptNumber >= NOTIFICATION_MAX_ATTEMPTS ||
+    (row.deliveryDeadlineAt !== null &&
+      row.deliveryDeadlineAt.getTime() <= now.getTime());
+  const backoff =
+    RETRY_BACKOFF_MS[Math.min(attemptNumber - 1, RETRY_BACKOFF_MS.length - 1)] ??
+    RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1]!;
+
+  await deliveries.update({
+    where: { id: row.id },
+    data: {
+      status: terminal ? "FAILED" : "PENDING",
+      errorCode: "EMAIL_SEND_FAILED",
+      errorMessage: sendResult.error,
+      failedAt: terminal ? now : null,
+      nextAttemptAt: terminal ? null : new Date(now.getTime() + backoff),
+      claimedAt: null,
+      claimExpiresAt: null,
+      claimedBy: null,
+    },
+  });
+  return terminal
+    ? { outcome: "failed", error: sendResult.error }
+    : { outcome: "retried", error: sendResult.error };
+}
+
+/**
+ * The single inline provider attempt made right after an outbox row commits.
+ * Bounded by the 10-second provider timeout and never throws: any failure
+ * leaves the row PENDING for the cron sweep, so the caller's own response is
+ * unaffected either way.
+ */
+export async function attemptInlineEmailDispatch(
+  row: NotificationDelivery,
+  deps: OutboxDispatchDependencies
+): Promise<OutboxDispatchOutcome> {
+  try {
+    return await dispatchOutboxRow(row, deps);
+  } catch (err) {
+    console.error(
+      "[notification-service] inline dispatch failed; row stays queued",
+      {
+        rowId: row.id,
+        errorName: err instanceof Error ? err.name : typeof err,
+      }
+    );
+    return {
+      outcome: "retried",
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+function inlineDeliveryResult(
+  recipientId: string,
+  inline: OutboxDispatchOutcome
+): DeliveryResult {
+  switch (inline.outcome) {
+    case "sent":
+      return {
+        recipientId,
+        channel: "email",
+        status: "SENT",
+        emailId: inline.providerMessageId,
+      };
+    case "skipped":
+      return {
+        recipientId,
+        channel: "email",
+        status: "SKIPPED",
+        reason: "EMAIL_UNCONFIGURED",
+      };
+    case "failed":
+      return {
+        recipientId,
+        channel: "email",
+        status: "FAILED",
+        reason: inline.error,
+      };
+    case "expired":
+      return {
+        recipientId,
+        channel: "email",
+        status: "FAILED",
+        reason: "DELIVERY_DEADLINE_EXCEEDED",
+      };
+    default:
+      return {
+        recipientId,
+        channel: "email",
+        status: "PENDING",
+        reason: "QUEUED_FOR_DISPATCH",
+      };
+  }
+}
+
+/**
+ * Claim PENDING/retryable email outbox rows and send them.
+ * Uses conditional claim leases (skip-locked style) so multiple dispatchers do
+ * not double-deliver. Terminal after three attempts or once the 26-hour
+ * deliveryDeadlineAt has passed (requirements 17.4–17.6). Stops claiming new
+ * rows once the wall-clock budget is spent; the rest wait for the next sweep.
  */
 export async function dispatchPendingNotificationEmails(options?: {
   readonly batchSize?: number;
   readonly workerId?: string;
   readonly now?: Date;
   readonly send?: typeof sendEmail;
+  readonly client?: NotificationOutboxClient;
+  readonly budgetMs?: number;
+  /** Whether a transport exists; read from the environment when omitted. */
+  readonly emailConfigured?: boolean;
 }): Promise<DispatchPendingNotificationsResult> {
   const batchSize = Math.min(Math.max(options?.batchSize ?? 25, 1), 100);
   const workerId = options?.workerId ?? `cron-${crypto.randomUUID()}`;
   const now = options?.now ?? new Date();
   const send = options?.send ?? sendEmail;
+  const client: NotificationOutboxClient = options?.client ?? db;
+  const budgetMs = options?.budgetMs ?? NOTIFICATION_DISPATCH_BUDGET_MS;
+  const emailConfigured = options?.emailConfigured ?? isEmailConfigured();
+  const startedAtMs = Date.now();
   const result: DispatchPendingNotificationsResult = {
     claimed: 0,
     sent: 0,
     failed: 0,
     skipped: 0,
     retried: 0,
+    expired: 0,
+    budgetExhausted: false,
     errors: [],
   };
 
-  if (!isEmailConfigured()) {
+  if (!emailConfigured) {
     // Mark due PENDING rows SKIPPED without a network call when no transport
     // is configured. An operator reads errorMessage directly, so it names both
     // transports rather than only the one that used to exist.
-    const unconfigured = await db.notificationDelivery.updateMany({
+    const unconfigured = await client.notificationDelivery.updateMany({
       where: {
         channel: "email",
         status: "PENDING",
@@ -747,7 +1134,9 @@ export async function dispatchPendingNotificationEmails(options?: {
     return result;
   }
 
-  const candidates = await db.notificationDelivery.findMany({
+  // Rows past their deadline are selected too: the dispatcher closes them as
+  // FAILED so the outbox cannot accumulate PENDING rows nothing will ever send.
+  const candidates = await client.notificationDelivery.findMany({
     where: {
       channel: "email",
       status: "PENDING",
@@ -755,12 +1144,6 @@ export async function dispatchPendingNotificationEmails(options?: {
       AND: [
         { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
         { OR: [{ claimExpiresAt: null }, { claimExpiresAt: { lte: now } }] },
-        {
-          OR: [
-            { deliveryDeadlineAt: null },
-            { deliveryDeadlineAt: { gt: now } },
-          ],
-        },
       ],
     },
     orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
@@ -768,151 +1151,37 @@ export async function dispatchPendingNotificationEmails(options?: {
   });
 
   for (const row of candidates) {
-    const claimExpiresAt = new Date(now.getTime() + NOTIFICATION_CLAIM_LEASE_MS);
-    const claimed = await db.notificationDelivery.updateMany({
-      where: {
-        id: row.id,
-        status: "PENDING",
-        attemptCount: row.attemptCount,
-        OR: [{ claimExpiresAt: null }, { claimExpiresAt: { lte: now } }],
-      },
-      data: {
-        claimedAt: now,
-        claimExpiresAt,
-        claimedBy: workerId,
-        firstAttemptAt: row.firstAttemptAt ?? now,
-        lastAttemptAt: now,
-        attemptCount: { increment: 1 },
-      },
-    });
-
-    if (claimed.count !== 1) continue;
-    result.claimed += 1;
-
-    const attemptNumber = row.attemptCount + 1;
-    const payload = parseOutboxPayload(row.payloadJson);
-    const subjectKey = payload.subjectKey ?? row.templateKey;
-    const bodyKey = payload.bodyKey;
-    const locale = (row.recipientLocale as Locale) || "ar";
-
-    if (!row.recipientEmail || !subjectKey || !bodyKey) {
-      await db.notificationDelivery.update({
-        where: { id: row.id },
-        data: {
-          status: "FAILED",
-          errorCode: "OUTBOX_PAYLOAD_INVALID",
-          errorMessage: "Missing recipient email or template keys",
-          failedAt: now,
-          claimedAt: null,
-          claimExpiresAt: null,
-          claimedBy: null,
-        },
-      });
-      result.failed += 1;
-      result.errors.push(`${row.id}: OUTBOX_PAYLOAD_INVALID`);
-      continue;
+    if (Date.now() - startedAtMs >= budgetMs) {
+      result.budgetExhausted = true;
+      break;
     }
 
-    const content = composeContent(
-      subjectKey,
-      bodyKey,
-      locale,
-      payload.bodyParams
-    );
-    const subject = content.subject.slice(0, 150);
-    const body =
-      locale === "ar" ? content.bodyAr : content.bodyEn;
-    const html = formatEmailHtml(body, payload.href ?? undefined);
-
-    let sendResult: Awaited<ReturnType<typeof sendEmail>>;
-    try {
-      sendResult = await Promise.race([
-        send({
-          to: row.recipientEmail,
-          subject,
-          html,
-          text: body,
-        }),
-        new Promise<never>((_, reject) => {
-          setTimeout(
-            () => reject(new Error("NOTIFICATION_PROVIDER_TIMEOUT")),
-            NOTIFICATION_PROVIDER_TIMEOUT_MS
-          );
-        }),
-      ]);
-    } catch (err) {
-      sendResult = {
-        ok: false,
-        skipped: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
+    const outcome = await dispatchOutboxRow(row, { client, send, now, workerId });
+    switch (outcome.outcome) {
+      case "not_claimed":
+        break;
+      case "expired":
+        result.expired += 1;
+        break;
+      case "sent":
+        result.claimed += 1;
+        result.sent += 1;
+        break;
+      case "skipped":
+        result.claimed += 1;
+        result.skipped += 1;
+        break;
+      case "retried":
+        result.claimed += 1;
+        result.retried += 1;
+        result.errors.push(`${row.id}: ${outcome.error}`);
+        break;
+      case "failed":
+        result.claimed += 1;
+        result.failed += 1;
+        result.errors.push(`${row.id}: ${outcome.error}`);
+        break;
     }
-
-    if (sendResult.ok) {
-      await db.notificationDelivery.update({
-        where: { id: row.id },
-        data: {
-          status: "SENT",
-          providerMessageId: sendResult.id,
-          deliveredAt: new Date(),
-          errorCode: null,
-          errorMessage: null,
-          claimedAt: null,
-          claimExpiresAt: null,
-          claimedBy: null,
-          nextAttemptAt: null,
-        },
-      });
-      result.sent += 1;
-      continue;
-    }
-
-    if ("skipped" in sendResult && sendResult.skipped) {
-      await db.notificationDelivery.update({
-        where: { id: row.id },
-        data: {
-          status: "SKIPPED",
-          errorCode: "EMAIL_UNCONFIGURED",
-          errorMessage: sendResult.reason,
-          failedAt: new Date(),
-          claimedAt: null,
-          claimExpiresAt: null,
-          claimedBy: null,
-        },
-      });
-      result.skipped += 1;
-      continue;
-    }
-
-    const terminal =
-      attemptNumber >= NOTIFICATION_MAX_ATTEMPTS ||
-      (row.deliveryDeadlineAt !== null &&
-        row.deliveryDeadlineAt.getTime() <= Date.now());
-    const backoff =
-      RETRY_BACKOFF_MS[Math.min(attemptNumber - 1, RETRY_BACKOFF_MS.length - 1)] ??
-      RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1]!;
-    const nextAttemptAt = new Date(Date.now() + backoff);
-
-    await db.notificationDelivery.update({
-      where: { id: row.id },
-      data: {
-        status: terminal ? "FAILED" : "PENDING",
-        errorCode: "EMAIL_SEND_FAILED",
-        errorMessage: sendResult.error,
-        failedAt: terminal ? new Date() : null,
-        nextAttemptAt: terminal ? null : nextAttemptAt,
-        claimedAt: null,
-        claimExpiresAt: null,
-        claimedBy: null,
-      },
-    });
-
-    if (terminal) {
-      result.failed += 1;
-    } else {
-      result.retried += 1;
-    }
-    result.errors.push(`${row.id}: ${sendResult.error}`);
   }
 
   return result;

@@ -2,10 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { jsonApiFailure, withTenant } from "@/lib/api-controller";
 import { t } from "@/lib/i18n";
+import { activationFunnelFromCounts } from "@/lib/analytics-collector";
 import {
-  aggregateAnalyticsEvents,
-  type AnalyticsEventType,
-} from "@/lib/analytics-collector";
+  countByMetadataField,
+  countEventsByType,
+  dailyCountsForType,
+  medianAgentRunDurationMs,
+  retentionCutoff,
+  sumCounts,
+  summaryDayRange,
+  topEntitiesForType,
+} from "@/lib/analytics-read";
 import { isPrismaMissingTable } from "@/lib/prisma-missing-table";
 
 function calculateTrend(current: number, previous: number): "up" | "down" | "stable" {
@@ -65,131 +72,84 @@ export async function GET(request: NextRequest) {
       }
 
       try {
-        // [start, end) — half-open range prevents overlap with preceding window
-        const events = await db.analyticsEvent.findMany({
-          where: {
-            workspaceId: ctx.workspace.id,
-            createdAt: { gte: startDate, lt: endDate },
-          },
-          orderBy: { createdAt: "asc" },
-        });
-
-        // Pure aggregation — Property 16 reference model (criteria 4.7, 4.8, 4.10)
-        const aggregation = aggregateAnalyticsEvents(events);
-        const countsByType = new Map<AnalyticsEventType, number>(
-          Object.entries(aggregation.countsByType) as [AnalyticsEventType, number][]
-        );
-        const medianAgentDuration = aggregation.medianAgentDurationMs;
+        const now = new Date();
+        const workspaceId = ctx.workspace.id;
 
         // Previous period: adjacent equal-duration [prevStart, prevEnd)
         const periodMs = endDate.getTime() - startDate.getTime();
         const prevStart = new Date(startDate.getTime() - periodMs);
         const prevEnd = new Date(startDate.getTime());
 
-        const prevEvents = await db.analyticsEvent.findMany({
-          where: {
-            workspaceId: ctx.workspace.id,
-            createdAt: { gte: prevStart, lt: prevEnd },
-          },
-        });
+        // Every aggregate is a database GROUP BY over the half-open range
+        // createdAt: { gte: startDate, lt: endDate } — no raw event row is held
+        // in memory — and the per-type counts union the retention summaries
+        // for whole days already archived (criteria 4.7, 4.8, 4.10).
+        const [
+          countsByType,
+          prevCountsByType,
+          agentDuration,
+          prevAgentDuration,
+          proposalsByDay,
+          exportsByType,
+          templateUsage,
+          sectionCompletion,
+        ] = await Promise.all([
+          countEventsByType(db, workspaceId, startDate, endDate, now),
+          countEventsByType(db, workspaceId, prevStart, prevEnd, now),
+          medianAgentRunDurationMs(db, workspaceId, startDate, endDate),
+          medianAgentRunDurationMs(db, workspaceId, prevStart, prevEnd),
+          dailyCountsForType(db, workspaceId, "proposal_created", startDate, endDate, now),
+          countByMetadataField(db, workspaceId, "proposal_exported", "exportFormat", startDate, endDate),
+          topEntitiesForType(db, workspaceId, "template_used", startDate, endDate, 10),
+          countByMetadataField(db, workspaceId, "section_added", "sectionType", startDate, endDate),
+        ]);
+        const medianAgentDuration = agentDuration.medianMs;
+        const prevMedianAgentDuration = prevAgentDuration.medianMs;
 
-        const prevAggregation = aggregateAnalyticsEvents(prevEvents);
-        const prevCountsByType = new Map<AnalyticsEventType, number>(
-          Object.entries(prevAggregation.countsByType) as [
-            AnalyticsEventType,
-            number,
-          ][]
-        );
-        const prevMedianAgentDuration = prevAggregation.medianAgentDurationMs;
-
-        // Proposals over time (daily buckets)
+        // Proposals over time (daily buckets, every day of the range present)
         const proposalsOverTime: { date: string; value: number }[] = [];
-        const dailyMap = new Map<string, number>();
-        events
-          .filter((e) => e.eventType === "proposal_created")
-          .forEach((e) => {
-            const day = e.createdAt.toISOString().split("T")[0];
-            dailyMap.set(day, (dailyMap.get(day) ?? 0) + 1);
-          });
         const current = new Date(startDate);
         while (current < endDate) {
           const day = current.toISOString().split("T")[0];
-          proposalsOverTime.push({ date: day, value: dailyMap.get(day) ?? 0 });
+          proposalsOverTime.push({ date: day, value: proposalsByDay.get(day) ?? 0 });
           current.setDate(current.getDate() + 1);
         }
 
-        // Exports by type
-        const exportsByTypeMap = new Map<string, number>();
-        events
-          .filter((e) => e.eventType === "proposal_exported")
-          .forEach((e) => {
-            const type =
-              (e.metadataJson as { exportFormat?: string } | null)?.exportFormat ??
-              "unknown";
-            exportsByTypeMap.set(type, (exportsByTypeMap.get(type) ?? 0) + 1);
-          });
-        const exportsByType = Array.from(exportsByTypeMap.entries()).map(
-          ([category, count]) => ({ category, count })
-        );
-
-        // Template usage
-        const templateUsageMap = new Map<string, number>();
-        events
-          .filter((e) => e.eventType === "template_used")
-          .forEach((e) => {
-            templateUsageMap.set(
-              e.entityId,
-              (templateUsageMap.get(e.entityId) ?? 0) + 1
-            );
-          });
-        const templateUsage = Array.from(templateUsageMap.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 10)
-          .map(([category, count]) => ({ category, count }));
-
-        // Section completion
-        const sectionCompletionMap = new Map<string, number>();
-        events
-          .filter((e) => e.eventType === "section_added")
-          .forEach((e) => {
-            const sectionType =
-              (e.metadataJson as { sectionType?: string } | null)?.sectionType ??
-              "unknown";
-            sectionCompletionMap.set(
-              sectionType,
-              (sectionCompletionMap.get(sectionType) ?? 0) + 1
-            );
-          });
-        const sectionCompletion = Array.from(sectionCompletionMap.entries()).map(
-          ([category, count]) => ({ category, count })
-        );
-
-        const isEmpty = events.length === 0;
+        const isEmpty = sumCounts(countsByType) === 0;
 
         // Build metrics from closed vocabulary only (criterion 4.10)
-        const proposalsCreated = countsByType.get("proposal_created") ?? 0;
-        const proposalsExported = countsByType.get("proposal_exported") ?? 0;
-        const templatesUsed = countsByType.get("template_used") ?? 0;
-        const agentCompleted = countsByType.get("agent_run_completed") ?? 0;
-        const agentFailed = countsByType.get("agent_run_failed") ?? 0;
-        const agentCancelled = countsByType.get("agent_run_cancelled") ?? 0;
-        const documentsUploaded = countsByType.get("document_uploaded") ?? 0;
-        const documentVersionsCreated =
-          countsByType.get("document_version_created") ?? 0;
+        const proposalsCreated = countsByType.proposal_created;
+        const proposalsApproved = countsByType.proposal_approved;
+        const proposalsRejected = countsByType.proposal_rejected;
+        const proposalsExported = countsByType.proposal_exported;
+        const templatesUsed = countsByType.template_used;
+        const agentCompleted = countsByType.agent_run_completed;
+        const agentFailed = countsByType.agent_run_failed;
+        const agentCancelled = countsByType.agent_run_cancelled;
+        const documentsUploaded = countsByType.document_uploaded;
+        const documentVersionsCreated = countsByType.document_version_created;
 
-        const prevProposalsCreated = prevCountsByType.get("proposal_created") ?? 0;
-        const prevProposalsExported =
-          prevCountsByType.get("proposal_exported") ?? 0;
-        const prevTemplatesUsed = prevCountsByType.get("template_used") ?? 0;
-        const prevAgentCompleted =
-          prevCountsByType.get("agent_run_completed") ?? 0;
-        const prevAgentFailed = prevCountsByType.get("agent_run_failed") ?? 0;
-        const prevAgentCancelled =
-          prevCountsByType.get("agent_run_cancelled") ?? 0;
-        const prevDocumentsUploaded =
-          prevCountsByType.get("document_uploaded") ?? 0;
-        const prevDocumentVersionsCreated =
-          prevCountsByType.get("document_version_created") ?? 0;
+        const prevProposalsCreated = prevCountsByType.proposal_created;
+        const prevProposalsApproved = prevCountsByType.proposal_approved;
+        const prevProposalsRejected = prevCountsByType.proposal_rejected;
+        const prevProposalsExported = prevCountsByType.proposal_exported;
+        const prevTemplatesUsed = prevCountsByType.template_used;
+        const prevAgentCompleted = prevCountsByType.agent_run_completed;
+        const prevAgentFailed = prevCountsByType.agent_run_failed;
+        const prevAgentCancelled = prevCountsByType.agent_run_cancelled;
+        const prevDocumentsUploaded = prevCountsByType.document_uploaded;
+        const prevDocumentVersionsCreated = prevCountsByType.document_version_created;
+
+        // Activation funnel: registered → verified → first project → first
+        // document → first run → first export, as event counts for the period.
+        const funnel = activationFunnelFromCounts(countsByType).map((stage) => ({
+          ...stage,
+          label: localizedLabel(
+            `funnel_stage_${stage.key}`,
+            stage.eventType,
+            stage.eventType
+          ),
+        }));
 
         return NextResponse.json({
           ok: true,
@@ -198,6 +158,18 @@ export async function GET(request: NextRequest) {
             period: { start, end },
             range: { start, end },
             empty: isEmpty,
+            // Payload breakdowns (export format, template, section type) come
+            // from raw events only; archived days carry counts, not payloads.
+            archivedDaysIncluded:
+              summaryDayRange(startDate, endDate, retentionCutoff(now)) !== null,
+            funnel: {
+              label: localizedLabel(
+                "analytics_funnel_title",
+                "مسار التفعيل",
+                "Activation funnel"
+              ),
+              stages: funnel,
+            },
             metrics: [
               {
                 key: "proposals_created",
@@ -210,6 +182,32 @@ export async function GET(request: NextRequest) {
                 previousValue: prevProposalsCreated,
                 difference: proposalsCreated - prevProposalsCreated,
                 trend: calculateTrend(proposalsCreated, prevProposalsCreated),
+              },
+              // Review outcomes were recorded at PATCH /api/reviews/[id] but
+              // never surfaced; without them "created" had no counterpart.
+              {
+                key: "proposals_approved",
+                label: localizedLabel(
+                  "metric_proposals_approved",
+                  "عروض معتمدة",
+                  "Proposals Approved"
+                ),
+                value: proposalsApproved,
+                previousValue: prevProposalsApproved,
+                difference: proposalsApproved - prevProposalsApproved,
+                trend: calculateTrend(proposalsApproved, prevProposalsApproved),
+              },
+              {
+                key: "proposals_rejected",
+                label: localizedLabel(
+                  "metric_proposals_rejected",
+                  "عروض مرفوضة",
+                  "Proposals Rejected"
+                ),
+                value: proposalsRejected,
+                previousValue: prevProposalsRejected,
+                difference: proposalsRejected - prevProposalsRejected,
+                trend: calculateTrend(proposalsRejected, prevProposalsRejected),
               },
               {
                 key: "proposals_exported",
