@@ -361,8 +361,16 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
       'DROP INDEX IF EXISTS "DocumentChunk_tsv_idx"; DROP INDEX IF EXISTS "DocumentChunk_workspaceId_embeddingDim_idx"; ALTER TABLE "DocumentChunk" DROP COLUMN "tsv"; ALTER TABLE "DocumentChunk" DROP COLUMN "language"; ALTER TABLE "DocumentChunk" DROP COLUMN "pageRef"; ALTER TABLE "DocumentChunk" DROP COLUMN "sectionHeading"; ALTER TABLE "DocumentChunk" DROP COLUMN "embeddingDim"; ALTER TABLE "DocumentChunk" DROP COLUMN "embeddingModel"; ALTER TABLE "DocumentChunk" DROP COLUMN "embedding";',
   },
   {
-    id: "20261126000000_autonomy_slice_1",
+    id: "20260905220000_analytics_activation_vocabulary",
     position: 28,
+    capabilities: ["activity analytics", "activation funnel"],
+    createsTables: [],
+    reverse:
+      'ALTER TABLE "AnalyticsEvent" DROP CONSTRAINT "AnalyticsEvent_event_type_check"; ALTER TABLE "AnalyticsEvent" ADD CONSTRAINT "AnalyticsEvent_event_type_check" CHECK ("eventType" IN (the fourteen pre-activation values)) NOT VALID; — activation rows appended in the meantime remain and are only tolerated because the re-added constraint is NOT VALID.',
+  },
+  {
+    id: "20261126000000_autonomy_slice_1",
+    position: 29,
     capabilities: [
       "autonomy shell",
       "company profile Markdown",

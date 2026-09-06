@@ -490,6 +490,16 @@ export interface MigrationSqlPolicyOptions {
    * site, so the exception stays reviewable and cannot silently widen.
    */
   readonly allowedDroppedIndexes?: readonly string[];
+  /**
+   * Constraint names this migration is explicitly approved to drop, lower-cased.
+   *
+   * Same shape and same discipline as `allowedDroppedIndexes`. The one
+   * legitimate use is widening a CHECK constraint: PostgreSQL cannot alter a
+   * CHECK in place, so the migration drops the narrow one and adds the wider
+   * one under the same name. The drop is only additive when the ADD follows in
+   * the same file, which is what the exemption is asserting at its call site.
+   */
+  readonly allowedDroppedConstraints?: readonly string[];
 }
 
 const ALLOWED_STATEMENTS: readonly RegExp[] = [
@@ -714,6 +724,21 @@ export function analyzeMigrationSql(
       const rule = DROP_RULES[keyword] ?? "NON_ADDITIVE_DROP";
 
       if (rule === "DROP_CONSTRAINT" && targetIsSelfCreated) continue;
+      if (rule === "DROP_CONSTRAINT") {
+        const approved = new Set(
+          (options.allowedDroppedConstraints ?? []).map((name) =>
+            name.toLowerCase(),
+          ),
+        );
+        // The dropped name is the identifier after DROP CONSTRAINT; the table
+        // name precedes it, so only that one identifier has to be approved.
+        const dropped = new RegExp(
+          String.raw`\bDROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?(${IDENTIFIER})`,
+          "iu",
+        ).exec(statement.scanned);
+        const name = unquote(dropped?.[1]).toLowerCase();
+        if (name.length > 0 && approved.has(name)) continue;
+      }
       if (rule === "DROP_INDEX") {
         const names = [...statement.scanned.matchAll(/"((?:[^"]|"")+)"/gu)].map(
           (name) => unquote(`"${name[1]}"`).toLowerCase(),

@@ -180,15 +180,58 @@ describe("no migration on disk removes, renames, retypes, or empties schema", ()
     ],
   };
 
+  /**
+   * Pre-existing constraints a specific migration is approved to drop.
+   *
+   * Only for widening a CHECK: PostgreSQL cannot alter a CHECK in place, so the
+   * migration drops the narrow constraint and re-adds a wider one under the
+   * same name. `analytics vocabulary migration` below proves the re-add follows
+   * and carries the full vocabulary, so the drop never leaves the table
+   * unconstrained.
+   */
+  const APPROVED_CONSTRAINT_DROPS: Readonly<Record<string, readonly string[]>> = {
+    // The closed event-type CHECK predated the activation family, so every
+    // account_registered / email_verified / project_created / checkout_*
+    // append failed with 23514 and the activation funnel reported nothing.
+    "20260905220000_analytics_activation_vocabulary": [
+      "AnalyticsEvent_event_type_check",
+    ],
+  };
+
   const policyFor = (id: string) => ({
     ...LEGACY_POLICY,
     allowedDroppedIndexes: APPROVED_INDEX_DROPS[id] ?? [],
+    allowedDroppedConstraints: APPROVED_CONSTRAINT_DROPS[id] ?? [],
   });
 
   test("every approved index drop names a migration that exists", () => {
     for (const id of Object.keys(APPROVED_INDEX_DROPS)) {
       expect(MIGRATION_IDS).toContain(id);
     }
+  });
+
+  test("every approved constraint drop names a migration that exists and re-adds the constraint", () => {
+    for (const [id, names] of Object.entries(APPROVED_CONSTRAINT_DROPS)) {
+      expect(MIGRATION_IDS).toContain(id);
+      const sql = migrationSql(id);
+      for (const name of names) {
+        expect(sql).toContain(`DROP CONSTRAINT "${name}"`);
+        expect(sql).toContain(`ADD CONSTRAINT "${name}"`);
+      }
+    }
+  });
+
+  test("an approved constraint drop only relaxes the migration it names", () => {
+    const borrowed = migrationSqlViolations(
+      'ALTER TABLE "AnalyticsEvent" DROP CONSTRAINT "AnalyticsEvent_event_type_check";',
+      LEGACY_POLICY
+    );
+    expect(borrowed.map((v) => v.rule)).toContain("DROP_CONSTRAINT");
+    const other = migrationSqlViolations(
+      'ALTER TABLE "User" DROP CONSTRAINT "User_email_key";',
+      policyFor("20260905220000_analytics_activation_vocabulary")
+    );
+    expect(other.map((v) => v.rule)).toContain("DROP_CONSTRAINT");
   });
 
   test("an approved index drop only relaxes the migration it names", () => {
