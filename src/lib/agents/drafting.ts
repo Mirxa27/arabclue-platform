@@ -85,7 +85,7 @@ export type DraftProposalResult = {
   model: string;
   /** Summed across every call the draft made. */
   tokensUsed: number;
-  /** True only when no live section was produced and the deterministic document stands in. */
+  /** True whenever any content was supplied by a deterministic fallback. */
   fallback: boolean;
   locale: Locale;
   /** Why the LLM path degraded (null when a live draft was produced). */
@@ -632,10 +632,10 @@ export function sectionContextBlocks(
           title: "Tender extract digest (scope, evaluation weights, SLA, milestones)",
           body: e
             ? JSON.stringify(
-                { scope: e.scope, evaluation: e.evaluation, sla: e.sla, milestones: e.milestones },
-                null,
-                2
-              ).slice(0, ENTITIES_DIGEST_CHARS)
+              { scope: e.scope, evaluation: e.evaluation, sla: e.sla, milestones: e.milestones },
+              null,
+              2
+            ).slice(0, ENTITIES_DIGEST_CHARS)
             : "No tender extract available.",
         });
         break;
@@ -757,7 +757,7 @@ export class OrderedFlusher {
     private readonly order: readonly number[],
     private readonly sink?: (text: string) => void,
     private readonly separator = "\n\n"
-  ) {}
+  ) { }
 
   /** The section whose text goes straight through; undefined once everything finished. */
   get head(): number | undefined {
@@ -956,7 +956,14 @@ export async function draftProposalSectioned(
     state.aborted = true;
     flusher.close();
   };
-  const takeSlice = (spec: SectionSpec) => {
+  const takeSlice = (
+    spec: SectionSpec,
+    failure?: Pick<LLMResult, "fallback" | "failureKind" | "provider">
+  ) => {
+    guardOrThrow(
+      failure ?? { fallback: true, failureKind: "timeout", provider: state.provider || "none" },
+      "drafting:section"
+    );
     const text = deterministicSlice(deterministic, spec, locale);
     outcomes.set(spec.number, { text, live: false, truncated: false });
     flusher.push(spec.number, text);
@@ -1009,7 +1016,7 @@ export async function draftProposalSectioned(
         return;
       }
       state.firstFailure ??= degraded;
-      takeSlice(spec);
+      takeSlice(spec, degraded);
       return;
     }
     if (!state.provider) {
@@ -1046,8 +1053,13 @@ export async function draftProposalSectioned(
   const queue = [...PROPOSAL_SECTIONS];
   await Promise.all(
     Array.from({ length: SECTION_CONCURRENCY }, async () => {
-      for (let spec = queue.shift(); spec && !state.aborted; spec = queue.shift()) {
-        await runSection(spec);
+      try {
+        for (let spec = queue.shift(); spec && !state.aborted; spec = queue.shift()) {
+          await runSection(spec);
+        }
+      } catch (error) {
+        abort();
+        throw error;
       }
     })
   );
@@ -1141,9 +1153,11 @@ export async function draftProposalSectioned(
     provider: state.provider,
     model: state.model,
     tokensUsed: state.tokens,
-    fallback: false,
+    fallback: sectionFallbacks.length > 0,
     locale,
-    failureKind: null,
+    failureKind: sectionFallbacks.length > 0
+      ? state.firstFailure?.failureKind ?? "timeout"
+      : null,
     truncated: [...outcomes.values()].some((o) => o.truncated),
     sections: PROPOSAL_SECTIONS.length,
     sectionFallbacks,
@@ -1160,8 +1174,7 @@ function logSectionedRun(run: {
   failureKind?: string;
 }): void {
   console.info(
-    `[drafting] sectioned draft: sections=${PROPOSAL_SECTIONS.length} fallbacks=[${run.sectionFallbacks.join(",")}]${
-      run.failureKind ? ` fallbackKind=${run.failureKind}` : ""
+    `[drafting] sectioned draft: sections=${PROPOSAL_SECTIONS.length} fallbacks=[${run.sectionFallbacks.join(",")}]${run.failureKind ? ` fallbackKind=${run.failureKind}` : ""
     } uncovered=${run.uncovered} tokens=${run.tokens} ms=${run.ms}`
   );
 }
@@ -1319,12 +1332,12 @@ export function buildDeterministicProposal(opts: {
     .join("\n");
   const experienceBlock = opts.technical.matchedProjects.length
     ? opts.technical.matchedProjects
-        .map((p) =>
-          locale === "ar"
-            ? `- **${p.title}** [${p.experienceClass}] — ${p.why}`
-            : `- **${p.title}** [${p.experienceClass}] — score ${p.score.toFixed(2)}: ${p.why}`
-        )
-        .join("\n")
+      .map((p) =>
+        locale === "ar"
+          ? `- **${p.title}** [${p.experienceClass}] — ${p.why}`
+          : `- **${p.title}** [${p.experienceClass}] — score ${p.score.toFixed(2)}: ${p.why}`
+      )
+      .join("\n")
     : locale === "ar"
       ? "_لا توجد مشاريع معتمدة مطابقة — يُدرج كفجوة أدلة_"
       : "_No approved matching projects — recorded as evidence gap_";
@@ -1441,9 +1454,9 @@ ${opts.financial.notes.map((n) => `- ${n}`).join("\n")}
 | البند | الوحدة | الكمية | السعر | الإجمالي |
 | --- | --- | --- | --- | --- |
 ${opts.financial.boqItems
-  .slice(0, 20)
-  .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | — | — |`)
-  .join("\n")}
+        .slice(0, 20)
+        .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | — | — |`)
+        .join("\n")}
 
 ## 16. الافتراضات والاستثناءات والتوضيحات
 - الأسعار والتعبئة التجارية من مسؤولية الفريق التجاري المعتمد لدى العميل فقط.
@@ -1551,9 +1564,9 @@ ${opts.financial.notes.map((n) => `- ${n}`).join("\n")}
 | Item | Unit | Qty | Unit Price | Total |
 | --- | --- | --- | --- | --- |
 ${opts.financial.boqItems
-  .slice(0, 20)
-  .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | — | — |`)
-  .join("\n")}
+      .slice(0, 20)
+      .map((b) => `| ${b.item} | ${b.unit} | ${b.qty} | — | — |`)
+      .join("\n")}
 
 ## 16. Assumptions, Exclusions & Clarifications
 - Commercial prices are entered solely by the client's authorized commercial team.

@@ -119,7 +119,7 @@ describe("header action rows wrap on a phone", () => {
 
   test("proposal builder live preview header", () => {
     const src = read("src/components/dashboard/proposal-builder-preview.tsx");
-    expect(src).toMatch(/flex flex-wrap items-center justify-between gap-2 border-b/);
+    expect(src).toMatch(/flex shrink-0 flex-wrap items-center justify-between gap-3 border-b/);
   });
 });
 

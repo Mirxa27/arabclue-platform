@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -16,6 +17,8 @@ import {
   FileText,
   Loader2,
   Maximize2,
+  RefreshCw,
+  XIcon,
 } from "lucide-react";
 import {
   classifyStoredFilePreviewKind,
@@ -72,6 +75,8 @@ export function DocumentFileViewer({
   const [pdfZoom, setPdfZoom] = useState<PdfPreviewZoom>("fitH");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
   const embedSrc = pdfBase ? pdfPreviewSrc(pdfBase, pdfZoom) : null;
 
@@ -88,6 +93,7 @@ export function DocumentFileViewer({
 
     let cancelled = false;
     let objectUrl: string | null = null;
+    const controller = new AbortController();
 
     async function load() {
       setLoading(true);
@@ -98,7 +104,7 @@ export function DocumentFileViewer({
 
       try {
         if (kind === "text") {
-          const res = await fetch(fileUrl, { credentials: "include" });
+          const res = await fetch(fileUrl, { credentials: "include", signal: controller.signal });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const t = await res.text();
           if (!cancelled) setTextBody(t);
@@ -106,9 +112,10 @@ export function DocumentFileViewer({
         }
 
         if (kind === "pdf") {
-          const res = await fetch(fileUrl, { credentials: "include" });
+          const res = await fetch(fileUrl, { credentials: "include", signal: controller.signal });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const bytes = await res.arrayBuffer();
+          if (cancelled) return;
           if (bytes.byteLength < 5) {
             throw new Error(ar ? "ملف PDF فارغ" : "Empty PDF file");
           }
@@ -118,9 +125,10 @@ export function DocumentFileViewer({
         }
 
         if (kind === "image") {
-          const res = await fetch(fileUrl, { credentials: "include" });
+          const res = await fetch(fileUrl, { credentials: "include", signal: controller.signal });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const blob = await res.blob();
+          if (cancelled) return;
           objectUrl = URL.createObjectURL(blob);
           if (!cancelled) setImageSrc(objectUrl);
         }
@@ -136,9 +144,10 @@ export function DocumentFileViewer({
     void load();
     return () => {
       cancelled = true;
+      controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [open, kind, fileUrl, ar]);
+  }, [open, kind, fileUrl, ar, reloadNonce]);
 
   const kindLabel =
     kind === "pdf"
@@ -157,65 +166,81 @@ export function DocumentFileViewer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[96vw] h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
-        <DialogHeader className="shrink-0 border-b border-border/60 px-4 py-3">
-          <DialogTitle className="flex flex-wrap items-center justify-between gap-2 pe-8 text-base">
-            <span className="flex items-center gap-2 min-w-0">
-              <FileText className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">{title}</span>
-              <Badge variant="outline" className="text-[10px] uppercase">
-                {kindLabel}
-              </Badge>
-            </span>
-            <span className="flex items-center gap-1.5">
-              {kind === "pdf" && pdfBase ? (
-                <div className="flex rounded-md border p-0.5">
-                  {(
-                    [
-                      ["fitH", ar ? "عرض" : "Width"],
-                      ["fitV", ar ? "صفحة" : "Page"],
-                      ["page", "100%"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <Button
-                      key={id}
-                      type="button"
-                      size="sm"
-                      variant={pdfZoom === id ? "secondary" : "ghost"}
-                      className="h-7 px-2 text-[11px]"
-                      onClick={() => setPdfZoom(id)}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
-              <Button size="sm" variant="outline" className="h-8 gap-1" asChild>
-                <a href={downloadUrl}>
-                  <Download className="size-3.5" />
-                  {ar ? "تنزيل" : "Download"}
-                </a>
-              </Button>
-              <Button size="sm" variant="outline" className="h-8 gap-1" asChild>
-                <a href={fileUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink className="size-3.5" />
-                  {ar ? "تبويب" : "Open"}
-                </a>
-              </Button>
-              {kind === "pdf" && (
-                <Button size="sm" variant="ghost" className="h-8 gap-1" asChild>
-                  <a href={fileUrl} target="_blank" rel="noreferrer">
-                    <Maximize2 className="size-3.5" />
-                  </a>
-                </Button>
-              )}
-            </span>
-          </DialogTitle>
+      <DialogContent
+        showCloseButton={false}
+        dir={ar ? "rtl" : "ltr"}
+        className={cn(
+          "flex h-dvh w-full max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-none",
+          !expanded && "sm:h-[calc(100dvh-3rem)] sm:w-[calc(100vw-3rem)] sm:rounded-lg",
+        )}
+      >
+        <DialogHeader className="flex-row items-center gap-3 border-b border-border/60 px-4 py-3 text-start sm:text-start">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <FileText className="size-5" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="break-words text-base leading-snug tracking-normal [overflow-wrap:anywhere]">
+              <bdi>{title}</bdi>
+            </DialogTitle>
+            <p className="mt-1 text-xs text-muted-foreground">{ar ? "المستند الأصلي" : "Original document"}</p>
+          </div>
+          <Badge variant="outline" className="shrink-0 text-xs">{kindLabel}</Badge>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost" size="icon" className="size-10 shrink-0" title={ar ? "إغلاق" : "Close"} aria-label={ar ? "إغلاق" : "Close"}>
+              <XIcon className="size-4" aria-hidden />
+            </Button>
+          </DialogClose>
         </DialogHeader>
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/20 px-4 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {kind === "pdf" && pdfBase ? (
+              <div className="flex rounded-md border bg-background p-0.5" role="group" aria-label={ar ? "تكبير المستند" : "Document zoom"}>
+                {(
+                  [
+                    ["fitH", ar ? "عرض" : "Width"],
+                    ["fitV", ar ? "صفحة" : "Page"],
+                    ["page", "100%"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <Button
+                    key={id}
+                    type="button"
+                    size="sm"
+                    variant={pdfZoom === id ? "secondary" : "ghost"}
+                    className="h-9 px-3 text-xs"
+                    aria-pressed={pdfZoom === id}
+                    onClick={() => setPdfZoom(id)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button type="button" variant="ghost" size="icon" className="size-10" disabled={loading} onClick={() => setReloadNonce((value) => value + 1)} title={ar ? "تحديث" : "Refresh"} aria-label={ar ? "تحديث" : "Refresh"}>
+              <RefreshCw className="size-4" aria-hidden />
+            </Button>
+            <Button size="sm" variant="outline" className="h-10 gap-2" asChild>
+              <a href={downloadUrl}>
+                <Download className="size-4" aria-hidden />
+                {ar ? "تنزيل" : "Download"}
+              </a>
+            </Button>
+            <Button size="icon" variant="ghost" className="size-10" asChild>
+              <a href={fileUrl} target="_blank" rel="noreferrer" title={ar ? "فتح في تبويب جديد" : "Open in new tab"} aria-label={ar ? "فتح في تبويب جديد" : "Open in new tab"}>
+                <ExternalLink className="size-4" aria-hidden />
+              </a>
+            </Button>
+            <Button type="button" size="icon" variant="ghost" className="hidden size-10 sm:inline-flex" aria-pressed={expanded} onClick={() => setExpanded((value) => !value)} title={ar ? "توسيع العرض" : "Expand view"} aria-label={ar ? "توسيع العرض" : "Expand view"}>
+              <Maximize2 className="size-4" aria-hidden />
+            </Button>
+          </div>
+        </div>
 
         <div
           className={cn(
-            "flex-1 min-h-0 bg-[radial-gradient(ellipse_at_top,rgba(15,118,110,0.06),transparent_50%),linear-gradient(180deg,#f8fafc,transparent)] dark:bg-background"
+            "min-h-0 flex-1 bg-muted/30"
           )}
           dir={ar ? "rtl" : "ltr"}
         >

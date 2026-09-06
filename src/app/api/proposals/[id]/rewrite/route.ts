@@ -88,6 +88,9 @@ export async function POST(
     typeof body.selection === "string" && body.selection.trim()
       ? body.selection.trim()
       : (proposal.contentMd ?? "");
+  if (!(proposal.contentMd ?? "").includes(selection)) {
+    return jsonApiFailure("PROPOSAL_VERSION_CONFLICT");
+  }
   const skill = body.skill ?? "rewrite";
   const instruction = skillInstruction(skill, locale, body.instruction);
   const apply = body.apply === true;
@@ -171,6 +174,9 @@ Return Markdown only.`,
     selection,
     rewritten,
   );
+  if (contentMd === null) {
+    return jsonApiFailure("PROPOSAL_VERSION_CONFLICT");
+  }
   const previewDiff = unifiedDiff(selection, rewritten);
 
   let proposalOut = proposal;
@@ -178,12 +184,12 @@ Return Markdown only.`,
   if (apply) {
     const forms = proposal.financialFormsJson
       ? (() => {
-          try {
-            return JSON.parse(proposal.financialFormsJson);
-          } catch {
-            return null;
-          }
-        })()
+        try {
+          return JSON.parse(proposal.financialFormsJson);
+        } catch {
+          return null;
+        }
+      })()
       : null;
     validation = validateProposalOutput({
       contentMd,
@@ -260,11 +266,11 @@ Return Markdown only.`,
     validation,
     proposal: apply
       ? {
-          ...proposalOut,
-          artifacts: proposalOut.artifactsJson
-            ? JSON.parse(proposalOut.artifactsJson)
-            : [],
-        }
+        ...proposalOut,
+        artifacts: proposalOut.artifactsJson
+          ? JSON.parse(proposalOut.artifactsJson)
+          : [],
+      }
       : undefined,
   });
 }

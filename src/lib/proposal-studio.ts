@@ -24,61 +24,61 @@ export const PROPOSAL_SKILLS: {
   instructionEn: string;
   instructionAr: string;
 }[] = [
-  {
-    id: "rewrite",
-    labelEn: "Rewrite",
-    labelAr: "إعادة صياغة",
-    instructionEn:
-      "Improve government-formal wording and evaluator scannability while preserving all facts, citations, requirement IDs, and gaps.",
-    instructionAr:
-      "حسّن الصياغة الرسمية الحكومية وقابلية المسح للمقيّم مع الحفاظ على الحقائق والاقتباسات ومعرفات المتطلبات والفجوات.",
-  },
-  {
-    id: "expand",
-    labelEn: "Expand",
-    labelAr: "توسيع",
-    instructionEn:
-      "Expand with evaluator-facing detail only where supported by tender text or approved evidence already present. Do not invent projects, staff, certifications, metrics, or prices.",
-    instructionAr:
-      "وسّع التفاصيل القابلة للتقييم فقط حيث يدعمها نص المناقصة أو الأدلة المعتمدة الموجودة. لا تختلق مشاريع أو كوادر أو شهادات أو مقاييس أو أسعار.",
-  },
-  {
-    id: "condense",
-    labelEn: "Condense",
-    labelAr: "اختصار",
-    instructionEn:
-      "Condense for clarity while retaining requirement coverage, explicit gaps, compliance commitments, and blank financial amount cells.",
-    instructionAr:
-      "اختصر للوضوح مع الإبقاء على تغطية المتطلبات والفجوات الصريحة والالتزامات التنظيمية وخلايا المبالغ المالية فارغة.",
-  },
-  {
-    id: "translate",
-    labelEn: "Translate",
-    labelAr: "ترجمة",
-    instructionEn:
-      "Translate to the target locale with professional tender tone. Preserve standards names (NCA, PDPL, NORA, QLR), requirement IDs, numbers, and gaps. Do not invent content.",
-    instructionAr:
-      "ترجم إلى اللغة المستهدفة بنبرة عطاء رسمية. حافظ على أسماء المعايير (NCA, PDPL, NORA, QLR) ومعرفات المتطلبات والأرقام والفجوات. لا تختلق محتوى.",
-  },
-  {
-    id: "redesign",
-    labelEn: "Redesign layout",
-    labelAr: "إعادة تصميم الهيكل",
-    instructionEn:
-      "Redesign document structure for evaluator scoring: clear ## headings, requirement coverage table, methodology, experience classes (exact/analogous/proposed), explicit gaps. Do not invent facts or prices.",
-    instructionAr:
-      "أعد هيكل المستند لتسهيل تقييم المقيّم: عناوين ## واضحة، جدول تغطية المتطلبات، المنهجية، تصنيفات الخبرة، والفجوات الصريحة. لا تختلق حقائق أو أسعار.",
-  },
-  {
-    id: "section",
-    labelEn: "Regenerate section",
-    labelAr: "إعادة توليد قسم",
-    instructionEn:
-      "Regenerate only the provided section so it is evaluator-scorable, evidence-backed, and gap-explicit. Leave other sections untouched (return only the section).",
-    instructionAr:
-      "أعد توليد القسم المقدم فقط ليكون قابلاً للتقييم ومدعوماً بالأدلة مع فجوات صريحة. أعد القسم فقط دون بقية المستند.",
-  },
-];
+    {
+      id: "rewrite",
+      labelEn: "Rewrite",
+      labelAr: "إعادة صياغة",
+      instructionEn:
+        "Improve government-formal wording and evaluator scannability while preserving all facts, citations, requirement IDs, and gaps.",
+      instructionAr:
+        "حسّن الصياغة الرسمية الحكومية وقابلية المسح للمقيّم مع الحفاظ على الحقائق والاقتباسات ومعرفات المتطلبات والفجوات.",
+    },
+    {
+      id: "expand",
+      labelEn: "Expand",
+      labelAr: "توسيع",
+      instructionEn:
+        "Expand with evaluator-facing detail only where supported by tender text or approved evidence already present. Do not invent projects, staff, certifications, metrics, or prices.",
+      instructionAr:
+        "وسّع التفاصيل القابلة للتقييم فقط حيث يدعمها نص المناقصة أو الأدلة المعتمدة الموجودة. لا تختلق مشاريع أو كوادر أو شهادات أو مقاييس أو أسعار.",
+    },
+    {
+      id: "condense",
+      labelEn: "Condense",
+      labelAr: "اختصار",
+      instructionEn:
+        "Condense for clarity while retaining requirement coverage, explicit gaps, compliance commitments, and blank financial amount cells.",
+      instructionAr:
+        "اختصر للوضوح مع الإبقاء على تغطية المتطلبات والفجوات الصريحة والالتزامات التنظيمية وخلايا المبالغ المالية فارغة.",
+    },
+    {
+      id: "translate",
+      labelEn: "Translate",
+      labelAr: "ترجمة",
+      instructionEn:
+        "Translate to the target locale with professional tender tone. Preserve standards names (NCA, PDPL, NORA, QLR), requirement IDs, numbers, and gaps. Do not invent content.",
+      instructionAr:
+        "ترجم إلى اللغة المستهدفة بنبرة عطاء رسمية. حافظ على أسماء المعايير (NCA, PDPL, NORA, QLR) ومعرفات المتطلبات والأرقام والفجوات. لا تختلق محتوى.",
+    },
+    {
+      id: "redesign",
+      labelEn: "Redesign layout",
+      labelAr: "إعادة تصميم الهيكل",
+      instructionEn:
+        "Redesign document structure for evaluator scoring: clear ## headings, requirement coverage table, methodology, experience classes (exact/analogous/proposed), explicit gaps. Do not invent facts or prices.",
+      instructionAr:
+        "أعد هيكل المستند لتسهيل تقييم المقيّم: عناوين ## واضحة، جدول تغطية المتطلبات، المنهجية، تصنيفات الخبرة، والفجوات الصريحة. لا تختلق حقائق أو أسعار.",
+    },
+    {
+      id: "section",
+      labelEn: "Regenerate section",
+      labelAr: "إعادة توليد قسم",
+      instructionEn:
+        "Regenerate only the provided section so it is evaluator-scorable, evidence-backed, and gap-explicit. Leave other sections untouched (return only the section).",
+      instructionAr:
+        "أعد توليد القسم المقدم فقط ليكون قابلاً للتقييم ومدعوماً بالأدلة مع فجوات صريحة. أعد القسم فقط دون بقية المستند.",
+    },
+  ];
 
 export function getProposalSkill(id: string | undefined | null) {
   return PROPOSAL_SKILLS.find((s) => s.id === id) ?? PROPOSAL_SKILLS[0];
@@ -117,12 +117,11 @@ export function applySectionRewrite(
   fullMd: string,
   selection: string,
   rewritten: string
-): string {
+): string | null {
   if (!selection || selection === fullMd) return rewritten;
-  if (fullMd.includes(selection)) {
-    return fullMd.replace(selection, rewritten);
-  }
-  return rewritten;
+  const selectionIndex = fullMd.indexOf(selection);
+  if (selectionIndex < 0) return null;
+  return fullMd.slice(0, selectionIndex) + rewritten + fullMd.slice(selectionIndex + selection.length);
 }
 
 export type ExportPolicyInput = {

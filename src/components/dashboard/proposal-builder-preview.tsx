@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { FileText, Languages } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import type { ProposalSection, ProposalMetadata } from "@/lib/proposal-builder-types";
 import { getSectionLabel } from "@/lib/proposal-builder-engine";
 import { markdownToHtml } from "@/lib/markdown";
-import { useState } from "react";
 
 type PreviewMode = "ar" | "en" | "bilingual";
 
@@ -22,7 +21,8 @@ export function ProposalBuilderPreview({
   metadata: ProposalMetadata;
 }) {
   const ar = locale === "ar";
-  const [previewMode, setPreviewMode] = useState<PreviewMode>(locale as "ar" | "en");
+  const [previewMode, setPreviewMode] = useState<PreviewMode>(ar ? "ar" : "en");
+  const paperRef = useRef<HTMLElement>(null);
 
   const visibleSections = useMemo(
     () => sections.filter((s) => s.isVisible).sort((a, b) => a.sortOrder - b.sortOrder),
@@ -40,24 +40,25 @@ export function ProposalBuilderPreview({
   const estimatedPages = Math.max(1, Math.ceil(totalWords / 300));
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col" dir={ar ? "rtl" : "ltr"}>
       {/* Preview header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-background px-4 py-3">
         <div className="flex items-center gap-2">
           <FileText className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium">
             {ar ? "معاينة مباشرة" : "Live Preview"}
           </span>
-          <Badge variant="outline" className="text-[10px]">
-            {estimatedPages} {ar ? "صفحة" : "pages"}
-          </Badge>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {estimatedPages} {ar ? "صفحات تقديرية" : "estimated pages"}
+          </span>
         </div>
-        <div className="flex gap-1">
+        <div className="flex rounded-md border border-border/60 p-0.5" role="group" aria-label={ar ? "لغة المستند" : "Document language"}>
           <Button
             type="button"
             variant={previewMode === "ar" ? "default" : "ghost"}
             size="sm"
-            className="h-7 px-2 text-xs"
+            className="h-9 px-3 text-xs"
+            aria-pressed={previewMode === "ar"}
             onClick={() => setPreviewMode("ar")}
           >
             {ar ? "عربي" : "Arabic"}
@@ -66,7 +67,8 @@ export function ProposalBuilderPreview({
             type="button"
             variant={previewMode === "en" ? "default" : "ghost"}
             size="sm"
-            className="h-7 px-2 text-xs"
+            className="h-9 px-3 text-xs"
+            aria-pressed={previewMode === "en"}
             onClick={() => setPreviewMode("en")}
           >
             {ar ? "إنجليزي" : "EN"}
@@ -75,46 +77,68 @@ export function ProposalBuilderPreview({
             type="button"
             variant={previewMode === "bilingual" ? "default" : "ghost"}
             size="sm"
-            className="h-7 gap-1 px-2 text-xs"
+            className="h-9 gap-1.5 px-3 text-xs"
+            aria-pressed={previewMode === "bilingual"}
             onClick={() => setPreviewMode("bilingual")}
           >
             <Languages className="size-3" />
-            {ar ? "ثنائي" : "Bi"}
+            {ar ? "ثنائي اللغة" : "Bilingual"}
           </Button>
         </div>
       </div>
 
+      {visibleSections.length > 0 ? (
+        <nav aria-label={ar ? "أقسام المستند" : "Document sections"} className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-muted/20 px-4 py-2">
+          <select
+            aria-label={ar ? "الانتقال إلى القسم" : "Go to section"}
+            defaultValue=""
+            className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+            onChange={(event) => {
+              paperRef.current?.querySelector<HTMLElement>(`[data-preview-section="${Number(event.target.value)}"]`)?.scrollIntoView({ block: "start", behavior: "auto" });
+            }}
+          >
+            <option value="" disabled>{ar ? "المحتويات" : "Contents"}</option>
+            {visibleSections.map((section, index) => (
+              <option key={section.sectionKey} value={index}>
+                {index + 1}. {section.title[ar ? "ar" : "en"] || getSectionLabel(section.sectionType, ar ? "ar" : "en")}
+              </option>
+            ))}
+          </select>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{totalWords.toLocaleString(ar ? "ar-SA" : "en-US")} {ar ? "كلمة" : "words"}</span>
+        </nav>
+      ) : null}
+
       {/* Preview content */}
-      <div className="flex-1 overflow-y-auto bg-muted/20 p-6">
-        <div className="mx-auto max-w-3xl">
+      <div className="min-h-0 flex-1 overflow-auto bg-muted/40 p-0 sm:p-6">
+        <article ref={paperRef} aria-label={ar ? "معاينة محتوى المستند" : "Document content preview"} className="@container mx-auto min-h-full w-full max-w-[1100px] bg-white px-5 py-8 text-zinc-900 shadow-sm ring-1 ring-zinc-200 [color-scheme:light] sm:px-10 sm:py-12">
           {/* Document header */}
-          <div className="mb-8 rounded-xl border border-border/60 bg-background p-8 shadow-sm">
+          <header className="mb-8 border-b-2 border-primary pb-8">
+            <p className="mb-4 text-xs font-medium uppercase tracking-normal text-zinc-500">{ar ? "مسودة العرض" : "Proposal draft"}</p>
             <h1
-              className="text-2xl font-bold tracking-tight"
-              dir={previewMode === "ar" ? "rtl" : "ltr"}
+              className="break-words text-2xl font-semibold leading-snug tracking-normal [overflow-wrap:anywhere] sm:text-3xl"
+              dir={previewMode === "en" ? "ltr" : "rtl"}
+              lang={previewMode === "en" ? "en" : "ar"}
             >
               {metadata.title[previewMode === "bilingual" ? "ar" : previewMode] ||
                 (ar ? "عرض بدون عنوان" : "Untitled Proposal")}
             </h1>
             {previewMode === "bilingual" && metadata.title.en && (
-              <h2 className="mt-2 text-lg text-muted-foreground" dir="ltr">
+              <h2 className="mt-3 break-words text-xl leading-snug text-zinc-600 [overflow-wrap:anywhere]" dir="ltr" lang="en">
                 {metadata.title.en}
               </h2>
             )}
-            <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 text-xs text-zinc-500">
               <span>{ar ? "الإصدار" : "Version"} {metadata.version}</span>
-              <span>•</span>
               <span>{visibleSections.length} {ar ? "أقسام" : "sections"}</span>
-              <span>•</span>
-              <span>{totalWords} {ar ? "كلمة" : "words"}</span>
             </div>
-          </div>
+          </header>
 
           {/* Sections */}
-          <div className="space-y-6">
-            {visibleSections.map((section) => (
+          <div>
+            {visibleSections.map((section, index) => (
               <PreviewSection
                 key={section.sectionKey}
+                index={index}
                 section={section}
                 previewMode={previewMode}
                 locale={locale}
@@ -131,17 +155,19 @@ export function ProposalBuilderPreview({
               </p>
             </div>
           )}
-        </div>
+        </article>
       </div>
     </div>
   );
 }
 
 function PreviewSection({
+  index,
   section,
   previewMode,
   locale,
 }: {
+  index: number;
   section: ProposalSection;
   previewMode: PreviewMode;
   locale: string;
@@ -154,10 +180,11 @@ function PreviewSection({
   const hasEnContent = section.content.en.trim().length > 0;
 
   return (
-    <section className="rounded-xl border border-border/60 bg-background p-6 shadow-sm">
+    <section data-preview-section={index} className="scroll-mt-6 border-t border-zinc-200 py-8 first:border-t-0 first:pt-0">
       {/* Section header */}
-      <div className="mb-4 flex items-center gap-2 border-b border-border/30 pb-3">
-        <Badge variant="outline" className="text-[10px]">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium tabular-nums text-zinc-400">{String(index + 1).padStart(2, "0")}</span>
+        <Badge variant="outline" className="border-zinc-200 text-xs text-zinc-600">
           {getSectionLabel(section.sectionType, locale as "ar" | "en")}
         </Badge>
         {section.isRequired && (
@@ -169,12 +196,12 @@ function PreviewSection({
 
       {/* Bilingual layout */}
       {previewMode === "bilingual" ? (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-8 @min-[640px]:grid-cols-2">
           {/* Arabic column */}
-          <div dir="rtl" className="space-y-3">
-            <h3 className="text-lg font-semibold">{section.title.ar || "—"}</h3>
+          <div dir="rtl" lang="ar" className="min-w-0 space-y-4 [overflow-wrap:anywhere]">
+            <h3 className="text-xl font-semibold leading-snug">{section.title.ar || "—"}</h3>
             {hasArContent ? (
-              <div className="prose prose-sm max-w-none dark:prose-invert">
+              <div className="min-w-0">
                 <MarkdownPreview content={section.content.ar} />
               </div>
             ) : (
@@ -185,10 +212,10 @@ function PreviewSection({
           </div>
 
           {/* English column */}
-          <div dir="ltr" className="space-y-3">
-            <h3 className="text-lg font-semibold">{section.title.en || "—"}</h3>
+          <div dir="ltr" lang="en" className="min-w-0 space-y-4 [overflow-wrap:anywhere]">
+            <h3 className="text-xl font-semibold leading-snug">{section.title.en || "—"}</h3>
             {hasEnContent ? (
-              <div className="prose prose-sm max-w-none dark:prose-invert">
+              <div className="min-w-0">
                 <MarkdownPreview content={section.content.en} />
               </div>
             ) : (
@@ -200,12 +227,12 @@ function PreviewSection({
         </div>
       ) : (
         /* Single language layout */
-        <div dir={previewMode === "ar" ? "rtl" : "ltr"} className="space-y-3">
-          <h3 className="text-lg font-semibold">
+        <div dir={previewMode === "ar" ? "rtl" : "ltr"} lang={previewMode} className="min-w-0 space-y-4 [overflow-wrap:anywhere]">
+          <h3 className="text-xl font-semibold leading-snug">
             {section.title[previewMode] || getSectionLabel(section.sectionType, previewMode)}
           </h3>
           {(previewMode === "ar" ? hasArContent : hasEnContent) ? (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
+            <div className="min-w-0">
               <MarkdownPreview content={section.content[previewMode]} />
             </div>
           ) : (
@@ -237,14 +264,15 @@ function MarkdownPreview({ content }: { content: string }) {
   return (
     <div
       className={cn(
-        "text-sm leading-relaxed",
+        "min-w-0 text-sm leading-7 text-zinc-700 [overflow-wrap:anywhere]",
         "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-6 [&_h1]:mb-4",
         "[&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-3",
         "[&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-2",
         "[&_p]:mb-3 [&_ul]:mb-3 [&_ol]:mb-3 [&_li]:ms-4",
-        "[&_table]:w-full [&_table]:border-collapse [&_table]:mb-3",
-        "[&_td]:border [&_td]:border-border/50 [&_td]:px-2 [&_td]:py-1",
-        "[&_th]:border [&_th]:border-border/50 [&_th]:px-2 [&_th]:py-1"
+        "[&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:border-collapse [&_table]:my-5",
+        "[&_td]:border [&_td]:border-zinc-200 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_td]:text-zinc-700",
+        "[&_th]:border [&_th]:border-zinc-200 [&_th]:bg-zinc-50 [&_th]:px-3 [&_th]:py-2 [&_th]:text-start [&_th]:text-zinc-900",
+        "[&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-zinc-50 [&_pre]:p-4 [&_pre]:text-xs [&_blockquote]:border-s-2 [&_blockquote]:border-primary [&_blockquote]:ps-4"
       )}
       dangerouslySetInnerHTML={{ __html: html }}
     />

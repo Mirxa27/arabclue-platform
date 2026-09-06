@@ -5,6 +5,7 @@ import { apiErrorText } from "@/lib/api-failure-message";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
@@ -13,6 +14,7 @@ import {
   FileText,
   Loader2,
   Maximize2,
+  Minimize2,
   Printer,
   RefreshCw,
 } from "lucide-react";
@@ -152,6 +154,11 @@ export function DocumentPreviewFrame({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const expandButtonRef = useRef<HTMLButtonElement>(null);
+  const frameEventsRef = useRef<AbortController | null>(null);
+  const readingPositionRef = useRef<{ key: string; top: number; left: number } | null>(null);
   const { download, busyFormat } = useArtifactDownload();
   const pdfCacheRef = useRef<{
     key: string;
@@ -174,25 +181,40 @@ export function DocumentPreviewFrame({
 
   const pdfSrc = pdfBase ? pdfPreviewSrc(pdfBase, pdfZoom) : null;
 
+  const changeExpanded = (nextExpanded: boolean) => {
+    const scrollingElement = mode === "html" ? iframeRef.current?.contentDocument?.scrollingElement : null;
+    if (scrollingElement) {
+      readingPositionRef.current = { key: cacheKey, top: scrollingElement.scrollTop, left: scrollingElement.scrollLeft };
+    }
+    frameEventsRef.current?.abort();
+    setExpanded(nextExpanded);
+  };
+
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
+    const controller = new AbortController();
 
     async function load() {
       setLoading(true);
       setError(null);
       setHtmlSrc(null);
+      const failureMessage = locale === "ar"
+        ? "تعذّر تحميل المستند. أعد المحاولة."
+        : "Unable to load the document. Please try again.";
 
       try {
         if (mode === "html") {
-          const res = await fetch(htmlUrl, { credentials: "include" });
+          const res = await fetch(htmlUrl, { credentials: "include", signal: controller.signal });
           if (!res.ok) {
             const data = (await res.json().catch(() => ({}))) as {
               error?: string;
             };
-            throw new Error(apiErrorText(data, locale, `HTML failed (${res.status})`));
+            if (!cancelled) setError(apiErrorText(data, locale, failureMessage));
+            return;
           }
           const html = await res.text();
+          if (cancelled) return;
           objectUrl = createHtmlPreviewObjectUrl(html);
           if (!cancelled) setHtmlSrc(objectUrl);
           return;
@@ -213,20 +235,22 @@ export function DocumentPreviewFrame({
         }
         setPdfBase(null);
 
-        const res = await fetch(pdfUrl, { credentials: "include" });
+        const res = await fetch(pdfUrl, { credentials: "include", signal: controller.signal });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as {
             error?: string;
           };
-          throw new Error(apiErrorText(data, locale, `PDF failed (${res.status})`));
+          if (!cancelled) setError(apiErrorText(data, locale, failureMessage));
+          return;
         }
         const bytes = await res.arrayBuffer();
+        if (cancelled) return;
         objectUrl = createPdfPreviewObjectUrl(bytes);
         pdfCacheRef.current = { key: cacheKey, url: objectUrl };
         if (!cancelled) setPdfBase(objectUrl);
-      } catch (err) {
+      } catch {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Preview failed");
+          setError(failureMessage);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -236,13 +260,15 @@ export function DocumentPreviewFrame({
     void load();
     return () => {
       cancelled = true;
+      controller.abort();
       // Only revoke HTML blobs here; PDF cache is owned by pdfCacheRef.
       if (mode === "html" && objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [htmlUrl, pdfUrl, mode, cacheKey]);
+  }, [htmlUrl, pdfUrl, mode, cacheKey, locale]);
 
   useEffect(() => {
     return () => {
+      frameEventsRef.current?.abort();
       if (pdfCacheRef.current?.url) {
         URL.revokeObjectURL(pdfCacheRef.current.url);
         pdfCacheRef.current = null;
@@ -250,41 +276,44 @@ export function DocumentPreviewFrame({
     };
   }, []);
 
-  return (
+  const viewer = (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm",
+        "flex min-w-0 flex-col overflow-hidden rounded-lg border border-border/70 bg-background",
         className,
+        expanded && "h-full min-h-0 w-full flex-1 rounded-none border-0",
       )}
       dir={ar ? "rtl" : "ltr"}
     >
       {/* Chrome: what this is, then one segmented control per decision
           (layout or PDF; how the PDF fits), then the actions. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 bg-muted/30 px-3 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background">
-            <FileText className="size-3.5 text-muted-foreground" aria-hidden />
+      <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3">
+        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 sm:flex">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <FileText className="size-5" aria-hidden />
           </span>
-          <p className="min-w-0 truncate text-sm font-medium">
+          <p className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug [overflow-wrap:anywhere]">
             {title || (ar ? "معاينة المستند" : "Document preview")}
           </p>
-          <Badge variant="outline" className="text-[10px] uppercase tabular-nums">
-            {mode === "pdf" ? "PDF" : ar ? "تخطيط" : "Layout"}
-          </Badge>
-          {stale ? (
-            <Badge variant="destructive" className="text-[10px]">
-              {ar ? "مسودة غير محفوظة" : "Unsaved draft"}
+          <div className="col-span-2 flex shrink-0 flex-wrap items-center gap-2 sm:ms-auto">
+            <Badge variant="outline" className="text-[10px] uppercase tabular-nums">
+              {mode === "pdf" ? "PDF" : ar ? "تخطيط" : "Layout"}
             </Badge>
-          ) : null}
+            {stale ? (
+              <Badge variant="destructive" className="text-[10px]">
+                {ar ? "مسودة غير محفوظة" : "Unsaved draft"}
+              </Badge>
+            ) : null}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-border/70 bg-background p-0.5" role="group" aria-label={ar ? "وضع المعاينة" : "Preview mode"}>
             <Button
               type="button"
               size="sm"
               variant={mode === "html" ? "secondary" : "ghost"}
               aria-pressed={mode === "html"}
-              className="h-7 px-2.5 text-[11px]"
+              className="h-9 px-3 text-xs"
               onClick={() => setMode("html")}
             >
               {ar ? "تخطيط" : "Layout"}
@@ -294,7 +323,7 @@ export function DocumentPreviewFrame({
               size="sm"
               variant={mode === "pdf" ? "secondary" : "ghost"}
               aria-pressed={mode === "pdf"}
-              className="h-7 px-2.5 text-[11px]"
+              className="h-9 px-3 text-xs"
               onClick={() => setMode("pdf")}
             >
               PDF
@@ -315,7 +344,7 @@ export function DocumentPreviewFrame({
                   size="sm"
                   variant={pdfZoom === id ? "secondary" : "ghost"}
                   aria-pressed={pdfZoom === id}
-                  className="h-7 px-2 text-[11px]"
+                  className="h-9 px-3 text-xs"
                   onClick={() => setPdfZoom(id)}
                 >
                   {label}
@@ -327,7 +356,7 @@ export function DocumentPreviewFrame({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-8 gap-1"
+            className="size-10 p-0"
             disabled={loading}
             onClick={() => setReloadNonce((n) => n + 1)}
             title={ar ? "تحديث المعاينة" : "Refresh preview"}
@@ -339,7 +368,7 @@ export function DocumentPreviewFrame({
             type="button"
             size="sm"
             variant="outline"
-            className="h-8 gap-1"
+            className="h-10 gap-2"
             disabled={busyFormat === "pdf" || stale}
             onClick={() =>
               void download({
@@ -351,7 +380,7 @@ export function DocumentPreviewFrame({
             }
           >
             {busyFormat === "pdf" ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
             ) : (
               <Download className="size-3.5" />
             )}
@@ -361,12 +390,11 @@ export function DocumentPreviewFrame({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-8 gap-1"
+            className="size-10 p-0"
             asChild
           >
-            <a href={htmlUrl} target="_blank" rel="noreferrer">
-              <ExternalLink className="size-3.5" />
-              {ar ? "تبويب" : "Tab"}
+            <a href={mode === "pdf" ? pdfUrl : htmlUrl} target="_blank" rel="noreferrer" title={ar ? "فتح في تبويب جديد" : "Open in new tab"} aria-label={ar ? "فتح في تبويب جديد" : "Open in new tab"}>
+              <ExternalLink className="size-4" aria-hidden />
             </a>
           </Button>
           {mode === "html" ? (
@@ -374,19 +402,20 @@ export function DocumentPreviewFrame({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-8 gap-1"
+              className="size-10 p-0"
+              disabled={loading || Boolean(error) || !htmlSrc}
               title={ar ? "طباعة" : "Print"}
               aria-label={ar ? "طباعة" : "Print"}
               onClick={() => {
-                const frame = document.getElementById(
-                  `doc-preview-${proposalId}`,
-                ) as HTMLIFrameElement | null;
-                frame?.contentWindow?.print();
+                iframeRef.current?.contentWindow?.print();
               }}
             >
               <Printer className="size-3.5" />
             </Button>
           ) : null}
+          <Button ref={expandButtonRef} type="button" size="icon" variant="ghost" className="size-10" onClick={() => changeExpanded(!expanded)} aria-pressed={expanded} aria-haspopup={expanded ? undefined : "dialog"} title={expanded ? ar ? "تصغير العرض" : "Exit expanded view" : ar ? "توسيع العرض" : "Expand view"} aria-label={expanded ? ar ? "تصغير العرض" : "Exit expanded view" : ar ? "توسيع العرض" : "Expand view"}>
+            {expanded ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
+          </Button>
         </div>
       </div>
 
@@ -411,18 +440,15 @@ export function DocumentPreviewFrame({
         </div>
       ) : null}
 
-      {/* The stage: dark in both themes, the way a print preview is; the paper
-          carries the light. No page counter — the embedded viewer does not
-          report one, and a guessed count would be a lie. */}
       <div
+        aria-busy={loading}
         className={cn(
-          "relative overflow-auto ops-stage p-3 sm:p-5 scrollbar-thin",
-          compact ? "h-[420px]" : "h-[min(70vh,760px)]",
+          "relative overflow-auto bg-muted/40 p-0 sm:p-5 scrollbar-thin",
+          expanded ? "min-h-0 flex-1" : compact ? "h-[420px]" : "h-[min(75dvh,900px)] min-h-[360px]",
         )}
       >
-        <div aria-hidden className="pointer-events-none absolute inset-0 ops-stage-grid" />
         {loading ? (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/30 text-sm text-white/85 backdrop-blur-[2px]">
+          <div role="status" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/90 text-sm text-muted-foreground">
             <Loader2 className="size-5 motion-safe:animate-spin" />
             {mode === "pdf"
               ? ar
@@ -434,13 +460,9 @@ export function DocumentPreviewFrame({
           </div>
         ) : null}
         {error ? (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-6 text-center">
-            <p className="max-w-md rounded-lg border border-red-400/40 bg-red-500/15 px-3 py-2 text-sm text-red-100">{error}</p>
-            <p className="max-w-sm text-xs text-white/70">
-              {ar
-                ? "تأكد من تثبيت Chromium لـ Playwright على الخادم، أو استخدم معاينة التخطيط HTML."
-                : "Ensure Playwright Chromium is installed on the server, or use HTML layout preview."}
-            </p>
+          <div role="alert" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background p-6 text-center">
+            <AlertTriangle className="size-7 text-destructive" aria-hidden />
+            <p className="max-w-md break-words text-sm text-destructive [overflow-wrap:anywhere]">{error}</p>
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -464,10 +486,11 @@ export function DocumentPreviewFrame({
         ) : null}
         {!loading && !error && mode === "html" && htmlSrc ? (
           <div
-            className="relative mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-[3px] bg-white ops-paper"
+            className="relative mx-auto h-full min-h-[360px] w-full max-w-[1100px] overflow-hidden bg-white shadow-sm ring-1 ring-border/40 sm:rounded-sm"
             aria-label={tr("preview_stage_paper", locale)}
           >
             <iframe
+              ref={iframeRef}
               id={`doc-preview-${proposalId}`}
               title={title || "Document preview"}
               src={htmlSrc}
@@ -476,11 +499,25 @@ export function DocumentPreviewFrame({
               referrerPolicy="no-referrer"
               onLoad={(event) => {
                 const frameDocument = event.currentTarget.contentDocument;
-                if (
-                  !frameDocument?.querySelector("[data-bilingual-document]")
-                ) {
-                  return;
-                }
+                if (!frameDocument) return;
+                frameEventsRef.current?.abort();
+                const controller = new AbortController();
+                frameEventsRef.current = controller;
+                frameDocument.addEventListener("keydown", (keyboardEvent) => {
+                  if (keyboardEvent.key === "Escape" && expanded) {
+                    keyboardEvent.preventDefault();
+                    changeExpanded(false);
+                  }
+                }, { signal: controller.signal });
+                const restorePosition = () => {
+                  if (iframeRef.current?.contentDocument !== frameDocument) return;
+                  const position = readingPositionRef.current;
+                  if (position?.key === cacheKey) {
+                    frameDocument.defaultView?.scrollTo(position.left, position.top);
+                  }
+                };
+                restorePosition();
+                if (!frameDocument.querySelector("[data-bilingual-document]")) return;
                 const bilingualRoot = frameDocument.querySelector<HTMLElement>(
                   "[data-bilingual-document]",
                 );
@@ -489,6 +526,7 @@ export function DocumentPreviewFrame({
                   "loading",
                 );
                 const synchronize = (): void => {
+                  if (iframeRef.current?.contentDocument !== frameDocument) return;
                   try {
                     synchronizeCurrentBilingualDocument({}, frameDocument);
                     bilingualRoot?.setAttribute(
@@ -509,8 +547,12 @@ export function DocumentPreviewFrame({
                 };
                 bindBilingualViewerTabs(frameDocument, synchronize);
                 void waitForPreviewAssets(frameDocument).then(
-                  synchronize,
+                  () => {
+                    synchronize();
+                    restorePosition();
+                  },
                   (cause: unknown) => {
+                    if (iframeRef.current?.contentDocument !== frameDocument) return;
                     bilingualRoot?.setAttribute(
                       "data-bilingual-preview-state",
                       "error",
@@ -528,7 +570,7 @@ export function DocumentPreviewFrame({
         ) : null}
         {!loading && !error && mode === "pdf" && pdfSrc ? (
           <div
-            className="relative mx-auto h-full min-h-[360px] w-full max-w-[860px] overflow-hidden rounded-[3px] bg-white ops-paper"
+            className="relative mx-auto h-full min-h-[360px] w-full overflow-hidden bg-white sm:rounded-sm"
             aria-label={tr("preview_stage_paper", locale)}
           >
             <iframe
@@ -541,12 +583,31 @@ export function DocumentPreviewFrame({
           </div>
         ) : null}
         {!loading && !error && !htmlSrc && !pdfSrc ? (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-white/70">
+          <div role="status" className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Maximize2 className="size-4" />
             {ar ? "لا معاينة" : "No preview"}
           </div>
         ) : null}
       </div>
     </div>
+  );
+
+  return (
+    <Dialog open={expanded} onOpenChange={changeExpanded}>
+      {expanded ? (
+        <DialogContent
+          showCloseButton={false}
+          dir={ar ? "rtl" : "ltr"}
+          className="flex h-dvh w-full max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-none"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            requestAnimationFrame(() => expandButtonRef.current?.focus());
+          }}
+        >
+          <DialogTitle className="sr-only">{title || (ar ? "معاينة المستند" : "Document preview")}</DialogTitle>
+          {viewer}
+        </DialogContent>
+      ) : viewer}
+    </Dialog>
   );
 }

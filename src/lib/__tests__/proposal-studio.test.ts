@@ -43,6 +43,28 @@ describe("unifiedDiff and section apply", () => {
     expect(next).toContain("Expanded body");
     expect(next).toContain("# Two");
   });
+
+  test("stale selections are rejected instead of replacing the document", () => {
+    const full = "# Scope\n\nCurrent scope\n\n# Evidence\n\nRetained evidence";
+    expect(applySectionRewrite(full, "Old scope", "New scope")).toBeNull();
+  });
+
+  test("replacement text preserves dollar sequences literally", () => {
+    const replacement = "$$ $& $` $' $1";
+    expect(applySectionRewrite("Before Body After", "Body", replacement)).toBe(
+      `Before ${replacement} After`,
+    );
+  });
+
+  test("repeated selections replace only the first occurrence", () => {
+    expect(applySectionRewrite("Body\nBody", "Body", "Updated")).toBe("Updated\nBody");
+  });
+
+  test("explicit whole-document and empty-selection rewrites remain supported", () => {
+    expect(applySectionRewrite("Original", "Original", "Updated")).toBe("Updated");
+    expect(applySectionRewrite("Original", "", "Updated")).toBe("Updated");
+    expect(applySectionRewrite("", "", "First draft")).toBe("First draft");
+  });
 });
 
 describe("export policy", () => {

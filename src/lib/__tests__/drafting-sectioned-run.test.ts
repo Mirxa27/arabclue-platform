@@ -174,9 +174,11 @@ describe("a live sectioned draft", () => {
     });
     const deltas: string[] = [];
 
-    const result = await draftProposalSectioned(
-      { ...sampleOptions(), onDelta: (t) => deltas.push(t) },
-      { complete }
+    const result = await withEnv({ AUTONOMY_REAL_AI_ONLY: "0" }, () =>
+      draftProposalSectioned(
+        { ...sampleOptions(), onDelta: (t) => deltas.push(t) },
+        { complete }
+      )
     );
 
     const streamed = deltas.join("");
@@ -234,20 +236,52 @@ describe("a live sectioned draft", () => {
     });
     const deltas: string[] = [];
 
-    const result = await draftProposalSectioned(
-      { ...sampleOptions(), onDelta: (t) => deltas.push(t) },
-      { complete }
+    const result = await withEnv({ AUTONOMY_REAL_AI_ONLY: "0" }, () =>
+      draftProposalSectioned(
+        { ...sampleOptions(), onDelta: (t) => deltas.push(t) },
+        { complete }
+      )
     );
 
-    expect(result.fallback).toBe(false);
+    expect(result.fallback).toBe(true);
     expect(result.sectionFallbacks).toEqual([8]);
-    expect(result.failureKind).toBeNull();
+    expect(result.failureKind).toBe("server_error");
     // The template's risk section under the heading the live sections use.
     expect(result.contentMd).toContain("## 8. Risk Management / إدارة المخاطر\nRISK-MARKER");
     expect(result.contentMd).not.toContain("Body of section 8.");
     expect(ascending(headingIndexes(result.contentMd))).toBe(true);
     // The slice is streamed too, in its place.
     expect(deltas.join("")).toContain("RISK-MARKER");
+  });
+
+  test("strict mode refuses a later failed section without streaming a template", async () => {
+    const { complete } = scriptedProvider({
+      section: (number) => number === 8 ? down("server_error") : live(sectionText(number)),
+    });
+    const deltas: string[] = [];
+    await expect(withEnv({ AUTONOMY_REAL_AI_ONLY: "1" }, () =>
+      draftProposalSectioned(
+        { ...sampleOptions(), onDelta: (text) => deltas.push(text) },
+        { complete },
+      )
+    )).rejects.toBeInstanceOf(ProviderUnavailableError);
+    expect(deltas.join("")).not.toContain("RISK-MARKER");
+  });
+
+  test("strict mode refuses a deadline after live sections instead of filling with templates", async () => {
+    let clock = 0;
+    const { complete } = scriptedProvider({
+      section: (number) => {
+        clock += 500;
+        return live(sectionText(number));
+      },
+    });
+    await expect(withEnv({ AUTONOMY_REAL_AI_ONLY: "1" }, () =>
+      draftProposalSectioned(
+        { ...sampleOptions(), deadlineMs: 1_200 },
+        { complete, now: () => clock },
+      )
+    )).rejects.toBeInstanceOf(ProviderUnavailableError);
   });
 
   test("the first call to settle degrading is the whole-document decision", async () => {
@@ -304,15 +338,18 @@ describe("a live sectioned draft", () => {
       },
     });
 
-    const result = await draftProposalSectioned(
-      { ...sampleOptions(), deadlineMs: 1_200 },
-      { complete, now: () => clock }
+    const result = await withEnv({ AUTONOMY_REAL_AI_ONLY: "0" }, () =>
+      draftProposalSectioned(
+        { ...sampleOptions(), deadlineMs: 1_200 },
+        { complete, now: () => clock }
+      )
     );
 
     // The first wave of three started inside the deadline; everything after it did not.
     expect(sectionCalls(calls).map((c) => sectionOf(c.messages))).toEqual([1, 2, 3]);
     expect(result.sectionFallbacks).toEqual(Array.from({ length: 15 }, (_, i) => i + 4));
-    expect(result.fallback).toBe(false);
+    expect(result.fallback).toBe(true);
+    expect(result.failureKind).toBe("timeout");
     expect(result.provider).toBe("openai");
     expect(calls.filter((c) => isFill(c.messages))).toHaveLength(0);
     expect(result.contentMd).toContain("Body of section 1.");

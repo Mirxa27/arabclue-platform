@@ -437,9 +437,10 @@ describe("reduced motion is honoured", () => {
 });
 
 describe("the document stage", () => {
-  test("paper on a dark stage, the same controls, no invented page count", () => {
-    has(PREVIEW, "the stage", /ops-stage/);
-    has(PREVIEW, "the paper", /ops-paper/);
+  test("paper on a theme-aware reading surface, the same controls, no invented page count", () => {
+    has(PREVIEW, "the stage", /relative overflow-auto bg-muted\/40/);
+    has(PREVIEW, "the paper", /bg-white shadow-sm/);
+    has(PREVIEW, "accessible expanded reading", /<Dialog open=\{expanded\}/);
     has(PREVIEW, "layout mode", /setMode\("html"\)/);
     has(PREVIEW, "pdf mode", /setMode\("pdf"\)/);
     has(PREVIEW, "the zoom group labelled", /aria-label=\{tr\("preview_zoom_label", locale\)\}/);
