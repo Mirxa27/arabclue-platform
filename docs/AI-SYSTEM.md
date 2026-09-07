@@ -45,6 +45,28 @@ Tenant RBAC, pricing-input refuse, constitution instructions (no pricing strateg
 
 Code: `src/lib/agents/platform/*`, `src/components/dashboard/platform-agent-console.tsx`, `src/components/dashboard/mission-*.tsx`, `src/components/dashboard/live-voice-session.tsx`.
 
+## Tender Clarification Intelligence (استفسارات المنافسة)
+
+Every Etimad tender has an inquiries window. The dashboard view **Tender Clarifications** (`/app/projects/<id>/clarifications`, workflow group) interrogates the project's parsed tender chunks for defects a careful bidder must ask about, drafts the formal bilingual question for each, lets the team triage them, and exports the clarification letter. Answers recorded on a question flow into the proposal.
+
+| Layer | Location |
+| --- | --- |
+| Pure rules, prompts, grounding, letter | `src/lib/tender-interrogation/*` (no db, no provider; unit-tested) |
+| Persistence and triage | `src/lib/tender-interrogation/repository.ts` (`TenderClarification`, migration `20260907000000_tender_clarifications`) |
+| Orchestration (rules + model pass + upsert) | `src/lib/ai/tender-interrogation.ts` |
+| Routes | `GET/POST /api/projects/[id]/clarifications`, `POST …/interrogate`, `PATCH …/[cid]`, `GET …/letter?format=json\|md\|html\|pdf&locale=` |
+| UI | `tender-interrogation.tsx`, `clarification-card.tsx`, `clarification-letter-sheet.tsx` |
+
+**Deterministic detectors** (always run, provenance `DETERMINISTIC`): conflicting submission deadlines across documents (Gregorian and Hijri parsed separately), evaluation weights stated with different values or not totalling 100, conflicting penalty caps, uncapped penalty rates, dangling annex references (`Annex 4`, `المرفق رقم 7`) never defined in the uploaded files, missing mandatory information (deadline, criteria, SLA, scope, submission channel), placeholders (TBD, blanks, «يحدد لاحقاً»; signature lines excluded), amounts in several currencies, day counts without a working/calendar qualifier, and risk clauses (unlimited liability, termination without notice, blanket IP transfer). Every quote is a verbatim run of the source with document, page and heading.
+
+**Model pass** (engine `INGESTION`, `promptOrigin: "system"`): passages are scored for interrogation relevance, packed into at most six ~9k-character windows in reading order, and read through a pool of two. Answers are JSON checked by `interrogationAnswerSchema`; every quote must pass the grounding gate (normalization-tolerant verbatim match against the window, chunk boundaries included) or the finding is dropped — nothing is repaired. Findings are merged with the rules (fingerprint and quote overlap) and upserted by `(projectId, fingerprint)`, so a re-run refreshes untouched `PROPOSED` rows and never disturbs status, edits or answers. The result reports `ai.status` (`complete | partial | unavailable | skipped`) with the failure kind; under `AUTONOMY_REAL_AI_ONLY` the rule findings are still returned because they are labelled as rules, not passed off as a model's.
+
+**Triage** — `PROPOSED → KEPT | DROPPED`, `KEPT → SUBMITTED`, `SUBMITTED → ANSWERED` (recording an answer on a submitted question answers it); illegal moves answer `CLARIFICATION_STATUS_INVALID`. The team may add its own question (`USER_AUTHORED`, kept on creation). **Clarity score** = 100 − weighted open findings (CRITICAL 15, MAJOR 6, MINOR 2), labelled in the UI as derived from the tender text, never as a prediction.
+
+**Letter** — `composeClarificationLetter` numbers the kept and submitted questions with their tender references, as Markdown and plain text per locale (for the Etimad inquiries form) and as a paired AR|EN `BilingualDocumentSpec` rendered by the existing HTML/PDF engine (PDF is plan-gated like other exports). Empty letters are refused (`NO_KEPT_CLARIFICATIONS`).
+
+**Drafting hook** — the orchestrator loads kept, submitted and answered rows as the *clarifications register* (`src/lib/tender-interrogation/register.ts`); sections 8 (Risk Management) and 16 (Assumptions, Exclusions & Clarifications) receive it as a context slice, the single-shot prompt carries it as a block, and the deterministic proposal lists it under section 16 — open questions as explicit assumptions, answered ones cited as the entity's dated response.
+
 ## 18-section proposal package
 
 1. Executive Summary  
