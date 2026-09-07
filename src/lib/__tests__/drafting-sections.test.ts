@@ -71,7 +71,7 @@ describe("the section registry", () => {
       5: ["technical"],
       6: ["tenderContext", "technical", "rag"],
       7: ["technical"],
-      8: ["technical"],
+      8: ["technical", "clarifications"],
       9: ["tenderContext", "technical", "compliance"],
       10: ["entities", "tenderContext", "technical"],
       11: ["rag"],
@@ -79,7 +79,7 @@ describe("the section registry", () => {
       13: ["compliance", "liveResearch"],
       14: ["technical"],
       15: ["financial"],
-      16: ["entities", "tenderContext"],
+      16: ["entities", "tenderContext", "clarifications"],
       17: ["technical", "liveResearch"],
       18: [],
     };

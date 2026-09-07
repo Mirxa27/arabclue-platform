@@ -20,6 +20,8 @@ import {
 } from "./run-recorder";
 import { extractTextFromStorage, parseTenderText, buildIngestionSummary, sanitizeText } from "./ingestion";
 import { frameworksMentionedIn, researchTenderContext, type LiveResearchBrief } from "../ai/web-research";
+import { listClarifications, REGISTER_STATUSES } from "../tender-interrogation/repository";
+import type { RegisterItem } from "../tender-interrogation/register";
 import { engineNote } from "./run-presentation";
 import { evaluateCompliance } from "./compliance";
 import { runTechnicalArchitect } from "./technical";
@@ -153,6 +155,8 @@ export interface PreparedContext {
   knowledgeFindings: string[];
   /** Live web research (prompt block + sources); empty when no search key is configured. */
   liveResearch: LiveResearchBrief;
+  /** Kept / submitted / answered clarifications, for sections 8 and 16 of the draft. */
+  clarifications: RegisterItem[];
 }
 
 /** A stage that ended the run itself has already written the row. */
@@ -258,6 +262,7 @@ function draftingInputsFrom(ctx: PreparedContext, locale: Locale): Omit<DraftPro
     restrictions: ctx.restrictionsText,
     sectors: ctx.sectors,
     liveResearch: ctx.liveResearch.block || undefined,
+    clarifications: ctx.clarifications,
   };
 }
 
@@ -796,6 +801,11 @@ export async function runPreparationStage(
         targetSectors: { select: { sector: true }, take: 12 },
       },
     });
+    // The questions the team kept for the buyer become the draft's stated
+    // assumptions, and the buyer's recorded answers its cited clarifications.
+    const clarifications: RegisterItem[] = (
+      await listClarifications(input.projectId)
+    ).filter((c) => REGISTER_STATUSES.includes(c.status));
     const reviewedWhere = {
       approved: true,
       reviewStatus: "APPROVED" as const,
@@ -1192,6 +1202,7 @@ export async function runPreparationStage(
         evidenceDocIds: ragDocs.map((d) => d.id),
         knowledgeFindings,
         liveResearch,
+        clarifications,
       },
     };
     });

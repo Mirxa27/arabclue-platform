@@ -44,6 +44,23 @@ export const ROWS: CoverageRow[] = [
   row("REQ-012", "Technical Response"),
 ];
 
+/** One kept question, so the sections that declare the register slice receive it. */
+export const CLARIFICATIONS = [
+  {
+    id: "c-fixture",
+    severity: "MAJOR" as const,
+    status: "KEPT" as const,
+    titleEn: "CLARIFICATION-MARKER title",
+    titleAr: "عنوان الاستفسار",
+    questionEn: "CLARIFICATION-MARKER We kindly request the Entity to confirm the penalty cap.",
+    questionAr: "نرجو من الجهة الحكومية التكرم بتأكيد الحد الأقصى للغرامات.",
+    quotes: [],
+    answerMd: null,
+    answeredAt: null,
+    submittedAt: null,
+  },
+];
+
 export function sampleOptions(
   overrides: Partial<DraftProposalOptions> = {}
 ): Omit<DraftProposalOptions, "onDelta"> {
@@ -119,6 +136,7 @@ export function sampleOptions(
     restrictions: "Never name competitor X",
     sectors: ["Government"],
     liveResearch: LIVE,
+    clarifications: CLARIFICATIONS,
     ...overrides,
   };
 }

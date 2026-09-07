@@ -13,6 +13,13 @@ import {
 } from "./prompts";
 import { LEGAL_DISCLAIMER, LEGAL_DISCLAIMER_AR } from "../procurement-rules";
 import { isPlaceholderCompanyName, isQualityScopeText } from "../text-quality";
+import {
+  CLARIFICATIONS_BLOCK_TITLE,
+  REGISTER_MAX_CHARS,
+  clarificationsRegisterMarkdown,
+  formatClarificationsRegister,
+  type RegisterItem,
+} from "../tender-interrogation/register";
 import type { CoveragePlan, CoverageRow } from "./coverage";
 import type {
   IngestionEntities,
@@ -73,6 +80,8 @@ export type DraftProposalOptions = {
   sectors?: string[];
   /** Dated web research on the buyer and the regulatory frame, already formatted as a block. */
   liveResearch?: string;
+  /** The clarifications register: kept / submitted / answered questions to the buyer. */
+  clarifications?: readonly RegisterItem[];
   /** Wall clock for a sectioned run, from its start; default `SECTION_DEADLINE_MS`. */
   deadlineMs?: number;
   /** Receives the draft as the model writes it; the result is unchanged. */
@@ -176,6 +185,7 @@ export function buildDraftingMessages(opts: Omit<DraftProposalOptions, "onDelta"
     tenderContext: (opts.technical.tenderContext ?? "").slice(0, TENDER_CONTEXT_CHARS),
     bidderProfile: describeBidder(opts),
     liveResearch: opts.liveResearch?.slice(0, LIVE_RESEARCH_CHARS),
+    clarifications: formatClarificationsRegister(opts.clarifications ?? []) ?? undefined,
   });
 
   return { system: systemDrafting(locale), user };
@@ -285,7 +295,8 @@ export type ContextSliceName =
   | "financial"
   | "rag"
   | "coverageSummary"
-  | "liveResearch";
+  | "liveResearch"
+  | "clarifications";
 
 /** The fields of the technical package, by the names the single-shot prompt used. */
 export type TechnicalField =
@@ -401,9 +412,9 @@ export const PROPOSAL_SECTIONS: readonly SectionSpec[] = [
     titleEn: "Risk Management",
     titleAr: "إدارة المخاطر",
     contentBrief:
-      "The risk plan from the technical package as a register — risk, likelihood, impact, mitigation, owner — tied to the tender's milestones and penalty terms as stated; routed risk requirements answered by ID.",
+      "The risk plan from the technical package as a register — risk, likelihood, impact, mitigation, owner — tied to the tender's milestones and penalty terms as stated; routed risk requirements answered by ID; every open clarification about liability, penalties or termination carried as a risk with the pending question as its mitigation.",
     maxTokens: TOKENS_BASE,
-    slices: ["technical"],
+    slices: ["technical", "clarifications"],
     technicalFields: ["riskPlan"],
   },
   {
@@ -477,9 +488,9 @@ export const PROPOSAL_SECTIONS: readonly SectionSpec[] = [
     titleEn: "Assumptions, Exclusions & Clarifications",
     titleAr: "الافتراضات والاستثناءات والتوضيحات",
     contentBrief:
-      "Assumptions, exclusions and clarification requests: one explicit task for the human team per routed GAP / NEEDS_USER_INPUT requirement (by ID), ambiguities in the tender passages to raise with the buyer, and the standing notes that prices are entered only by the authorized commercial team and that regulatory content is not legal advice.",
+      "Assumptions, exclusions and clarification requests: one explicit task for the human team per routed GAP / NEEDS_USER_INPUT requirement (by ID); every entry of the clarifications register — open or submitted questions stated as explicit assumptions with their tender reference, answered ones cited as the entity's dated response; further ambiguities in the tender passages worth raising; and the standing notes that prices are entered only by the authorized commercial team and that regulatory content is not legal advice.",
     maxTokens: TOKENS_BASE,
-    slices: ["entities", "tenderContext"],
+    slices: ["entities", "tenderContext", "clarifications"],
   },
   {
     number: 17,
@@ -705,6 +716,13 @@ export function sectionContextBlocks(
         const text = opts.liveResearch?.trim();
         if (text) {
           blocks.push({ slice, title: LIVE_RESEARCH_BLOCK_TITLE, body: text.slice(0, LIVE_RESEARCH_CHARS) });
+        }
+        break;
+      }
+      case "clarifications": {
+        const text = formatClarificationsRegister(opts.clarifications ?? []);
+        if (text) {
+          blocks.push({ slice, title: CLARIFICATIONS_BLOCK_TITLE, body: text.slice(0, REGISTER_MAX_CHARS) });
         }
         break;
       }
@@ -1305,9 +1323,13 @@ export function buildDeterministicProposal(opts: {
   brandTagline: string;
   vision2030: string;
   locale?: Locale;
+  /** The clarifications register; section 16 lists it. */
+  clarifications?: readonly RegisterItem[];
 }): string {
   const locale: Locale = opts.locale === "en" ? "en" : "ar";
   const e = opts.entities;
+  const registerMd = clarificationsRegisterMarkdown(opts.clarifications ?? [], locale);
+  const clarificationsMd = registerMd ? `\n${registerMd}\n` : "";
   const c = opts.coverage;
   const compliant = opts.complianceRows.filter((r) => r.status === "COMPLIANT").length;
   const qlr = opts.financial.quickLiquidityRatio;
@@ -1462,7 +1484,7 @@ ${opts.financial.boqItems
 - الأسعار والتعبئة التجارية من مسؤولية الفريق التجاري المعتمد لدى العميل فقط.
 - أي متطلب بحالة GAP/NEEDS_USER_INPUT يتطلب دليلاً معتمداً قبل التسليم النهائي.
 - المحتوى التنظيمي ليس استشارة قانونية.
-
+${clarificationsMd}
 ## 17. المواءمة مع رؤية 2030
 ${opts.technical.vision2030Notes}
 ملاحظة العلامة: ${opts.vision2030}
@@ -1572,7 +1594,7 @@ ${opts.financial.boqItems
 - Commercial prices are entered solely by the client's authorized commercial team.
 - Any GAP / NEEDS_USER_INPUT requirement requires approved evidence before final submission.
 - Regulatory content is not legal advice.
-
+${clarificationsMd}
 ## 17. Vision 2030 Alignment
 ${opts.technical.vision2030Notes}
 Brand note: ${opts.vision2030}
