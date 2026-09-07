@@ -1,9 +1,24 @@
 /**
- * Sliding-window rate limiter.
- * Uses Redis when REDIS_URL is set (multi-instance safe); otherwise in-memory.
+ * Rate limiter with three backends, chosen per deployment:
+ *
+ * - Redis (sliding window) when REDIS_URL is set;
+ * - the platform database (fixed window, `rate-limit-postgres.ts`) when the
+ *   limiter must be shared across instances and there is no Redis — Vercel
+ *   production, or `RATE_LIMIT_BACKEND=postgres`;
+ * - process memory otherwise (development, single-node self-hosts).
  */
 
 import { randomUUID } from "node:crypto";
+import {
+  distributedRateLimitBackend,
+  type RateLimitEnvironment,
+} from "./rate-limit-backend";
+import {
+  postgresAcquireLease,
+  postgresRateLimit,
+  postgresReleaseLease,
+  probePostgresRateLimitBackend,
+} from "./rate-limit-postgres";
 
 type Bucket = { timestamps: number[] };
 
@@ -32,19 +47,19 @@ function sweepMemoryBuckets(now: number): void {
   }
 }
 
+export {
+  distributedRateLimitBackend,
+  type DistributedRateLimitBackend,
+  type RateLimitEnvironment,
+} from "./rate-limit-backend";
+
 export function requiresDistributedRateLimit(
   requested: boolean | undefined,
-  env: {
-    readonly NODE_ENV?: string;
-    readonly VERCEL?: string;
-    readonly REDIS_URL?: string;
-  } = process.env
+  env: RateLimitEnvironment = process.env
 ): boolean {
   if (requested === true) return true;
   if (requested === false) return false;
-  // Only fail-closed on Redis when Redis is actually configured.
-  // Otherwise allow in-memory limits (Hostinger / Vercel Hobby).
-  return Boolean(env.REDIS_URL?.trim());
+  return distributedRateLimitBackend(env) !== null;
 }
 
 type RedisClient = {
@@ -365,7 +380,25 @@ async function redisRateLimit(opts: {
   };
 }
 
-/** Preferred async limiter — Redis when REDIS_URL is configured. */
+export type RateLimitBackend = "redis" | "postgres" | "memory" | "unavailable";
+
+/** A shared backend, in the sense every consumer's "must be distributed" check means. */
+export function isDistributedBackend(backend: RateLimitBackend): boolean {
+  return backend === "redis" || backend === "postgres";
+}
+
+const UNAVAILABLE = Object.freeze({
+  ok: false,
+  remaining: 0,
+  retryAfterMs: 5_000,
+  backend: "unavailable" as const,
+});
+
+/**
+ * Preferred async limiter. Redis when REDIS_URL is configured, the database
+ * when the deployment must share limits without Redis, memory otherwise. A
+ * distributed requirement that cannot be met fails closed.
+ */
 export async function rateLimitAsync(opts: {
   key: string;
   limit: number;
@@ -375,44 +408,43 @@ export async function rateLimitAsync(opts: {
   ok: boolean;
   remaining: number;
   retryAfterMs: number;
-  backend: "redis" | "memory" | "unavailable";
+  backend: RateLimitBackend;
 }> {
   const requireDistributed = requiresDistributedRateLimit(
     opts.requireDistributed
   );
-  const client = await getRedis();
-  if (client?.isReady) {
-    try {
-      return {
-        ...(await redisRateLimit({ ...opts, client })),
-        backend: "redis",
-      };
-    } catch (err) {
-      console.warn("[rate-limit] redis op failed", err);
-      markRedisUnavailable(client);
-      if (requireDistributed) {
+  const configured = distributedRateLimitBackend();
+
+  if (configured === "redis") {
+    const client = await getRedis();
+    if (client?.isReady) {
+      try {
         return {
-          ok: false,
-          remaining: 0,
-          retryAfterMs: 5_000,
-          backend: "unavailable",
+          ...(await redisRateLimit({ ...opts, client })),
+          backend: "redis",
         };
+      } catch (err) {
+        console.warn("[rate-limit] redis op failed", err);
+        markRedisUnavailable(client);
       }
     }
+    if (requireDistributed) return UNAVAILABLE;
   }
-  if (requireDistributed) {
-    return {
-      ok: false,
-      remaining: 0,
-      retryAfterMs: 5_000,
-      backend: "unavailable",
-    };
+
+  if (configured === "postgres" || (requireDistributed && configured !== "redis")) {
+    try {
+      return { ...(await postgresRateLimit(opts)), backend: "postgres" };
+    } catch (err) {
+      console.warn("[rate-limit] postgres op failed", err);
+      if (requireDistributed) return UNAVAILABLE;
+    }
   }
+
   return { ...memoryRateLimit(opts), backend: "memory" };
 }
 
 export function describeRateLimitDenial(result: {
-  readonly backend: "redis" | "memory" | "unavailable";
+  readonly backend: RateLimitBackend;
   readonly retryAfterMs: number;
 }): {
   readonly status: 429 | 503;
@@ -430,13 +462,20 @@ export function describeRateLimitDenial(result: {
   };
 }
 
-/** Bounded connectivity probe shared by readiness and guarded operations. */
+/**
+ * Bounded connectivity probe for the configured shared backend, used by
+ * readiness and guarded operations. Answers false when no shared backend is
+ * configured, since then there is nothing distributed to be reachable.
+ */
 export async function probeDistributedRateLimitBackend(
   timeoutMs = 1_500
 ): Promise<boolean> {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 5_000) {
     throw new RangeError("Redis readiness timeout is invalid");
   }
+  const configured = distributedRateLimitBackend();
+  if (configured === null) return false;
+  if (configured === "postgres") return probePostgresRateLimitBackend();
   const probe = (async () => {
     const client = await getRedis();
     if (!client?.isReady) return false;
@@ -472,20 +511,29 @@ export type DistributedLeaseAdmission =
   | Readonly<{ status: "unavailable"; retryAfterMs: number }>;
 
 /**
- * Acquire a cross-instance lease with one atomic Redis script. Expired leases
- * are removed before capacity is checked, so crashed renderers self-heal.
+ * Acquire a cross-instance lease on the configured shared backend. Expired
+ * leases do not count toward capacity, so crashed renderers self-heal. Redis
+ * does it in one atomic script; the database in one conditional INSERT.
  */
 export async function acquireDistributedLease(options: {
   readonly key: string;
   readonly limit: number;
   readonly leaseMs: number;
 }): Promise<DistributedLeaseAdmission> {
+  const token = randomUUID();
+  if (distributedRateLimitBackend() === "postgres") {
+    try {
+      return await postgresAcquireLease({ ...options, token });
+    } catch (error) {
+      console.warn("[rate-limit] distributed lease acquisition failed", error);
+      return { status: "unavailable", retryAfterMs: 5_000 };
+    }
+  }
   const client = await getRedis();
   if (!client?.isReady) {
     return { status: "unavailable", retryAfterMs: 5_000 };
   }
   const now = Date.now();
-  const token = randomUUID();
   try {
     const result = await runRedisCommand(
       client,
@@ -542,6 +590,15 @@ export async function releaseDistributedLease(options: {
   readonly key: string;
   readonly token: string;
 }): Promise<void> {
+  if (distributedRateLimitBackend() === "postgres") {
+    try {
+      await postgresReleaseLease(options.token);
+    } catch (error) {
+      // The bounded lease expiry is the recovery path if release is unavailable.
+      console.warn("[rate-limit] distributed lease release failed", error);
+    }
+    return;
+  }
   const client = await getRedis();
   if (!client?.isReady) return;
   try {

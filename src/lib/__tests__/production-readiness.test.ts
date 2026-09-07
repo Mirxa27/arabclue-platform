@@ -2,16 +2,47 @@ import { describe, expect, test } from "bun:test";
 import { productionInfrastructureReadiness } from "../production-readiness";
 
 describe("production infrastructure readiness", () => {
-  test("fails closed when production cron, Redis, or Vercel Blob is absent on Vercel", () => {
+  test("fails closed when production cron or Vercel Blob is absent on Vercel", () => {
     const checks = productionInfrastructureReadiness({
       NODE_ENV: "production",
       VERCEL: "1",
     });
     expect(checks.storage.ok).toBe(false);
-    // Per-instance memory counters are not a rate limit on Vercel.
-    expect(checks.rateLimit.ok).toBe(false);
-    expect(checks.rateLimit.detail).toBe("REDIS_URL_missing_on_vercel");
+    // No Redis on Vercel: the platform database is the shared backend.
+    expect(checks.rateLimit).toEqual({ ok: true, detail: "postgres" });
     expect(checks.cron.ok).toBe(false);
+  });
+
+  test("fails closed when Vercel production opts out of every shared backend", () => {
+    const checks = productionInfrastructureReadiness({
+      NODE_ENV: "production",
+      VERCEL: "1",
+      RATE_LIMIT_BACKEND: "memory",
+    });
+    // Per-instance memory counters are not a rate limit on Vercel.
+    expect(checks.rateLimit).toEqual({
+      ok: false,
+      detail: "shared_backend_disabled_on_vercel",
+    });
+  });
+
+  test("Redis wins over the database when both are available", () => {
+    const checks = productionInfrastructureReadiness({
+      NODE_ENV: "production",
+      VERCEL: "1",
+      REDIS_URL: "rediss://redis.example.test",
+      RATE_LIMIT_BACKEND: "postgres",
+    });
+    expect(checks.rateLimit.detail).toBe("redis");
+  });
+
+  test("a multi-node self-host can ask for the database backend", () => {
+    const checks = productionInfrastructureReadiness({
+      NODE_ENV: "production",
+      RATE_LIMIT_BACKEND: "postgres",
+      CRON_SECRET: "0123456789abcdef",
+    });
+    expect(checks.rateLimit).toEqual({ ok: true, detail: "postgres" });
   });
 
   test("passes only with all required production infrastructure", () => {

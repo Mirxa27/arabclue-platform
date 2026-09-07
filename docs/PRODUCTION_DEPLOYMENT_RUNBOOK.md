@@ -94,7 +94,7 @@ builds can mutate the database.
 
 ## Migration ledger
 
-All 29 migrations under `prisma/migrations` are listed below with their
+All 30 migrations under `prisma/migrations` are listed below with their
 identifiers, the capabilities they affect, their positions in the apply sequence,
 and their reverse actions. Prisma applies migrations in lexicographic directory
 order, so the positions below are the apply order.
@@ -145,207 +145,215 @@ controlled release job. Never apply a subset by hand.
 | 26 | `20260905180000_proposal_counterpart` | documented below | proposal generation, bilingual export |
 | 27 | `20260905200000_rag_pgvector` | documented below | document ingestion, document search, proposal generation |
 | 28 | `20260905220000_analytics_activation_vocabulary` | documented below | activity analytics, activation funnel |
-| 29 | `20261126000000_autonomy_slice_1` | documented below | autonomy shell, company profile Markdown, residency preference, agent plan panel, agent interrupt, agent failure taxonomy, tender artifact public link, inbox retention loop, proposal public review link, saved tender filters |
+| 29 | `20260906120000_rate_limit_postgres_backend` | documented below | authentication rate limiting, registration rate limiting, AI request rate limiting, document export admission, contract draft admission |
+| 30 | `20261126000000_autonomy_slice_1` | documented below | autonomy shell, company profile Markdown, residency preference, agent plan panel, agent interrupt, agent failure taxonomy, tender artifact public link, inbox retention loop, proposal public review link, saved tender filters |
 
 ### 1. `20260722140000_postgres_baseline`
 
-- **Apply position:** 1 of 29
+- **Apply position:** 1 of 30
 - **Capabilities:** authentication, workspace tenancy, tender projects, document ingestion, proposal generation, agent runs, compliance checks, approval policy, billing, audit log, knowledge records
 - **Tables created:** `User`, `UserSession`, `Workspace`, `WorkspaceMember`, `TenderProject`, `UploadedDocument`, `DocumentChunk`, `DocumentVersion`, `BrandProfile`, `PastProject`, `AgentRun`, `ComplianceCheck`, `GeneratedProposal`, `ProposalVersion`, `AIProviderConfig`, `EnvSetting`, `SubscriptionPlan`, `Subscription`, `BillingRecord`, `PaymentCheckout`, `AuditLog`, `Certificate`, `StaffMember`, `MethodologyAsset`, `ContentLibraryItem`, `Partnership`, `TargetSector`, `BidHistoryNote`, `ApprovalPolicy`, `ApprovalStep`, `Restriction`, `OnboardingProgress`, `TenderRequirement`, `ProposalReview`
 - **Reverse action:** **None.** This migration has no reverse action; recover forward or restore the pre-release restore point.
 
 ### 2. `20260722150000_payment_webhook_recurring`
 
-- **Apply position:** 2 of 29
+- **Apply position:** 2 of 30
 - **Capabilities:** payment webhook idempotence, recurring subscription billing
 - **Tables created:** `PaymentWebhookEvent`, `MyFatoorahRecurringProfile`
 - **Reverse action:** DROP TABLE "MyFatoorahRecurringProfile"; DROP TABLE "PaymentWebhookEvent";
 
 ### 3. `20260722160000_knowledge_eligibility`
 
-- **Apply position:** 3 of 29
+- **Apply position:** 3 of 30
 - **Capabilities:** knowledge eligibility screening
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "Certificate" and "PastProject": drop the added eligibility columns.
 
 ### 4. `20260722170000_proposal_studio`
 
-- **Apply position:** 4 of 29
+- **Apply position:** 4 of 30
 - **Capabilities:** proposal studio editing, agent run telemetry
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "AgentRun" and "GeneratedProposal": drop the added studio columns.
 
 ### 5. `20260722180000_provider_models_cache`
 
-- **Apply position:** 5 of 29
+- **Apply position:** 5 of 30
 - **Capabilities:** LLM provider model cache
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "AIProviderConfig": drop the added model-cache columns.
 
 ### 6. `20260723000000_copilot_mission_control`
 
-- **Apply position:** 6 of 29
+- **Apply position:** 6 of 30
 - **Capabilities:** platform copilot, mission control, mission attachments
 - **Tables created:** `CopilotMission`, `CopilotMessage`, `CopilotAttachment`, `CopilotAction`
 - **Reverse action:** DROP TABLE "CopilotAction"; DROP TABLE "CopilotAttachment"; DROP TABLE "CopilotMessage"; DROP TABLE "CopilotMission";
 
 ### 7. `20260723101000_provider_multi_engines`
 
-- **Apply position:** 7 of 29
+- **Apply position:** 7 of 30
 - **Capabilities:** multi-engine LLM routing
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "AIProviderConfig": drop the added engine columns.
 
 ### 8. `20260724161123_contract_templates`
 
-- **Apply position:** 8 of 29
+- **Apply position:** 8 of 30
 - **Capabilities:** contract template provider selection
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "AIProviderConfig": drop the added contract-template column.
 
 ### 9. `20260724180000_production_persistence`
 
-- **Apply position:** 9 of 29
+- **Apply position:** 9 of 30
 - **Capabilities:** contract obligation tracking, expiry notifications, notification dismissal
 - **Tables created:** `ContractObligationState`, `ExpiryNotificationLog`, `NotificationDismissal`
 - **Reverse action:** DROP TABLE "NotificationDismissal"; DROP TABLE "ExpiryNotificationLog"; DROP TABLE "ContractObligationState";
 
 ### 10. `20260724200000_contract_templates`
 
-- **Apply position:** 10 of 29
+- **Apply position:** 10 of 30
 - **Capabilities:** contract template catalog, contract template versioning, standard clause library, generated contracts
 - **Tables created:** `ContractTemplate`, `ContractTemplateVersion`, `StandardClause`, `GeneratedContract`
 - **Reverse action:** DROP TABLE "GeneratedContract"; DROP TABLE "StandardClause"; DROP TABLE "ContractTemplateVersion"; DROP TABLE "ContractTemplate";
 
 ### 11. `20260724214500_contract_template_safety`
 
-- **Apply position:** 11 of 29
+- **Apply position:** 11 of 30
 - **Capabilities:** contract legal-review safety flags, contract non-executable marking
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "ContractTemplate", "ContractTemplateVersion", "StandardClause", "GeneratedContract": drop the added legal-safety columns.
 
 ### 12. `20260724223000_knowledge_review_safety`
 
-- **Apply position:** 12 of 29
+- **Apply position:** 12 of 30
 - **Capabilities:** knowledge approval queue, knowledge review provenance
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "Certificate", "PastProject", "MethodologyAsset", "ContentLibraryItem": drop the added review columns.
 
 ### 13. `20260724231500_proposal_structured_snapshot`
 
-- **Apply position:** 13 of 29
+- **Apply position:** 13 of 30
 - **Capabilities:** structured proposal snapshot, authoritative bilingual export
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "GeneratedProposal": drop the added snapshot columns.
 
 ### 14. `20260724234500_proposal_review_integrity`
 
-- **Apply position:** 14 of 29
+- **Apply position:** 14 of 30
 - **Capabilities:** proposal review snapshot integrity
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "ProposalReview": drop the added integrity columns.
 
 ### 15. `20260725001000_knowledge_evidence_integrity`
 
-- **Apply position:** 15 of 29
+- **Apply position:** 15 of 30
 - **Capabilities:** knowledge evidence binding, evidence checksum provenance
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "Certificate", "PastProject", "MethodologyAsset", "ContentLibraryItem": drop the added evidence-binding columns.
 
 ### 16. `20260725003000_contract_draft_persistence`
 
-- **Apply position:** 16 of 29
+- **Apply position:** 16 of 30
 - **Capabilities:** contract draft persistence
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "ContractTemplate" and "GeneratedContract": drop the added draft columns.
 
 ### 17. `20260725004000_contract_render_snapshot`
 
-- **Apply position:** 17 of 29
+- **Apply position:** 17 of 30
 - **Capabilities:** contract render snapshot
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "GeneratedProposal": drop the added render-snapshot columns.
 
 ### 18. `20260725_phase4_proposal_system`
 
-- **Apply position:** 18 of 29
+- **Apply position:** 18 of 30
 - **Capabilities:** activity analytics, collaboration comments, proposal builder sections, template marketplace
 - **Tables created:** `AnalyticsEvent`, `CollaborationComment`, `ProposalBuilderSection`, `TemplateMarketplaceEntry`
 - **Reverse action:** DROP TABLE "TemplateMarketplaceEntry"; DROP TABLE "ProposalBuilderSection"; DROP TABLE "CollaborationComment"; DROP TABLE "AnalyticsEvent";
 
 ### 19. `20260726000000_platform_completion`
 
-- **Apply position:** 19 of 29
+- **Apply position:** 19 of 30
 - **Capabilities:** email verification, credential recovery, workspace invitations, contract instance revision history, transactional notification delivery, in-application notifications, marketplace ratings, marketplace usage accounting, recurring checkout idempotence, proposal presence
 - **Tables created:** `VerificationToken`, `RecoveryToken`, `WorkspaceInvitation`, `GeneratedContractVersion`, `RecurringCheckoutIntent`, `TemplateMarketplaceApplication`, `NotificationDelivery`, `InAppNotification`, `TemplateMarketplaceRating`, `ProposalPresence`
 - **Reverse action:** DROP TABLE "ProposalPresence"; DROP TABLE "TemplateMarketplaceRating"; DROP TABLE "InAppNotification"; DROP TABLE "NotificationDelivery"; DROP TABLE "TemplateMarketplaceApplication"; DROP TABLE "RecurringCheckoutIntent"; DROP TABLE "GeneratedContractVersion"; DROP TABLE "WorkspaceInvitation"; DROP TABLE "RecoveryToken"; DROP TABLE "VerificationToken"; then drop the columns added by this migration.
 
 ### 20. `20260729100000_marketplace_rating_check`
 
-- **Apply position:** 20 of 29
+- **Apply position:** 20 of 30
 - **Capabilities:** marketplace rating integrity
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "TemplateMarketplaceRating": DROP CONSTRAINT IF EXISTS "template_marketplace_rating_range_check";
 
 ### 21. `20260822170000_notification_delivery_channel_unique`
 
-- **Apply position:** 21 of 29
+- **Apply position:** 21 of 30
 - **Capabilities:** multi-channel notification delivery
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** CREATE UNIQUE INDEX "NotificationDelivery_eventId_recipientId_key" ON "NotificationDelivery"("eventId", "recipientId"); — only safe after collapsing multi-channel rows to one row per (eventId, recipientId).
 
 ### 22. `20260822180000_analytics_daily_summary`
 
-- **Apply position:** 22 of 29
+- **Apply position:** 22 of 30
 - **Capabilities:** analytics retention archival
 - **Tables created:** `AnalyticsDailySummary`
 - **Reverse action:** DROP TABLE "AnalyticsDailySummary";
 
 ### 23. `20260822190000_auth_hardening_mfa`
 
-- **Apply position:** 23 of 29
+- **Apply position:** 23 of 30
 - **Capabilities:** authentication, MFA enrolment staging, TOTP replay protection, MFA recovery codes
 - **Tables created:** `MfaRecoveryCode`
 - **Reverse action:** DROP TABLE "MfaRecoveryCode"; ALTER TABLE "User" DROP COLUMN "pendingMfaSecret"; ALTER TABLE "User" DROP COLUMN "mfaLastUsedStep";
 
 ### 24. `20260822200000_money_decimal_columns`
 
-- **Apply position:** 24 of 29
+- **Apply position:** 24 of 30
 - **Capabilities:** billing, exact SAR storage
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "SubscriptionPlan" DROP COLUMN "priceMonthlyDecimal"; ALTER TABLE "SubscriptionPlan" DROP COLUMN "priceYearlyDecimal"; ALTER TABLE "BillingRecord" DROP COLUMN "amountDecimal"; ALTER TABLE "PaymentCheckout" DROP COLUMN "amountDecimal";
 
 ### 25. `20260905120000_hot_path_indexes`
 
-- **Apply position:** 25 of 29
+- **Apply position:** 25 of 30
 - **Capabilities:** tender projects, document ingestion, proposal generation, agent runs, dashboard KPIs
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** DROP INDEX IF EXISTS "AgentRun_projectId_createdAt_idx"; DROP INDEX IF EXISTS "GeneratedProposal_workspaceId_status_idx"; DROP INDEX IF EXISTS "GeneratedProposal_workspaceId_createdAt_idx"; DROP INDEX IF EXISTS "UploadedDocument_workspaceId_createdAt_idx"; DROP INDEX IF EXISTS "TenderProject_workspaceId_status_idx"; DROP INDEX IF EXISTS "TenderProject_workspaceId_updatedAt_idx";
 
 ### 26. `20260905180000_proposal_counterpart`
 
-- **Apply position:** 26 of 29
+- **Apply position:** 26 of 30
 - **Capabilities:** proposal generation, bilingual export
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartMd"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartLocale"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartGeneratedAt"; ALTER TABLE "GeneratedProposal" DROP COLUMN "counterpartDiagnosticsJson";
 
 ### 27. `20260905200000_rag_pgvector`
 
-- **Apply position:** 27 of 29
+- **Apply position:** 27 of 30
 - **Capabilities:** document ingestion, document search, proposal generation
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** DROP INDEX IF EXISTS "DocumentChunk_tsv_idx"; DROP INDEX IF EXISTS "DocumentChunk_workspaceId_embeddingDim_idx"; ALTER TABLE "DocumentChunk" DROP COLUMN "tsv"; ALTER TABLE "DocumentChunk" DROP COLUMN "language"; ALTER TABLE "DocumentChunk" DROP COLUMN "pageRef"; ALTER TABLE "DocumentChunk" DROP COLUMN "sectionHeading"; ALTER TABLE "DocumentChunk" DROP COLUMN "embeddingDim"; ALTER TABLE "DocumentChunk" DROP COLUMN "embeddingModel"; ALTER TABLE "DocumentChunk" DROP COLUMN "embedding";
 
 ### 28. `20260905220000_analytics_activation_vocabulary`
 
-- **Apply position:** 28 of 29
+- **Apply position:** 28 of 30
 - **Capabilities:** activity analytics, activation funnel
 - **Tables created:** none — adds columns, indexes, or constraints only
 - **Reverse action:** ALTER TABLE "AnalyticsEvent" DROP CONSTRAINT "AnalyticsEvent_event_type_check"; ALTER TABLE "AnalyticsEvent" ADD CONSTRAINT "AnalyticsEvent_event_type_check" CHECK ("eventType" IN (the fourteen pre-activation values)) NOT VALID; — activation rows appended in the meantime remain and are only tolerated because the re-added constraint is NOT VALID.
 
-### 29. `20261126000000_autonomy_slice_1`
+### 29. `20260906120000_rate_limit_postgres_backend`
 
-- **Apply position:** 29 of 29
+- **Apply position:** 29 of 30
+- **Capabilities:** authentication rate limiting, registration rate limiting, AI request rate limiting, document export admission, contract draft admission
+- **Tables created:** `RateLimitWindow`, `RateLimitLease`
+- **Reverse action:** DROP TABLE "RateLimitLease"; DROP TABLE "RateLimitWindow";
+
+### 30. `20261126000000_autonomy_slice_1`
+
+- **Apply position:** 30 of 30
 - **Capabilities:** autonomy shell, company profile Markdown, residency preference, agent plan panel, agent interrupt, agent failure taxonomy, tender artifact public link, inbox retention loop, proposal public review link, saved tender filters
 - **Tables created:** `InboxItem`, `ProposalReviewToken`, `SavedTenderFilter`
 - **Reverse action:** DROP TABLE "SavedTenderFilter"; DROP TABLE "ProposalReviewToken"; DROP TABLE "InboxItem"; ALTER TABLE "AgentRun" DROP COLUMN "planStepsJson"; ALTER TABLE "AgentRun" DROP COLUMN "currentStepName"; ALTER TABLE "AgentRun" DROP COLUMN "failureKind"; ALTER TABLE "TenderProject" DROP COLUMN "artifactUrlToken"; ALTER TABLE "Workspace" DROP COLUMN "companyProfileMd"; ALTER TABLE "Workspace" DROP COLUMN "residencyPreference";

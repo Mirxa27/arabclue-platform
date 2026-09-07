@@ -1,9 +1,11 @@
 import {
   acquireDistributedLease,
+  isDistributedBackend,
   rateLimitAsync,
   releaseDistributedLease,
   requiresDistributedRateLimit,
   type DistributedLeaseAdmission,
+  type RateLimitBackend,
 } from "./rate-limit";
 
 export const DOCUMENT_EXPORT_LIMITS = Object.freeze({
@@ -53,7 +55,7 @@ type RateLimiter = (options: {
   ok: boolean;
   remaining: number;
   retryAfterMs: number;
-  backend?: "redis" | "memory" | "unavailable";
+  backend?: RateLimitBackend;
 }>;
 
 type DistributedLeaseAcquirer = (options: {
@@ -207,10 +209,8 @@ export class DocumentExportGate {
     ]);
     if (
       this.#requireDistributed &&
-      (userRate.backend === "unavailable" ||
-        workspaceRate.backend === "unavailable" ||
-        userRate.backend === "memory" ||
-        workspaceRate.backend === "memory")
+      (!isDistributedBackend(userRate.backend ?? "unavailable") ||
+        !isDistributedBackend(workspaceRate.backend ?? "unavailable"))
     ) {
       return Object.freeze({
         ok: false as const,

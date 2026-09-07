@@ -1,6 +1,8 @@
 import {
+  isDistributedBackend,
   rateLimitAsync,
   requiresDistributedRateLimit,
+  type RateLimitBackend,
 } from "./rate-limit";
 
 export const CONTRACT_DRAFT_WRITE_RATE_LIMITS = Object.freeze({
@@ -18,7 +20,7 @@ type DraftRateLimiter = (options: {
   readonly ok: boolean;
   readonly remaining: number;
   readonly retryAfterMs: number;
-  readonly backend: "redis" | "memory" | "unavailable";
+  readonly backend: RateLimitBackend;
 }>;
 
 export type ContractDraftWriteAdmission =
@@ -99,7 +101,8 @@ export async function admitContractDraftWrite(
     userRate.backend === "unavailable" ||
     workspaceRate.backend === "unavailable" ||
     (requireDistributed &&
-      (userRate.backend !== "redis" || workspaceRate.backend !== "redis"))
+      (!isDistributedBackend(userRate.backend) ||
+        !isDistributedBackend(workspaceRate.backend)))
   ) {
     return Object.freeze({
       ok: false as const,

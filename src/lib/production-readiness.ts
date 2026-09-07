@@ -3,11 +3,13 @@ export type ReadinessCheck = {
   readonly detail: string;
 };
 
-export type ProductionInfrastructureEnvironment = {
-  readonly NODE_ENV?: string;
-  readonly VERCEL?: string;
+import {
+  distributedRateLimitBackend,
+  type RateLimitEnvironment,
+} from "./rate-limit-backend";
+
+export type ProductionInfrastructureEnvironment = RateLimitEnvironment & {
   readonly BLOB_READ_WRITE_TOKEN?: string;
-  readonly REDIS_URL?: string;
   readonly CRON_SECRET?: string;
 };
 
@@ -30,7 +32,7 @@ export function productionInfrastructureReadiness(
   const production = env.NODE_ENV === "production";
   const onVercel = configured(env.VERCEL);
   const blobConfigured = configured(env.BLOB_READ_WRITE_TOKEN);
-  const redisConfigured = configured(env.REDIS_URL);
+  const sharedBackend = distributedRateLimitBackend(env);
   const cronConfigured = (env.CRON_SECRET?.trim().length ?? 0) >= 16;
 
   return {
@@ -43,17 +45,16 @@ export function productionInfrastructureReadiness(
           : "local_uploads",
     },
     rateLimit: {
-      // Redis when configured. Memory is acceptable on a single-node host and
-      // in development. On Vercel every function instance has its own memory,
-      // so a per-instance counter is not a rate limit: fail closed there.
-      ok: redisConfigured || !(production && onVercel),
-      detail: redisConfigured
-        ? "redis"
-        : production
-          ? onVercel
-            ? "REDIS_URL_missing_on_vercel"
-            : "memory_single_instance"
-          : "memory_development",
+      // A shared backend (Redis, or the platform database) whenever the
+      // deployment runs more than one instance; Vercel production always
+      // resolves to one unless RATE_LIMIT_BACKEND=memory opts out, in which
+      // case per-instance counters are not a rate limit: fail closed there.
+      ok: sharedBackend !== null || !(production && onVercel),
+      detail: sharedBackend ?? (production
+        ? onVercel
+          ? "shared_backend_disabled_on_vercel"
+          : "memory_single_instance"
+        : "memory_development"),
     },
     cron: {
       ok: !production || cronConfigured,

@@ -386,9 +386,13 @@ export function runDeploymentSafetyCheck(scope = "deploy") {
   // Runtime environment requirements are a property of the deployment target,
   // not of the checkout, so they are not asserted in the `repo` scope.
   if (includeEnvironmentAndHistory) {
-    if (!String(process.env.REDIS_URL ?? "").trim()) {
+    // Limits are shared through Redis when REDIS_URL is set and through the
+    // platform database otherwise (src/lib/rate-limit-backend.ts). Only an
+    // explicit opt-out leaves a multi-instance deployment on per-instance
+    // memory counters, which are not a rate limit.
+    if (String(process.env.RATE_LIMIT_BACKEND ?? "").trim().toLowerCase() === "memory") {
       failures.push(
-        "REDIS_URL is required for distributed authentication and document-export rate limiting",
+        "RATE_LIMIT_BACKEND=memory disables shared authentication and document-export rate limiting on a multi-instance deployment",
       );
     }
     if (!String(process.env.BLOB_READ_WRITE_TOKEN ?? "").trim()) {
@@ -461,7 +465,7 @@ export function runDeploymentSafetyCheck(scope = "deploy") {
   console.log(
     scope === "repo"
       ? "Deployment safety gate (repo scope) passed: no sensitive environment file or role credential is tracked, and the build/development/start scripts and Vercel build issue no data-definition statement."
-      : "Deployment safety gate passed: environment files are protected, Redis, Blob, and cron authentication are configured, no role credentials are embedded, Vercel builds and the build/development/start scripts issue no data-definition statement, and the runbook migration ledger matches the migration registry.",
+      : "Deployment safety gate passed: environment files are protected, shared rate limiting, Blob, and cron authentication are configured, no role credentials are embedded, Vercel builds and the build/development/start scripts issue no data-definition statement, and the runbook migration ledger matches the migration registry.",
   );
   return 0;
 }

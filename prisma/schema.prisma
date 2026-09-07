@@ -1567,6 +1567,29 @@ model AnalyticsEvent {
 /// Retention deletes raw events older than the window; without this table the
 /// aggregate was computed, returned to the caller, and thrown away, so the
 /// history was destroyed rather than archived. `eventCount` accumulates so a
+/// Fixed-window counter shared by every instance when Redis is not configured
+/// (src/lib/rate-limit-postgres.ts). One row per limiter key and window;
+/// rows are dropped once `expiresAt` has passed.
+model RateLimitWindow {
+  key         String
+  windowStart BigInt
+  count       Int      @default(0)
+  expiresAt   DateTime
+
+  @@id([key, windowStart])
+  @@index([expiresAt])
+}
+
+/// An outstanding capacity lease (document renders) with the expiry the holder
+/// promised, so a crashed renderer's slot is reclaimed when the lease lapses.
+model RateLimitLease {
+  token     String   @id
+  key       String
+  expiresAt DateTime
+
+  @@index([key, expiresAt])
+}
+
 /// batched or repeated run converges on the true total.
 model AnalyticsDailySummary {
   id          String   @id @default(cuid())

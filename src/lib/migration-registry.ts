@@ -369,8 +369,21 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
       'ALTER TABLE "AnalyticsEvent" DROP CONSTRAINT "AnalyticsEvent_event_type_check"; ALTER TABLE "AnalyticsEvent" ADD CONSTRAINT "AnalyticsEvent_event_type_check" CHECK ("eventType" IN (the fourteen pre-activation values)) NOT VALID; — activation rows appended in the meantime remain and are only tolerated because the re-added constraint is NOT VALID.',
   },
   {
-    id: "20261126000000_autonomy_slice_1",
+    id: "20260906120000_rate_limit_postgres_backend",
     position: 29,
+    capabilities: [
+      "authentication rate limiting",
+      "registration rate limiting",
+      "AI request rate limiting",
+      "document export admission",
+      "contract draft admission",
+    ],
+    createsTables: ["RateLimitWindow", "RateLimitLease"],
+    reverse: 'DROP TABLE "RateLimitLease"; DROP TABLE "RateLimitWindow";',
+  },
+  {
+    id: "20261126000000_autonomy_slice_1",
+    position: 30,
     capabilities: [
       "autonomy shell",
       "company profile Markdown",

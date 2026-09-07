@@ -15,8 +15,8 @@ import {
   type MigrationReadinessReport,
 } from "@/lib/migration-readiness";
 import {
+  distributedRateLimitBackend,
   probeDistributedRateLimitBackend,
-  requiresDistributedRateLimit,
 } from "@/lib/rate-limit";
 import { summarizeSealedSecrets } from "@/lib/secret-readiness";
 import {
@@ -53,7 +53,7 @@ type ReadinessReport = Readonly<{
     durationMs: number;
   }>;
   storage: "vercel_blob" | "ephemeral" | "local";
-  rateLimit: "redis" | "memory" | "unavailable";
+  rateLimit: "redis" | "postgres" | "memory" | "unavailable";
   time: string;
 }>;
 
@@ -311,12 +311,14 @@ async function buildReadinessReport(): Promise<ReadinessReport> {
   checks.storage = infrastructure.storage;
   checks.rateLimit = infrastructure.rateLimit;
   checks.cron = infrastructure.cron;
-  const distributedRateLimitRequired = requiresDistributedRateLimit(undefined);
-  if (checks.rateLimit.ok && distributedRateLimitRequired) {
+  const sharedRateLimitBackend = distributedRateLimitBackend();
+  if (checks.rateLimit.ok && sharedRateLimitBackend) {
     const reachable = await probeDistributedRateLimitBackend();
     checks.rateLimit = {
       ok: reachable,
-      detail: reachable ? "redis" : "redis_unavailable",
+      detail: reachable
+        ? sharedRateLimitBackend
+        : `${sharedRateLimitBackend}_unavailable`,
     };
   }
   if (!infrastructure.storage.ok) {
@@ -375,9 +377,7 @@ async function buildReadinessReport(): Promise<ReadinessReport> {
         ? ("ephemeral" as const)
         : ("local" as const),
     rateLimit: checks.rateLimit.ok
-      ? process.env.REDIS_URL?.trim()
-        ? ("redis" as const)
-        : ("memory" as const)
+      ? (sharedRateLimitBackend ?? ("memory" as const))
       : ("unavailable" as const),
     time: new Date().toISOString(),
   });
