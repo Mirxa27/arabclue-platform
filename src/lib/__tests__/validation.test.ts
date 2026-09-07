@@ -139,3 +139,23 @@ describe("validation failures answer through the bilingual contract", () => {
     expect(result.data.email).toBe("bidder@arabclue.com");
   });
 });
+
+describe("project schemas accept a tender that states no percentage targets", () => {
+  test("null saudization and local-content targets pass create and patch", async () => {
+    const { projectCreateSchema, projectPatchSchema } = await import("../validation");
+    // What the tender setup wizard sends when the goals fields are left blank.
+    const created = projectCreateSchema.safeParse({
+      title: "Cloud Services Platform",
+      titleAr: "منصة الخدمات السحابية",
+      etimadRef: "ETM-QA-0907",
+      category: "IT",
+      budget: null,
+      currency: "SAR",
+      saudizationTarget: null,
+      localContentTarget: null,
+    });
+    expect(created.success).toBe(true);
+    expect(projectPatchSchema.safeParse({ saudizationTarget: null }).success).toBe(true);
+    expect(projectCreateSchema.safeParse({ title: "x", saudizationTarget: 140 }).success).toBe(false);
+  });
+});

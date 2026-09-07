@@ -204,8 +204,11 @@ export const projectCreateSchema = z.object({
     .union([z.string().min(1), z.null()])
     .optional()
     .transform((v) => (v === "" || v === undefined ? undefined : v)),
-  saudizationTarget: z.number().min(0).max(100).optional(),
-  localContentTarget: z.number().min(0).max(100).optional(),
+  // Null means "the tender states no target", which is what the setup wizard
+  // sends for a blank field; refusing it blocked project creation whenever the
+  // goals step was skipped.
+  saudizationTarget: z.number().min(0).max(100).nullable().optional(),
+  localContentTarget: z.number().min(0).max(100).nullable().optional(),
 });
 
 export const projectPatchSchema = z
@@ -218,8 +221,8 @@ export const projectPatchSchema = z
     status: z
       .enum(["DRAFT", "PARSING", "DRAFTING", "REVIEW", "SUBMITTED", "ARCHIVED"])
       .optional(),
-    saudizationTarget: z.number().min(0).max(100).optional(),
-    localContentTarget: z.number().min(0).max(100).optional(),
+    saudizationTarget: z.number().min(0).max(100).nullable().optional(),
+    localContentTarget: z.number().min(0).max(100).nullable().optional(),
     submissionDeadline: z.string().datetime().nullable().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: "no allowed fields" });
