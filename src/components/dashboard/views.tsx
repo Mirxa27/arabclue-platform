@@ -156,6 +156,11 @@ const KnowledgeApprovalQueueView = dynamic(
     import("./knowledge-approval-queue").then((m) => ({ default: m.KnowledgeApprovalQueue })),
   { loading: PanelLoading }
 );
+const TenderInterrogationView = dynamic(
+  () =>
+    import("./tender-interrogation").then((m) => ({ default: m.TenderInterrogation })),
+  { loading: PanelLoading }
+);
 const SetupWizardView = dynamic(
   () =>
     import("./onboarding-wizard").then((m) => ({ default: m.OnboardingWizard })),
@@ -171,6 +176,7 @@ const VIEW_REGISTRY: Record<DashboardView, ComponentType> = {
   projects: ProjectsView,
   documents: DocumentsView,
   proposals: ProposalsView,
+  clarifications: ClarificationsView,
   contracts: ContractsView,
   "clause-library": ClauseLibraryRouteView,
   "template-editor": TemplateEditorRouteView,
@@ -372,6 +378,24 @@ function ProposalsView() {
         locale={locale}
       />
       <ProposalsList />
+    </PageSection>
+  );
+}
+
+function ClarificationsView() {
+  const { locale } = useLocale();
+  return (
+    <PageSection>
+      <PageHeader
+        title={tr("nav_clarifications", locale)}
+        subtitle={
+          locale === "ar"
+            ? "استجواب نص المنافسة: تعارضات وغموض وملاحق ناقصة وبنود عالية المخاطر — تتحول إلى خطاب استفسارات رسمي"
+            : "Interrogate the tender text: contradictions, ambiguities, missing annexes and risk clauses, turned into a formal clarification letter"
+        }
+        locale={locale}
+      />
+      <TenderInterrogationView />
     </PageSection>
   );
 }

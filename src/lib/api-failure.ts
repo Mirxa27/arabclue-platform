@@ -222,6 +222,12 @@ const EXPLICIT_FAILURE_STATUS: Readonly<Record<string, number>> = {
   // Same reason, and 422 is what `POST /api/agents/run` already answers for an
   // empty project (route.ts:113-118) — the two entry points must not disagree.
   NO_DOCUMENTS: 422,
+  // The interrogation needs parsed tender text and the letter needs kept
+  // questions: well-formed requests against a project state that cannot yet
+  // satisfy them, so 409 rather than 400.
+  NO_TENDER_TEXT: 409,
+  NO_KEPT_CLARIFICATIONS: 409,
+  CLARIFICATION_STATUS_INVALID: 409,
   LIVE_VOICE_START_FAILED: 500,
   AGENT_TOOL_FAILED: 500,
   EXTENSION_PACK_FAILED: 500,

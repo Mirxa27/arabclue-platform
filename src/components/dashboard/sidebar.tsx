@@ -29,6 +29,7 @@ import {
   Lock,
   Loader2,
   Scale,
+  MessageCircleQuestionMark,
   Sparkles,
   LayoutList,
   Store,
@@ -84,6 +85,7 @@ const NAV_PRIMARY: { view: DashboardView; key: string; icon: typeof LayoutDashbo
  */
 const NAV_SECONDARY: (NavItem & { group: NavGroupKey })[] = [
   { view: "knowledge-approval", key: "nav_knowledge_approval", icon: ClipboardCheck, badge: "pending-approval", group: "nav_group_workflow" },
+  { view: "clarifications", key: "nav_clarifications", icon: MessageCircleQuestionMark, group: "nav_group_workflow" },
   { view: "contracts", key: "nav_contracts", icon: Scale, group: "nav_group_workflow" },
   { view: "agents", key: "nav_agents", icon: Bot, group: "nav_group_workflow" },
   { view: "proposal-builder", key: "nav_proposal_builder", icon: LayoutList, group: "nav_group_workflow" },

@@ -382,8 +382,15 @@ export const MIGRATIONS: readonly MigrationRecord[] = Object.freeze([
     reverse: 'DROP TABLE "RateLimitLease"; DROP TABLE "RateLimitWindow";',
   },
   {
-    id: "20261126000000_autonomy_slice_1",
+    id: "20260907000000_tender_clarifications",
     position: 30,
+    capabilities: ["tender clarification intelligence", "clarification letter export"],
+    createsTables: ["TenderClarification"],
+    reverse: 'DROP TABLE "TenderClarification";',
+  },
+  {
+    id: "20261126000000_autonomy_slice_1",
+    position: 31,
     capabilities: [
       "autonomy shell",
       "company profile Markdown",

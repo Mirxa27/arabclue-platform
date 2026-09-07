@@ -117,6 +117,7 @@ model User {
   inboxItems                  InboxItem[]
   createdProposalReviewTokens ProposalReviewToken[]            @relation("ProposalReviewTokenCreator")
   savedTenderFilters          SavedTenderFilter[]
+  tenderClarifications        TenderClarification[]
 }
 
 model UserSession {
@@ -192,6 +193,7 @@ model Workspace {
   inboxItems               InboxItem[]
   proposalReviewTokens     ProposalReviewToken[]
   savedTenderFilters       SavedTenderFilter[]
+  tenderClarifications     TenderClarification[]
 }
 
 model WorkspaceMember {
@@ -227,8 +229,8 @@ model TenderProject {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy          User                @relation(fields: [createdById], references: [id])
+  workspace          Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy          User                  @relation(fields: [createdById], references: [id])
   documents          UploadedDocument[]
   proposals          GeneratedProposal[]
   agentRuns          AgentRun[]
@@ -236,6 +238,7 @@ model TenderProject {
   requirements       TenderRequirement[]
   generatedContracts GeneratedContract[]
   inboxItems         InboxItem[]
+  clarifications     TenderClarification[]
 
   @@index([workspaceId])
   @@index([status])
@@ -1210,6 +1213,48 @@ model TenderRequirement {
 
   @@index([projectId])
   @@index([status])
+}
+
+// ─── Tender Clarification Intelligence ───────────────────────────────────────
+// One row per question the bidder may put to the buyer during the tender's
+// inquiries window: a contradiction, ambiguity, missing item, placeholder or
+// risk clause found in the tender text, with the verbatim quotes that ground it.
+// Rows are upserted by (projectId, fingerprint) so a re-run refreshes proposed
+// findings without touching the team's triage, edits or recorded answers.
+
+model TenderClarification {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  projectId      String
+  createdById    String
+  kind           String // CONTRADICTION | AMBIGUITY | MISSING_INFO | RISK_CLAUSE | PLACEHOLDER
+  severity       String // CRITICAL | MAJOR | MINOR
+  status         String    @default("PROPOSED") // PROPOSED | KEPT | DROPPED | SUBMITTED | ANSWERED
+  titleEn        String
+  titleAr        String
+  rationaleEn    String    @db.Text
+  rationaleAr    String    @db.Text
+  questionEn     String    @db.Text
+  questionAr     String    @db.Text
+  quotesJson     String    @db.Text // JSON ClarificationQuote[]: { text, documentId, documentName, pageRef, sectionHeading }
+  answerMd       String?   @db.Text // the entity's answer as recorded by the team
+  answeredAt     DateTime?
+  submittedAt    DateTime?
+  provenance     String // DETERMINISTIC | AI_GENERATED | USER_AUTHORED
+  provenanceJson String? // JSON: { detectorId } | { provider, model, tokensUsed, windowIndex }
+  fingerprint    String // sha256 of kind + normalized primary quote; dedupe key across runs
+  editedAt       DateTime? // set when a person changed the question or title; a re-run then leaves the text alone
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   TenderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User          @relation(fields: [createdById], references: [id])
+
+  @@unique([projectId, fingerprint])
+  @@index([projectId, status])
+  @@index([workspaceId])
 }
 
 // ─── Proposal Review Workflow ────────────────────────────────────────────────

@@ -90,6 +90,7 @@ export const localizationRegistry = {
   nav_billing: { ar: "الاشتراك والدفع", en: "Billing" },
   nav_reviews: { ar: "المراجعات", en: "Reviews" },
   nav_knowledge_approval: { ar: "اعتماد المعرفة", en: "Knowledge Approval" },
+  nav_clarifications: { ar: "استفسارات المنافسة", en: "Tender Clarifications" },
   nav_settings: { ar: "الإعدادات", en: "Settings" },
   status_REVIEWED: { ar: "تمت المراجعة", en: "Reviewed" },
   status_APPROVED: { ar: "معتمد", en: "Approved" },
@@ -2289,6 +2290,24 @@ export const localizationRegistry = {
     ar: "لا توجد مستندات مرفوعة لهذا المشروع. ارفع كراسة الشروط أولاً ثم شغّل الوكلاء",
     en: "No documents are uploaded for this project. Upload the tender documents first, then run the agents",
   },
+  // Tender clarification intelligence reads the parsed chunks of the tender
+  // documents; an unparsed or empty project has nothing to interrogate.
+  NO_TENDER_TEXT: {
+    ar: "لا يوجد نص منافسة مُحلَّل لهذا المشروع. ارفع كراسة الشروط وانتظر انتهاء التحليل ثم أعد المحاولة",
+    en: "No parsed tender text exists for this project. Upload the tender documents, wait for parsing to finish, then try again",
+  },
+  CLARIFICATION_NOT_FOUND: {
+    ar: "الاستفسار غير موجود في هذا المشروع",
+    en: "This clarification does not exist in this project",
+  },
+  CLARIFICATION_STATUS_INVALID: {
+    ar: "لا يمكن نقل الاستفسار إلى هذه الحالة من حالته الحالية",
+    en: "The clarification cannot move to that status from its current one",
+  },
+  NO_KEPT_CLARIFICATIONS: {
+    ar: "لا توجد استفسارات مُعتمدة لتضمينها في الخطاب. اعتمد استفساراً واحداً على الأقل ثم أعد المحاولة",
+    en: "No kept clarifications to put in the letter. Keep at least one question, then try again",
+  },
   // Distinct from AI_RATE_LIMITED on purpose: the caller did nothing wrong and
   // slowing down will not help, so the text must not read as a quota message.
   AI_RATE_LIMIT_UNAVAILABLE: {
@@ -3499,6 +3518,10 @@ export const COMPLETION_ERROR_CONTRACTS = {
   AGENT_RUN_IN_PROGRESS: { actionKey: "error_action_run_agent", messageKey: "AGENT_RUN_IN_PROGRESS" },
   AI_RATE_LIMITED: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMITED" },
   NO_DOCUMENTS: { actionKey: "error_action_run_agent", messageKey: "NO_DOCUMENTS" },
+  NO_TENDER_TEXT: { actionKey: "error_action_run_agent", messageKey: "NO_TENDER_TEXT" },
+  CLARIFICATION_NOT_FOUND: { actionKey: "error_action_complete_request", messageKey: "CLARIFICATION_NOT_FOUND" },
+  CLARIFICATION_STATUS_INVALID: { actionKey: "error_action_complete_request", messageKey: "CLARIFICATION_STATUS_INVALID" },
+  NO_KEPT_CLARIFICATIONS: { actionKey: "error_action_complete_request", messageKey: "NO_KEPT_CLARIFICATIONS" },
   AI_RATE_LIMIT_UNAVAILABLE: { actionKey: "error_action_run_agent", messageKey: "AI_RATE_LIMIT_UNAVAILABLE" },
   AI_PROVIDER_UNAVAILABLE: { actionKey: "error_action_run_agent", messageKey: "AI_PROVIDER_UNAVAILABLE" },
   PRICING_REFUSED: { actionKey: "error_action_run_agent", messageKey: "PRICING_REFUSED" },

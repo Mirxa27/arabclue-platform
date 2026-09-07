@@ -26,6 +26,7 @@ export type DashboardView =
   | "projects"
   | "documents"
   | "proposals"
+  | "clarifications"
   | "contracts"
   | "clause-library"
   | "template-editor"
@@ -70,6 +71,7 @@ export const VIEW_PATHS: Readonly<Record<DashboardView, string>> = Object.freeze
   projects: "projects",
   documents: "documents",
   proposals: "proposals",
+  clarifications: "clarifications",
   contracts: "contracts",
   "clause-library": "clause-library",
   "template-editor": "template-editor",
@@ -110,6 +112,7 @@ export const VIEW_LABEL_KEYS: Readonly<Record<DashboardView, string>> =
     projects: "nav_projects",
     documents: "nav_documents",
     proposals: "nav_proposals",
+    clarifications: "nav_clarifications",
     contracts: "nav_contracts",
     "clause-library": "nav_clause_library",
     "template-editor": "nav_template_editor",
@@ -180,7 +183,7 @@ export const ADMIN_VIEWS: ReadonlySet<DashboardView> = Object.freeze(
  * path carries the project identifier while a project is selected.
  */
 export const PROJECT_SCOPED_VIEWS: ReadonlySet<DashboardView> = Object.freeze(
-  new Set<DashboardView>(["documents", "proposals", "contracts", "agents"])
+  new Set<DashboardView>(["documents", "proposals", "clarifications", "contracts", "agents"])
 );
 
 /**
