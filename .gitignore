@@ -89,3 +89,6 @@ test-results/
 src/app/.well-known/workflow/
 .next/workflow-data/
 /.swc
+
+# local database dumps (bun run db:backup without BLOB_READ_WRITE_TOKEN)
+/backups/

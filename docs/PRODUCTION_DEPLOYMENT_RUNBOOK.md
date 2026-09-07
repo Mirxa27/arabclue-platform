@@ -89,6 +89,64 @@ old clones and caches may retain the original objects.
 
 Vercel's `buildCommand` is `bun run build`, so neither Preview nor Production
 builds can mutate the database.
+### Drift checks never touch a live host
+
+`prisma migrate diff --from-migrations` **resets** its shadow database before
+replaying the migration folder into it. The only sanctioned form is
+`SHADOW_DATABASE_URL=… bun run db:diff` (`scripts/prisma-migrate-diff.mjs`),
+which refuses before spawning Prisma when the shadow host is any host present
+in `DATABASE_URL*` / `POSTGRES_*` / `PG*`, the other endpoint of that Neon
+branch, any `*.neon.tech` host without `SHADOW_DATABASE_ALLOW_NEON=1`, or a
+database named like the production one. `db:push`, `db:migrate` (dev) and
+`db:reset` no longer exist as package scripts.
+
+### Off-platform backups
+
+Neon's history window is a property of the plan (six hours on Free). The
+platform therefore keeps its own logical dumps: `/api/cron/database-backup`
+runs daily at 04:00 UTC (before the analytics-retention job deletes anything),
+writes one gzip'd JSON document of every table — including
+`_prisma_migrations` — to Vercel Blob under `backups/database/`, and prunes
+dumps older than 30 days only after the new one is durable.
+
+- `bun run db:backup` — dump now (to Blob when `BLOB_READ_WRITE_TOKEN` is set,
+  else `./backups/`).
+- `bun run db:backup list` — available dumps.
+- `bun run db:backup restore <key>` — dry run: per-table counts only.
+- `bun run db:backup restore <key> --apply [--force]` — truncate and re-insert
+  every table in one transaction with triggers disabled (foreign-key order and
+  the contract-template FK cycles do not matter). Without `--force` it refuses
+  when the live database holds more rows than the dump.
+
+## Incident 2026-09-06 — production schema reset
+
+At 19:32 UTC an operator command
+`prisma migrate diff --from-migrations … --shadow-database-url "$DATABASE_URL"`
+was run with the production Neon connection string as the shadow database. The
+production schema was dropped and replayed empty. The project was on Neon's
+Free plan; the six-hour restore window closed at ~01:30 UTC before a restore
+was attempted, and no external backup existed. All tenant rows (users,
+workspaces, documents, proposals, billing, analytics, sealed secrets, AI
+provider connections) were lost. The application re-bootstrapped its default
+administrator on the next deploy.
+
+Recovery performed on 2026-09-07:
+
+1. The `_prisma_migrations` ledger was baselined with `prisma migrate resolve
+   --applied` for all 31 declared migrations (metadata only; the replayed
+   schema already matched). `prisma migrate status` reports up to date and
+   `/api/ready` is green.
+2. The five AI provider connections were re-created from the recorded
+   configuration by `scripts/reseed-ai-providers.ts` (idempotent). Their API
+   keys were sealed with a key that was never recoverable and must be
+   re-entered in Admin → Env Settings.
+3. The guards above (`db:diff` wrapper, script removal, daily off-platform
+   backup with tested restore) were added so neither the cause nor the missing
+   safety net can recur.
+4. The `neondb_owner` password, exposed in chat during the response, is to be
+   rotated in Neon and updated in Vercel Production environment variables.
+
+
 
 <!-- BEGIN GENERATED MIGRATION LEDGER — generated from src/lib/migration-registry.ts; do not edit by hand -->
 

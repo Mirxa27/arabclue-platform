@@ -93,7 +93,9 @@ bun run dev
 | `bun run eval:rag` | Offline retrieval eval over `public/samples` (precision@1/@3, MRR); exits 1 under the pinned floor |
 | `bun run rag:reindex [-- --workspace <id>] [-- --stale-only]` | Re-extract, re-chunk and re-embed uploaded documents (after an embedding-model change or parser fix) |
 | `bun run db:generate / db:studio` | Read-safe Prisma client and inspection helpers |
-| `bun run db:push:dev / db:migrate / db:migrate:deploy` | Explicit schema-changing commands; isolated/approved environments only |
+| `bun run db:migrate:deploy` | The only schema-changing command; approved release step on the unpooled URL |
+| `SHADOW_DATABASE_URL=… bun run db:diff` | Drift check between the migration folder and the schema. Refuses any live, Neon, or production-named shadow host — `migrate diff --from-migrations` **resets** its shadow database (this destroyed production on 2026-09-06) |
+| `bun run db:backup [list \| restore <key> --apply]` | Off-platform daily dump to Vercel Blob (also scheduled as `/api/cron/database-backup`); restore refuses to overwrite a larger live database without `--force` |
 
 ---
 

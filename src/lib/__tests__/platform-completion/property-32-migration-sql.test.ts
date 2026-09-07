@@ -658,14 +658,12 @@ describe(PROPERTY_TAG, () => {
       expect(schemaMutatingScripts(packageScripts)).toEqual([]);
     });
 
-    test("operator-only database scripts stay available", () => {
-      for (const name of [
-        "db:push",
-        "db:migrate",
-        "db:migrate:deploy",
-        "db:reset",
-      ]) {
-        expect(containsDatabaseMutation(packageScripts[name] ?? "")).toBe(true);
+    test("the release migration script is the only schema-mutating package script", () => {
+      expect(containsDatabaseMutation(packageScripts["db:migrate:deploy"] ?? "")).toBe(true);
+      // Removed after the 2026-09-06 production reset: shortcuts that drop or
+      // rewrite a schema have no place next to a live connection string.
+      for (const name of ["db:push", "db:push:dev", "db:migrate", "db:reset"]) {
+        expect(packageScripts[name]).toBeUndefined();
       }
     });
   });
