@@ -143,8 +143,13 @@ Recovery performed on 2026-09-07:
 3. The guards above (`db:diff` wrapper, script removal, daily off-platform
    backup with tested restore) were added so neither the cause nor the missing
    safety net can recur.
-4. The `neondb_owner` password, exposed in chat during the response, is to be
-   rotated in Neon and updated in Vercel Production environment variables.
+4. The `neondb_owner` password, exposed in chat during the response, was
+   rotated in Neon (Roles → Reset password) and every Production variable
+   that embeds it (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `PGPASSWORD`,
+   `POSTGRES_PASSWORD`, `POSTGRES_PRISMA_URL`, `POSTGRES_URL`,
+   `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL_NO_SSL`) was re-added as a
+   sensitive variable; the old password was confirmed rejected and production
+   redeployed. The first off-platform dump was written to Blob the same day.
 
 
 
